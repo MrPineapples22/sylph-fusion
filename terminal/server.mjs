@@ -266,12 +266,13 @@ async function handleRequest(req,res){
   try{const data=await readLive(upstream+requested.search);res.setHeader('Content-Type','application/json');res.end(JSON.stringify(data));}
   catch{res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({error:'Live request unavailable. The collector will retry its feeds automatically.'}));}return;
  }
- try{const path=decodeURIComponent(new URL(req.url,`http://127.0.0.1:${port}`).pathname);const file=resolve(root,'.'+(path==='/'?'/index.html':path));if(!file.startsWith(resolve(root)+sep)){res.writeHead(403);res.end();return;}
+ try{const path=decodeURIComponent(new URL(req.url,`http://${req.headers.host || '127.0.0.1'}`).pathname);const file=resolve(root,'.'+(path==='/'?'/index.html':path));if(!file.startsWith(resolve(root)+sep)){res.writeHead(403);res.end();return;}
  const data=await readFile(file);res.setHeader('Cache-Control','no-store, no-cache, must-revalidate');res.setHeader('Content-Type',({'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml'})[extname(file)]||'application/octet-stream');res.writeHead(200);res.end(req.method==='HEAD'?undefined:data);
  }catch{res.writeHead(404);res.end('Not found');}
 }
 const astraFeed=createAstraFeed(readLive);
 server.requestTimeout = 15_000;
 server.headersTimeout = 10_000;
-server.listen(port, '127.0.0.1',()=>console.log(`SYLPH paper terminal: http://127.0.0.1:${port} (also http://localhost:${port})`));
+const host = process.env.TERMINAL_HOST || '0.0.0.0';
+server.listen(port, host,()=>console.log(`SYLPH paper terminal: http://localhost:${port} | Phone / Local LAN: http://192.168.1.155:${port}`));
 for(const signal of ['SIGINT','SIGTERM'])process.once(signal,()=>{hub.stop();server.close();});

@@ -1,8 +1,19 @@
 export function isLocalRequest(req, port) {
   const authorities = new Set([`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`]);
-  if (!authorities.has(req.headers.host) || req.headers['sec-fetch-site'] === 'cross-site') return false;
+  const host = req.headers.host || '';
+  const isPrivateLanHost = /^((192\.168\.\d{1,3}\.\d{1,3})|(10\.\d{1,3}\.\d{1,3}\.\d{1,3})|(172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}))(?::(\d+))?$/.exec(host);
+  const isLanMatch = isPrivateLanHost && (!isPrivateLanHost[5] || Number(isPrivateLanHost[5]) === port);
+
+  if (!authorities.has(host) && !isLanMatch) return false;
+  if (req.headers['sec-fetch-site'] === 'cross-site') return false;
   const origin = req.headers.origin;
-  if (origin && ![...authorities].some(host => origin === `http://${host}`)) return false;
+  if (origin) {
+    const originMatch = /^https?:\/\/([^/]+)/.exec(origin);
+    const originHost = originMatch ? originMatch[1] : origin;
+    const isPrivateLanOrigin = /^((192\.168\.\d{1,3}\.\d{1,3})|(10\.\d{1,3}\.\d{1,3}\.\d{1,3})|(172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}))(?::(\d+))?$/.exec(originHost);
+    const isLanOriginMatch = isPrivateLanOrigin && (!isPrivateLanOrigin[5] || Number(isPrivateLanOrigin[5]) === port);
+    if (!authorities.has(originHost) && !isLanOriginMatch) return false;
+  }
   return true;
 }
 
