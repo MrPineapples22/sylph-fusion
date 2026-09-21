@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="glass" x1="6" y1="4" x2="58" y2="64" gradientUnits="userSpaceOnUse"><stop stop-color="#344D62"/><stop offset="1" stop-color="#152331"/></linearGradient>
+    <linearGradient id="flow" x1="16" y1="14" x2="50" y2="49" gradientUnits="userSpaceOnUse"><stop stop-color="#D3F3FF"/><stop offset=".5" stop-color="#8ED8EF"/><stop offset="1" stop-color="#B7AAF2"/></linearGradient>
+  </defs>
+  <rect x="1" y="1" width="62" height="62" rx="18" fill="url(#glass)" stroke="#A9D6EE" stroke-opacity=".3"/>
+  <path d="M47 17H30c-7 0-12 4-12 9s5 8 12 8h5c7 0 11 3 11 7s-5 7-12 7H17" stroke="url(#flow)" stroke-width="5" stroke-linecap="round"/>
+  <path d="M17 41c10 0 15-17 30-17" stroke="#C8F1FF" stroke-opacity=".6" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="32" cy="32" r="3.5" fill="#EEF9FF"/>
+</svg>

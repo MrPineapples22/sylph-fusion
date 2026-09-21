@@ -1,0 +1,905 @@
+import { existsSync } from 'node:fs';
+import { readFile, mkdir } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createServer } from 'node:net';
+import { monitorEventLoopDelay } from 'node:perf_hooks';
+import { setTimeout as delay } from 'node:timers/promises';
+import { Keypair, PublicKey } from '@solana/web3.js';
+import { bondingCurvePda } from '@pump-fun/pump-sdk';
+import { config } from './config.js';
+import { exitDecision, log, mulBps, settle, recordFailure, recordEquity, pruneRiskState, recordResult, recentEvents } from './core.js';
+import { startDashboard } from './dashboard.js';
+import { RpcPool } from './rpc.js';
+import { Feed } from './feed.js';
+import { Market } from './market.js';
+import { SimulationExecutionAuthority, LiveExecutionAuthority } from './platform/execution/authority.js';
+import { Store } from './store.js';
+import { strategyStatuses } from './strategy.js';
+import { SessionLogger } from './session-logger.js';
+import { buildCandidateSnapshot, buildOutcomeLabel, deterministicCandidateId, executeModelGate, saltHashWallet, } from './candidate-snapshot.js';
+const reserveBigInt = (value) => BigInt(typeof value?.toString === 'function' ? value.toString() : String(value));
+export function checkCandidateReserveDrift(s1, s2, maxPriceDriftBps = 200n, maxLiquidityDropBps = 200n) {
+    if (s1.curve.complete || s2.curve.complete)
+        return { passed: false, priceDriftBps: 0n, liquidityDropBps: 0n, driftBps: 0n, direction: 'none', reason: 'CURVE_COMPLETED' };
+    const r1 = reserveBigInt(s1.curve.realQuoteReserves), r2 = reserveBigInt(s2.curve.realQuoteReserves);
+    const v1Quote = reserveBigInt(s1.curve.virtualQuoteReserves), v1Token = reserveBigInt(s1.curve.virtualTokenReserves);
+    const v2Quote = reserveBigInt(s2.curve.virtualQuoteReserves), v2Token = reserveBigInt(s2.curve.virtualTokenReserves);
+    if (r1 <= 0n || r2 <= 0n || v1Quote <= 0n || v2Quote <= 0n || v1Token <= 0n || v2Token <= 0n) {
+        return { passed: false, priceDriftBps: 0n, liquidityDropBps: 0n, driftBps: 0n, direction: 'none', reason: 'ZERO_RESERVES' };
+    }
+    let liquidityDropBps = 0n;
+    if (r2 < r1) {
+        liquidityDropBps = (r1 - r2) * 10000n / r1;
+        if (liquidityDropBps > maxLiquidityDropBps) {
+            return { passed: false, priceDriftBps: 0n, liquidityDropBps, driftBps: liquidityDropBps, direction: 'down', reason: 'EXCESSIVE_LIQUIDITY_DROP' };
+        }
+    }
+    const p1 = (v1Quote * 1000000000000n) / v1Token;
+    const p2 = (v2Quote * 1000000000000n) / v2Token;
+    let priceDriftBps = 0n;
+    if (p2 > p1) {
+        priceDriftBps = (p2 - p1) * 10000n / p1;
+        if (priceDriftBps > maxPriceDriftBps) {
+            return { passed: false, priceDriftBps, liquidityDropBps, driftBps: priceDriftBps, direction: 'up', reason: 'EXCESSIVE_PRICE_DRIFT' };
+        }
+    }
+    const direction = p2 > p1 ? 'up' : r2 < r1 ? 'down' : 'none';
+    const driftBps = direction === 'up' ? priceDriftBps : direction === 'down' ? liquidityDropBps : 0n;
+    return { passed: true, priceDriftBps, liquidityDropBps, driftBps, direction };
+}
+export class Engine {
+    cfg;
+    rpc;
+    market;
+    executor;
+    store;
+    state;
+    sessionLogger;
+    modelEvaluator;
+    gateMode;
+    candidates = new Map();
+    stopped = false;
+    lastHealth = 0;
+    cursor = 0;
+    marks = new Map();
+    startedAt = Date.now();
+    loopLag = monitorEventLoopDelay({ resolution: 20 });
+    entryBuildInFlight = false;
+    rejectionCounts = new Map();
+    blockedExits = new Map();
+    lastCheckpoint = Date.now();
+    feed;
+    constructor(cfg, rpc, market, executor, store, state, sessionLogger, modelEvaluator, gateMode = modelEvaluator ? 'ml_gated' : 'deterministic_only') {
+        this.cfg = cfg;
+        this.rpc = rpc;
+        this.market = market;
+        this.executor = executor;
+        this.store = store;
+        this.state = state;
+        this.sessionLogger = sessionLogger;
+        this.modelEvaluator = modelEvaluator;
+        this.gateMode = gateMode;
+        this.feed = new Feed(cfg, rpc.connection, e => this.onEvent(e));
+    }
+    snapshotCandidate(candidate, disposition, reason = null, extra = {}) {
+        if (!this.sessionLogger)
+            return null;
+        const now = Date.now();
+        const observedAtMs = candidate.born;
+        const decisionAtMs = Math.max(now, observedAtMs);
+        const curveData = extra.curve || candidate.curve || (extra.s ? {
+            complete: extra.s.curve.complete,
+            realQuoteReserves: extra.s.curve.realQuoteReserves.toString(),
+            virtualQuoteReserves: extra.s.curve.virtualQuoteReserves.toString(),
+            virtualTokenReserves: extra.s.curve.virtualTokenReserves.toString(),
+        } : undefined);
+        const rpcStats = typeof this.rpc?.getEndpointStats === 'function' ? this.rpc.getEndpointStats() : [];
+        const primary = rpcStats[0];
+        const leadingRpcLatencyMs = primary ? (primary.latencyMs ?? primary.p50LatencyMs ?? 0) : 0;
+        const totalCalls = rpcStats.reduce((acc, s) => acc + (s.calls || 0), 0);
+        const totalDrops = rpcStats.reduce((acc, s) => acc + (s.drops || (s.http429Count + s.errorCount) || 0), 0);
+        const trailingRpcDropRatePct = totalCalls > 0 ? Number(((totalDrops / totalCalls) * 100).toFixed(2)) : 0;
+        let curveCompletionPct = 0;
+        if (curveData?.complete) {
+            curveCompletionPct = 100.0;
+        }
+        else if (extra.s?.curve && extra.s?.global?.initialRealTokenReserves) {
+            const initialTokens = BigInt(extra.s.global.initialRealTokenReserves.toString());
+            const realTokens = BigInt(extra.s.curve.realTokenReserves.toString());
+            if (initialTokens > 0n) {
+                const sold = initialTokens > realTokens ? initialTokens - realTokens : 0n;
+                curveCompletionPct = Math.min(100, Math.max(0, Number(sold * 10000n / initialTokens) / 100));
+            }
+        }
+        else if (curveData?.realQuoteReserves) {
+            const realReserves = BigInt(curveData.realQuoteReserves);
+            const targetReserves = extra.s?.global?.initialVirtualSolReserves
+                ? BigInt(extra.s.global.initialVirtualSolReserves.toString())
+                : (extra.s?.curve?.realQuoteReserves ? BigInt(extra.s.curve.realQuoteReserves.toString()) : 0n);
+            if (targetReserves > 0n && realReserves > 0n) {
+                curveCompletionPct = Math.min(100, Number(realReserves * 10000n / (targetReserves + realReserves)) / 100);
+            }
+        }
+        const vQuote = curveData?.virtualQuoteReserves ? BigInt(curveData.virtualQuoteReserves) : (extra.s ? BigInt(extra.s.curve.virtualQuoteReserves.toString()) : 0n);
+        const vToken = curveData?.virtualTokenReserves ? BigInt(curveData.virtualTokenReserves) : (extra.s ? BigInt(extra.s.curve.virtualTokenReserves.toString()) : 0n);
+        const spotPriceSol = (vQuote > 0n && vToken > 0n) ? Number(vQuote) / Number(vToken) : 0;
+        const spotPriceUsd = extra.spotPriceUsd ?? (extra.solPriceUsd ? spotPriceSol * extra.solPriceUsd : (spotPriceSol > 0 ? spotPriceSol : 0));
+        const snapshot = buildCandidateSnapshot({
+            mint: candidate.mint,
+            poolAddress: extra.s?.mint ? bondingCurvePda(extra.s.mint).toBase58() : candidate.mint,
+            slot: candidate.slot,
+            eventSignature: candidate.eventSignature || `eval-${candidate.mint}-${candidate.slot}`,
+            observedAtMs,
+            decisionAtMs,
+            policyContext: {
+                policyVersion: 'fusion-v1.4',
+                maxSlippageBps: this.cfg.SLIPPAGE_BPS,
+                targetSizeLamports: String(this.cfg.BUY_LAMPORTS),
+                priorityFeeMultiplier: 1,
+                exitLadderConfigHash: 'ladder-v1-tp20-50-100-stop8',
+            },
+            evaluationDisposition: disposition,
+            dispositionReason: reason,
+            microstructure: {
+                buyerCount5m: candidate.buyers.size,
+                buyTransactionCount: candidate.buyCount ?? 0,
+                sellTransactionCount: candidate.sellCount ?? 0,
+                buySellRatio: candidate.sell > 0n ? Number((candidate.buy * 100n) / candidate.sell) / 100 : Number(candidate.buy > 0n ? 10 : 1),
+                buyerArrivalVelocityPerSec: candidate.buyers.size / Math.max(1, (now - candidate.born) / 1000),
+                creatorWalletHashed: saltHashWallet(candidate.creator),
+            },
+            curveState: {
+                tokenAgeSeconds: Math.floor((now - candidate.born) / 1000),
+                realSolReservesLamports: curveData?.realQuoteReserves || (extra.s ? extra.s.curve.realQuoteReserves.toString() : '0'),
+                virtualSolReservesLamports: curveData?.virtualQuoteReserves || (extra.s ? extra.s.curve.virtualQuoteReserves.toString() : '0'),
+                virtualTokenReserves: curveData?.virtualTokenReserves || (extra.s ? extra.s.curve.virtualTokenReserves.toString() : '0'),
+                curveCompletionPct,
+                reserveDriftPct: extra.drift ? extra.drift.priceDriftBps / 100 : (candidate.drift ? candidate.drift.priceDriftBps / 100 : 0),
+                spotPriceUsd,
+            },
+            transport: {
+                quoteAgeMs: extra.s ? Math.max(0, now - extra.s.at) : 0,
+                leadingRpcLatencyMs,
+                trailingRpcDropRatePct,
+                inFlightOrderCount: this.state.pending ? 1 : 0,
+                oldestPendingAgeMs: this.state.pending ? now - this.state.pending.created : 0,
+                reservedCashRatio: Number(this.cfg.RESERVE_LAMPORTS) / Math.max(1, Number(this.state.cash)),
+            },
+        });
+        candidate.lastSnapshotSlot = candidate.slot;
+        candidate.lastSnapshotDisposition = disposition;
+        this.sessionLogger?.writeCandidateSnapshot?.(snapshot);
+        return snapshot;
+    }
+    recordRejection(mint, reason, meta) {
+        this.rejectionCounts.set(reason, (this.rejectionCounts.get(reason) ?? 0) + 1);
+        const data = { mint, reason, ...meta };
+        log('entry_rejected', data);
+        this.sessionLogger?.writeEvent('entry_rejected', data);
+        const c = this.candidates.get(mint);
+        if (c) {
+            this.snapshotCandidate(c, 'rejected', reason, meta);
+        }
+    }
+    emitCheckpoint() {
+        const uptimeMs = Date.now() - this.startedAt;
+        const rejections = Object.fromEntries(this.rejectionCounts.entries());
+        const openPositions = Object.values(this.state.positions).map(p => ({
+            mint: p.mint,
+            qty: p.qty,
+            cost: p.cost,
+            peak: p.peak,
+            stage: p.stage,
+            panic: p.panic,
+            mark: this.marks.get(p.mint)?.value ?? null,
+        }));
+        const data = {
+            uptimeMs,
+            uptimeHours: +(uptimeMs / 3_600_000).toFixed(2),
+            feedHealthy: this.feed.healthy(),
+            feedLastSlot: this.feed.slot,
+            feedLastEventAgeMs: Date.now() - this.feed.last,
+            cash: this.state.cash,
+            dayPnl: this.state.dayPnl,
+            day: this.state.day,
+            halted: this.state.halted,
+            haltReason: this.state.risk?.haltReason ?? null,
+            openPositionsCount: openPositions.length,
+            openPositions,
+            candidatesTracked: this.candidates.size,
+            rejectionTaxonomy: rejections,
+            blockedExitsCount: this.blockedExits.size,
+            totalFills: this.state.performance?.count ?? 0,
+            realizedPnl: this.state.performance?.realized ?? '0',
+        };
+        log('soak_checkpoint', data);
+        this.sessionLogger?.writeEvent('soak_checkpoint', data);
+    }
+    stop() { this.stopped = true; this.feed.stop(); }
+    canSubmitEntry(candidate, s, entryAmount, now = Date.now()) {
+        return !this.stopped && !this.state.operatorPaused && !this.state.halted && this.feed.healthy() && !this.state.pending && !this.entryBuildInFlight && !candidate.devSold && now >= candidate.next && !this.state.positions[candidate.mint] && !this.state.closed[candidate.mint] && !s.curve.complete && !s.curve.isMayhemMode && entryAmount > 0n;
+    }
+    async setPaused(paused) {
+        if (this.stopped)
+            throw new Error('Engine is stopping');
+        this.state.operatorPaused = paused;
+        try {
+            await this.store.save(this.state, paused ? 'operator-paused' : 'operator-resumed');
+        }
+        catch (e) {
+            this.stop();
+            throw e;
+        }
+        log(paused ? 'entries_paused' : 'entries_resumed');
+    }
+    snapshot() {
+        const now = Date.now();
+        const allCandidates = [...this.candidates.values()];
+        const discovered = allCandidates.length;
+        const aged = allCandidates.filter(c => now - c.born >= this.cfg.MIN_AGE_MS).length;
+        const buyerThreshold = allCandidates.filter(c => now - c.born >= this.cfg.MIN_AGE_MS && c.buyers.size >= this.cfg.MIN_BUYERS && c.buy > c.sell * 2n && !c.devSold).length;
+        const safetyPassed = allCandidates.filter(c => now - c.born >= this.cfg.MIN_AGE_MS && c.buyers.size >= this.cfg.MIN_BUYERS && c.buy > c.sell * 2n && !c.devSold && c.curve && !c.curve.complete).length;
+        const driftPassed = allCandidates.filter(c => c.drift && c.drift.passed).length;
+        const eligible = allCandidates.filter(c => c.drift?.passed && c.curve && !c.curve.complete && !c.devSold && this.feed.healthy() && !this.stopped && !this.state.operatorPaused && !this.state.halted).length;
+        const paperFilled = this.state.performance?.count ?? 0;
+        return {
+            performance: this.state.performance ?? null, connected: true,
+            mode: this.cfg.MODE, demo: false, wallet: this.state.wallet, time: Date.now(), startedAt: this.startedAt,
+            paused: !!this.state.operatorPaused, halted: this.state.halted, stopping: this.stopped,
+            feed: { healthy: this.feed.healthy(), last: this.feed.last, slot: this.feed.slot },
+            rpcEndpoints: typeof this.rpc?.getEndpointStats === 'function' ? this.rpc.getEndpointStats() : [],
+            cash: this.state.cash, dayPnl: this.state.dayPnl, day: this.state.day,
+            funnel: {
+                discovered,
+                aged,
+                buyerThreshold,
+                safetyPassed,
+                driftPassed,
+                eligible,
+                paperFilled,
+            },
+            positions: Object.values(this.state.positions).map(p => {
+                const mark = this.marks.get(p.mint) ?? null;
+                const currentValue = mark ? mark.value : null;
+                const unrealizedPnl = mark ? String(BigInt(mark.value) - BigInt(p.cost)) : null;
+                const peakMultiple = BigInt(p.cost) > 0n && p.peak ? (Number(p.peak) / Number(p.cost)).toFixed(2) : '1.00';
+                return {
+                    mint: p.mint,
+                    qty: p.qty,
+                    initialQty: p.initialQty,
+                    cost: p.cost,
+                    currentValue,
+                    unrealizedPnl,
+                    stage: p.stage,
+                    peak: p.peak,
+                    peakMultiple,
+                    opened: p.opened,
+                    panic: p.panic,
+                    reserve: p.reserve,
+                    creator: p.creator,
+                    creatorTokens: p.creatorTokens,
+                    mark,
+                };
+            }),
+            pending: this.state.pending ? { mint: this.state.pending.mint, side: this.state.pending.side, signature: this.state.pending.signature, created: this.state.pending.created, reason: this.state.pending.reason } : null,
+            candidates: [...this.candidates.values()].slice(-50).reverse().map(c => ({
+                mint: c.mint,
+                age: Date.now() - c.born,
+                buyers: c.buyers.size,
+                devSold: c.devSold,
+                curve: c.curve ?? null,
+                drift: c.drift ?? null,
+            })),
+            limits: { positions: this.cfg.MAX_POSITIONS, exposure: String(this.cfg.MAX_EXPOSURE_LAMPORTS), dailyLoss: String(this.cfg.MAX_DAILY_LOSS_LAMPORTS), buy: String(this.cfg.BUY_LAMPORTS), riskBps: this.cfg.MAX_SPECULATIVE_RISK_BPS, rollingDrawdownBps: this.cfg.ROLLING_DRAWDOWN_BPS, failureHaltCount: this.cfg.FAILURE_HALT_COUNT, slippage: this.cfg.SLIPPAGE_BPS, stop: this.cfg.STOP_BPS, tip: String(this.cfg.MAX_TIP_LAMPORTS), priority: String(this.cfg.MAX_PRIORITY_LAMPORTS) },
+            risk: { failures: this.state.risk?.failures?.length ?? 0, highWater: this.state.risk?.highWater ?? this.state.cash, lifetimePeak: this.state.risk?.lifetimePeak ?? (this.state.risk?.highWater ?? this.state.cash), haltReason: this.state.risk?.haltReason ?? null },
+            strategies: strategyStatuses(),
+            events: recentEvents.slice().reverse(),
+        };
+    }
+    onEvent(e) {
+        const d = e.data, name = e.name.replaceAll('_', '').toLowerCase();
+        const mint = d.mint?.toBase58?.();
+        if (!mint)
+            return;
+        if (name === 'createevent' && !this.candidates.has(mint)) {
+            const creator = d.user?.toBase58?.();
+            if (!creator)
+                return;
+            const chainTime = Number(d.timestamp?.toString()) * 1000;
+            if (!Number.isFinite(chainTime) || chainTime > e.received + 10_000 || e.received - chainTime > this.cfg.MAX_AGE_MS)
+                return;
+            if (this.candidates.size >= this.cfg.MAX_TRACKED)
+                this.candidates.delete(this.candidates.keys().next().value);
+            this.candidates.set(mint, { mint, creator, born: e.received, slot: e.slot, eventSignature: e.signature, buyers: new Map(), buy: 0n, sell: 0n, buyCount: 0, sellCount: 0, devSold: false, next: 0 });
+        }
+        if (name === 'tradeevent') {
+            const user = d.user?.toBase58?.(), p = this.state.positions[mint], c = this.candidates.get(mint);
+            if (d.isBuy === false && user && p?.creator === user) {
+                p.panic = true;
+                log('creator_sell_detected', { mint });
+            }
+            if (c && e.slot >= c.slot) {
+                c.slot = e.slot;
+                c.eventSignature = e.signature;
+                if (!d.isBuy && user === c.creator)
+                    c.devSold = true;
+                const amount = BigInt((d.solAmount ?? d.quoteAmount ?? 0).toString());
+                if (amount < 0n)
+                    return;
+                if (d.isBuy) {
+                    c.buy += amount;
+                    c.buyCount = (c.buyCount || 0) + 1;
+                    if (user && user !== c.creator && c.buyers.size < 1000)
+                        c.buyers.set(user, e.received);
+                }
+                else {
+                    c.sell += amount;
+                    c.sellCount = (c.sellCount || 0) + 1;
+                }
+            }
+        }
+    }
+    async run() {
+        this.loopLag.enable();
+        const feedTask = this.feed.run().catch(() => { log('feed_fatal'); this.stop(); });
+        try {
+            while (!this.stopped) {
+                const started = Date.now();
+                await this.tick();
+                if (Date.now() - this.lastHealth > 30_000) {
+                    this.lastHealth = Date.now();
+                    log('health', { feedFresh: this.feed.healthy(), positions: Object.keys(this.state.positions).length, pending: this.state.pending?.signature ?? null,
+                        entriesHalted: this.state.halted, candidates: this.candidates.size, eventLoopP99Ms: Math.round(this.loopLag.percentile(99) / 1e6) });
+                    this.loopLag.reset();
+                }
+                if (Date.now() - this.lastCheckpoint >= this.cfg.CHECKPOINT_INTERVAL_MS) {
+                    this.lastCheckpoint = Date.now();
+                    this.emitCheckpoint();
+                }
+                if (!this.stopped)
+                    await delay(Math.max(10, this.cfg.POLL_MS - (Date.now() - started)));
+            }
+        }
+        finally {
+            this.feed.stop();
+            await feedTask;
+            this.loopLag.disable();
+            for (const p of Object.values(this.state.positions)) {
+                const markValue = this.marks.get(p.mint)?.value ?? p.cost;
+                this.sessionLogger?.writeOutcomeLabel?.(buildOutcomeLabel({
+                    candidateId: p.candidateId || `pos-${p.mint}`,
+                    mint: p.mint,
+                    entrySnapshotSlot: p.entrySlot || 0,
+                    censored: true,
+                    censoringReason: 'session_terminated',
+                    observationDurationMs: Date.now() - p.opened,
+                    costBasisLamports: p.cost,
+                    grossProceedsLamports: markValue,
+                    dexImpactLamports: 0n,
+                    priorityFeeLamports: 0n,
+                    jitoTipLamports: 0n,
+                    ataRentLamports: 0n,
+                    maximumFavorableExcursionPct: p.mfePct,
+                    maximumAdverseExcursionPct: p.maePct,
+                    exitStage: p.stage,
+                }));
+            }
+            await this.sessionLogger?.close();
+            await this.store.save(this.state, 'shutdown');
+        }
+    }
+    async tick() {
+        const today = new Date().toISOString().slice(0, 10);
+        if (this.state.day !== today) {
+            this.state.day = today;
+            this.state.dayPnl = '0';
+        }
+        for (const [mint, c] of this.candidates) {
+            if (Date.now() - c.born > this.cfg.MAX_AGE_MS) {
+                this.snapshotCandidate(c, 'notEvaluated', 'max_age_expired');
+                this.candidates.delete(mint);
+            }
+        }
+        for (const [mint, at] of Object.entries(this.state.closed))
+            if (Date.now() - at > 86_400_000)
+                delete this.state.closed[mint];
+        if (this.state.pending) {
+            const pending = this.state.pending;
+            for (const p of Object.values(this.state.positions)) {
+                const mark = this.marks.get(p.mint);
+                if (mark) {
+                    const exit = exitDecision(p, BigInt(mark.value), this.cfg.STOP_BPS);
+                    if (exit && !this.blockedExits.has(p.mint)) {
+                        this.blockedExits.set(p.mint, {
+                            blockedAt: Date.now(),
+                            reason: exit.reason,
+                            triggerValue: BigInt(mark.value),
+                            stage: exit.stage,
+                        });
+                        const blockedData = {
+                            mint: p.mint,
+                            reason: exit.reason,
+                            stage: exit.stage,
+                            pendingMint: pending.mint,
+                            pendingSide: pending.side,
+                            pendingAgeMs: Date.now() - pending.created,
+                        };
+                        log('exit_blocked_by_pending', blockedData);
+                        this.sessionLogger?.writeEvent('exit_blocked_by_pending', blockedData);
+                    }
+                }
+            }
+            const order = this.state.pending;
+            const posBefore = this.state.positions[order.mint];
+            const posQty = posBefore ? BigInt(posBefore.qty) : 0n;
+            const posCost = posBefore ? BigInt(posBefore.cost) : 0n;
+            const isSell = order.side === 'sell';
+            const result = await this.executor.reconcile(order);
+            if (result.status === 'filled') {
+                const tokensSold = isSell ? -result.tokenDelta : 0n;
+                const isFullExit = isSell && posBefore && (tokensSold >= posQty || posQty === 0n);
+                const allocatedCost = (isSell && posBefore && posQty > 0n)
+                    ? (isFullExit ? posCost : (posCost * tokensSold) / posQty)
+                    : 0n;
+                settle(this.state, result.tokenDelta, result.solDelta);
+                if (order.side === 'buy') {
+                    const p = this.state.positions[order.mint];
+                    if (p) {
+                        const c = this.candidates.get(order.mint);
+                        p.candidateId = c ? deterministicCandidateId(c.mint, c.slot, c.eventSignature || `eval-${c.mint}-${c.slot}`) : `order-${order.signature}`;
+                        p.entrySlot = c?.slot || this.feed.slot;
+                    }
+                    if (this.candidates.get(order.mint)?.devSold)
+                        this.state.positions[order.mint].panic = true;
+                }
+                else if (order.side === 'sell') {
+                    const grossProceeds = result.solDelta > 0n ? result.solDelta : 0n;
+                    this.sessionLogger?.writeOutcomeLabel(buildOutcomeLabel({
+                        candidateId: posBefore?.candidateId || `order-${order.signature}`,
+                        mint: order.mint,
+                        entrySnapshotSlot: posBefore?.entrySlot || 0,
+                        censored: false,
+                        observationDurationMs: posBefore ? Date.now() - posBefore.opened : 0,
+                        costBasisLamports: allocatedCost.toString(),
+                        grossProceedsLamports: grossProceeds.toString(),
+                        dexImpactLamports: 0n,
+                        priorityFeeLamports: 0n,
+                        jitoTipLamports: 0n,
+                        ataRentLamports: 0n,
+                        maximumFavorableExcursionPct: posBefore?.mfePct,
+                        maximumAdverseExcursionPct: posBefore?.maePct,
+                        exitStage: order.stage,
+                    }));
+                }
+                await this.store.save(this.state, `filled:${order.signature}`);
+                const fillData = { mint: order.mint, side: order.side, signature: order.signature, tokenDelta: String(result.tokenDelta), netLamports: String(result.solDelta), reason: order.reason, stage: order.stage };
+                log('fill_finalized', fillData);
+                this.sessionLogger?.writeEvent('fill_finalized', fillData);
+            }
+            else if (result.status === 'expired' || result.status === 'failed') {
+                if (result.status === 'failed') {
+                    recordResult(this.state, order.mint, 'failed', order.signature, -(result.fee ?? 0n), -(result.fee ?? 0n));
+                    recordFailure(this.state, Date.now(), this.cfg.FAILURE_WINDOW_MS, this.cfg.FAILURE_HALT_COUNT);
+                    this.state.dayPnl = String(BigInt(this.state.dayPnl) - (result.fee ?? 0n));
+                    this.state.cash = String(BigInt(this.state.cash) - (result.fee ?? 0n));
+                }
+                this.state.pending = null;
+                await this.store.save(this.state, `${result.status}:${order.signature}`);
+                const termData = { signature: order.signature, status: result.status, mint: order.mint };
+                log('order_terminal', termData);
+                this.sessionLogger?.writeEvent('order_terminal', termData);
+            }
+            else
+                await this.executor.broadcast(order);
+            return;
+        }
+        const positions = Object.values(this.state.positions);
+        // Snapshot reads run concurrently; all economic state transitions have one writer.
+        const snapshots = await Promise.allSettled(positions.map(p => this.market.snapshot(p.mint, this.feed.slot)));
+        for (let k = 0; k < positions.length; k++) {
+            const i = (this.cursor + k) % positions.length, p = positions[i], result = snapshots[i];
+            if (result.status === 'rejected') {
+                log('position_snapshot_unavailable', { mint: p.mint });
+                continue;
+            }
+            const s = result.value;
+            if (BigInt(p.creatorTokens ?? '0') > 0n) {
+                try {
+                    const held = await this.rpc.connection.getParsedTokenAccountsByOwner(new PublicKey(p.creator), { mint: s.mint }, 'confirmed');
+                    const amount = held.value.reduce((n, a) => n + BigInt(a.account.data.parsed.info.tokenAmount.amount), 0n);
+                    if (amount < BigInt(p.creatorTokens))
+                        p.panic = true;
+                    p.creatorTokens = String(amount);
+                }
+                catch {
+                    log('creator_balance_unavailable', { mint: p.mint });
+                }
+            }
+            let value;
+            if (s.curve.complete) {
+                p.panic = true;
+                value = 0n;
+            }
+            else {
+                const reserve = BigInt(s.curve.realQuoteReserves.toString());
+                if (BigInt(p.reserve) > 0n && reserve < mulBps(BigInt(p.reserve), 10_000 - this.cfg.LIQUIDITY_DROP_BPS))
+                    p.panic = true;
+                p.reserve = String(reserve);
+                value = this.market.sellQuote(s, BigInt(p.qty)) - BigInt(this.cfg.MAX_TIP_LAMPORTS + this.cfg.MAX_PRIORITY_LAMPORTS + 5000);
+                const normalized = value * BigInt(p.initialQty) / BigInt(p.qty);
+                if (normalized > BigInt(p.peak))
+                    p.peak = String(normalized);
+            }
+            const exit = exitDecision(p, value, this.cfg.STOP_BPS);
+            this.marks.set(p.mint, { value: String(value), at: Date.now() });
+            const currentPct = BigInt(p.cost) > 0n ? Number(((value - BigInt(p.cost)) * 10000n) / BigInt(p.cost)) / 100 : 0;
+            p.mfePct = Math.max(p.mfePct ?? currentPct, currentPct);
+            p.maePct = Math.min(p.maePct ?? currentPct, currentPct);
+            if (exit) {
+                const blocked = this.blockedExits.get(p.mint);
+                if (blocked) {
+                    const blockedDurationMs = Date.now() - blocked.blockedAt;
+                    const clearData = {
+                        mint: p.mint,
+                        reason: exit.reason,
+                        blockedDurationMs,
+                        valueAtTrigger: String(blocked.triggerValue),
+                        valueAtExecution: String(value),
+                    };
+                    log('exit_block_cleared', clearData);
+                    this.sessionLogger?.writeEvent('exit_block_cleared', clearData);
+                    this.blockedExits.delete(p.mint);
+                }
+                this.cursor = i + 1;
+                const amount = mulBps(BigInt(p.qty), exit.fraction);
+                await this.trade(s, 'sell', amount > 0n ? amount : BigInt(p.qty), p.creator, exit.stage, exit.reason, p.panic || exit.reason === 'stop');
+                return;
+            }
+        }
+        // Do not treat an unavailable mark as zero; that would create a false drawdown halt.
+        const allMarked = positions.every(p => this.marks.has(p.mint));
+        if (allMarked) {
+            const markedEquity = BigInt(this.state.cash) + [...this.marks.values()].reduce((sum, mark) => sum + BigInt(mark.value), 0n);
+            recordEquity(this.state, markedEquity, Date.now(), this.cfg.FAILURE_WINDOW_MS, this.cfg.ROLLING_DRAWDOWN_BPS);
+        }
+        if (positions.length)
+            await this.store.save(this.state);
+        for (const mint of this.marks.keys())
+            if (!this.state.positions[mint])
+                this.marks.delete(mint);
+        if (this.stopped || this.state.operatorPaused || this.state.halted || !this.feed.healthy() || positions.length >= this.cfg.MAX_POSITIONS || BigInt(this.state.dayPnl) <= -BigInt(this.cfg.MAX_DAILY_LOSS_LAMPORTS))
+            return;
+        const exposure = positions.reduce((a, p) => a + BigInt(p.cost), 0n);
+        const maxPositionsReached = positions.length >= this.cfg.MAX_POSITIONS;
+        const exposureExceeded = exposure + BigInt(this.cfg.BUY_LAMPORTS + this.cfg.RESERVE_LAMPORTS) > BigInt(this.cfg.MAX_EXPOSURE_LAMPORTS);
+        if (maxPositionsReached || exposureExceeded) {
+            for (const c of this.candidates.values()) {
+                if (Date.now() - c.born >= this.cfg.MIN_AGE_MS && !c.devSold && !this.state.positions[c.mint] && !this.state.closed[c.mint]) {
+                    if (c.lastSnapshotSlot !== c.slot || c.lastSnapshotDisposition !== 'notEvaluated') {
+                        this.snapshotCandidate(c, 'notEvaluated', maxPositionsReached ? 'max_positions_reached' : 'max_portfolio_exposure_reached');
+                    }
+                }
+            }
+            return;
+        }
+        // Track candidates that reached min age but failed initial buyer or volume filters
+        for (const c of this.candidates.values()) {
+            if (Date.now() - c.born >= this.cfg.MIN_AGE_MS && !this.state.positions[c.mint] && !this.state.closed[c.mint]) {
+                if (c.buyers.size < this.cfg.MIN_BUYERS && c.lastSnapshotDisposition !== 'rejected') {
+                    this.snapshotCandidate(c, 'rejected', 'insufficient_buyers');
+                }
+                else if (c.buy <= c.sell * 2n && c.lastSnapshotDisposition !== 'rejected') {
+                    this.snapshotCandidate(c, 'rejected', 'insufficient_buy_volume_ratio');
+                }
+            }
+        }
+        const available = [...this.candidates.values()].filter(c => Date.now() - c.born >= this.cfg.MIN_AGE_MS && c.next <= Date.now() && !c.devSold && !this.state.positions[c.mint] && !this.state.closed[c.mint]
+            && c.buyers.size >= this.cfg.MIN_BUYERS && c.buy > c.sell * 2n).slice(0, this.cfg.MAX_QUEUE);
+        const candidate = available[0];
+        if (!candidate)
+            return;
+        candidate.next = Date.now() + 15_000;
+        let s, s1;
+        let entryAmount = BigInt(this.cfg.BUY_LAMPORTS);
+        try {
+            s1 = await this.market.snapshot(candidate.mint, candidate.slot);
+            await this.market.safety(s1, candidate.creator);
+            const creatorTokens = s1.creatorTokens;
+            // Re-read after expensive checks; never execute using reserves from before the checks.
+            s = await this.market.snapshot(candidate.mint, candidate.slot);
+            s.creatorTokens = creatorTokens;
+            this.market.validateEntry(s);
+            const drift = checkCandidateReserveDrift(s1, s);
+            candidate.curve = {
+                complete: s.curve.complete,
+                realQuoteReserves: s.curve.realQuoteReserves.toString(),
+                virtualTokenReserves: s.curve.virtualTokenReserves.toString(),
+                virtualQuoteReserves: s.curve.virtualQuoteReserves.toString(),
+            };
+            candidate.drift = {
+                passed: drift.passed,
+                priceDriftBps: Number(drift.priceDriftBps),
+                liquidityDropBps: Number(drift.liquidityDropBps),
+                driftBps: Number(drift.driftBps ?? 0n),
+                direction: drift.direction ?? 'none',
+                reason: drift.reason,
+            };
+            const candidateMeta = {
+                curve: candidate.curve,
+                drift: candidate.drift,
+                realReserveSol: Number(s.curve.realQuoteReserves.toString()) / 1e9,
+                buyers: candidate.buyers.size,
+                devSold: candidate.devSold,
+            };
+            if (!drift.passed) {
+                candidate.next = Date.now() + 5_000;
+                this.recordRejection(candidate.mint, drift.reason ?? 'reserve_drift', candidateMeta);
+                return;
+            }
+            if (s.curve.complete || s.curve.isMayhemMode || candidate.devSold || !this.feed.healthy() || this.stopped) {
+                const reason = s.curve.complete ? 'curve_complete' : s.curve.isMayhemMode ? 'mayhem_mode' : candidate.devSold ? 'dev_sold' : !this.feed.healthy() ? 'feed_unhealthy' : 'engine_stopped';
+                this.recordRejection(candidate.mint, reason, candidateMeta);
+                return;
+            }
+            const walletPubkey = this.executor?.walletPublicKey || this.executor?.key?.publicKey;
+            const cash = this.cfg.MODE === 'live' ? BigInt(await this.rpc.connection.getBalance(walletPubkey, 'confirmed')) : BigInt(this.state.cash);
+            const riskBudget = cash * BigInt(this.cfg.MAX_SPECULATIVE_RISK_BPS) / 10000n;
+            entryAmount = entryAmount < riskBudget ? entryAmount : riskBudget;
+            if (entryAmount <= 0n || cash < entryAmount + BigInt(this.cfg.RESERVE_LAMPORTS)) {
+                this.recordRejection(candidate.mint, 'insufficient_cash_or_reserve', candidateMeta);
+                return;
+            }
+            const snapshot = this.snapshotCandidate(candidate, 'cleared', null, { ...candidateMeta, s });
+            if (snapshot && this.gateMode !== 'deterministic_only') {
+                const modelDecision = await executeModelGate(snapshot, this.modelEvaluator, {
+                    maxInferenceMs: 10.0,
+                    mode: this.gateMode,
+                });
+                if (this.gateMode === 'shadow') {
+                    // Shadow evidence never changes the deterministic entry decision.
+                    this.sessionLogger?.writeEvent('model_shadow_evaluation', {
+                        mint: candidate.mint,
+                        candidateId: snapshot.candidateId,
+                        modelDecision,
+                    });
+                }
+                else if (!modelDecision.accepted) {
+                    this.recordRejection(candidate.mint, modelDecision.rejectionReason ?? 'model_rejected', {
+                        ...candidateMeta,
+                        modelDecision,
+                    });
+                    return;
+                }
+            }
+            await this.trade(s, 'buy', entryAmount, candidate.creator, 0, 'buyer-accumulation', false, candidate);
+        }
+        catch (err) {
+            const reason = err instanceof Error ? err.message : String(err);
+            this.recordRejection(candidate.mint, reason, {
+                curve: candidate.curve,
+                drift: candidate.drift,
+                devSold: candidate.devSold,
+                buyers: candidate.buyers.size,
+            });
+            return;
+        }
+    }
+    async trade(s, side, amount, creator, stage, reason, panic, candidate) {
+        if (side === 'buy' && candidate && !this.canSubmitEntry(candidate, s, amount))
+            return;
+        if (side === 'buy')
+            this.entryBuildInFlight = true;
+        let built;
+        try {
+            built = await this.executor.build(s, side, amount, creator, stage, reason, panic);
+        }
+        catch {
+            log('order_build_rejected', { mint: s.mint.toBase58(), side, reason });
+            return;
+        }
+        finally {
+            if (side === 'buy')
+                this.entryBuildInFlight = false;
+        }
+        if (side === 'buy' && (this.stopped || this.state.operatorPaused || this.state.halted || this.candidates.get(s.mint.toBase58())?.devSold || !this.feed.healthy()))
+            return;
+        this.state.pending = built.pending;
+        if (this.cfg.MODE === 'paper') {
+            const posBefore = this.state.positions[built.pending.mint];
+            const posQty = posBefore ? BigInt(posBefore.qty) : 0n;
+            const posCost = posBefore ? BigInt(posBefore.cost) : 0n;
+            const isSell = side === 'sell';
+            const tokensSold = isSell ? -built.tokenDelta : 0n;
+            const isFullExit = isSell && posBefore && (tokensSold >= posQty || posQty === 0n);
+            const allocatedCost = (isSell && posBefore && posQty > 0n)
+                ? (isFullExit ? posCost : (posCost * tokensSold) / posQty)
+                : 0n;
+            settle(this.state, built.tokenDelta, built.solDelta);
+            if (side === 'buy') {
+                const p = this.state.positions[built.pending.mint];
+                if (p && candidate) {
+                    p.candidateId = deterministicCandidateId(candidate.mint, candidate.slot, candidate.eventSignature || `eval-${candidate.mint}-${candidate.slot}`);
+                    p.entrySlot = candidate.slot;
+                }
+            }
+            else if (side === 'sell') {
+                const grossProceeds = built.quotedOutput ?? (built.solDelta > 0n ? built.solDelta : 0n);
+                const slippageLamports = BigInt(built.overhead?.slippageLamports ?? '0');
+                const priorityLamports = BigInt(built.overhead?.priorityLamports ?? '0') + BigInt(built.overhead?.baseFeeLamports ?? '5000');
+                const tipLamports = BigInt(built.overhead?.tipLamports ?? '0');
+                const rentLamports = BigInt(built.overhead?.rentLamports ?? '0');
+                this.sessionLogger?.writeOutcomeLabel?.(buildOutcomeLabel({
+                    candidateId: posBefore?.candidateId || `paper-${built.pending.id}`,
+                    mint: built.pending.mint,
+                    entrySnapshotSlot: posBefore?.entrySlot || 0,
+                    censored: false,
+                    observationDurationMs: posBefore ? Date.now() - posBefore.opened : 0,
+                    costBasisLamports: allocatedCost.toString(),
+                    grossProceedsLamports: grossProceeds.toString(),
+                    dexImpactLamports: slippageLamports,
+                    priorityFeeLamports: priorityLamports,
+                    jitoTipLamports: tipLamports,
+                    ataRentLamports: rentLamports,
+                    realizedSlippageBps: built.overhead?.slippageBps,
+                    maximumFavorableExcursionPct: posBefore?.mfePct,
+                    maximumAdverseExcursionPct: posBefore?.maePct,
+                    exitStage: stage,
+                }));
+            }
+            await this.store.save(this.state, `paper-fill:${built.pending.id}`);
+            const quoteAgeMs = Date.now() - (built.quoteTimestamp ?? Date.now());
+            const fillData = {
+                id: built.pending.id,
+                mint: built.pending.mint,
+                side,
+                reason,
+                stage,
+                requestedAmount: built.pending.requested,
+                quotedOutput: String(built.quotedOutput ?? 0n),
+                tokenDelta: String(built.tokenDelta),
+                netLamports: String(built.solDelta),
+                quoteAgeMs,
+                slippageBps: built.overhead?.slippageBps ?? (side === 'sell' && panic ? this.cfg.PANIC_SLIPPAGE_BPS : this.cfg.SLIPPAGE_BPS),
+                tipLamports: built.overhead?.tipLamports ?? '0',
+                priorityLamports: built.overhead?.priorityLamports ?? '0',
+                rentLamports: built.overhead?.rentLamports ?? '0',
+            };
+            log('paper_fill', fillData);
+            if (this.sessionLogger) {
+                this.sessionLogger.writeFill({
+                    timestampUtc: new Date().toISOString(),
+                    id: built.pending.id,
+                    mint: built.pending.mint,
+                    side,
+                    reason,
+                    stage,
+                    requestedAmount: built.pending.requested,
+                    quotedOutput: String(built.quotedOutput ?? 0n),
+                    tokenDelta: String(built.tokenDelta),
+                    netLamports: String(built.solDelta),
+                    quoteAgeMs,
+                    slippageBps: fillData.slippageBps,
+                    tipLamports: fillData.tipLamports,
+                    priorityLamports: fillData.priorityLamports,
+                    rentLamports: fillData.rentLamports,
+                });
+            }
+        }
+        else {
+            // Durability must succeed before any signed bytes leave this process.
+            await this.store.save(this.state, `prepared:${built.pending.signature}`);
+            await this.executor.broadcast(built.pending);
+        }
+    }
+}
+async function wallet(cfg) {
+    if (cfg.MODE === 'paper')
+        return Keypair.fromSeed(Buffer.alloc(32, 7));
+    const bytes = JSON.parse(await readFile(cfg.KEYPAIR_PATH, 'utf8'));
+    if (!Array.isArray(bytes) || bytes.length !== 64 || bytes.some(x => !Number.isInteger(x) || x < 0 || x > 255))
+        throw new Error('keypair file must contain 64 byte values');
+    return Keypair.fromSecretKey(Uint8Array.from(bytes));
+}
+async function acquire(wallet) {
+    const port = 20_000 + wallet.toBuffer().readUInt16LE(0) % 30_000;
+    const server = createServer(socket => socket.destroy());
+    await new Promise((done, reject) => { server.once('error', reject); server.listen({ host: '127.0.0.1', port, exclusive: true }, done); });
+    return server;
+}
+export async function runEngine(options = {}) {
+    if (options.sessionDir)
+        process.env.SESSION_DIR = options.sessionDir;
+    if (options.dbPath)
+        process.env.DB_PATH = options.dbPath;
+    if (options.uiPort)
+        process.env.UI_PORT = String(options.uiPort);
+    if (existsSync('.env')) {
+        try {
+            process.loadEnvFile('.env');
+        }
+        catch { /* ignore */ }
+    }
+    const cfg = config(), key = await wallet(cfg), lock = await acquire(key.publicKey);
+    let store;
+    let dashboard;
+    let sessionLogger;
+    try {
+        const rpc = new RpcPool(cfg);
+        await rpc.verifyCluster();
+        const market = new Market(rpc, cfg, key.publicKey);
+        let executor;
+        if (cfg.MODE === 'live') {
+            executor = new LiveExecutionAuthority(cfg, rpc, market, key);
+            await executor.warm();
+        }
+        else {
+            executor = new SimulationExecutionAuthority(cfg, market, key.publicKey);
+            await executor.warm();
+        }
+        if (process.argv.includes('--check')) {
+            log('configuration_and_rpc_check_passed', { mode: cfg.MODE, rpcCount: cfg.RPC_URLS.length, wallet: key.publicKey.toBase58() });
+            return;
+        }
+        await mkdir(dirname(resolve(cfg.DB_PATH)), { recursive: true });
+        store = new Store(resolve(cfg.DB_PATH));
+        if (cfg.SESSION_DIR) {
+            sessionLogger = new SessionLogger(resolve(cfg.SESSION_DIR));
+            await sessionLogger.init();
+            log('session_logger_initialized', { dir: resolve(cfg.SESSION_DIR) });
+        }
+        const state = await store.load() ?? { version: 1, wallet: key.publicKey.toBase58(), mode: cfg.MODE, positions: {}, pending: null, cash: String(cfg.PAPER_CASH_LAMPORTS), day: new Date().toISOString().slice(0, 10), dayPnl: '0', closed: {}, halted: false };
+        if (state.version !== 1 || state.wallet !== key.publicKey.toBase58() || state.mode !== cfg.MODE)
+            throw new Error('database version/wallet/mode mismatch');
+        pruneRiskState(state, Date.now(), cfg.FAILURE_WINDOW_MS);
+        if (cfg.MODE === 'live') {
+            if (!state.pending) {
+                for (const p of Object.values(state.positions)) {
+                    const rows = await rpc.connection.getParsedTokenAccountsByOwner(key.publicKey, { mint: new PublicKey(p.mint) }, 'finalized');
+                    const balance = rows.value.reduce((n, row) => n + BigInt(row.account.data.parsed.info.tokenAmount.amount), 0n);
+                    if (balance !== BigInt(p.qty)) {
+                        state.halted = true;
+                        log('balance_reconciliation_mismatch', { mint: p.mint, expected: p.qty, actual: String(balance) });
+                    }
+                }
+            }
+            if (!state.pending)
+                state.cash = String(await rpc.connection.getBalance(key.publicKey, 'finalized'));
+        }
+        await store.save(state, 'startup');
+        const engine = new Engine(cfg, rpc, market, executor, store, state, sessionLogger);
+        dashboard = await startDashboard(engine, cfg.UI_PORT);
+        log('dashboard_ready', { url: dashboard.url });
+        let durationTimer;
+        if (options.durationSec && options.durationSec > 0) {
+            durationTimer = setTimeout(() => {
+                log('duration_reached', { durationSec: options.durationSec });
+                engine.stop();
+            }, options.durationSec * 1000);
+            durationTimer.unref();
+        }
+        const stopFn = () => engine.stop();
+        process.once('SIGINT', stopFn);
+        process.once('SIGTERM', stopFn);
+        log('started', { mode: cfg.MODE, wallet: key.publicKey.toBase58(), positions: Object.keys(state.positions).length });
+        await engine.run();
+        if (durationTimer)
+            clearTimeout(durationTimer);
+        return { engine, state, sessionDir: cfg.SESSION_DIR };
+    }
+    finally {
+        await dashboard?.close();
+        await store?.close();
+        await sessionLogger?.close();
+        await new Promise(done => lock.close(() => done()));
+    }
+}
+async function main() {
+    const durationArg = process.argv.find(a => a.startsWith('--duration='));
+    const durationSec = durationArg ? Math.max(10, parseInt(durationArg.split('=')[1], 10)) : undefined;
+    await runEngine({ durationSec });
+}
+if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
+    main().catch(e => { log('fatal', { kind: e instanceof Error ? e.name : 'unknown', message: e instanceof Error && !e.message.includes('http') ? e.message.slice(0, 200) : 'startup or runtime failure; inspect configuration and endpoint access' }); process.exitCode = 1; });
+}
+//# sourceMappingURL=fusion.js.map
