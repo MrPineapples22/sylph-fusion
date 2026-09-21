@@ -1,0 +1,118 @@
+┌─────────────────────┬────────────────────────────────────────────────────────┐
+│ high                │ bigint-buffer Vulnerable to Buffer Overflow via        │
+│                     │ toBigIntLE() Function                                  │
+├─────────────────────┼────────────────────────────────────────────────────────┤
+│ Package             │ bigint-buffer                                          │
+├─────────────────────┼────────────────────────────────────────────────────────┤
+│ Vulnerable versions │ <=1.1.5                                                │
+├─────────────────────┼────────────────────────────────────────────────────────┤
+│ Patched versions    │ >=1.1.6                                                │
+├─────────────────────┼────────────────────────────────────────────────────────┤
+│ Paths               │ .>@pump-fun/pump-sdk>@pump-fun/agent-payments-         │
+│                     │ sdk>@solana/spl-token>@solana/buffer-layout-           │
+│                     │ utils>bigint-buffer                                    │
+│                     │                                                        │
+│                     │ .>@pump-fun/pump-sdk>@pump-fun/pump-swap-sdk>@solana/  │
+│                     │ spl-token>@solana/buffer-layout-utils>bigint-buffer    │
+│                     │                                                        │
+│                     │ .>@pump-fun/pump-sdk>@solana/spl-token>@solana/buffer- │
+│                     │ layout-utils>bigint-buffer                             │
+│                     │                                                        │
+│                     │ ... Found 4 paths, run `pnpm why bigint-buffer` for    │
+│                     │ more information                                       │
+├─────────────────────┼────────────────────────────────────────────────────────┤
+│ More info           │ https://github.com/advisories/GHSA-3gc7-fjrx-p6mg      │
+└─────────────────────┴────────────────────────────────────────────────────────┘
+┌─────────────────────┬────────────────────────────────────────────────────────┐
+│ high                │ toml-node: Uncontrolled Recursion                      │
+├─────────────────────┼────────────────────────────────────────────────────────┤
+│ Package             │ toml                                                   │
+├─────────────────────┼────────────────────────────────────────────────────────┤
+│ Vulnerable versions │ <4.2.0                                                 │
+├─────────────────────┼────────────────────────────────────────────────────────┤
+│ Patched versions    │ >=4.2.0                                                │
+├─────────────────────┼────────────────────────────────────────────────────────┤
+│ Paths               │ .>@coral-xyz/anchor>toml                               │
+│                     │                                                        │
+│                     │ .>@pump-fun/pump-sdk>@coral-xyz/anchor>toml            │
+│                     │                                                        │
+│                     │ .>@pump-fun/pump-sdk>@pump-fun/agent-payments-         │
+│                     │ sdk>@coral-xyz/anchor>toml                             │
+│                     │                                                        │
+│                     │ ... Found 4 paths, run `pnpm why toml` for more        │
+│                     │ information                                            │
+├─────────────────────┼────────────────────────────────────────────────────────┤
+│ More info           │ https://github.com/advisories/GHSA-82x6-q7mm-w9cf      │
+└─────────────────────┴────────────────────────────────────────────────────────┘
+┌─────────────────────┬────────────────────────────────────────────────────────┐
+│ high                │ toml-node: Prototype Pollution Leads to                │
+│                     │ `Object.prototype` Corruption via `__proto__` Key-Path │
+│                     │ Desynchronization                                      │
+├─────────────────────┼────────────────────────────────────────────────────────┤
+│ Package             │ toml                                                   │
+├─────────────────────┼────────────────────────────────────────────────────────┤
+│ Vulnerable versions │ <4.1.2                                                 │
+├─────────────────────┼────────────────────────────────────────────────────────┤
+│ Patched versions    │ >=4.1.2                                                │
+├─────────────────────┼────────────────────────────────────────────────────────┤
+│ Paths               │ .>@coral-xyz/anchor>toml                               │
+│                     │                                                        │
+│                     │ .>@pump-fun/pump-sdk>@coral-xyz/anchor>toml            │
+│                     │                                                        │
+│                     │ .>@pump-fun/pump-sdk>@pump-fun/agent-payments-         │
+│                     │ sdk>@coral-xyz/anchor>toml                             │
+│                     │                                                        │
+│                     │ ... Found 4 paths, run `pnpm why toml` for more        │
+│                     │ information                                            │
+├─────────────────────┼────────────────────────────────────────────────────────┤
+│ More info           │ https://github.com/advisories/GHSA-v5mp-jgw5-2x6j      │
+└─────────────────────┴────────────────────────────────────────────────────────┘
+┌─────────────────────┬────────────────────────────────────────────────────────┐
+│ moderate            │ uuid: Missing buffer bounds check in v3/v5/v6 when buf │
+│                     │ is provided                                            │
+├─────────────────────┼────────────────────────────────────────────────────────┤
+│ Package             │ uuid                                                   │
+├─────────────────────┼────────────────────────────────────────────────────────┤
+│ Vulnerable versions │ <11.1.1                                                │
+├─────────────────────┼────────────────────────────────────────────────────────┤
+│ Patched versions    │ >=11.1.1                                               │
+├─────────────────────┼────────────────────────────────────────────────────────┤
+│ Paths               │ .>@coral-xyz/anchor>@coral-xyz/borsh>@solana/web3.     │
+│                     │ js>jayson>uuid                                         │
+│                     │                                                        │
+│                     │ .>@coral-xyz/anchor>@solana/web3.js>jayson>uuid        │
+│                     │                                                        │
+│                     │ .>@pump-fun/pump-sdk>@coral-xyz/anchor>@coral-xyz/     │
+│                     │ borsh>@solana/web3.js>jayson>uuid                      │
+│                     │                                                        │
+│                     │ ... Found 28 paths, run `pnpm why uuid` for more       │
+│                     │ information                                            │
+├─────────────────────┼────────────────────────────────────────────────────────┤
+│ More info           │ https://github.com/advisories/GHSA-w5hq-g745-h8pq      │
+└─────────────────────┴────────────────────────────────────────────────────────┘
+┌─────────────────────┬────────────────────────────────────────────────────────┐
+│ moderate            │ stream-json: pick/ignore/filter/replace filters are    │
+│                     │ O(depth²) on nested input — small crafted JSON blocks  │
+│                     │ the event loop for seconds→minutes (DoS)               │
+├─────────────────────┼────────────────────────────────────────────────────────┤
+│ Package             │ stream-json                                            │
+├─────────────────────┼────────────────────────────────────────────────────────┤
+│ Vulnerable versions │ <=3.4.0                                                │
+├─────────────────────┼────────────────────────────────────────────────────────┤
+│ Patched versions    │ >=3.4.1                                                │
+├─────────────────────┼────────────────────────────────────────────────────────┤
+│ Paths               │ .>@coral-xyz/anchor>@coral-xyz/borsh>@solana/web3.     │
+│                     │ js>jayson>stream-json                                  │
+│                     │                                                        │
+│                     │ .>@coral-xyz/anchor>@solana/web3.js>jayson>stream-json │
+│                     │                                                        │
+│                     │ .>@pump-fun/pump-sdk>@coral-xyz/anchor>@coral-xyz/     │
+│                     │ borsh>@solana/web3.js>jayson>stream-json               │
+│                     │                                                        │
+│                     │ ... Found 28 paths, run `pnpm why stream-json` for     │
+│                     │ more information                                       │
+├─────────────────────┼────────────────────────────────────────────────────────┤
+│ More info           │ https://github.com/advisories/GHSA-528h-pc64-c93x      │
+└─────────────────────┴────────────────────────────────────────────────────────┘
+5 vulnerabilities found
+Severity: 2 moderate | 3 high

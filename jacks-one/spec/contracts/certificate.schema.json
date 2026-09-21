@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Certificate",
+  "type": "object",
+  "required": [
+    "certificate_id",
+    "hand_canonical",
+    "hand_input",
+    "ruleset_id",
+    "ruleset_version",
+    "strategy_version",
+    "all_holds",
+    "selected_hold_mask",
+    "selected_ev",
+    "ev_gap_to_second",
+    "is_tie",
+    "tied_masks",
+    "engine_a_hash",
+    "engine_b_hash",
+    "engines_in_agreement",
+    "calculation_hash",
+    "timestamp",
+    "manifest_reference"
+  ],
+  "properties": {
+    "certificate_id": { "type": "string" },
+    "hand_canonical": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 5,
+      "maxItems": 5
+    },
+    "hand_input": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 5,
+      "maxItems": 5
+    },
+    "ruleset_id": { "type": "string" },
+    "ruleset_version": { "type": "string" },
+    "strategy_version": { "type": "string" },
+    "all_holds": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "mask",
+          "held_cards",
+          "exact_ev",
+          "total_combinations",
+          "outcome_counts"
+        ]
+      },
+      "minItems": 32,
+      "maxItems": 32
+    },
+    "selected_hold_mask": { "type": "integer", "minimum": 0, "maximum": 31 },
+    "selected_ev": {
+      "type": "object",
+      "required": ["numerator", "denominator", "decimal_approx"]
+    },
+    "ev_gap_to_second": {
+      "type": "object",
+      "required": ["numerator", "denominator", "decimal_approx"]
+    },
+    "is_tie": { "type": "boolean" },
+    "tied_masks": { "type": "array", "items": { "type": "integer" } },
+    "engine_a_hash": { "type": "string" },
+    "engine_b_hash": { "type": "string" },
+    "engines_in_agreement": { "type": "boolean", "const": true },
+    "calculation_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "timestamp": { "type": "string" },
+    "manifest_reference": { "type": "string" }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,10 @@
+#!/usr/bin/env node
+import { Worker } from 'node:worker_threads'; import { cpus } from 'node:os'; import { resolve } from 'node:path'; import { readFileSync, writeFileSync } from 'node:fs';
+const args=process.argv.slice(2), fixture=args[0]; if(!fixture) throw new Error('Usage: sweep-bounded.mjs <fixture> [--max-workers=N] [--out=file]');
+const max=Number(args.find(x=>x.startsWith('--max-workers='))?.split('=')[1]||cpus().length-1); const out=args.find(x=>x.startsWith('--out='))?.split('=')[1]||'sweep-results.json';
+const f=JSON.parse(readFileSync(resolve(fixture),'utf8')); if(!Array.isArray(f?.ticks)&&!Array.isArray(f)) throw new Error('Invalid fixture');
+const values=(name,def)=>{const a=args.find(x=>x.startsWith(`--${name}=`));return a?a.split('=')[1].split(',').map(Number):def}; const velocities=values('velocity',[.8,1.2,1.6]), trailings=values('trailing',[5,7]), slips=values('slippage-bps',[300,800]), tps=[[15,35,75],[20,40,80]]; const tasks=[];let id=0;for(const velocity of velocities)for(const trailing of trailings)for(const slippageBps of slips)for(const tp of tps)tasks.push({type:'RUN',taskId:id,seed:(7+id*10007)>>>0,params:{velocity,trailing,slippageBps,tp}}),id++;
+const workerFile=resolve('scripts/sweep-task-worker.mjs'); const results=new Array(tasks.length),queue=tasks.slice(); let done=0; const n=Math.max(1,Math.min(Math.floor(max)||1,cpus().length-1||1));
+await Promise.all(Array.from({length:n},()=>new Promise((resolveWorker,reject)=>{const w=new Worker(workerFile,{workerData:{fixturePath:resolve(fixture)}});w.on('message',m=>{if(m.type==='RESULT')results[m.taskId]=m;else results[m.taskId]=m;done++;const next=queue.shift();if(next)w.postMessage(next);else{w.terminate().then(()=>resolveWorker()).catch(reject)}});w.on('error',reject);const first=queue.shift();if(first)w.postMessage(first);else resolveWorker()})));
+const payload={version:1,fixture:resolve(fixture),workerCount:n,trialCount:tasks.length,results};writeFileSync(out,JSON.stringify(payload,null,2));console.log(`Completed ${done} trials with ${n} workers; wrote ${out}`);
+

@@ -1,0 +1,2657 @@
+{
+  "application": "sylph-fusion",
+  "version": "1.0.0",
+  "targetPlatform": "win32-x64",
+  "packagedAtUtc": "2026-09-21T03:42:09.590Z",
+  "architecture": {
+    "engine": "TypeScript 5.9.2 (Compiled ES Modules)",
+    "terminal": "React 18 + Vite 7 + Vanilla CSS 3-Tier Cockpit",
+    "dataIngestion": "Multi-provider with Rate-limit and 10s Staleness Gates",
+    "executionLifecycle": "6-Stage Auditable IDLE -> VALIDATING -> QUOTING -> SIGNING -> SUBMITTING -> SETTLED",
+    "provenance": "Streamflow Organic Vesting Attribution + Exponent/Lulo Yield Hurdle"
+  },
+  "totalFiles": 528,
+  "totalSizeBytes": 3669970,
+  "files": [
+    {
+      "path": ".env.example",
+      "sizeBytes": 1661,
+      "sha256": "e26c89d4555e7a939139e46aeed141876af7de2a6421cff62b1810f0f4eacf8b"
+    },
+    {
+      "path": "dist/app.js",
+      "sizeBytes": 4137,
+      "sha256": "3d7d7b2da9d1bf673d373866ec3767de2573646ef107b3ab05dd84fbe80c5ac0"
+    },
+    {
+      "path": "dist/app.js.map",
+      "sizeBytes": 4994,
+      "sha256": "2b6db138ebc8f765191748f94ac25fde8bb338b8f726de2bdc151d534db1aac8"
+    },
+    {
+      "path": "dist/candidate-snapshot.js",
+      "sizeBytes": 15158,
+      "sha256": "2dddb1e64e37f9fce01d10d9462169c2002ad1d56ba391a82a75f4200d437e36"
+    },
+    {
+      "path": "dist/candidate-snapshot.js.map",
+      "sizeBytes": 12585,
+      "sha256": "062953f48fad2763cacfc4b6d8158a2767e1f4aec810f2386d92c672270ff26d"
+    },
+    {
+      "path": "dist/command-gateway.js",
+      "sizeBytes": 15893,
+      "sha256": "fe973be36309a3b71959b595e3ef452e413567773c3e75106c0237de66518d3f"
+    },
+    {
+      "path": "dist/command-gateway.js.map",
+      "sizeBytes": 12391,
+      "sha256": "d136ce602a5398c0dd55595e20de830a53d9d17eac6348f66e0e20efb6d1e369"
+    },
+    {
+      "path": "dist/config-authority.js",
+      "sizeBytes": 5251,
+      "sha256": "3c0c603e02468207516bb1e29ea697bf9bbbcf4da0aaf86dfba9bdb31524a700"
+    },
+    {
+      "path": "dist/config-authority.js.map",
+      "sizeBytes": 6915,
+      "sha256": "574fe621c92cf79de8eb4e39115e2d55855027e7472f8285ec57c29be6fc7e7e"
+    },
+    {
+      "path": "dist/config.js",
+      "sizeBytes": 3825,
+      "sha256": "caf6824cca5f5c610fa82fdbaf1ce0dd3076cdbaf1661b9faa99930babdd418a"
+    },
+    {
+      "path": "dist/config.js.map",
+      "sizeBytes": 4669,
+      "sha256": "3d67609786a590ff8825f0dafe21d36db1421c70f9aa105ddbf4f58becf7ea46"
+    },
+    {
+      "path": "dist/core.js",
+      "sizeBytes": 8308,
+      "sha256": "dc886fe5a9852f3157491e1cac9117c7da29c7886d36c02c3ec2e10628e11c48"
+    },
+    {
+      "path": "dist/core.js.map",
+      "sizeBytes": 10689,
+      "sha256": "e521cb7255e2e5645098963776207d2fbaad29e427e08813234c1dfc1b92d13d"
+    },
+    {
+      "path": "dist/dashboard.js",
+      "sizeBytes": 6783,
+      "sha256": "df2c674f19fcb8dd64f2195322093879bcf3b8d5760d821aa5897b78729b46a4"
+    },
+    {
+      "path": "dist/dashboard.js.map",
+      "sizeBytes": 7233,
+      "sha256": "1327a18f0e7df24c1e4d295525c4d2daecf7f16940fa02c1c4edbc95dcbea101"
+    },
+    {
+      "path": "dist/db-worker.js",
+      "sizeBytes": 2292,
+      "sha256": "874a4ff2c9a8874f729011ff0014eeb11c9ad7968cdb9866c7ae0d2530831afe"
+    },
+    {
+      "path": "dist/db-worker.js.map",
+      "sizeBytes": 2395,
+      "sha256": "59aa2c1983d34f311835a404586a691b4682fa3b8431bc0a4c776d35819a7ce3"
+    },
+    {
+      "path": "dist/events/event-envelope.js",
+      "sizeBytes": 2214,
+      "sha256": "f9c720d87c515ac0baa3a8a18baef12c7e8d90272b99b4fd9d99d46b65c0ad39"
+    },
+    {
+      "path": "dist/events/event-envelope.js.map",
+      "sizeBytes": 2026,
+      "sha256": "fb5db6669145a0cc78107cbac07a82490c616cd236b2914e3e0ec0a8edcc0440"
+    },
+    {
+      "path": "dist/execution-engine.js",
+      "sizeBytes": 17004,
+      "sha256": "f11ae8389f4bf7a0799fcfad410be990fb98429536d9b7ee15dc1c0a41e987f1"
+    },
+    {
+      "path": "dist/execution-engine.js.map",
+      "sizeBytes": 17616,
+      "sha256": "47da91a63c59f01f653a20eed4c14e30031ce770c5c99605ec432793dfdf850d"
+    },
+    {
+      "path": "dist/execution.js",
+      "sizeBytes": 14312,
+      "sha256": "109e7e33252d022008ebdd5c94fc95314b262f9bbe24ebdee3c21f93327e3429"
+    },
+    {
+      "path": "dist/execution.js.map",
+      "sizeBytes": 16134,
+      "sha256": "6baabf591a45acd42f98f2e85a93e788c0ee8c0afbf2ff42169883beb169f3ec"
+    },
+    {
+      "path": "dist/feed.js",
+      "sizeBytes": 7265,
+      "sha256": "6d88d04fb859ebcf8b7bfa73369293ee488fb60877eddaf473a1d2babe2084d3"
+    },
+    {
+      "path": "dist/feed.js.map",
+      "sizeBytes": 7859,
+      "sha256": "8a74dcde9126a213290f875e0b1616a59324b84bf78c2960a71b515db26caaf9"
+    },
+    {
+      "path": "dist/fusion.js",
+      "sizeBytes": 49073,
+      "sha256": "41716c2a4d66fa89f5468609dbb40745fbd3eb4ba17a8b445fb8d849c84be6a0"
+    },
+    {
+      "path": "dist/fusion.js.map",
+      "sizeBytes": 52371,
+      "sha256": "797abe5046d11c8a9f1f060516af4ae1d2fc66a05994b2005599269270916d68"
+    },
+    {
+      "path": "dist/intelligence/adversarial/actor-graph.js",
+      "sizeBytes": 3598,
+      "sha256": "2b2f53de5f9fc70e6e5beb24fe304ec547b4fbc607fe5b060a743dfb6f9d0e5b"
+    },
+    {
+      "path": "dist/intelligence/adversarial/actor-graph.js.map",
+      "sizeBytes": 3080,
+      "sha256": "9d2f80064b6337028c3054c6d376bd1e67a146ed0539f5dc851728e79f491155"
+    },
+    {
+      "path": "dist/intelligence/adversarial/actor-resolution.js",
+      "sizeBytes": 2848,
+      "sha256": "4fd42d87d375bb93bbee5ee0134260356caa4a9b6c9e2722143b85b67a8d6ecc"
+    },
+    {
+      "path": "dist/intelligence/adversarial/actor-resolution.js.map",
+      "sizeBytes": 2338,
+      "sha256": "ab42f3e1b7583e3c1c0a0f54ee6c11a48603ad6750da049d022a47041d90a5da"
+    },
+    {
+      "path": "dist/intelligence/adversarial/adversarial-search.js",
+      "sizeBytes": 3715,
+      "sha256": "6223254b0fac8c0e19690784b2b3697982d08577a4c094726edf7173e52718f6"
+    },
+    {
+      "path": "dist/intelligence/adversarial/adversarial-search.js.map",
+      "sizeBytes": 2005,
+      "sha256": "55de8ee39cc95f3ddb8203540f9c73411b63f0cc5e9eadf4d78cf30b9d87ec6b"
+    },
+    {
+      "path": "dist/intelligence/adversarial/clean-room.js",
+      "sizeBytes": 2656,
+      "sha256": "f7f18c6707612320994d544b746fff7d09f5292e6fc9f498860ed0136625e090"
+    },
+    {
+      "path": "dist/intelligence/adversarial/clean-room.js.map",
+      "sizeBytes": 1979,
+      "sha256": "7c12e9be78d0b759bcfd876a8ba36fc22f235c40717de1e7dd7c45dad09287b2"
+    },
+    {
+      "path": "dist/intelligence/adversarial/coordination-score.js",
+      "sizeBytes": 2758,
+      "sha256": "1eb9010c7d20afc2bf404488402db44e59c452adfd0efdfbcd4a82bbd8f4a6f1"
+    },
+    {
+      "path": "dist/intelligence/adversarial/coordination-score.js.map",
+      "sizeBytes": 2519,
+      "sha256": "7d40fd900b53e6f2b8b74711ff5211b2ff92b2ea853976534eaf774f6e99ff60"
+    },
+    {
+      "path": "dist/intelligence/adversarial/inventory-pressure.js",
+      "sizeBytes": 2266,
+      "sha256": "53b9d842be5cb5609f243048d192bfde23f4d5a1640b037dd40945aeb952d837"
+    },
+    {
+      "path": "dist/intelligence/adversarial/inventory-pressure.js.map",
+      "sizeBytes": 2022,
+      "sha256": "c2d99689821374a700171f94d2cb59a141612fa18280693dd121afe7f98904eb"
+    },
+    {
+      "path": "dist/intelligence/adversarial/market-authenticity.js",
+      "sizeBytes": 4391,
+      "sha256": "2ac5530ad16650b539b50bab841282810fa88c8db96c3372fe7d46fab071d984"
+    },
+    {
+      "path": "dist/intelligence/adversarial/market-authenticity.js.map",
+      "sizeBytes": 3286,
+      "sha256": "1a6f8881f3eb816b3403d249df29acd74367b17dbd8ebed8e84c14d75e3a2bcb"
+    },
+    {
+      "path": "dist/intelligence/adversarial/operator-playbook.js",
+      "sizeBytes": 3342,
+      "sha256": "9aaf76a9eee95fc078e07a600a8b09b3c5c3d17a9565b9b6817d22c307f55f67"
+    },
+    {
+      "path": "dist/intelligence/adversarial/operator-playbook.js.map",
+      "sizeBytes": 2457,
+      "sha256": "1189466917da5799b0d08d7181fe911137fbd758cfe442e91c02062c22bfc866"
+    },
+    {
+      "path": "dist/intelligence/adversarial/wallet-intelligence.js",
+      "sizeBytes": 1931,
+      "sha256": "67ddcc3a5e5b7d466060b3130b8f02596b5599255a6b8bea9cc382669a34ecb9"
+    },
+    {
+      "path": "dist/intelligence/adversarial/wallet-intelligence.js.map",
+      "sizeBytes": 1476,
+      "sha256": "817e03f81acf40b6ad0db3fa389c53fd1626d3ded4d9ccf3187094c75ff18e8d"
+    },
+    {
+      "path": "dist/intelligence/agents/evidence-council.js",
+      "sizeBytes": 5490,
+      "sha256": "c685212238160d1f4efe702fe1f317abb572e5e9fc4fcd0409737a967f8413b0"
+    },
+    {
+      "path": "dist/intelligence/agents/evidence-council.js.map",
+      "sizeBytes": 4041,
+      "sha256": "ef22f5a9e46f6da6a3ba12cdb9b5d6f4f51704ba5121d00a6d80f011e5dec1e8"
+    },
+    {
+      "path": "dist/intelligence/agents/nash-agents.js",
+      "sizeBytes": 3471,
+      "sha256": "37e0d3193dffef4c0eef1805f5462c25830a815813ecb300d154733c07fbe97f"
+    },
+    {
+      "path": "dist/intelligence/agents/nash-agents.js.map",
+      "sizeBytes": 2462,
+      "sha256": "513424621a2d9a97bb5586815c13bf362513e7f42deb6e3a5bfc89713ed8a586"
+    },
+    {
+      "path": "dist/intelligence/agents/prover-challenger.js",
+      "sizeBytes": 3151,
+      "sha256": "1dc32a0a39314110d6e3855eb1dd273ea41fdcc26708701b10b80d1b8d852491"
+    },
+    {
+      "path": "dist/intelligence/agents/prover-challenger.js.map",
+      "sizeBytes": 2029,
+      "sha256": "b56977e68b5180a992ca33fba98d1b6929f6e5f5a37ac3e3e8788b436283108c"
+    },
+    {
+      "path": "dist/intelligence/agents/skeptic.js",
+      "sizeBytes": 2313,
+      "sha256": "79a700a4f50e6f99f6d366d39a6ecd803704ec0ec9e80e03103f382a33a42d2f"
+    },
+    {
+      "path": "dist/intelligence/agents/skeptic.js.map",
+      "sizeBytes": 1503,
+      "sha256": "ae00128b1f8d574c86eee0913fb878e0063262779f6da027e29072ad915938e4"
+    },
+    {
+      "path": "dist/intelligence/agents/types.js",
+      "sizeBytes": 269,
+      "sha256": "8c7bbd0a32f38f002473a97f32c6dd1b8320dda21927c49d0a06f9ae4bef48a6"
+    },
+    {
+      "path": "dist/intelligence/agents/types.js.map",
+      "sizeBytes": 140,
+      "sha256": "7aba5630e9b164bfc5d706ecf8adec42cd89866f6f423d3ead7b913470309a73"
+    },
+    {
+      "path": "dist/intelligence/archimedes/scientific-memory.js",
+      "sizeBytes": 7321,
+      "sha256": "a276571cffd6252ea87e8d57f788ad061cf1b5546eccdfc32b2b221932dae731"
+    },
+    {
+      "path": "dist/intelligence/archimedes/scientific-memory.js.map",
+      "sizeBytes": 5127,
+      "sha256": "d7803488a168f8ab958590f82e37af904657324ce4cb3839185952a6d3fcceac"
+    },
+    {
+      "path": "dist/intelligence/attribution/pavlov-attribution.js",
+      "sizeBytes": 2568,
+      "sha256": "015b3283e0b790313e9816b0103d0540ace820babb68b8806539301bdfa873ad"
+    },
+    {
+      "path": "dist/intelligence/attribution/pavlov-attribution.js.map",
+      "sizeBytes": 1507,
+      "sha256": "86cb661f64467dcd8e2f788f8e88c1e9d6328831809faeb86e7a9ac7384e4a4c"
+    },
+    {
+      "path": "dist/intelligence/bayes/hierarchical-belief.js",
+      "sizeBytes": 3991,
+      "sha256": "d85e2a8c13420d459e5370dc26f0568a5b3abd03f8acfb814e0dae4a472cb856"
+    },
+    {
+      "path": "dist/intelligence/bayes/hierarchical-belief.js.map",
+      "sizeBytes": 3275,
+      "sha256": "c8f0444cdd0b0a84442c0aee288e6dd41354d17769567d17d9ab10f955e8509d"
+    },
+    {
+      "path": "dist/intelligence/bohr/competing-hypotheses.js",
+      "sizeBytes": 8647,
+      "sha256": "88a13923fcb7ef678e4f100b8cf6c378e4bf232c0a15ce062438f5a0a4f1717c"
+    },
+    {
+      "path": "dist/intelligence/bohr/competing-hypotheses.js.map",
+      "sizeBytes": 6211,
+      "sha256": "cfe5c3881337e5a7c18354975b1bce277f1172412f07cbef4763734eba253f32"
+    },
+    {
+      "path": "dist/intelligence/capital/authoritative-ledger.js",
+      "sizeBytes": 4754,
+      "sha256": "c0d897afb1bf607aaac6278bec8911136a45fa5f075c25592fcc555a2e5a4f9c"
+    },
+    {
+      "path": "dist/intelligence/capital/authoritative-ledger.js.map",
+      "sizeBytes": 3680,
+      "sha256": "2dd14aa8aa6f25874707c6d3595b376d429567b98666616905c8e004da1999b5"
+    },
+    {
+      "path": "dist/intelligence/capital/capital-kernel.js",
+      "sizeBytes": 8359,
+      "sha256": "90876acaa05f541a01698935bed110f5e11109c6b1ecf950d375dac19c0b1c86"
+    },
+    {
+      "path": "dist/intelligence/capital/capital-kernel.js.map",
+      "sizeBytes": 5359,
+      "sha256": "2680a613bf43d46a99b844edb71be63891a9233173695acfeed51fe111c8959a"
+    },
+    {
+      "path": "dist/intelligence/capital/capital-truth-engine.js",
+      "sizeBytes": 15250,
+      "sha256": "7ea76a77d0aed52716d7e527045b23d804e0220be0f1445f3fa161bc86da6d87"
+    },
+    {
+      "path": "dist/intelligence/capital/capital-truth-engine.js.map",
+      "sizeBytes": 11050,
+      "sha256": "c3552ba85d6b58d88c4b95147cf8651e08e9fa47b8c13a170eb6a41829c353f8"
+    },
+    {
+      "path": "dist/intelligence/capital/reservations.js",
+      "sizeBytes": 3934,
+      "sha256": "25f25815a2b2f8ac5e3387735d3818a6ea75682bb36c05289b799f6c876563b6"
+    },
+    {
+      "path": "dist/intelligence/capital/reservations.js.map",
+      "sizeBytes": 2889,
+      "sha256": "9e71af045db6845b93a083c5330f552322551aa2becc8c5dccded496a99791e3"
+    },
+    {
+      "path": "dist/intelligence/certificates/approval-certificates.js",
+      "sizeBytes": 5667,
+      "sha256": "26019e3ceb5f14877304697bd58746db2dbed322cf01fd7c2924eaed65b84161"
+    },
+    {
+      "path": "dist/intelligence/certificates/approval-certificates.js.map",
+      "sizeBytes": 4243,
+      "sha256": "27e076c0f92b4c4e5fbca6a57bd674c29b8dfe8ee577008a27e2e08f728b869a"
+    },
+    {
+      "path": "dist/intelligence/compass/mission-compass.js",
+      "sizeBytes": 8236,
+      "sha256": "010917b6f9880a4999c9ff7b080f347b632fa8c1eaef4fd941ce5501838c245e"
+    },
+    {
+      "path": "dist/intelligence/compass/mission-compass.js.map",
+      "sizeBytes": 5304,
+      "sha256": "2f63cd53f9940a45e9225e25edd6f3854b62afc78c10dab724992bba2879d6d8"
+    },
+    {
+      "path": "dist/intelligence/compiler/babbage-compiler.js",
+      "sizeBytes": 3795,
+      "sha256": "29ff811380901eebe5b9754666778128206694f06926b0197e4a0bc0e546ee4c"
+    },
+    {
+      "path": "dist/intelligence/compiler/babbage-compiler.js.map",
+      "sizeBytes": 2773,
+      "sha256": "6283d0958e1a05e3b9e71b87c9bdb021e6eb231f78d9c372a8febea0f05def05"
+    },
+    {
+      "path": "dist/intelligence/context/context-gate.js",
+      "sizeBytes": 3343,
+      "sha256": "6cb9e98c038c5dabbb350fcab6efc64fdf0df2271a9319a1d84f43f723b3d900"
+    },
+    {
+      "path": "dist/intelligence/context/context-gate.js.map",
+      "sizeBytes": 1711,
+      "sha256": "5991d1cc0bbb85ffccf95d48410c3cd11736b2daa8637c9f3ab1ae23ee49589e"
+    },
+    {
+      "path": "dist/intelligence/context/context-snapshot.js",
+      "sizeBytes": 3569,
+      "sha256": "325cff56b5a88b8c7d66d6d9f022f5cd61e67b1fe7ad89113b258489f32cbabf"
+    },
+    {
+      "path": "dist/intelligence/context/context-snapshot.js.map",
+      "sizeBytes": 2567,
+      "sha256": "86e09105040b05f771a42eedc5534a8fdce5b7e7317c76662bb35ebf7aefe272"
+    },
+    {
+      "path": "dist/intelligence/context/market-state.js",
+      "sizeBytes": 6209,
+      "sha256": "9903aa85db5df5d97b4a4f8f6e029ea8e93020d493a2e5eaf84bf37622a0960c"
+    },
+    {
+      "path": "dist/intelligence/context/market-state.js.map",
+      "sizeBytes": 5322,
+      "sha256": "2ddb81b69b56bb9ec5c8ad874ae6c99d84faf6e6d65c561b9f72542e4d1a9c3e"
+    },
+    {
+      "path": "dist/intelligence/contracts/blueprint-contracts.js",
+      "sizeBytes": 332,
+      "sha256": "14d8c07b2327a137eec608b1954302be02e259fd76ccd0a0d8e42ca760ad2bb9"
+    },
+    {
+      "path": "dist/intelligence/contracts/blueprint-contracts.js.map",
+      "sizeBytes": 172,
+      "sha256": "353b150a26d66a37b693d1efa6846cc84a6eef760f337ba6ced5a0402bec44ed"
+    },
+    {
+      "path": "dist/intelligence/contracts/scientific-contracts.js",
+      "sizeBytes": 170,
+      "sha256": "ca2666b683c86a3eb94dde8f0b8ae6981829f868d616a30bf62e3afb236a7c41"
+    },
+    {
+      "path": "dist/intelligence/contracts/scientific-contracts.js.map",
+      "sizeBytes": 172,
+      "sha256": "63bb0b94802f202c9681445ccd4db7d9846461610ee669f2f6cd1c616a7c7b21"
+    },
+    {
+      "path": "dist/intelligence/control/omega-control.js",
+      "sizeBytes": 10781,
+      "sha256": "847695eae5545ec2ef699d97c80f5e26285b390ebed157db35353cbd6190ed9e"
+    },
+    {
+      "path": "dist/intelligence/control/omega-control.js.map",
+      "sizeBytes": 7945,
+      "sha256": "a122534e8fb760a7715a29d2ae3a86551dde66f1c19e4d60f86be8c1ae0ee00f"
+    },
+    {
+      "path": "dist/intelligence/criticality/chandrasekhar-criticality.js",
+      "sizeBytes": 3255,
+      "sha256": "b2ffd0297e5012f941d7bcaebfbb43a4ef0596517f25cebeb7e1d07e80212a59"
+    },
+    {
+      "path": "dist/intelligence/criticality/chandrasekhar-criticality.js.map",
+      "sizeBytes": 2201,
+      "sha256": "fc5b46fc28b0b158ff74418b947a202bf2096875f515e31a6401d91165754548"
+    },
+    {
+      "path": "dist/intelligence/curie/curie-uncertainty.js",
+      "sizeBytes": 4900,
+      "sha256": "c5405a700b29ba8d60d0a09e628c042052a13313ecaf6281f833507f95d0054a"
+    },
+    {
+      "path": "dist/intelligence/curie/curie-uncertainty.js.map",
+      "sizeBytes": 3818,
+      "sha256": "973d0a945ebc02923fe7ece8c9b339a83bb9996472b3bc9b69ced524f27122fb"
+    },
+    {
+      "path": "dist/intelligence/curie/replicated-knowledge.js",
+      "sizeBytes": 4672,
+      "sha256": "4d11c5dcedbc63e84b92d6647c5802e38168743628e22035f5df141657fd8c71"
+    },
+    {
+      "path": "dist/intelligence/curie/replicated-knowledge.js.map",
+      "sizeBytes": 3444,
+      "sha256": "5cd76c8ce5e456266a99d3e25c13b503a44f47497763100e10de20e0789be6f6"
+    },
+    {
+      "path": "dist/intelligence/darwin/strategy-ecology.js",
+      "sizeBytes": 5060,
+      "sha256": "551c9103b02d84e33b2c665468c1b23768738e3949bf6875ed875712b510e54a"
+    },
+    {
+      "path": "dist/intelligence/darwin/strategy-ecology.js.map",
+      "sizeBytes": 3823,
+      "sha256": "c5c75e033f474076fe48d121dcaba92857959408944bf1ec3c1e79c7c73ad805"
+    },
+    {
+      "path": "dist/intelligence/decision/bayes-decision.js",
+      "sizeBytes": 5779,
+      "sha256": "e460f70f26ecd5c30dd4e8d9fee548f2915879a83f2542c0069190a210743b97"
+    },
+    {
+      "path": "dist/intelligence/decision/bayes-decision.js.map",
+      "sizeBytes": 4220,
+      "sha256": "80fddb1920aa80eececc9bb313a54a8743531f61b693d9e51a2b7dfbc4b648d1"
+    },
+    {
+      "path": "dist/intelligence/diagnosis/watson-diagnosis.js",
+      "sizeBytes": 3092,
+      "sha256": "b619ddf7c12dad0613762a98fa9fc9c460a5f79a5f36f2a0c25f3d55dabc3872"
+    },
+    {
+      "path": "dist/intelligence/diagnosis/watson-diagnosis.js.map",
+      "sizeBytes": 2166,
+      "sha256": "cae6827fbdb1f5e4cfdbfd8ecab3e5a13434e161cb2aded5f99c4a513c44c094"
+    },
+    {
+      "path": "dist/intelligence/discovery/cantor-universe.js",
+      "sizeBytes": 3855,
+      "sha256": "64e86ef1da28382fe3f445fc00d3b901f0af7082112da4313b5911175bfc93c8"
+    },
+    {
+      "path": "dist/intelligence/discovery/cantor-universe.js.map",
+      "sizeBytes": 2874,
+      "sha256": "7e469fbfd6284a28606587b1a46b95173b3e426e1e68c84b804545a2bd435eb9"
+    },
+    {
+      "path": "dist/intelligence/discovery/tesla-discovery.js",
+      "sizeBytes": 2324,
+      "sha256": "f194ad1b3a1f19df29c35f502fdfc6e117f94daa47c2410439ea5245510de147"
+    },
+    {
+      "path": "dist/intelligence/discovery/tesla-discovery.js.map",
+      "sizeBytes": 1475,
+      "sha256": "fbd88310584d00479ede471fc5c5c900253bb39027abd9a8bc01ae1e3c08cc5b"
+    },
+    {
+      "path": "dist/intelligence/einstein/regime-relativity.js",
+      "sizeBytes": 4478,
+      "sha256": "31755415dc3ac8b11bc53cd0dd06050252fa97acbec3e75d55dafa20befb903f"
+    },
+    {
+      "path": "dist/intelligence/einstein/regime-relativity.js.map",
+      "sizeBytes": 3073,
+      "sha256": "389235b23d03a2f226e43f5ecbfe889bd0a7adc75d6133b5be91a474d7251c9b"
+    },
+    {
+      "path": "dist/intelligence/epistemic/omega-epistemic.js",
+      "sizeBytes": 8522,
+      "sha256": "e72cf5e0b1f8ec615e38f0ed329da5b47513d33052166ab85fdf6838e8ac1119"
+    },
+    {
+      "path": "dist/intelligence/epistemic/omega-epistemic.js.map",
+      "sizeBytes": 6127,
+      "sha256": "99ba62396813f5824f8df02b4138118f0b6e6a7cca21d013bb72da7e2e3e3155"
+    },
+    {
+      "path": "dist/intelligence/events/canonical-event.js",
+      "sizeBytes": 5726,
+      "sha256": "9bf1f5a0c0fc1c20dccf47c06c0be96e5f37105a6844b9491dcf0b55fc195c4a"
+    },
+    {
+      "path": "dist/intelligence/events/canonical-event.js.map",
+      "sizeBytes": 4932,
+      "sha256": "6c55d15de45b872bd3df5ef655b8de88b8975269bf5b10a5a1d94dfef1f8a12b"
+    },
+    {
+      "path": "dist/intelligence/evidence/evidence-graph.js",
+      "sizeBytes": 6669,
+      "sha256": "e8e7273ac3741bd52d002158bdc765305df1524c566237ab993b960425f03ce3"
+    },
+    {
+      "path": "dist/intelligence/evidence/evidence-graph.js.map",
+      "sizeBytes": 5727,
+      "sha256": "116ed82e9b0da3d70a2a7bf25f608aa5fa3fe45ecf0b02d668b6328dca614272"
+    },
+    {
+      "path": "dist/intelligence/evidence/evidence-registry.js",
+      "sizeBytes": 13637,
+      "sha256": "c4397cedba104dfff7917c387626ba280b2df85165e49e8f3bb01c4594d846d2"
+    },
+    {
+      "path": "dist/intelligence/evidence/evidence-registry.js.map",
+      "sizeBytes": 12037,
+      "sha256": "a36e8dc9f7c0e3144eb9ed76b0358b803cbfa53fde3e8c6ca946a20764365768"
+    },
+    {
+      "path": "dist/intelligence/evidence/market-provenance.js",
+      "sizeBytes": 9184,
+      "sha256": "db2ead03dd2abd8d322e4b8916be00c35f3f430139c506c03fa2337060854506"
+    },
+    {
+      "path": "dist/intelligence/evidence/market-provenance.js.map",
+      "sizeBytes": 5951,
+      "sha256": "6ab50be1b00ed8b336b8765631f504b06af1220da1e0c4d80af9c43fa70af57d"
+    },
+    {
+      "path": "dist/intelligence/evidence/source-health.js",
+      "sizeBytes": 4231,
+      "sha256": "2c774b19314c99e1ca603d402cd8d35194b0750be395154bd0ba97db8b0c0efd"
+    },
+    {
+      "path": "dist/intelligence/evidence/source-health.js.map",
+      "sizeBytes": 3945,
+      "sha256": "4ff9d5d97643871c94319e49f6dd3d31cc784a484740b575e6d4ba0b9041fce6"
+    },
+    {
+      "path": "dist/intelligence/execution/execution-authority.js",
+      "sizeBytes": 2991,
+      "sha256": "db694532903dd3572dd804f4a822ac5cdd7a72899ed839d3c3a3949deee8a4c2"
+    },
+    {
+      "path": "dist/intelligence/execution/execution-authority.js.map",
+      "sizeBytes": 2105,
+      "sha256": "fdcd831f7eef72aea257c4d9d9cad931f3274fe41898c2c07ffc1fb6b104a66f"
+    },
+    {
+      "path": "dist/intelligence/execution/execution-permit.js",
+      "sizeBytes": 4010,
+      "sha256": "79deb5ced9b03cdd72b5f08b6e24698c99256076d17981bdd7dc46bca5a88d42"
+    },
+    {
+      "path": "dist/intelligence/execution/execution-permit.js.map",
+      "sizeBytes": 3285,
+      "sha256": "9ef25a37ed10be4fbabff2feba5217ba0a0c50abf248072a374c1cf86d48f467"
+    },
+    {
+      "path": "dist/intelligence/execution/execution-state-machine.js",
+      "sizeBytes": 3294,
+      "sha256": "0fec6526fdd76d50398ebfef7329a7020a3739bd1f58b9fc4128000a31ad76a5"
+    },
+    {
+      "path": "dist/intelligence/execution/execution-state-machine.js.map",
+      "sizeBytes": 2305,
+      "sha256": "1d570c186f1511d22ae82b202bf88cb064cda44159e851d1bb4b4ac59f27a3dd"
+    },
+    {
+      "path": "dist/intelligence/execution/hermes-timing.js",
+      "sizeBytes": 2806,
+      "sha256": "422e5d523204caecf354ef4f9bfb4e922267bc94fb5ab6da3b0c5d90d0be6381"
+    },
+    {
+      "path": "dist/intelligence/execution/hermes-timing.js.map",
+      "sizeBytes": 1976,
+      "sha256": "7885925bb78770ab589f87873e62306dbe2439b8fadd34e2cc2ef277664ff9cc"
+    },
+    {
+      "path": "dist/intelligence/execution/latency-trace.js",
+      "sizeBytes": 2754,
+      "sha256": "e3e362d3c098fb52ced08f0c6f7a6d143cad86063464357312e7bfa2e2ceb1f1"
+    },
+    {
+      "path": "dist/intelligence/execution/latency-trace.js.map",
+      "sizeBytes": 1874,
+      "sha256": "a6b429d9e977a39132aaea1326270fc809f776f67e13acb221dccb1c7071ac9c"
+    },
+    {
+      "path": "dist/intelligence/execution/opportunity-contract.js",
+      "sizeBytes": 7127,
+      "sha256": "33b01bb184b15baad2ed21d9bc6d72df25a2f2f6f36b2c21d0292b1431501a81"
+    },
+    {
+      "path": "dist/intelligence/execution/opportunity-contract.js.map",
+      "sizeBytes": 5438,
+      "sha256": "2f987dfe11661719889412abaef08566b73551deda723395c0b265919bd1638d"
+    },
+    {
+      "path": "dist/intelligence/execution/position-defense.js",
+      "sizeBytes": 4691,
+      "sha256": "9213731f0d629a1a1680351d069c25fb3658bb443d2b0ebdb81b4e8541b9dbea"
+    },
+    {
+      "path": "dist/intelligence/execution/position-defense.js.map",
+      "sizeBytes": 3293,
+      "sha256": "51f6e3673a60c8429ea0314c117e7c80c654e39e15ebc9a0b345aa3b27bf58b5"
+    },
+    {
+      "path": "dist/intelligence/execution/token-inspector.js",
+      "sizeBytes": 3480,
+      "sha256": "2019ee2645f83b7f656fcbc59fb7b95c1ed27de97607293116f529c5574978b8"
+    },
+    {
+      "path": "dist/intelligence/execution/token-inspector.js.map",
+      "sizeBytes": 2629,
+      "sha256": "bcaec226a3c9db0aa9c9879492efc0c6c1eaaa4194742f1c037f2be931876750"
+    },
+    {
+      "path": "dist/intelligence/execution/von-neumann-machine.js",
+      "sizeBytes": 3331,
+      "sha256": "f5e482a56cf5e55f646f5c4841d4beb7f0de674201215501ae9daa4a5772c032"
+    },
+    {
+      "path": "dist/intelligence/execution/von-neumann-machine.js.map",
+      "sizeBytes": 2323,
+      "sha256": "2b36938ae3b4812325e03cbcac2f5a63e46e361a299a9c1a01b31a3d97a6ffe6"
+    },
+    {
+      "path": "dist/intelligence/experimentation/franklin-experiment.js",
+      "sizeBytes": 3400,
+      "sha256": "2802c4edc6af725915647dff884efe82e3ba7e35d1f703a22fbc15b5df728ac9"
+    },
+    {
+      "path": "dist/intelligence/experimentation/franklin-experiment.js.map",
+      "sizeBytes": 2454,
+      "sha256": "2df6689208a47527d35643a9b130dfdedfd1c8d07a94fced0e71d284ae65da1b"
+    },
+    {
+      "path": "dist/intelligence/flight-recorder/flight-recorder.js",
+      "sizeBytes": 2297,
+      "sha256": "39a4b92cd7b32e5f69d9fed4f75a0a4087e753ddaeab6ae5d0fb4fa150944560"
+    },
+    {
+      "path": "dist/intelligence/flight-recorder/flight-recorder.js.map",
+      "sizeBytes": 1999,
+      "sha256": "7446e5b45ada4bd8b2f47c7a411947cc6cd2b394b72423dd61bf8d06cd675802"
+    },
+    {
+      "path": "dist/intelligence/governance/connection-auditor.js",
+      "sizeBytes": 2637,
+      "sha256": "4f1f63332bc88027a6b24e50959131c750ca1e59d4b4c119f92301a34c821674"
+    },
+    {
+      "path": "dist/intelligence/governance/connection-auditor.js.map",
+      "sizeBytes": 2054,
+      "sha256": "c3a47e10372cf96251c80b338c20dcb826d1276517c9d96dbe2d27609cc062f2"
+    },
+    {
+      "path": "dist/intelligence/governance/constitution-registry.js",
+      "sizeBytes": 5885,
+      "sha256": "b161478a8f233c49456b50931d9ccbc7b607f05a06ea2fee37fcffc508df3a3e"
+    },
+    {
+      "path": "dist/intelligence/governance/constitution-registry.js.map",
+      "sizeBytes": 4037,
+      "sha256": "acb9445cf02f27d86fa3a7542fbc91d6988e75e3b31001c14ecf035256792401"
+    },
+    {
+      "path": "dist/intelligence/governance/contract-registry.js",
+      "sizeBytes": 3380,
+      "sha256": "e8423e4cd3939001469242c7c420495d0fa79894f45eca17c4c0c19cb8be37cc"
+    },
+    {
+      "path": "dist/intelligence/governance/contract-registry.js.map",
+      "sizeBytes": 2338,
+      "sha256": "8957139fe32f96b286b34e47cc89d25c0536642b40deb0dcaf4d5f5e63a1d70b"
+    },
+    {
+      "path": "dist/intelligence/governance/hypatia-alignment.js",
+      "sizeBytes": 3734,
+      "sha256": "fdb6c0384892993fcb1320d593547f60cd28cd98652b08de2cdc54bcdfaf1c00"
+    },
+    {
+      "path": "dist/intelligence/governance/hypatia-alignment.js.map",
+      "sizeBytes": 1595,
+      "sha256": "736e9da739b17c7317dcb4a25fc06d5cbbb45fe13a73945da3ff89f50e44ab3c"
+    },
+    {
+      "path": "dist/intelligence/governance/manifest.js",
+      "sizeBytes": 4921,
+      "sha256": "2a55dce3ae3a62baebcd52e2c7f6ed2a1cab8698d630342378f44a78dca427ca"
+    },
+    {
+      "path": "dist/intelligence/governance/manifest.js.map",
+      "sizeBytes": 3857,
+      "sha256": "60739f6d2c225c58b18439ef445941f20400e725969487c2336f6a8b4a25bdef"
+    },
+    {
+      "path": "dist/intelligence/governance/omega-governance.js",
+      "sizeBytes": 4887,
+      "sha256": "8ddede682a6112f33412f1dd4f2e2c162f568e265d5681a2466dc2771c05e5d5"
+    },
+    {
+      "path": "dist/intelligence/governance/omega-governance.js.map",
+      "sizeBytes": 3646,
+      "sha256": "01cb2eb03f3f28d926fbb147cf03482226900e0d8ffe0ff7b5df604a3f14a581"
+    },
+    {
+      "path": "dist/intelligence/graph/capital-flow-graph.js",
+      "sizeBytes": 5958,
+      "sha256": "6060e86a3d361ce210dd44e49cf8bb3dd4d6b6e13a36260f315ff4ccbc84662f"
+    },
+    {
+      "path": "dist/intelligence/graph/capital-flow-graph.js.map",
+      "sizeBytes": 5169,
+      "sha256": "c7ea28fc5e6f51518016aabc5b745aca7b49871921497e82cfb5cab77e6a9a47"
+    },
+    {
+      "path": "dist/intelligence/graph/capital-migration.js",
+      "sizeBytes": 2444,
+      "sha256": "5d5536d761cefcca41d29730052c5a6031eee4e9c6678715a18df34316f21d04"
+    },
+    {
+      "path": "dist/intelligence/graph/capital-migration.js.map",
+      "sizeBytes": 2618,
+      "sha256": "11dec11f7049d572b160aeac38bd28bf610ed18dce74a5fb24f4a7a7c206b58f"
+    },
+    {
+      "path": "dist/intelligence/graph/capital-provenance.js",
+      "sizeBytes": 3811,
+      "sha256": "ec9a48b28765766e8487751c5292e732b6b77a4e0beeaffc994f8af4b6eeeceb"
+    },
+    {
+      "path": "dist/intelligence/graph/capital-provenance.js.map",
+      "sizeBytes": 3225,
+      "sha256": "57559033b5eb4a389f9750aea3a77368190d82ec6ba24e198ece8c0365baec0a"
+    },
+    {
+      "path": "dist/intelligence/graph/dependency-impact-graph.js",
+      "sizeBytes": 7175,
+      "sha256": "a798ff885f8645104291ca4b32523e9948074c60518b01b0b5143180cb29c65d"
+    },
+    {
+      "path": "dist/intelligence/graph/dependency-impact-graph.js.map",
+      "sizeBytes": 6148,
+      "sha256": "c5400118cdfde31876cd1d0eaf6666b536df379899b7580607c6031a2b5bb7ff"
+    },
+    {
+      "path": "dist/intelligence/graph/funding-ancestry.js",
+      "sizeBytes": 3686,
+      "sha256": "96a65a4cf59a7fbb5744a92176c8cb21dc8e3f88e75845f3684d46f19855276a"
+    },
+    {
+      "path": "dist/intelligence/graph/funding-ancestry.js.map",
+      "sizeBytes": 3087,
+      "sha256": "30857522afacaea491f78d9b38e6b7605bb37b158284fa1c7619cc65dc333480"
+    },
+    {
+      "path": "dist/intelligence/graph/newton-graph.js",
+      "sizeBytes": 3698,
+      "sha256": "5111ff81426b7f78d3a18384a21542da640de2dfcee39c8070acced87b5c6ce7"
+    },
+    {
+      "path": "dist/intelligence/graph/newton-graph.js.map",
+      "sizeBytes": 3486,
+      "sha256": "9b6168df95d2a84a6a4b1c41228bd73c6b8023efd7cdcc1beb4a4f45ae623084"
+    },
+    {
+      "path": "dist/intelligence/graph/temporal-evidence-graph.js",
+      "sizeBytes": 5707,
+      "sha256": "71d22870fcb6593a2d59186fff8c64e45f4402f2e50d81166786112ab43782d4"
+    },
+    {
+      "path": "dist/intelligence/graph/temporal-evidence-graph.js.map",
+      "sizeBytes": 5916,
+      "sha256": "e6aa911d37f80d17bea5c5c5c51c084ea359e65c1aec9d8e3d9048b1d12136e4"
+    },
+    {
+      "path": "dist/intelligence/guardian/safety-guardian.js",
+      "sizeBytes": 5717,
+      "sha256": "891b7d3d8364272c0408f4f097a195b1d16f41287010a3cd1279988d2fd4296f"
+    },
+    {
+      "path": "dist/intelligence/guardian/safety-guardian.js.map",
+      "sizeBytes": 4760,
+      "sha256": "d507541df015f32a3779fef55017ee22415229082dde0e852e18d8f8df442802"
+    },
+    {
+      "path": "dist/intelligence/horizon/copernicus-context.js",
+      "sizeBytes": 2125,
+      "sha256": "df5cd486fa9037335c7952b17ac3eea3abd5311f347a938d5e986aebc59929f4"
+    },
+    {
+      "path": "dist/intelligence/horizon/copernicus-context.js.map",
+      "sizeBytes": 1592,
+      "sha256": "57fcdbc2af5ad825b578b767cd69273903641bb882cda0c61734c9eb6848185d"
+    },
+    {
+      "path": "dist/intelligence/horizon/external-context.js",
+      "sizeBytes": 4393,
+      "sha256": "4527b06c71a928ec1b2948839b81439f9955ed24681d060affc9b0eb8200c51d"
+    },
+    {
+      "path": "dist/intelligence/horizon/external-context.js.map",
+      "sizeBytes": 2824,
+      "sha256": "29d3531e9926ef172e5d4ceec0204b5519e4872236ceb63eaf38b88ef32d9556"
+    },
+    {
+      "path": "dist/intelligence/investigation/investigation-engine.js",
+      "sizeBytes": 4505,
+      "sha256": "5d8d8899af28b11d3ce5034616132013e6e77cab8ad6530e46c8a9d2a9552e7a"
+    },
+    {
+      "path": "dist/intelligence/investigation/investigation-engine.js.map",
+      "sizeBytes": 3143,
+      "sha256": "3f126b04fdf11e243da87c4574fe5407f152e43ae05396f6cf33a934388d500f"
+    },
+    {
+      "path": "dist/intelligence/kernel/backpressure.js",
+      "sizeBytes": 3710,
+      "sha256": "f49bf8e371a0b3a5afb208da7b0479e6252013d160c06a216499c7ec1a0d6182"
+    },
+    {
+      "path": "dist/intelligence/kernel/backpressure.js.map",
+      "sizeBytes": 3127,
+      "sha256": "cab367d54a447489efa0980efbe6e4cd60b7414e3f44b196db8fd34009074c01"
+    },
+    {
+      "path": "dist/intelligence/kernel/decision-trace.js",
+      "sizeBytes": 2469,
+      "sha256": "38b032108af03528b1caafafb15d1d7b1a3091acd3d35bc112d33715685bf51e"
+    },
+    {
+      "path": "dist/intelligence/kernel/decision-trace.js.map",
+      "sizeBytes": 2346,
+      "sha256": "c8274f73ec88573ff47d990f66f79f2eb46284bc37a86d8455774939724c2e61"
+    },
+    {
+      "path": "dist/intelligence/kernel/integration-kernel.js",
+      "sizeBytes": 3376,
+      "sha256": "d77ea07d402b5393094e70a4b5e85f46fd1eb80b86ad5870d05c16f032e36146"
+    },
+    {
+      "path": "dist/intelligence/kernel/integration-kernel.js.map",
+      "sizeBytes": 2643,
+      "sha256": "e54b684d517956e3fe6219ae595922926d537547668458578429743a2fdf8f55"
+    },
+    {
+      "path": "dist/intelligence/kernel/safety-kernel.js",
+      "sizeBytes": 3265,
+      "sha256": "0e059e2d42aebd166bfb53e826004d2fb4f9a8c6e65c1f1827b89102493de388"
+    },
+    {
+      "path": "dist/intelligence/kernel/safety-kernel.js.map",
+      "sizeBytes": 2247,
+      "sha256": "b13611167ba0ccd65e5deb92dca043881d469b0f6d3246041c20637b654d8133"
+    },
+    {
+      "path": "dist/intelligence/kernel/types.js",
+      "sizeBytes": 253,
+      "sha256": "670ba11ee0219b8297b154c90c79b6da6359971e0d618ce64be3a07b025feb08"
+    },
+    {
+      "path": "dist/intelligence/kernel/types.js.map",
+      "sizeBytes": 140,
+      "sha256": "548ae6eefbf131702b1170556be34e000ff6ed02cc14f338338dd77d6dee96fe"
+    },
+    {
+      "path": "dist/intelligence/lifecycle/protection-lease.js",
+      "sizeBytes": 5925,
+      "sha256": "ac1c436bb84224f9dd88dc0cbae63235a1236bdabcfa356a325198e4859a4979"
+    },
+    {
+      "path": "dist/intelligence/lifecycle/protection-lease.js.map",
+      "sizeBytes": 4630,
+      "sha256": "d9e54885ae6196379bfd791294da74a190badbfb32046f75e3ced1013e0f9d9d"
+    },
+    {
+      "path": "dist/intelligence/lifecycle/venue-resolver.js",
+      "sizeBytes": 4506,
+      "sha256": "3ca84de77528dbaa58fa354d6981e6bbbb34d15a3bdf3f9e90fd578d7838ad8d"
+    },
+    {
+      "path": "dist/intelligence/lifecycle/venue-resolver.js.map",
+      "sizeBytes": 3662,
+      "sha256": "b5bd8ff00b4696f0838412204aa113ada59bc0986c18e59bce66742ac481ce90"
+    },
+    {
+      "path": "dist/intelligence/master-orchestrator.js",
+      "sizeBytes": 139057,
+      "sha256": "adbc16b3af1bb36ffe260815d4e17697fd60301714a611a50838b7fdc67deeea"
+    },
+    {
+      "path": "dist/intelligence/master-orchestrator.js.map",
+      "sizeBytes": 96634,
+      "sha256": "cf46da40bbd7daa8ec66686cd0da47d959713b04c7ab9422435d143b84091da9"
+    },
+    {
+      "path": "dist/intelligence/math/gauss-integrity.js",
+      "sizeBytes": 7274,
+      "sha256": "1a0d0e9a19c71aa8ae9686fbc7aacdda023a05f7f15d70c98ef0e315dc5faf4c"
+    },
+    {
+      "path": "dist/intelligence/math/gauss-integrity.js.map",
+      "sizeBytes": 5671,
+      "sha256": "9a702485f373ff9736dda46a281722c8bbc7fbf15041cc1e1a35b4f91cd41d7b"
+    },
+    {
+      "path": "dist/intelligence/memory/episode.js",
+      "sizeBytes": 5827,
+      "sha256": "a6cd8cfa1e794cd32ba124217f6db0280191469111f54d2d88887fac712afa83"
+    },
+    {
+      "path": "dist/intelligence/memory/episode.js.map",
+      "sizeBytes": 4679,
+      "sha256": "01fe07e52e244333c0f675af606522bcfd9116f88f9670f7d8900e82e06afc70"
+    },
+    {
+      "path": "dist/intelligence/mendel/gene-heredity.js",
+      "sizeBytes": 3993,
+      "sha256": "849d1572986fa904bc9def579c27780d7602b8088cd9c46d1443683481889f56"
+    },
+    {
+      "path": "dist/intelligence/mendel/gene-heredity.js.map",
+      "sizeBytes": 2853,
+      "sha256": "49b49e1956c8c952dc63bd179742f37665cdf6f61dd8aca28c4e9c1d38108bc3"
+    },
+    {
+      "path": "dist/intelligence/microstructure/depth-engine.js",
+      "sizeBytes": 1996,
+      "sha256": "0c04b2f22183243ef4f7db2c682de4595630ebd4be2bd1050889de7178983ed9"
+    },
+    {
+      "path": "dist/intelligence/microstructure/depth-engine.js.map",
+      "sizeBytes": 1376,
+      "sha256": "4b0550f98c1cbcb015c2c82e87aacc6ab45710a09521a3ff82efdbfd8cc8f7cf"
+    },
+    {
+      "path": "dist/intelligence/microstructure/flow-toxicity.js",
+      "sizeBytes": 2102,
+      "sha256": "f6f73e5f64536d7388a795ab423b9500a0ec25449e03089f3ad08af996e4d6b2"
+    },
+    {
+      "path": "dist/intelligence/microstructure/flow-toxicity.js.map",
+      "sizeBytes": 1638,
+      "sha256": "004ae5d44eaa20a6337c265e5f79214b16273dfa9a89f30e0b38eacf59bc96bb"
+    },
+    {
+      "path": "dist/intelligence/mirror/shadow-portfolio.js",
+      "sizeBytes": 5264,
+      "sha256": "bcfd19d4c77d6911f34949f684ee7ce32352ea692be54ca14073fdc4da621f68"
+    },
+    {
+      "path": "dist/intelligence/mirror/shadow-portfolio.js.map",
+      "sizeBytes": 4204,
+      "sha256": "bad5c7b8d699e2f6665ba4d522db2682116b3edc6a40bb094a07a60311e4864c"
+    },
+    {
+      "path": "dist/intelligence/nexus/canonical-nexus.js",
+      "sizeBytes": 4045,
+      "sha256": "64b970fac0b50779bd705ee880680bf74d475385347bcf42afcb4a8ec9c25c7c"
+    },
+    {
+      "path": "dist/intelligence/nexus/canonical-nexus.js.map",
+      "sizeBytes": 3245,
+      "sha256": "46603e8e53b89f104d3784922fe4f164948686e8d6270ba6f595e5b38c429170"
+    },
+    {
+      "path": "dist/intelligence/ontology/mendeleev-ontology.js",
+      "sizeBytes": 9235,
+      "sha256": "a85f33dc19943122249a533b1f8d090e93efe1b59c43a01fa29df7e760de7dec"
+    },
+    {
+      "path": "dist/intelligence/ontology/mendeleev-ontology.js.map",
+      "sizeBytes": 6752,
+      "sha256": "a348a1a4fa4abf059071c5b741e3dab29267a821f8e2099a3089dccd69d4db4a"
+    },
+    {
+      "path": "dist/intelligence/orchestration/turing-orchestrator.js",
+      "sizeBytes": 4068,
+      "sha256": "d5651c366fb743d38a6808241e39aa7b13bd61e13aeb97703ec952d01b0e6f8c"
+    },
+    {
+      "path": "dist/intelligence/orchestration/turing-orchestrator.js.map",
+      "sizeBytes": 2789,
+      "sha256": "3dd094e1c941e535c3e4ffa2d2017930c47cdd5b8b4670bfe8ffc171f5011066"
+    },
+    {
+      "path": "dist/intelligence/pasteur/research-integrity.js",
+      "sizeBytes": 3090,
+      "sha256": "c71496b3faf208ae658947089e8e106094104a7f9022b370ca98d040a4814738"
+    },
+    {
+      "path": "dist/intelligence/pasteur/research-integrity.js.map",
+      "sizeBytes": 2006,
+      "sha256": "45cc21f66d5b62ad5e988a629e9d46bb2e90eaeca9c690af9231861bb503b749"
+    },
+    {
+      "path": "dist/intelligence/pathfinder/capital-pathfinder.js",
+      "sizeBytes": 6655,
+      "sha256": "221a3c4e8c0cc794606e7c044b18922a1072dce34bf1463914ab011c240339db"
+    },
+    {
+      "path": "dist/intelligence/pathfinder/capital-pathfinder.js.map",
+      "sizeBytes": 4812,
+      "sha256": "8f7cf19875be1388cd58fdb0733109fc4e9cd6196b869496634bf56bc554ba74"
+    },
+    {
+      "path": "dist/intelligence/pearl/causal-inference.js",
+      "sizeBytes": 3649,
+      "sha256": "cec6efd64da8e9cba1072c43c3b64b861cf9cc842907db7c78f0c2a1166ef20f"
+    },
+    {
+      "path": "dist/intelligence/pearl/causal-inference.js.map",
+      "sizeBytes": 2401,
+      "sha256": "ed67425d00a71b9072457efc63ee538154d9913cff5ef48b50ee7a37d8942ff3"
+    },
+    {
+      "path": "dist/intelligence/phoenix/recovery-engine.js",
+      "sizeBytes": 6361,
+      "sha256": "692045c48681bd3a28fb9d48cbf5b6f55bd60328ed5b99754736fd46067b47f3"
+    },
+    {
+      "path": "dist/intelligence/phoenix/recovery-engine.js.map",
+      "sizeBytes": 4475,
+      "sha256": "89477549dd1dbb519d090b123252b419202ed72320f4a5c8eddbffc777b0dbd1"
+    },
+    {
+      "path": "dist/intelligence/planning/apollo-planner.js",
+      "sizeBytes": 2445,
+      "sha256": "ef03c93ab4dd118f6f637347831ca2f57bd7493b4a27e98ae85f8c164fc7ccf7"
+    },
+    {
+      "path": "dist/intelligence/planning/apollo-planner.js.map",
+      "sizeBytes": 1867,
+      "sha256": "1b22d142e93d840389e97cf1f80bc32edd6c4fe5da34af929784daf08503ed99"
+    },
+    {
+      "path": "dist/intelligence/policies/adaptive-router.js",
+      "sizeBytes": 9065,
+      "sha256": "737368be9bd15c5293f00463932e6178f339c084b2e1586347c423c1b906fb7a"
+    },
+    {
+      "path": "dist/intelligence/policies/adaptive-router.js.map",
+      "sizeBytes": 5936,
+      "sha256": "5df135157c15a4cbb3c0d3d010be5722d071fa989cd74804410e4b7b5307a62e"
+    },
+    {
+      "path": "dist/intelligence/policies/approval-lease.js",
+      "sizeBytes": 2835,
+      "sha256": "4a7c9918a5902dd918ffe1e891e89a0e7816c103e5dc93f5b85d930b9ac95c99"
+    },
+    {
+      "path": "dist/intelligence/policies/approval-lease.js.map",
+      "sizeBytes": 2461,
+      "sha256": "7ee5aad368e6a3885fd0c776f9155f9bc915379dfb4b97064b37c052ded84153"
+    },
+    {
+      "path": "dist/intelligence/policies/policy-bundle.js",
+      "sizeBytes": 4073,
+      "sha256": "534b9d778fcafeabeb3d99bb25d36f1b04cec288912b002a0e4d8c9525355044"
+    },
+    {
+      "path": "dist/intelligence/policies/policy-bundle.js.map",
+      "sizeBytes": 3088,
+      "sha256": "073d246e51f11221c2d97772784c31b20ff4d1fa2fb41cfde5105f465850ed07"
+    },
+    {
+      "path": "dist/intelligence/portfolio/opportunity-board.js",
+      "sizeBytes": 12899,
+      "sha256": "622be5b6dbc42dbf0da30e39baf2bd97538cd9319fc757e5638c6968712d86e1"
+    },
+    {
+      "path": "dist/intelligence/portfolio/opportunity-board.js.map",
+      "sizeBytes": 10663,
+      "sha256": "0c161a33e19d6de0b5fd4fbeb042737412262e55808b15a29dea059d0c80e967"
+    },
+    {
+      "path": "dist/intelligence/portfolio/opportunity-vector.js",
+      "sizeBytes": 5127,
+      "sha256": "f099aceec2f6d65ff1add1e48a85dfd236d216b540e37935d7e83601f2d4b6ba"
+    },
+    {
+      "path": "dist/intelligence/portfolio/opportunity-vector.js.map",
+      "sizeBytes": 4015,
+      "sha256": "3e49c1d477f82cdca24a1728a915fbb954613fe48f6cc1845227648560e7d77b"
+    },
+    {
+      "path": "dist/intelligence/portfolio/portfolio-twin.js",
+      "sizeBytes": 4014,
+      "sha256": "1891c0356520f537b642440522c11b2f7e4c257a696efced0a02f1356bb4ad94"
+    },
+    {
+      "path": "dist/intelligence/portfolio/portfolio-twin.js.map",
+      "sizeBytes": 3252,
+      "sha256": "d94728f1587e8a1aa8e760292bbd57faa75b0ed712590bb7eb132c2b6a7a1f8b"
+    },
+    {
+      "path": "dist/intelligence/portfolio/prometheus-capital.js",
+      "sizeBytes": 4674,
+      "sha256": "f35681f60dae4f5b7dd254f6882ccc1074f76ff9e655d7356914d57971670bfc"
+    },
+    {
+      "path": "dist/intelligence/portfolio/prometheus-capital.js.map",
+      "sizeBytes": 2726,
+      "sha256": "c0e7639e4d978db782c1bef8d79230b3bf5d8b80a40a88ef6928cd92047993c1"
+    },
+    {
+      "path": "dist/intelligence/projections/lorentz-sensitivity.js",
+      "sizeBytes": 3140,
+      "sha256": "472f3cb23ebcaa9924a94d459f1b95d979ec246dbc775d9b2588de44d4c1c111"
+    },
+    {
+      "path": "dist/intelligence/projections/lorentz-sensitivity.js.map",
+      "sizeBytes": 2382,
+      "sha256": "4e442ecce566508a48994b6a1c43b61f24b3db431a9a1e38a83fff054f3aed0a"
+    },
+    {
+      "path": "dist/intelligence/projections/projection-engine.js",
+      "sizeBytes": 4876,
+      "sha256": "31791e75d80dc24d818612fd6897f8c3edf4cf8ae89eb8b3ac76ed62ae68cb16"
+    },
+    {
+      "path": "dist/intelligence/projections/projection-engine.js.map",
+      "sizeBytes": 3879,
+      "sha256": "0083f64a3326be96307c0eb74208f1e9ced8ecc21169a21435907bc559756b10"
+    },
+    {
+      "path": "dist/intelligence/reconciliation/galileo-reconciliation.js",
+      "sizeBytes": 2248,
+      "sha256": "dd25e4549ce4dcc8d8d9a11b0499b5b20bd3b4ade402b8330ce5b2b28449b304"
+    },
+    {
+      "path": "dist/intelligence/reconciliation/galileo-reconciliation.js.map",
+      "sizeBytes": 1944,
+      "sha256": "9266e6617e80f57f2446a49ece18bb86bac3aaae0a458a564b98404f3ca5b1f7"
+    },
+    {
+      "path": "dist/intelligence/reconciliation/janus-reconciler.js",
+      "sizeBytes": 4890,
+      "sha256": "fa80b5e3053af6e5397b2f6b1fc88547cf2f49ba8fce2acec771380569c4c963"
+    },
+    {
+      "path": "dist/intelligence/reconciliation/janus-reconciler.js.map",
+      "sizeBytes": 2868,
+      "sha256": "ed40e5a7e3e90e00672ffa6991bcdf51bda94f4a3539d6215b669f4cdcd5a0fc"
+    },
+    {
+      "path": "dist/intelligence/research/autonomous-lab.js",
+      "sizeBytes": 2825,
+      "sha256": "fb0ec48c87af0cd3d8bf08c1622e1cb035cde43e10621a3960e016eaf0b13b54"
+    },
+    {
+      "path": "dist/intelligence/research/autonomous-lab.js.map",
+      "sizeBytes": 1572,
+      "sha256": "23980e78faa0122e2989afdec327f46fbca906d14ef9ba0b94b719e24fe68c45"
+    },
+    {
+      "path": "dist/intelligence/research/capital-regime.js",
+      "sizeBytes": 8098,
+      "sha256": "369c4cfee212c0c0f090204bca7a9a2a7d97249c25ee6818e6b20f57a6ed3315"
+    },
+    {
+      "path": "dist/intelligence/research/capital-regime.js.map",
+      "sizeBytes": 4674,
+      "sha256": "7d45aec7b7b61186d115d2afdf13b25955175ff772fb24397fb917ffc2c08abc"
+    },
+    {
+      "path": "dist/intelligence/research/champion-challenger.js",
+      "sizeBytes": 4388,
+      "sha256": "4f6bff1e34e260f8d07576e932783868c2cc6b7d49cad1ef0a4ced28c9a35068"
+    },
+    {
+      "path": "dist/intelligence/research/champion-challenger.js.map",
+      "sizeBytes": 3148,
+      "sha256": "3bfeb9a72d6b6c3e2a0729dd371e02eb7185b09a08173af4e4182f84a9c1cb61"
+    },
+    {
+      "path": "dist/intelligence/research/drift-engine.js",
+      "sizeBytes": 3491,
+      "sha256": "c9066630f8fdf4be413dcbbdce343755f1abb759d806d722d46b5d1ffa7f48e2"
+    },
+    {
+      "path": "dist/intelligence/research/drift-engine.js.map",
+      "sizeBytes": 2301,
+      "sha256": "39cb65ae67cd26ea67d8c1d27a8832604b6f730e926b5ed82eb3400334a40e65"
+    },
+    {
+      "path": "dist/intelligence/research/negative-db.js",
+      "sizeBytes": 1242,
+      "sha256": "26941dbfde8ea7243788a315bc5a19b5a3bbf4dc30c6f0e8c37ba43470400da9"
+    },
+    {
+      "path": "dist/intelligence/research/negative-db.js.map",
+      "sizeBytes": 1049,
+      "sha256": "36ec30f087e63c35f5724640ed6e4aa1768d42f5aa6c9dd034c652c1062b3ac1"
+    },
+    {
+      "path": "dist/intelligence/research/outcome-ground-truth.js",
+      "sizeBytes": 3201,
+      "sha256": "6d141604c31ef29fd23e9a7a8493996461e9a8ff4424b3c49d6c60ea6952aebb"
+    },
+    {
+      "path": "dist/intelligence/research/outcome-ground-truth.js.map",
+      "sizeBytes": 2601,
+      "sha256": "1670708af7c194986ab62dbce27a2b4a47c27bcabd68564b8a47c0efa9d65c5a"
+    },
+    {
+      "path": "dist/intelligence/resilience/faraday-recovery.js",
+      "sizeBytes": 4318,
+      "sha256": "27f44535b8302c3a2922ba0fa6ec21a84a9262477968782d63c82bdf479a0c6f"
+    },
+    {
+      "path": "dist/intelligence/resilience/faraday-recovery.js.map",
+      "sizeBytes": 2830,
+      "sha256": "f81540aa0bb2af61e721c27797743bb2641ef99a970afef8bc3615e55d186ef6"
+    },
+    {
+      "path": "dist/intelligence/revocation/revocation-engine.js",
+      "sizeBytes": 4154,
+      "sha256": "9eb613d1e95354efdd9aead0c234a08ed4ec4e93656ec1c977cb7f976db87793"
+    },
+    {
+      "path": "dist/intelligence/revocation/revocation-engine.js.map",
+      "sizeBytes": 3330,
+      "sha256": "67b99a29fdf5719c43edac7989b109da8ce18d600e770188ac6d503ea9c9f8c5"
+    },
+    {
+      "path": "dist/intelligence/runtime/meta-intelligence.js",
+      "sizeBytes": 7004,
+      "sha256": "a6e5b689d1b7644fcaa0a23b9041815dabc6d4ea93f04ffa7745371a733b6424"
+    },
+    {
+      "path": "dist/intelligence/runtime/meta-intelligence.js.map",
+      "sizeBytes": 5627,
+      "sha256": "b125f2d5672136508dc92d24945819402c3ee59ae05ee7862e64e0bb7f7723c8"
+    },
+    {
+      "path": "dist/intelligence/runtime/operating-modes.js",
+      "sizeBytes": 3013,
+      "sha256": "e4c254aa3d76afedf0d7ede851c3909f52d828f9f672cb2c77c76c6141d96899"
+    },
+    {
+      "path": "dist/intelligence/runtime/operating-modes.js.map",
+      "sizeBytes": 2371,
+      "sha256": "5e343de0e8369938ac5045e9da03200b8ee21a9dad7cc9f60b0d499853104baa"
+    },
+    {
+      "path": "dist/intelligence/safety/constitution.js",
+      "sizeBytes": 3032,
+      "sha256": "a16f5f0a2a49b3b81363b307dc06ce097d4eaba6b94fdea1946b8cc414df7942"
+    },
+    {
+      "path": "dist/intelligence/safety/constitution.js.map",
+      "sizeBytes": 1515,
+      "sha256": "c06d5b5507728c699684d166f3a4e11abd1c52da8b103e36b5c7f95652dcbe3d"
+    },
+    {
+      "path": "dist/intelligence/safety/kill-switch-hierarchy.js",
+      "sizeBytes": 5884,
+      "sha256": "196770f110363ad6f9ad96a14a1961caa76911202f6a8e6324aa347854a70aa5"
+    },
+    {
+      "path": "dist/intelligence/safety/kill-switch-hierarchy.js.map",
+      "sizeBytes": 4022,
+      "sha256": "f6bb04890d0a444c4953291a007a01e539e5c00bde3e898587cc1f5f7aeedf1a"
+    },
+    {
+      "path": "dist/intelligence/safety/noether-invariants.js",
+      "sizeBytes": 3287,
+      "sha256": "7ba79b39f0fd2e5ef6c41bb0cdf493a3795a66f43d26dfac7815ea023528360e"
+    },
+    {
+      "path": "dist/intelligence/safety/noether-invariants.js.map",
+      "sizeBytes": 1957,
+      "sha256": "0b12c99463e4b137e1f3d427650e23a7eba5adf1b8e2653697f99d68a385f1d9"
+    },
+    {
+      "path": "dist/intelligence/safety/ood-sentinel.js",
+      "sizeBytes": 3339,
+      "sha256": "8a4a2b01e40f4a372d933e7214630a7207055173a09180841d5f86d980bdf355"
+    },
+    {
+      "path": "dist/intelligence/safety/ood-sentinel.js.map",
+      "sizeBytes": 2019,
+      "sha256": "8ab480b7e29e7a55b8a577c9be99a0cfd11087b2b08c60f8fbc879ea7e4d3c1c"
+    },
+    {
+      "path": "dist/intelligence/safety/safety-monitor.js",
+      "sizeBytes": 1977,
+      "sha256": "5478dace482a5f70f398edfb783a2d757caae0e0a11cc69e07cff0403d37dc9f"
+    },
+    {
+      "path": "dist/intelligence/safety/safety-monitor.js.map",
+      "sizeBytes": 1281,
+      "sha256": "61d34ddd9cb9a80da481e2cce5f9a74ce84219a1f1500a6c9f78f00ce071224e"
+    },
+    {
+      "path": "dist/intelligence/safety/system-integrity.js",
+      "sizeBytes": 3565,
+      "sha256": "64fb97decc7daca995d688c01b9cdad6c5f2e692597017ac52226f18f7061bbb"
+    },
+    {
+      "path": "dist/intelligence/safety/system-integrity.js.map",
+      "sizeBytes": 2785,
+      "sha256": "ab0c628ccdc5d98cabef9512bcc5bfa6773244ea4e2fbcddd967a6b5613d7966"
+    },
+    {
+      "path": "dist/intelligence/sage/capability-assurance.js",
+      "sizeBytes": 5434,
+      "sha256": "6136f1f1b7dfdcc26e278c0873aa3615bac802b1cbdcd407b03527627ab3ab5c"
+    },
+    {
+      "path": "dist/intelligence/sage/capability-assurance.js.map",
+      "sizeBytes": 4107,
+      "sha256": "6c786d41de8f05451b93fab8ee555b09f97b4a8afa7300b5fac5de7fb9fb1b97"
+    },
+    {
+      "path": "dist/intelligence/science/calibrator.js",
+      "sizeBytes": 4300,
+      "sha256": "c06a98595fdbab132e713bf244af1fea3f784a8cda6afc0c57a63ebeff91da9f"
+    },
+    {
+      "path": "dist/intelligence/science/calibrator.js.map",
+      "sizeBytes": 3962,
+      "sha256": "7d0a4a52787976581e2e1da084dadd1c638c7be6c4cc64a3e7c421c97b66960a"
+    },
+    {
+      "path": "dist/intelligence/science/counterfactual.js",
+      "sizeBytes": 2760,
+      "sha256": "83d977882abe6bd377d64f81998be04bb70d84afe3e6d441f9338bbc1296e130"
+    },
+    {
+      "path": "dist/intelligence/science/counterfactual.js.map",
+      "sizeBytes": 1908,
+      "sha256": "857453290153acaefa59de29edcf5348db3cc8b272a9141aa5c18894cff0abda"
+    },
+    {
+      "path": "dist/intelligence/science/evidence-ladder.js",
+      "sizeBytes": 3262,
+      "sha256": "99f6a4258a1a5763e7c6ad69c14741fae24cccae32d2a126373131b662e75bf0"
+    },
+    {
+      "path": "dist/intelligence/science/evidence-ladder.js.map",
+      "sizeBytes": 1814,
+      "sha256": "da931a659050846a2a11f6a03610db25c479feed33ac000f399c452e1651902f"
+    },
+    {
+      "path": "dist/intelligence/science/first-passage.js",
+      "sizeBytes": 6229,
+      "sha256": "48d3cd91684d1ae358f8974ba660677640145a8e59f5356a87d7b307f739e997"
+    },
+    {
+      "path": "dist/intelligence/science/first-passage.js.map",
+      "sizeBytes": 6165,
+      "sha256": "20e6936dd70bdd7e675f3d952c395fc53044446394ee70a5af50129be2b9f418"
+    },
+    {
+      "path": "dist/intelligence/science/fisher-evidence.js",
+      "sizeBytes": 2087,
+      "sha256": "40d216bd5b5e5ce5c754c9a2aef5930a88ff35783ad98dfcec86e055ab12ede0"
+    },
+    {
+      "path": "dist/intelligence/science/fisher-evidence.js.map",
+      "sizeBytes": 1573,
+      "sha256": "a3b1b841b2b87caa4b919f66a7646d77b3bbcb380ff62fb15e87539fa6d87c8e"
+    },
+    {
+      "path": "dist/intelligence/science/multi-model-suite.js",
+      "sizeBytes": 12448,
+      "sha256": "443a9704947e97643753c4aa2602a9084b38358fefd91c85ac35557dd6d528e9"
+    },
+    {
+      "path": "dist/intelligence/science/multi-model-suite.js.map",
+      "sizeBytes": 10362,
+      "sha256": "4f3be5203107379832d358ae4441fc2361c1bf7c02662e44a128aaf092aeea25"
+    },
+    {
+      "path": "dist/intelligence/science/outcome-truth.js",
+      "sizeBytes": 4174,
+      "sha256": "8d154f41ae8cb67514949977a63b75035afee5f28010be1d55c860302c1071d3"
+    },
+    {
+      "path": "dist/intelligence/science/outcome-truth.js.map",
+      "sizeBytes": 3216,
+      "sha256": "1766f81fb5c13a9479d38b22f82f94611b0e3dd70b94e5d36c6ab35f8856db38"
+    },
+    {
+      "path": "dist/intelligence/science/scientific-ledger.js",
+      "sizeBytes": 8133,
+      "sha256": "961301cca62e5b1090c7e7308ad775a81ec7cc638053c83e08408af7a191a362"
+    },
+    {
+      "path": "dist/intelligence/science/scientific-ledger.js.map",
+      "sizeBytes": 5687,
+      "sha256": "eaefba2f6f26c54ef16aa912337414f8111b4404cd606ebb403f1e94e25d1777"
+    },
+    {
+      "path": "dist/intelligence/scout/strategy-coordinator.js",
+      "sizeBytes": 10736,
+      "sha256": "59ccae8ed34f38c533dcb7c8d86dee7ce889d84d3ac4191be676219f367b7d6c"
+    },
+    {
+      "path": "dist/intelligence/scout/strategy-coordinator.js.map",
+      "sizeBytes": 8539,
+      "sha256": "25b29889a78718236b85083a57bddfcf0b90dcfa6d4e5ade83769ca5a1a77a51"
+    },
+    {
+      "path": "dist/intelligence/security/sentinel-zones.js",
+      "sizeBytes": 3401,
+      "sha256": "da1898b056179aa5bf55708a1eec58a24a87f2cac1aa6d61765ac540d8595fb3"
+    },
+    {
+      "path": "dist/intelligence/security/sentinel-zones.js.map",
+      "sizeBytes": 1620,
+      "sha256": "0c909d16873b723967a967b7855ed6a627a5a130b3f641b0e07f29a0e3a923c9"
+    },
+    {
+      "path": "dist/intelligence/semantics/metron-theseus.js",
+      "sizeBytes": 3981,
+      "sha256": "2d067722c6ab0620532d4a981e6afd5662ce89e9a009b1674b01bf8d25787c41"
+    },
+    {
+      "path": "dist/intelligence/semantics/metron-theseus.js.map",
+      "sizeBytes": 3290,
+      "sha256": "d6d25a5c60159b38060155b2ed77667ec99ef836ac6553a214d057aab179b6e3"
+    },
+    {
+      "path": "dist/intelligence/sentinel/counterintelligence.js",
+      "sizeBytes": 5377,
+      "sha256": "afeb7bca5eb47b9f1528d684783ee5efdded174d1838efe29e68e8ab3d5d51cb"
+    },
+    {
+      "path": "dist/intelligence/sentinel/counterintelligence.js.map",
+      "sizeBytes": 3521,
+      "sha256": "ddeb36f1a688f249e523865545b366ffd7ce7431a69a34a5b4c3b9f6fa9d1bc0"
+    },
+    {
+      "path": "dist/intelligence/signals/divergence-engine.js",
+      "sizeBytes": 5161,
+      "sha256": "df0830564d85d32fe219c39b6c173390c285742bd070ea4e05f24215709b5d81"
+    },
+    {
+      "path": "dist/intelligence/signals/divergence-engine.js.map",
+      "sizeBytes": 3200,
+      "sha256": "85af382ace430373d51e23ce318bc984d889e51371bfbd8d4f053ae8573042ab"
+    },
+    {
+      "path": "dist/intelligence/signals/ecosystem-phase.js",
+      "sizeBytes": 2216,
+      "sha256": "0f1fedfaf82641a84e451f0c7708c8e988448f1f4f8dd1e0780e09b524454e18"
+    },
+    {
+      "path": "dist/intelligence/signals/ecosystem-phase.js.map",
+      "sizeBytes": 1347,
+      "sha256": "69977570879f88778afaf99caf3581cc80a501c247c6a91977c2884a7f60ee27"
+    },
+    {
+      "path": "dist/intelligence/signals/hsi.js",
+      "sizeBytes": 5024,
+      "sha256": "5ad6048455ea6e6ec40ae9faf04253bf6e940f6b7507849e9f83dac73e23f948"
+    },
+    {
+      "path": "dist/intelligence/signals/hsi.js.map",
+      "sizeBytes": 3683,
+      "sha256": "0de5e93d578633a99240e2473cec42e6f1c4a75437ea08adef0eb28554a9e3b0"
+    },
+    {
+      "path": "dist/intelligence/signals/market-phase-engine.js",
+      "sizeBytes": 4283,
+      "sha256": "a5818a8400cb60ffadc703044aee43439e35b4a7d973da4526f18108c38e7f52"
+    },
+    {
+      "path": "dist/intelligence/signals/market-phase-engine.js.map",
+      "sizeBytes": 2810,
+      "sha256": "6e70cf03e486150c26c7861c03b003c51387bab8278c688df0bd452ef57ed0dd"
+    },
+    {
+      "path": "dist/intelligence/signals/phase-transition.js",
+      "sizeBytes": 3355,
+      "sha256": "c89ee0c691d3fc547f5db616bd3b755aa159c2c4a864b32379981156a26b3199"
+    },
+    {
+      "path": "dist/intelligence/signals/phase-transition.js.map",
+      "sizeBytes": 3123,
+      "sha256": "abd76402a901b34115a3158936e122c92ed765178df2299d07a8429c11fa5583"
+    },
+    {
+      "path": "dist/intelligence/signals/pumpscore.js",
+      "sizeBytes": 1913,
+      "sha256": "a11a3caa053609008eeaa011e790c1200cf3a49d9ab9151776915b9d57d0160e"
+    },
+    {
+      "path": "dist/intelligence/signals/pumpscore.js.map",
+      "sizeBytes": 1668,
+      "sha256": "f39e04e668f66a2f935aa0ae0de5a7e7ba07ccba76aa35453fad6392920e49a7"
+    },
+    {
+      "path": "dist/intelligence/signals/regime.js",
+      "sizeBytes": 2025,
+      "sha256": "4702b8a1b7d95a80d28e68dd5b0dada767de7c9baa44772bd97370bd64a1a941"
+    },
+    {
+      "path": "dist/intelligence/signals/regime.js.map",
+      "sizeBytes": 1283,
+      "sha256": "9e0431bc2983b16ce6afa7657b8afbeb8cf54a59813e3903f8fa8f378a1f1318"
+    },
+    {
+      "path": "dist/intelligence/signals/shannon-information.js",
+      "sizeBytes": 4023,
+      "sha256": "70e0282ba9e87f96531b1e0b9e97351b08446f2d8be1d605f023184a363703de"
+    },
+    {
+      "path": "dist/intelligence/signals/shannon-information.js.map",
+      "sizeBytes": 3035,
+      "sha256": "30fc57099f66923314de47837328264c18642a8a3c3851ef54c22c5567dc16d8"
+    },
+    {
+      "path": "dist/intelligence/simulation/maxwell-twin.js",
+      "sizeBytes": 2729,
+      "sha256": "83cfa075f97172cc34183dd7ea6542f799dbb76cced52952e4c8a86bdc7ec524"
+    },
+    {
+      "path": "dist/intelligence/simulation/maxwell-twin.js.map",
+      "sizeBytes": 1450,
+      "sha256": "c6b712e1b84e1300aa86f9eee468352118128f25b7ce696a884ba05a30b7378b"
+    },
+    {
+      "path": "dist/intelligence/spie/dynamic-exits.js",
+      "sizeBytes": 5812,
+      "sha256": "61e523360e2643e6eff47cd672886c3fe1a92c8b07b7b6657af9e91d3dc260c9"
+    },
+    {
+      "path": "dist/intelligence/spie/dynamic-exits.js.map",
+      "sizeBytes": 3262,
+      "sha256": "4cb68024e726025e2a7c1f4e6cfc21089b2e25e18b631a520fbd2ac7558c644b"
+    },
+    {
+      "path": "dist/intelligence/spie/entry-timing.js",
+      "sizeBytes": 4478,
+      "sha256": "e8833d116bad96a36c761d0871bbfbaa50b2240c6298d2d4f94c8e9f0e83e5e7"
+    },
+    {
+      "path": "dist/intelligence/spie/entry-timing.js.map",
+      "sizeBytes": 2417,
+      "sha256": "49c1403ffffccfe718616048b05d8a0a7f850e8e7b44ad8677fde88a202037ab"
+    },
+    {
+      "path": "dist/intelligence/spie/index.js",
+      "sizeBytes": 216,
+      "sha256": "cda5cb4635c38c20d3271f956ec97ea2d1ddb4655927ce604b018f67b3681854"
+    },
+    {
+      "path": "dist/intelligence/spie/index.js.map",
+      "sizeBytes": 239,
+      "sha256": "1702ec36fc79a65751efeae2d7c7be5c25c8f7601fffa1ccb0fd16ba32464866"
+    },
+    {
+      "path": "dist/intelligence/spie/kelly-allocator.js",
+      "sizeBytes": 5597,
+      "sha256": "6467cd52b453e36086da18305eeacd14b60b98a40dafd66b603de399a42f4bd6"
+    },
+    {
+      "path": "dist/intelligence/spie/kelly-allocator.js.map",
+      "sizeBytes": 4096,
+      "sha256": "1ee702a1b20f5f5630b574488cd12051373730226ef025aab18ab39f7673ab6b"
+    },
+    {
+      "path": "dist/intelligence/spie/spie-engine.js",
+      "sizeBytes": 8932,
+      "sha256": "7963e4b6aedf948cab251e3bf402657c7fb20d29853ba0c97999f158e396cdcc"
+    },
+    {
+      "path": "dist/intelligence/spie/spie-engine.js.map",
+      "sizeBytes": 6459,
+      "sha256": "c2e2673942bf54e02d74d21de0797cbab44d0de360c44449fe2fe6c9a6da355a"
+    },
+    {
+      "path": "dist/intelligence/spie/trade-certificate.js",
+      "sizeBytes": 5352,
+      "sha256": "81acabec7361a793bdf57f264101d3498ede1bab035f0aead931ec92dcfdae65"
+    },
+    {
+      "path": "dist/intelligence/spie/trade-certificate.js.map",
+      "sizeBytes": 4189,
+      "sha256": "f2e9c65b5daaa02b1d10f20037a17968460656125ffc88df0f648dae63aaa4c9"
+    },
+    {
+      "path": "dist/intelligence/survival/haven-mode.js",
+      "sizeBytes": 2285,
+      "sha256": "36eee4813e5ae52eb1d83eaba9536e8a74a73598051603b07a3062a8294926f6"
+    },
+    {
+      "path": "dist/intelligence/survival/haven-mode.js.map",
+      "sizeBytes": 1551,
+      "sha256": "c9c47130452b7cc383c098e141a1becaf725e67a35cd379b31483db8984a1fa3"
+    },
+    {
+      "path": "dist/intelligence/survival/portfolio-evacuation.js",
+      "sizeBytes": 5725,
+      "sha256": "e4db5a9feb2133d29ad23ac3353f206d6b4f01755803b96051e8cf709d8e92fc"
+    },
+    {
+      "path": "dist/intelligence/survival/portfolio-evacuation.js.map",
+      "sizeBytes": 4565,
+      "sha256": "7454e071af37208b72c6609cf6a714d0361c1f5dea7dc26daa8c74b426732811"
+    },
+    {
+      "path": "dist/intelligence/survival/survival-core.js",
+      "sizeBytes": 5660,
+      "sha256": "a935cb18addc4b0dc4a9d4874231086ddd169ac658f6bb6c362b950d2009945f"
+    },
+    {
+      "path": "dist/intelligence/survival/survival-core.js.map",
+      "sizeBytes": 3925,
+      "sha256": "4dfae72c9ac2d73cd9bd10ca4e07b79491ad8391cd85bfcf5acd6ca5c2599d13"
+    },
+    {
+      "path": "dist/intelligence/survival/survival-proof-engine.js",
+      "sizeBytes": 4043,
+      "sha256": "3e788ef8a234431f2bdce7ecf24eca391a495dcf72327603f63df1e7d55c474c"
+    },
+    {
+      "path": "dist/intelligence/survival/survival-proof-engine.js.map",
+      "sizeBytes": 2832,
+      "sha256": "e0cf0fd1b36913e8fe5ad9386a0b38d22a22483bdb87642b9960223bf1993e31"
+    },
+    {
+      "path": "dist/intelligence/synthesis/davinci-synthesis.js",
+      "sizeBytes": 1728,
+      "sha256": "41812308421128866b962b3503a44ddbf6bc673de0c149616be707a309b879a1"
+    },
+    {
+      "path": "dist/intelligence/synthesis/davinci-synthesis.js.map",
+      "sizeBytes": 1382,
+      "sha256": "f25d1d763097daed56355c19c61d9c7d3ebc3d0fd2bdaad3c0d7717ecf362f6c"
+    },
+    {
+      "path": "dist/intelligence/temporal/atlas-fabric.js",
+      "sizeBytes": 3978,
+      "sha256": "36a7268ecf10f5b2a9510f7c325ebf1ac68fb9170e7809d217370173c547aa9c"
+    },
+    {
+      "path": "dist/intelligence/temporal/atlas-fabric.js.map",
+      "sizeBytes": 3189,
+      "sha256": "4d3ce516e4819a678917fe35fe37e0421df508e1139c37eeceb7e896527886ca"
+    },
+    {
+      "path": "dist/intelligence/thesis/contradiction-engine.js",
+      "sizeBytes": 1592,
+      "sha256": "c78f75ddb7f9cef71eb0bc6978a059341dc5083c22803470f05e3e86687abd49"
+    },
+    {
+      "path": "dist/intelligence/thesis/contradiction-engine.js.map",
+      "sizeBytes": 1386,
+      "sha256": "b20a2fe57619337d22582626df3170706b953a192f347a8bf1128c074edc7061"
+    },
+    {
+      "path": "dist/intelligence/thesis/explainability-engine.js",
+      "sizeBytes": 3621,
+      "sha256": "40d2afecfa54abfcb5939f91c0054de8a775afcf32c152349394bb1fc8ecae81"
+    },
+    {
+      "path": "dist/intelligence/thesis/explainability-engine.js.map",
+      "sizeBytes": 2603,
+      "sha256": "28a90d879442d3b21621f7aa0cbd2682fc0e329db1ee0134f4b6c66fea0ea276"
+    },
+    {
+      "path": "dist/intelligence/thesis/live-thesis-engine.js",
+      "sizeBytes": 8306,
+      "sha256": "5e8f8332f1d1f065e9801a6c6de7f7ad4b4abd5463d6dcb58b02aae3ecaf0c21"
+    },
+    {
+      "path": "dist/intelligence/thesis/live-thesis-engine.js.map",
+      "sizeBytes": 7181,
+      "sha256": "0efcbaa570c0225a6bef18080acf3c687cc49bb20e332f6dcab5b96fb626ba6f"
+    },
+    {
+      "path": "dist/intelligence/thesis/thesis-autopsy.js",
+      "sizeBytes": 3101,
+      "sha256": "0295929ff257f21769631997a80694f7f49f8c951e554af44886edbcbbe5b863"
+    },
+    {
+      "path": "dist/intelligence/thesis/thesis-autopsy.js.map",
+      "sizeBytes": 1920,
+      "sha256": "056a929b9678a63d24df96f431635dce16929bb2ab8f7320455876819a92bb38"
+    },
+    {
+      "path": "dist/intelligence/trajectory/kepler-trajectory.js",
+      "sizeBytes": 4493,
+      "sha256": "db2bc56357ff7d9415393f288035e2b9c288154caa076999f1eb23623a3b5127"
+    },
+    {
+      "path": "dist/intelligence/trajectory/kepler-trajectory.js.map",
+      "sizeBytes": 4113,
+      "sha256": "4ad12c2aee769be4ae977dba7eac023cda124d8364b6cd6cda82479105cfc6f1"
+    },
+    {
+      "path": "dist/intelligence/truth/birth-fingerprint.js",
+      "sizeBytes": 5522,
+      "sha256": "4534a21aec48a1ebc165f31e930f71bb3862821b0ca6220e6b06b75336c60586"
+    },
+    {
+      "path": "dist/intelligence/truth/birth-fingerprint.js.map",
+      "sizeBytes": 4726,
+      "sha256": "9958db289ddd08ee00ec8b6275ec14f6caf4538bcf73e1895de6ca684e1f2b91"
+    },
+    {
+      "path": "dist/intelligence/truth/canonical-store.js",
+      "sizeBytes": 4349,
+      "sha256": "0b2dfe344488aaa436dc7daeff77d7a24980d1eec1d4be613b383ac03bf7238e"
+    },
+    {
+      "path": "dist/intelligence/truth/canonical-store.js.map",
+      "sizeBytes": 3203,
+      "sha256": "b728c171a66f34e29d564bbf42d5ff908e76f1a5c55ae22570f54d690539fb37"
+    },
+    {
+      "path": "dist/intelligence/truth/chain-truth.js",
+      "sizeBytes": 5108,
+      "sha256": "b83be9b202ab0a16d353745b20ef67d40a1fa3ebcbb2777e47e09dcddd2ac878"
+    },
+    {
+      "path": "dist/intelligence/truth/chain-truth.js.map",
+      "sizeBytes": 4049,
+      "sha256": "94c4e71da3a188bf8b24168cda67f7095728515d7f4713e29d700a08f3f3f820"
+    },
+    {
+      "path": "dist/intelligence/truth/early-market.js",
+      "sizeBytes": 2527,
+      "sha256": "21809ae265ca14173320f572a04bdeb1ae705dc3f75c9d848f550100a38913a5"
+    },
+    {
+      "path": "dist/intelligence/truth/early-market.js.map",
+      "sizeBytes": 2469,
+      "sha256": "570aa5314cb5b8cd8eaed8b3ed419439b856b1675a10cf8ae1c96ce6f36dbb21"
+    },
+    {
+      "path": "dist/intelligence/truth/feature-store.js",
+      "sizeBytes": 2730,
+      "sha256": "4afdbc3c5ab4c198a9f83b95be3f53ac6b32e48cf7c0927b1061b3f44d75dfd1"
+    },
+    {
+      "path": "dist/intelligence/truth/feature-store.js.map",
+      "sizeBytes": 2237,
+      "sha256": "79d30c13cb65248508044c571889a3abc8f47ffeb9b753c0a39451559636932e"
+    },
+    {
+      "path": "dist/intelligence/truth/gap-recovery.js",
+      "sizeBytes": 6798,
+      "sha256": "ef2591b89ddab958c21261975bd0a457e500f79068830dcb8fd57613c8d3adc4"
+    },
+    {
+      "path": "dist/intelligence/truth/gap-recovery.js.map",
+      "sizeBytes": 5841,
+      "sha256": "f77462f5ee07c9647973964d8a7a82606ea78bcc4e1168ca655af42189c7b862"
+    },
+    {
+      "path": "dist/intelligence/truth/launch-genesis.js",
+      "sizeBytes": 3207,
+      "sha256": "421156511b766c1e140fd209e13c5b284e35f83e2600398b3065c938fd9401ce"
+    },
+    {
+      "path": "dist/intelligence/truth/launch-genesis.js.map",
+      "sizeBytes": 2760,
+      "sha256": "ef5446b6ba7292337df65d4c05319c490af7378be36460643059e9d546391f03"
+    },
+    {
+      "path": "dist/intelligence/truth/materialized-reducers.js",
+      "sizeBytes": 6372,
+      "sha256": "53d70a3d98d120bad7e55b493e37f69a4b48eb92ea75d674c8a80913197536bc"
+    },
+    {
+      "path": "dist/intelligence/truth/materialized-reducers.js.map",
+      "sizeBytes": 4831,
+      "sha256": "f11685bf976242c84fc9b5383462ed509a95879cddb5e0e636e758227a321ebc"
+    },
+    {
+      "path": "dist/intelligence/truth/point-in-time-state.js",
+      "sizeBytes": 7031,
+      "sha256": "371902c93040d5f9c69c48ad6537501c86390132ea589c0666c8f49bfefa017d"
+    },
+    {
+      "path": "dist/intelligence/truth/point-in-time-state.js.map",
+      "sizeBytes": 5842,
+      "sha256": "7ea17cce21c45006b656fd79c0fb6be12ea06e085cfa3080f4b4403d5297f70a"
+    },
+    {
+      "path": "dist/intelligence/truth/rpc-pool.js",
+      "sizeBytes": 4325,
+      "sha256": "293de4b262ccb419e79834aa76ea724875a0eceab9331b294a4ce96c7d410c37"
+    },
+    {
+      "path": "dist/intelligence/truth/rpc-pool.js.map",
+      "sizeBytes": 3698,
+      "sha256": "3853f3a1e34038629131b896abff46e9f952e69f2a012a5d31d6a49a74167caf"
+    },
+    {
+      "path": "dist/intelligence/truth/state-epochs.js",
+      "sizeBytes": 1542,
+      "sha256": "086ee6a023aae0f9982a7a5efe98dddb3dd36d2b52a935adc340cac5ac06dce7"
+    },
+    {
+      "path": "dist/intelligence/truth/state-epochs.js.map",
+      "sizeBytes": 1174,
+      "sha256": "e6dc551f4c65ddbe8d5960840feabad2d25a32e45f787c9addc8211354a9d7ef"
+    },
+    {
+      "path": "dist/intelligence/truth/temporal-firewall.js",
+      "sizeBytes": 1854,
+      "sha256": "113f9f1187c6bae01502f644251c6b3dd3b1e3d878799f3cdec12771e7e54007"
+    },
+    {
+      "path": "dist/intelligence/truth/temporal-firewall.js.map",
+      "sizeBytes": 1071,
+      "sha256": "85d31a08a4b4ed43a08d11144110d451035be3cf220bcdb19784ed9392eb03c2"
+    },
+    {
+      "path": "dist/intelligence/truth/three-clocks.js",
+      "sizeBytes": 2139,
+      "sha256": "f25d8a824c8b095be33b667403ffeaf82821833707eea2263701c09cc8dbc8fc"
+    },
+    {
+      "path": "dist/intelligence/truth/three-clocks.js.map",
+      "sizeBytes": 1552,
+      "sha256": "3759197bfe0529272a4eb178c8595c14f5d7e38fdd498b540ee6be4fa11b49db"
+    },
+    {
+      "path": "dist/intelligence/truth/types.js",
+      "sizeBytes": 291,
+      "sha256": "d999c800f784bbe9106c7b7b3aef61460ae9b368914e576c12df0a9749a0fe06"
+    },
+    {
+      "path": "dist/intelligence/truth/types.js.map",
+      "sizeBytes": 139,
+      "sha256": "b3f6a304e9e3132224a2ffafaf5c2f479434dea1c1d1d4be27db082f8ed02ca8"
+    },
+    {
+      "path": "dist/intelligence/twin/agent-market-twin.js",
+      "sizeBytes": 1434,
+      "sha256": "26f65e217f20d412626d609fc5e0cc1ef4cbb53325af8412ea5c424c1d405733"
+    },
+    {
+      "path": "dist/intelligence/twin/agent-market-twin.js.map",
+      "sizeBytes": 1231,
+      "sha256": "f26ea8f29e806fcee8e6065a37358fef4ba1929ef6f90dc19a55348dafec2533"
+    },
+    {
+      "path": "dist/intelligence/twin/digital-twin.js",
+      "sizeBytes": 8282,
+      "sha256": "d69e6b6797530c0ec07c5b67a2163221c83dfb72787ea019c99c7c33fd81cf02"
+    },
+    {
+      "path": "dist/intelligence/twin/digital-twin.js.map",
+      "sizeBytes": 6896,
+      "sha256": "00f30f3884f2cd15b569407145794238f5c609413d2d69d847967d3aced9e53b"
+    },
+    {
+      "path": "dist/intelligence/twin/market-twin.js",
+      "sizeBytes": 3870,
+      "sha256": "08b3d051ef9a70add9ec9a99c5002a49777ce1e2d70390b0492b70a0e0d5fb56"
+    },
+    {
+      "path": "dist/intelligence/twin/market-twin.js.map",
+      "sizeBytes": 2987,
+      "sha256": "a766354c00e3357e8d55d0abec02c59c362081398cd426ca23df69bbf91fea11"
+    },
+    {
+      "path": "dist/intelligence/ui-state.js",
+      "sizeBytes": 399,
+      "sha256": "54a6f22f164179322f2988a86ceb9c74184430b7c3d845861092aea48dc7ee8e"
+    },
+    {
+      "path": "dist/intelligence/ui-state.js.map",
+      "sizeBytes": 139,
+      "sha256": "d2f2c0ab04cbe53231707631c9af769fa57b0141fc7913f89c7bc242f4f1d3e4"
+    },
+    {
+      "path": "dist/intelligence/validation/golden-scenarios.js",
+      "sizeBytes": 5227,
+      "sha256": "affc7e8994cccbe81ebb66b550b5b4407d87f964e8ada4e8c6552bba530d76a5"
+    },
+    {
+      "path": "dist/intelligence/validation/golden-scenarios.js.map",
+      "sizeBytes": 3020,
+      "sha256": "f09470780a183a09fc08007f0db999911905b3ceaeda11cef2abfe8e72ed3fc8"
+    },
+    {
+      "path": "dist/intelligence/vault/effect-spec.js",
+      "sizeBytes": 7931,
+      "sha256": "6b8b3eddc066bde33a04aff12544b5214731ee7974ca41f4168c4dc49cba7490"
+    },
+    {
+      "path": "dist/intelligence/vault/effect-spec.js.map",
+      "sizeBytes": 5089,
+      "sha256": "f039e15ee47025f74b28176769a3fd23bcee1b01e27ec101c3f452479d0489dd"
+    },
+    {
+      "path": "dist/intelligence/vault/vault-signer.js",
+      "sizeBytes": 7310,
+      "sha256": "bbf6afa768fc0270946db4ad725f74014a5512f0f6f0b07ac1d82edc55d39894"
+    },
+    {
+      "path": "dist/intelligence/vault/vault-signer.js.map",
+      "sizeBytes": 4571,
+      "sha256": "9ffb1b8414fb1ab96abd0006afb9ba7c8ca7b9671c0cacfb2c7af45ac18c8e03"
+    },
+    {
+      "path": "dist/intelligence/verification/edison-verification.js",
+      "sizeBytes": 4903,
+      "sha256": "3367b06c9d6c2de75e96cb4a654a8a0c231332f308a01c7ca548c7cc666a64d1"
+    },
+    {
+      "path": "dist/intelligence/verification/edison-verification.js.map",
+      "sizeBytes": 3369,
+      "sha256": "6ad5601ca6891ddd26171b433c8715f269291a6a7039faf1f0eb259b69839616"
+    },
+    {
+      "path": "dist/intelligence/world/hawking-world.js",
+      "sizeBytes": 3811,
+      "sha256": "b6b85bb6f71301326b312f2b9a51c5a439e098089e66f9c2a48b7c21bc97fcde"
+    },
+    {
+      "path": "dist/intelligence/world/hawking-world.js.map",
+      "sizeBytes": 3060,
+      "sha256": "ce811fefb6399f1f2ff05cd92fd78bb233c64ddf9a51d98ecf932d7fd5db81fa"
+    },
+    {
+      "path": "dist/intelligence/world/world-model.js",
+      "sizeBytes": 3543,
+      "sha256": "2d56e7482013620841bbe46504a4a78ac79e8d9e75cc5dc410fd9171170816a0"
+    },
+    {
+      "path": "dist/intelligence/world/world-model.js.map",
+      "sizeBytes": 2827,
+      "sha256": "56a7b60dd9febad07280b8b28da41a8e6ccb6978fb48cfc88521f401787cd36b"
+    },
+    {
+      "path": "dist/intelligence/world/world-state.js",
+      "sizeBytes": 4697,
+      "sha256": "3f2327c8e8dccef569ee10cb2fe5ed1e0623ecaffee1dbae217f38f0db5102c7"
+    },
+    {
+      "path": "dist/intelligence/world/world-state.js.map",
+      "sizeBytes": 3303,
+      "sha256": "0a6bf0c2915ee9008e64780df7b631484354f8152f7d7102a9583678a7b911a9"
+    },
+    {
+      "path": "dist/lifecycle/system-lifecycle.js",
+      "sizeBytes": 4610,
+      "sha256": "10715719835006bdb4b6f7f9de55408a2286d4d8c75630d34badf004aba99f65"
+    },
+    {
+      "path": "dist/lifecycle/system-lifecycle.js.map",
+      "sizeBytes": 3648,
+      "sha256": "f89956c5554dbe7c02e049ac78879231a627d2c737c4c146b572b19f0e1248e0"
+    },
+    {
+      "path": "dist/market-hub.js",
+      "sizeBytes": 17094,
+      "sha256": "344587ce528835322efbb12a6cbd3a3012bd12db34b384c40a95e2e38ffef680"
+    },
+    {
+      "path": "dist/market-hub.js.map",
+      "sizeBytes": 20379,
+      "sha256": "b12ca52b278fc4e98097a97b7a321fc42e21b9cc494d4cb852bcba7e756602c4"
+    },
+    {
+      "path": "dist/market.js",
+      "sizeBytes": 8764,
+      "sha256": "2c66b72de836d693cc0bc7171290dcbc06a61a14bc16d9b43a5977650a9c1a1c"
+    },
+    {
+      "path": "dist/market.js.map",
+      "sizeBytes": 9541,
+      "sha256": "1da6ee25d1d44fe208e2799ad4cb4dc1ae900f92b9d81a02e7c662f8abbbe903"
+    },
+    {
+      "path": "dist/paper.js",
+      "sizeBytes": 12930,
+      "sha256": "515c58cd47f8f43ff1f8dc6bd51d487733d9dece14153245ed0ce298479de331"
+    },
+    {
+      "path": "dist/paper.js.map",
+      "sizeBytes": 18276,
+      "sha256": "9201395675562b3b5e30ac055fec2e7f0610c950c6dacea8e4ad20b6dff3087b"
+    },
+    {
+      "path": "dist/platform/cohort/cohort-engine.js",
+      "sizeBytes": 4441,
+      "sha256": "40f7ea19edd18adb1ccef7476d95c7f5a5f8247f6c6136e316205bb43451a462"
+    },
+    {
+      "path": "dist/platform/cohort/cohort-engine.js.map",
+      "sizeBytes": 3107,
+      "sha256": "504b6eda7da75642418fb1a227850c57a733140da7d520e7f5f6006dfe2232f2"
+    },
+    {
+      "path": "dist/platform/cohort/types.js",
+      "sizeBytes": 44,
+      "sha256": "01ae2a5b120382f9a648ced7ee8507493a134f216d100fc61600c6c9738235d2"
+    },
+    {
+      "path": "dist/platform/cohort/types.js.map",
+      "sizeBytes": 124,
+      "sha256": "8bde913a849dde0d857ad33e1d4fc960fc7daf01f9955acb7162b1a2999a2d9f"
+    },
+    {
+      "path": "dist/platform/consensus/capacity-engine.js",
+      "sizeBytes": 5285,
+      "sha256": "2fab85711879d30eaad16664c7346f5bf06f6f7a57e1b712034b750a60299278"
+    },
+    {
+      "path": "dist/platform/consensus/capacity-engine.js.map",
+      "sizeBytes": 3755,
+      "sha256": "6136211d083b930d4bfda81b209e85a87d2f1a746ee504a3cdafbe8d14cc4508"
+    },
+    {
+      "path": "dist/platform/consensus/consensus-engine.js",
+      "sizeBytes": 6159,
+      "sha256": "8690d3fca61b8eb38010c19398be7cbc9bfc6d7d8c1b182d8550d087cfe8fa28"
+    },
+    {
+      "path": "dist/platform/consensus/consensus-engine.js.map",
+      "sizeBytes": 4759,
+      "sha256": "c3de469b72bf56664318984f1362b334581aa1caed4d37f3e097aaa3c93da57b"
+    },
+    {
+      "path": "dist/platform/consensus/types.js",
+      "sizeBytes": 44,
+      "sha256": "01ae2a5b120382f9a648ced7ee8507493a134f216d100fc61600c6c9738235d2"
+    },
+    {
+      "path": "dist/platform/consensus/types.js.map",
+      "sizeBytes": 127,
+      "sha256": "7bba3864dcc6730a7716cd9e82795ba38e9ad4602ba1c36f4d91f1007748e874"
+    },
+    {
+      "path": "dist/platform/execution/command-gateway.js",
+      "sizeBytes": 7492,
+      "sha256": "981e6a1865f0ec3e58dbab4b533077b9fc020b41db34d9e24e17b09a6b76f594"
+    },
+    {
+      "path": "dist/platform/execution/command-gateway.js.map",
+      "sizeBytes": 4776,
+      "sha256": "a138152aebfe85f03fb5d1ea6efd58a57df1c57318517bb094c6d5e745c3621f"
+    },
+    {
+      "path": "dist/platform/execution/helios/helios-direct.js",
+      "sizeBytes": 6509,
+      "sha256": "1a0d1b7d6d3428a1d338b6618600a9df6b2d0ebdaf43cef146fbb977a45526df"
+    },
+    {
+      "path": "dist/platform/execution/helios/helios-direct.js.map",
+      "sizeBytes": 4675,
+      "sha256": "79a6a50e323b1ff98d24cb131756d0f7cbf6ae0637613c73f19d46cf0ef5b63d"
+    },
+    {
+      "path": "dist/platform/execution/helios/index.js",
+      "sizeBytes": 69,
+      "sha256": "90fcdaa9eef01d14d728c200b5fa5dd559d9c42f571882ba8816092885cb13cd"
+    },
+    {
+      "path": "dist/platform/execution/helios/index.js.map",
+      "sizeBytes": 158,
+      "sha256": "cc846e60f6b818cd717481262ddc4077b476a5677eeff18164d837d4e8d562d8"
+    },
+    {
+      "path": "dist/platform/execution/market-truth.js",
+      "sizeBytes": 5378,
+      "sha256": "ad2aafbd688292d374ea2094a6da3f9238bb0235c0f68052f45a676ae9436673"
+    },
+    {
+      "path": "dist/platform/execution/market-truth.js.map",
+      "sizeBytes": 4128,
+      "sha256": "25071c7c8a110e56a28b9d2fafd6dda9ba0cc00e67d6955715ac92c79e4a7c68"
+    },
+    {
+      "path": "dist/platform/execution/revalidator.js",
+      "sizeBytes": 4357,
+      "sha256": "d358ab4e55d68566af2eb775615ad43f16668dc2c03b176846702e6121f208d8"
+    },
+    {
+      "path": "dist/platform/execution/revalidator.js.map",
+      "sizeBytes": 2332,
+      "sha256": "2a744a8234e3834b88b4b1dac1b69dfb35860eb7e219c7a283dd7ba9ce0bd665"
+    },
+    {
+      "path": "dist/platform/execution/solaris/amm-bridge.js",
+      "sizeBytes": 4756,
+      "sha256": "585fb97c07f3eb0c42ca26e365212e9886e39e14c38f2013273505eb73f71803"
+    },
+    {
+      "path": "dist/platform/execution/solaris/amm-bridge.js.map",
+      "sizeBytes": 3768,
+      "sha256": "a3fb8d9d736307215114e6cf1f1b2f3c2e82e16ddd81bed0fb9b88cd20cf3e41"
+    },
+    {
+      "path": "dist/platform/execution/solaris/bimodal-router.js",
+      "sizeBytes": 4855,
+      "sha256": "49ca39cf5b8c9703777db3651e826dc2c9ed77b49c2e253daefbb3a5115bfe56"
+    },
+    {
+      "path": "dist/platform/execution/solaris/bimodal-router.js.map",
+      "sizeBytes": 3127,
+      "sha256": "bff2e35f6c0f68b7bb8b49597dcf59c01499305c30cdc525f4ca91a40ec63d20"
+    },
+    {
+      "path": "dist/platform/execution/solaris/leader-schedule.js",
+      "sizeBytes": 4660,
+      "sha256": "629774c1c6a4cd480b15dce53e5f07c79edff48b8130e74b68f069f9d1abb223"
+    },
+    {
+      "path": "dist/platform/execution/solaris/leader-schedule.js.map",
+      "sizeBytes": 4105,
+      "sha256": "f7ef49379e652eb67358f36c1316c35793615b271befc6a717aa697f18b01476"
+    },
+    {
+      "path": "dist/platform/execution/solaris/tip-oracle.js",
+      "sizeBytes": 5460,
+      "sha256": "5f7885108cc5e70209a58b002118109bc2b7486f09300ca5266363e9ee9f36ff"
+    },
+    {
+      "path": "dist/platform/execution/solaris/tip-oracle.js.map",
+      "sizeBytes": 4762,
+      "sha256": "27d89bb1ad079002cfdf76b742f1b908a66176effdac8d14a786cffcd03b5bad"
+    },
+    {
+      "path": "dist/platform/execution/solaris/types.js",
+      "sizeBytes": 170,
+      "sha256": "e667c71e07db85968c4daa068400821abf89daee6d66fd2fa797cadb6a71c918"
+    },
+    {
+      "path": "dist/platform/execution/solaris/types.js.map",
+      "sizeBytes": 149,
+      "sha256": "1f6d0143b22e7ef55f826fd5040c2aec6124c57ee7a9ab8dad5c3c70651c664e"
+    },
+    {
+      "path": "dist/platform/execution/types.js",
+      "sizeBytes": 281,
+      "sha256": "36d620e525505a2d5cecc0fd274791da9c4eb36145431b8edad851c44cf8979a"
+    },
+    {
+      "path": "dist/platform/execution/types.js.map",
+      "sizeBytes": 139,
+      "sha256": "4d36a05ce04dce99277d4d741273c70c15f2d6d38248b7f250a96869252679da"
+    },
+    {
+      "path": "dist/platform/ingestion/cross-validator.js",
+      "sizeBytes": 7061,
+      "sha256": "0d786825227cc4b9ac9f039c188c027a9775896d723d0dfb9035cbe726a0b93f"
+    },
+    {
+      "path": "dist/platform/ingestion/cross-validator.js.map",
+      "sizeBytes": 6550,
+      "sha256": "135aa3c90de4e0eea5a35cc974bc5b33896ac94940bcaf8dd60c65be200baee7"
+    },
+    {
+      "path": "dist/platform/ingestion/gap-reconciler.js",
+      "sizeBytes": 3792,
+      "sha256": "e240347f1ec014dab7c5fc565095c2fb80b0c469f26ba9be2e3ce8d87b45c4d7"
+    },
+    {
+      "path": "dist/platform/ingestion/gap-reconciler.js.map",
+      "sizeBytes": 3636,
+      "sha256": "5b598cf887e9a327d2cd1c0d9f2cbc4b9df2ca15e0ee74397efc28efd3a903b9"
+    },
+    {
+      "path": "dist/platform/ingestion/provider-health.js",
+      "sizeBytes": 7991,
+      "sha256": "73dc1abdef726bb6c6e9bba3d35ae41251adb381dc41b15203a618bef8bab034"
+    },
+    {
+      "path": "dist/platform/ingestion/provider-health.js.map",
+      "sizeBytes": 6526,
+      "sha256": "009e8988d88e53999434fe1bc8710c87b49ab4b6f70efd3cadd7419c46678f36"
+    },
+    {
+      "path": "dist/platform/ingestion/types.js",
+      "sizeBytes": 93,
+      "sha256": "84bc79492e2559ac70a454cc76045dd754326eebb520f79c073c07e94f1900ac"
+    },
+    {
+      "path": "dist/platform/ingestion/types.js.map",
+      "sizeBytes": 137,
+      "sha256": "bc337bce76860dd08fe2aae9d81b7ba7548d2301c21cb30f10d86f607feb9d6d"
+    },
+    {
+      "path": "dist/platform/ledger/double-entry.js",
+      "sizeBytes": 6603,
+      "sha256": "2a86c4f5f73f243d0ba322448a238e74c4fb1717e5a13ccef0d2f2e09b2698b4"
+    },
+    {
+      "path": "dist/platform/ledger/double-entry.js.map",
+      "sizeBytes": 4473,
+      "sha256": "48401051195a378ec110ea51c30dbe5985446516123535d364bb10011ad0ef54"
+    },
+    {
+      "path": "dist/platform/ledger/event-ledger.js",
+      "sizeBytes": 6326,
+      "sha256": "feef2c894ee1d50662d7c90ccc42482121787b52bc868b9b32b456a13eba6496"
+    },
+    {
+      "path": "dist/platform/ledger/event-ledger.js.map",
+      "sizeBytes": 4887,
+      "sha256": "8f145caecd2c3f32f00f7f88dd2b1a4991a7049aa29688f1fa64089903a96a96"
+    },
+    {
+      "path": "dist/platform/ledger/nav-engine.js",
+      "sizeBytes": 3288,
+      "sha256": "1d33ae5d31056aea7badcd02e8970d5865da8f34f70d954e14d8c105e8e2a51f"
+    },
+    {
+      "path": "dist/platform/ledger/nav-engine.js.map",
+      "sizeBytes": 1908,
+      "sha256": "58b506a2c53d4333af4b4a5f3bcc44d048658cb41a727ee93ecbbab59635918b"
+    },
+    {
+      "path": "dist/platform/ledger/types.js",
+      "sizeBytes": 44,
+      "sha256": "01ae2a5b120382f9a648ced7ee8507493a134f216d100fc61600c6c9738235d2"
+    },
+    {
+      "path": "dist/platform/ledger/types.js.map",
+      "sizeBytes": 124,
+      "sha256": "f80b257558074150256a6be985f6f82c6ef70ec9f171f2aef135927ccfb7cfe0"
+    },
+    {
+      "path": "dist/platform/lifecycle/state-machine.js",
+      "sizeBytes": 6204,
+      "sha256": "199068c5ed7fcc65f59d934794959bbf3a07b902e1707af88f3e36729e7cd715"
+    },
+    {
+      "path": "dist/platform/lifecycle/state-machine.js.map",
+      "sizeBytes": 4156,
+      "sha256": "c5c8ac17f90de7cdb662e39e2423199e7e97d4abf52201cd3c86de5d885d6135"
+    },
+    {
+      "path": "dist/platform/lifecycle/types.js",
+      "sizeBytes": 233,
+      "sha256": "9f4896fd80aff893a4cc4ba67b14a2d3e7747a9fa69416cda7b6ec5e71bb990d"
+    },
+    {
+      "path": "dist/platform/lifecycle/types.js.map",
+      "sizeBytes": 302,
+      "sha256": "67722aa067c3146f6b2788ccde6572ff91ef1703f7666c34c363861f4d65ecdc"
+    },
+    {
+      "path": "dist/platform/orchestrator.js",
+      "sizeBytes": 20012,
+      "sha256": "d1805bea84d73505bfc254e0a0ea547539e9a41365c9a7f23cc1f3b7451efc6e"
+    },
+    {
+      "path": "dist/platform/orchestrator.js.map",
+      "sizeBytes": 14871,
+      "sha256": "3652bec442374762fc41dfab617bcccba3aa655e1d4f95aaf255ff644a88f462"
+    },
+    {
+      "path": "dist/platform/reconciliation/reconciler.js",
+      "sizeBytes": 3225,
+      "sha256": "fd296e81742cdc84d4e85487935b245175fbe8b6b70331543653250ee51e5c1b"
+    },
+    {
+      "path": "dist/platform/reconciliation/reconciler.js.map",
+      "sizeBytes": 1964,
+      "sha256": "6d8ba4becbe368fe94ffb356068e0449d8ceaa4549cda65c31469ae33b3f2765"
+    },
+    {
+      "path": "dist/platform/reconciliation/solvency-monitor.js",
+      "sizeBytes": 5167,
+      "sha256": "600fcf5d3fa69790f9a0fb028797d9d35b65deacd4ad5d3320e3ce7e51b694b5"
+    },
+    {
+      "path": "dist/platform/reconciliation/solvency-monitor.js.map",
+      "sizeBytes": 3527,
+      "sha256": "4d056e432bf3688e34e4b982629ce4d39b3db6e45c996899156350579241cb66"
+    },
+    {
+      "path": "dist/platform/reconciliation/types.js",
+      "sizeBytes": 359,
+      "sha256": "3040bb6332c6fa88073a87108b7477f3b6325f778cf0bb9f9e40456b3dd9ffd2"
+    },
+    {
+      "path": "dist/platform/reconciliation/types.js.map",
+      "sizeBytes": 145,
+      "sha256": "20b745cf252cf9826ef7ac4e673201aebee232d6faa6914b8acb5e7811886614"
+    },
+    {
+      "path": "dist/platform/recovery/flight-recorder.js",
+      "sizeBytes": 2327,
+      "sha256": "a410d4568c22cd2e82b8cba371686d57ec77d9112bec89aa26d4964947ddc110"
+    },
+    {
+      "path": "dist/platform/recovery/flight-recorder.js.map",
+      "sizeBytes": 1744,
+      "sha256": "4bd142ed9d54eda61c23a2bce21c5de4875f066be88ea5b7f5c88f6bf4ac51bf"
+    },
+    {
+      "path": "dist/platform/risk/risk-engine.js",
+      "sizeBytes": 13482,
+      "sha256": "57ab0f9d35528ba188dc340244d89d7cf56701980c7e66f9579c300affce696e"
+    },
+    {
+      "path": "dist/platform/risk/risk-engine.js.map",
+      "sizeBytes": 9280,
+      "sha256": "e660ba7d79b4c155a67d8f89110d5101f69a71ce0e25b258e4b1f4deccbf52f3"
+    },
+    {
+      "path": "dist/platform/risk/types.js",
+      "sizeBytes": 44,
+      "sha256": "01ae2a5b120382f9a648ced7ee8507493a134f216d100fc61600c6c9738235d2"
+    },
+    {
+      "path": "dist/platform/risk/types.js.map",
+      "sizeBytes": 122,
+      "sha256": "4d4b6f216cb1ad58d51f42abfe519c18cf1ac17b77834a775e877c6fa64468ff"
+    },
+    {
+      "path": "dist/platform/security/external-registry.js",
+      "sizeBytes": 74549,
+      "sha256": "ac07c4c7fedbe596842a3cd9bb18099fb9d37467dad552e6d698bf16d9da1057"
+    },
+    {
+      "path": "dist/platform/security/external-registry.js.map",
+      "sizeBytes": 39871,
+      "sha256": "571bfa22757120b1114918971c275a60163e37b75a226fcffedc81b655d8d796"
+    },
+    {
+      "path": "dist/platform/security/token-gateway.js",
+      "sizeBytes": 4674,
+      "sha256": "cadfb691183b1b836624851e4b9bf2a4723b861d5ab1308fce4bb586880e2f3f"
+    },
+    {
+      "path": "dist/platform/security/token-gateway.js.map",
+      "sizeBytes": 3679,
+      "sha256": "e02221fb94533dc72b79c623a47a382ecb599750fa032746a33ededfdd6caa74"
+    },
+    {
+      "path": "dist/platform/security/wallet-graph.js",
+      "sizeBytes": 4298,
+      "sha256": "0e1aaae6eb980bbe21bacc0fba66aa5328158153e9cd7b40152d9cb66d33d365"
+    },
+    {
+      "path": "dist/platform/security/wallet-graph.js.map",
+      "sizeBytes": 3521,
+      "sha256": "d0d484f29cf462cd879a23012cd764403caceb917038ee3082be35dd6503f91e"
+    },
+    {
+      "path": "dist/platform/sentinel/market-safety.js",
+      "sizeBytes": 3968,
+      "sha256": "2664bb2f419ca46cb7a8dc3df53dfe8d6fcfd41722f2ed5beddd006aa6be69ab"
+    },
+    {
+      "path": "dist/platform/sentinel/market-safety.js.map",
+      "sizeBytes": 2956,
+      "sha256": "d2ee60121c90325d19088c0c05fc4f1efb40d3d18170b0821ac8b6001c8273a8"
+    },
+    {
+      "path": "dist/platform/sentinel/risk-sentinel.js",
+      "sizeBytes": 4061,
+      "sha256": "f8df27ab853a76dd76f7985033814d1b255cf4149d955a0f755086eb4f468557"
+    },
+    {
+      "path": "dist/platform/sentinel/risk-sentinel.js.map",
+      "sizeBytes": 2948,
+      "sha256": "1deeed9b5c808373c5754ec99ae6f20fffe88bbe1a0c6e32b50b1f06701d2a15"
+    },
+    {
+      "path": "dist/platform/sentinel/types.js",
+      "sizeBytes": 333,
+      "sha256": "9b87628688adb5f2f05aef704d9246cda81d0676395e298a9bdde01c53d6ad9b"
+    },
+    {
+      "path": "dist/platform/sentinel/types.js.map",
+      "sizeBytes": 139,
+      "sha256": "a7d98c4a43559fb09d29ea9ad552681140a002b379764cc2004cb66fbb20549d"
+    },
+    {
+      "path": "dist/platform/signing/settlement-firewall.js",
+      "sizeBytes": 6218,
+      "sha256": "6e2281f058956fa3d4c866c45035d27886217febf7cf19ef9de13412995f8679"
+    },
+    {
+      "path": "dist/platform/signing/settlement-firewall.js.map",
+      "sizeBytes": 4014,
+      "sha256": "280c6d946c7ccf76e7e7cb832da983d47f993e369fbbe9920fb1f445cb348d11"
+    },
+    {
+      "path": "dist/platform/signing/signer-service.js",
+      "sizeBytes": 6639,
+      "sha256": "aaa5dac771abcfe32e009ce2993e9006700ce9e9b512835accbfb9fd83728d92"
+    },
+    {
+      "path": "dist/platform/signing/signer-service.js.map",
+      "sizeBytes": 4345,
+      "sha256": "2110dd2939e41da7adc2ccfd94bf4bd82c75cdbe045a502e7ea18e547e282ca3"
+    },
+    {
+      "path": "dist/platform/signing/types.js",
+      "sizeBytes": 311,
+      "sha256": "4fdce79dd050b39d7f80599c61951a2501bf64918945f578064907f246723697"
+    },
+    {
+      "path": "dist/platform/signing/types.js.map",
+      "sizeBytes": 137,
+      "sha256": "0bd4d247bd64887b9a12bd38afb5d0d2ab6ce8fff8d0f115ad7f2ccf4755b29f"
+    },
+    {
+      "path": "dist/platform/strategy/governance.js",
+      "sizeBytes": 4418,
+      "sha256": "bc93eab3097d27284fd673facd45715f8715ae20bccf3c46b205076fadbe6558"
+    },
+    {
+      "path": "dist/platform/strategy/governance.js.map",
+      "sizeBytes": 2895,
+      "sha256": "c5aa6251e5a8a31fb0d2c6243bd7174b194c22c84736a9d1b0c2c749051c220d"
+    },
+    {
+      "path": "dist/platform/types.js",
+      "sizeBytes": 148,
+      "sha256": "984ef8c481088568244854f34a57fb02fe0f2e74f94c977b45d23f3304d074a8"
+    },
+    {
+      "path": "dist/platform/types.js.map",
+      "sizeBytes": 124,
+      "sha256": "0d673d67f1a4c1854ccad1997cbc1137cdea2aeb51bb1dc1ecba143dc8ce57c9"
+    },
+    {
+      "path": "dist/platform/vault/types.js",
+      "sizeBytes": 44,
+      "sha256": "01ae2a5b120382f9a648ced7ee8507493a134f216d100fc61600c6c9738235d2"
+    },
+    {
+      "path": "dist/platform/vault/types.js.map",
+      "sizeBytes": 123,
+      "sha256": "18b526201449bb0aa3bdbe1e62c812509b252d51fbe373ac02a832adcce7c756"
+    },
+    {
+      "path": "dist/platform/vault/vault-manager.js",
+      "sizeBytes": 6405,
+      "sha256": "4f8ae9b5586eacef61463dee86443465e70560f762933605147dc2d8ede817bb"
+    },
+    {
+      "path": "dist/platform/vault/vault-manager.js.map",
+      "sizeBytes": 4776,
+      "sha256": "82259fb62cd0638f7c227672a4d674666709ea4879fa53f67ddea5fd1b9f51eb"
+    },
+    {
+      "path": "dist/projection-service.js",
+      "sizeBytes": 13831,
+      "sha256": "2e5b4a7634e0a9be64c7ce81da304d053c4e3d6b01443cd54c8476f2fcf42504"
+    },
+    {
+      "path": "dist/projection-service.js.map",
+      "sizeBytes": 12045,
+      "sha256": "8a1700cf6bf77221703979632ae71c79283aa87d121b9ef6743fcc209e00aaf0"
+    },
+    {
+      "path": "dist/risk.js",
+      "sizeBytes": 9107,
+      "sha256": "049c4c8a144bc108bceca17441ef5e74fefcf17ebf049285340b0018f0f6cd1c"
+    },
+    {
+      "path": "dist/risk.js.map",
+      "sizeBytes": 11177,
+      "sha256": "4aae952b30198963655dba1fba2372efa11168cf9d56e1e92b039f9b99d8caab"
+    },
+    {
+      "path": "dist/rpc.js",
+      "sizeBytes": 7607,
+      "sha256": "155decddf5c45ad1d7ee6e8eb52bdd5f8c1fcec288fa456ed72623436e8fb5c3"
+    },
+    {
+      "path": "dist/rpc.js.map",
+      "sizeBytes": 8885,
+      "sha256": "6648d59fbf2d54e07691b1862932aa583c8fe9aabdbac87414b9cffad67a8e97"
+    },
+    {
+      "path": "dist/session-logger.js",
+      "sizeBytes": 4912,
+      "sha256": "5e23a3e4bd09bbde124e604152d5818b0f2720be4514e01bc796ed1447a9367a"
+    },
+    {
+      "path": "dist/session-logger.js.map",
+      "sizeBytes": 5384,
+      "sha256": "235fd6022eb7c8d47ab9f7a953962c89440e3a5d1f3f7fe8fd228d9ed9849e33"
+    },
+    {
+      "path": "dist/store.js",
+      "sizeBytes": 2569,
+      "sha256": "c161d0485a58a95db944ac36374d32cf2e36d997423a46d67f16b6f00db9b884"
+    },
+    {
+      "path": "dist/store.js.map",
+      "sizeBytes": 3155,
+      "sha256": "4153095ecd8a0628b5d243b2fd99ec5f7ca5362c19b47afe5475533dd63bdab8"
+    },
+    {
+      "path": "dist/strategy.js",
+      "sizeBytes": 4270,
+      "sha256": "1a79a425f82b15c05c48b9374d81fc4a11300b099bdee154cb2e260b3c712de0"
+    },
+    {
+      "path": "dist/strategy.js.map",
+      "sizeBytes": 4231,
+      "sha256": "f485cea77aeff2cb0e91b8a9264721af6b8fde27e1aa86fe050035a29591711f"
+    },
+    {
+      "path": "dist/terminal-execution.js",
+      "sizeBytes": 988,
+      "sha256": "dfec514423acd20f4f2612dd347839d3f92b80a3ffb3dd7abf063fa7dcc49367"
+    },
+    {
+      "path": "dist/terminal-execution.js.map",
+      "sizeBytes": 1169,
+      "sha256": "a54fcd60e7112b8a7b1ddf73df11a9e8a27255360f04876fc2c2d2530ce14dea"
+    },
+    {
+      "path": "dist/terminal-reducer-handlers.js",
+      "sizeBytes": 2504,
+      "sha256": "622811219bc3a478f73d535bd4cfef365397e860757c75739676caa32f209c0e"
+    },
+    {
+      "path": "dist/terminal-reducer-handlers.js.map",
+      "sizeBytes": 3018,
+      "sha256": "45104d46b531059ad13a10b67db1636852313707c2dd69773cc6e8b3ed47de62"
+    },
+    {
+      "path": "dist/ui-demo.js",
+      "sizeBytes": 1614,
+      "sha256": "848a363c11f930ab24f3eb61143b703db36bf11e490724a4b9282e4f3eb9cc61"
+    },
+    {
+      "path": "dist/ui-demo.js.map",
+      "sizeBytes": 2151,
+      "sha256": "51ee0afdbf085fc27876d5140fb0f876229efcc75f4543321451d82037cb5e97"
+    },
+    {
+      "path": "package.json",
+      "sizeBytes": 2405,
+      "sha256": "90f5eecd15e63fd85bcdde6f312cf81fdda1d9e5fa0f8aef2aabc2ca2f7bf453"
+    },
+    {
+      "path": "README.md",
+      "sizeBytes": 16374,
+      "sha256": "bc91e78684545373c2524dcb148e77335576782b6b27577c8f2bfaec1f0b4bd7"
+    },
+    {
+      "path": "start-dashboard.bat",
+      "sizeBytes": 653,
+      "sha256": "87886e85a89c2aa513bf1c352dadfacc490dd7f3dd53c56784335609963b9d67"
+    },
+    {
+      "path": "start-engine.bat",
+      "sizeBytes": 480,
+      "sha256": "14a1c99930424af7284a6be00fc1f4743c5f162a26ab8347d25303a07c5fb734"
+    },
+    {
+      "path": "terminal/dist/assets/index-CaEI2awM.css",
+      "sizeBytes": 147979,
+      "sha256": "c3ac8a6bcd5b4e71dcdc7fd1640d1d3ea371f09ccedb67a9e4edcf8c0b4bb717"
+    },
+    {
+      "path": "terminal/dist/assets/index-Du73mTlf.js",
+      "sizeBytes": 842652,
+      "sha256": "d55da5eed95132e226678e68e270e47548096572a61be785e1059d1984f66cd7"
+    },
+    {
+      "path": "terminal/dist/index.html",
+      "sizeBytes": 657,
+      "sha256": "fb01276c182a95927c68a21e4c896cad37dd38d997afc57b83402ef2716760ec"
+    },
+    {
+      "path": "terminal/dist/sylph-fusion.svg",
+      "sizeBytes": 906,
+      "sha256": "fb90a68a386209617dcbb7b60ce1ecdbe299d25644badc6bec80f88c3648e299"
+    },
+    {
+      "path": "terminal/server.mjs",
+      "sizeBytes": 22173,
+      "sha256": "af82a530189456f9180adb5a93eebd17099716da3e7fa8df0b0c3d87a9842220"
+    }
+  ]
+}

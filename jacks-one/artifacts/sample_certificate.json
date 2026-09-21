@@ -1,0 +1,858 @@
+{
+  "certificate_id": "cert_2974a3e1e9de7013",
+  "hand_canonical": [
+    "9c",
+    "Jd",
+    "Qd",
+    "Kd",
+    "Ad"
+  ],
+  "hand_input": [
+    "As",
+    "Ks",
+    "Qs",
+    "Js",
+    "9c"
+  ],
+  "ruleset_id": "jacks_or_better.full_pay_9_6.v1",
+  "ruleset_version": "1.0.0",
+  "strategy_version": "1.0.0",
+  "all_holds": [
+    {
+      "mask": 15,
+      "held_cards": [
+        "As",
+        "Ks",
+        "Qs",
+        "Js"
+      ],
+      "exact_ev": {
+        "numerator": "872",
+        "denominator": "47",
+        "decimal_approx": 18.5531914893617
+      },
+      "total_combinations": 47,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 1,
+        "STRAIGHT_FLUSH": 0,
+        "FOUR_OF_A_KIND": 0,
+        "FULL_HOUSE": 0,
+        "FLUSH": 8,
+        "STRAIGHT": 3,
+        "THREE_OF_A_KIND": 0,
+        "TWO_PAIR": 0,
+        "JACKS_OR_BETTER": 12,
+        "NOTHING": 23
+      }
+    },
+    {
+      "mask": 14,
+      "held_cards": [
+        "Ks",
+        "Qs",
+        "Js"
+      ],
+      "exact_ev": {
+        "numerator": "778",
+        "denominator": "1081",
+        "decimal_approx": 0.7197039777983348
+      },
+      "total_combinations": 1081,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 0,
+        "STRAIGHT_FLUSH": 1,
+        "FOUR_OF_A_KIND": 0,
+        "FULL_HOUSE": 0,
+        "FLUSH": 35,
+        "STRAIGHT": 23,
+        "THREE_OF_A_KIND": 9,
+        "TWO_PAIR": 27,
+        "JACKS_OR_BETTER": 345,
+        "NOTHING": 641
+      }
+    },
+    {
+      "mask": 7,
+      "held_cards": [
+        "As",
+        "Ks",
+        "Qs"
+      ],
+      "exact_ev": {
+        "numerator": "30",
+        "denominator": "47",
+        "decimal_approx": 0.6382978723404256
+      },
+      "total_combinations": 1081,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 0,
+        "STRAIGHT_FLUSH": 0,
+        "FOUR_OF_A_KIND": 0,
+        "FULL_HOUSE": 0,
+        "FLUSH": 36,
+        "STRAIGHT": 12,
+        "THREE_OF_A_KIND": 9,
+        "TWO_PAIR": 27,
+        "JACKS_OR_BETTER": 345,
+        "NOTHING": 652
+      }
+    },
+    {
+      "mask": 11,
+      "held_cards": [
+        "As",
+        "Ks",
+        "Js"
+      ],
+      "exact_ev": {
+        "numerator": "30",
+        "denominator": "47",
+        "decimal_approx": 0.6382978723404256
+      },
+      "total_combinations": 1081,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 0,
+        "STRAIGHT_FLUSH": 0,
+        "FOUR_OF_A_KIND": 0,
+        "FULL_HOUSE": 0,
+        "FLUSH": 36,
+        "STRAIGHT": 12,
+        "THREE_OF_A_KIND": 9,
+        "TWO_PAIR": 27,
+        "JACKS_OR_BETTER": 345,
+        "NOTHING": 652
+      }
+    },
+    {
+      "mask": 13,
+      "held_cards": [
+        "As",
+        "Qs",
+        "Js"
+      ],
+      "exact_ev": {
+        "numerator": "30",
+        "denominator": "47",
+        "decimal_approx": 0.6382978723404256
+      },
+      "total_combinations": 1081,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 0,
+        "STRAIGHT_FLUSH": 0,
+        "FOUR_OF_A_KIND": 0,
+        "FULL_HOUSE": 0,
+        "FLUSH": 36,
+        "STRAIGHT": 12,
+        "THREE_OF_A_KIND": 9,
+        "TWO_PAIR": 27,
+        "JACKS_OR_BETTER": 345,
+        "NOTHING": 652
+      }
+    },
+    {
+      "mask": 30,
+      "held_cards": [
+        "Ks",
+        "Qs",
+        "Js",
+        "9c"
+      ],
+      "exact_ev": {
+        "numerator": "25",
+        "denominator": "47",
+        "decimal_approx": 0.5319148936170213
+      },
+      "total_combinations": 47,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 0,
+        "STRAIGHT_FLUSH": 0,
+        "FOUR_OF_A_KIND": 0,
+        "FULL_HOUSE": 0,
+        "FLUSH": 0,
+        "STRAIGHT": 4,
+        "THREE_OF_A_KIND": 0,
+        "TWO_PAIR": 0,
+        "JACKS_OR_BETTER": 9,
+        "NOTHING": 34
+      }
+    },
+    {
+      "mask": 12,
+      "held_cards": [
+        "Qs",
+        "Js"
+      ],
+      "exact_ev": {
+        "numerator": "2769",
+        "denominator": "5405",
+        "decimal_approx": 0.5123034227567067
+      },
+      "total_combinations": 16215,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 0,
+        "STRAIGHT_FLUSH": 1,
+        "FOUR_OF_A_KIND": 2,
+        "FULL_HOUSE": 18,
+        "FLUSH": 83,
+        "STRAIGHT": 119,
+        "THREE_OF_A_KIND": 281,
+        "TWO_PAIR": 711,
+        "JACKS_OR_BETTER": 4806,
+        "NOTHING": 10194
+      }
+    },
+    {
+      "mask": 6,
+      "held_cards": [
+        "Ks",
+        "Qs"
+      ],
+      "exact_ev": {
+        "numerator": "1615",
+        "denominator": "3243",
+        "decimal_approx": 0.49799568300955904
+      },
+      "total_combinations": 16215,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 0,
+        "STRAIGHT_FLUSH": 0,
+        "FOUR_OF_A_KIND": 2,
+        "FULL_HOUSE": 18,
+        "FLUSH": 84,
+        "STRAIGHT": 72,
+        "THREE_OF_A_KIND": 281,
+        "TWO_PAIR": 711,
+        "JACKS_OR_BETTER": 4806,
+        "NOTHING": 10241
+      }
+    },
+    {
+      "mask": 10,
+      "held_cards": [
+        "Ks",
+        "Js"
+      ],
+      "exact_ev": {
+        "numerator": "1615",
+        "denominator": "3243",
+        "decimal_approx": 0.49799568300955904
+      },
+      "total_combinations": 16215,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 0,
+        "STRAIGHT_FLUSH": 0,
+        "FOUR_OF_A_KIND": 2,
+        "FULL_HOUSE": 18,
+        "FLUSH": 84,
+        "STRAIGHT": 72,
+        "THREE_OF_A_KIND": 281,
+        "TWO_PAIR": 711,
+        "JACKS_OR_BETTER": 4806,
+        "NOTHING": 10241
+      }
+    },
+    {
+      "mask": 3,
+      "held_cards": [
+        "As",
+        "Ks"
+      ],
+      "exact_ev": {
+        "numerator": "7931",
+        "denominator": "16215",
+        "decimal_approx": 0.4891150169596053
+      },
+      "total_combinations": 16215,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 0,
+        "STRAIGHT_FLUSH": 0,
+        "FOUR_OF_A_KIND": 2,
+        "FULL_HOUSE": 18,
+        "FLUSH": 84,
+        "STRAIGHT": 36,
+        "THREE_OF_A_KIND": 281,
+        "TWO_PAIR": 711,
+        "JACKS_OR_BETTER": 4806,
+        "NOTHING": 10277
+      }
+    },
+    {
+      "mask": 5,
+      "held_cards": [
+        "As",
+        "Qs"
+      ],
+      "exact_ev": {
+        "numerator": "7931",
+        "denominator": "16215",
+        "decimal_approx": 0.4891150169596053
+      },
+      "total_combinations": 16215,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 0,
+        "STRAIGHT_FLUSH": 0,
+        "FOUR_OF_A_KIND": 2,
+        "FULL_HOUSE": 18,
+        "FLUSH": 84,
+        "STRAIGHT": 36,
+        "THREE_OF_A_KIND": 281,
+        "TWO_PAIR": 711,
+        "JACKS_OR_BETTER": 4806,
+        "NOTHING": 10277
+      }
+    },
+    {
+      "mask": 9,
+      "held_cards": [
+        "As",
+        "Js"
+      ],
+      "exact_ev": {
+        "numerator": "7931",
+        "denominator": "16215",
+        "decimal_approx": 0.4891150169596053
+      },
+      "total_combinations": 16215,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 0,
+        "STRAIGHT_FLUSH": 0,
+        "FOUR_OF_A_KIND": 2,
+        "FULL_HOUSE": 18,
+        "FLUSH": 84,
+        "STRAIGHT": 36,
+        "THREE_OF_A_KIND": 281,
+        "TWO_PAIR": 711,
+        "JACKS_OR_BETTER": 4806,
+        "NOTHING": 10277
+      }
+    },
+    {
+      "mask": 8,
+      "held_cards": [
+        "Js"
+      ],
+      "exact_ev": {
+        "numerator": "15241",
+        "denominator": "35673",
+        "decimal_approx": 0.4272418916267205
+      },
+      "total_combinations": 178365,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 0,
+        "STRAIGHT_FLUSH": 1,
+        "FOUR_OF_A_KIND": 52,
+        "FULL_HOUSE": 288,
+        "FLUSH": 125,
+        "STRAIGHT": 551,
+        "THREE_OF_A_KIND": 4102,
+        "TWO_PAIR": 8874,
+        "JACKS_OR_BETTER": 39255,
+        "NOTHING": 125117
+      }
+    },
+    {
+      "mask": 1,
+      "held_cards": [
+        "As"
+      ],
+      "exact_ev": {
+        "numerator": "25151",
+        "denominator": "59455",
+        "decimal_approx": 0.4230258178454293
+      },
+      "total_combinations": 178365,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 0,
+        "STRAIGHT_FLUSH": 1,
+        "FOUR_OF_A_KIND": 52,
+        "FULL_HOUSE": 288,
+        "FLUSH": 125,
+        "STRAIGHT": 363,
+        "THREE_OF_A_KIND": 4102,
+        "TWO_PAIR": 8874,
+        "JACKS_OR_BETTER": 39255,
+        "NOTHING": 125305
+      }
+    },
+    {
+      "mask": 4,
+      "held_cards": [
+        "Qs"
+      ],
+      "exact_ev": {
+        "numerator": "75397",
+        "denominator": "178365",
+        "decimal_approx": 0.4227118549042693
+      },
+      "total_combinations": 178365,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 0,
+        "STRAIGHT_FLUSH": 0,
+        "FOUR_OF_A_KIND": 52,
+        "FULL_HOUSE": 288,
+        "FLUSH": 126,
+        "STRAIGHT": 360,
+        "THREE_OF_A_KIND": 4102,
+        "TWO_PAIR": 8874,
+        "JACKS_OR_BETTER": 39255,
+        "NOTHING": 125308
+      }
+    },
+    {
+      "mask": 2,
+      "held_cards": [
+        "Ks"
+      ],
+      "exact_ev": {
+        "numerator": "74821",
+        "denominator": "178365",
+        "decimal_approx": 0.41948252179519524
+      },
+      "total_combinations": 178365,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 0,
+        "STRAIGHT_FLUSH": 0,
+        "FOUR_OF_A_KIND": 52,
+        "FULL_HOUSE": 288,
+        "FLUSH": 126,
+        "STRAIGHT": 216,
+        "THREE_OF_A_KIND": 4102,
+        "TWO_PAIR": 8874,
+        "JACKS_OR_BETTER": 39255,
+        "NOTHING": 125452
+      }
+    },
+    {
+      "mask": 28,
+      "held_cards": [
+        "Qs",
+        "Js",
+        "9c"
+      ],
+      "exact_ev": {
+        "numerator": "427",
+        "denominator": "1081",
+        "decimal_approx": 0.395004625346901
+      },
+      "total_combinations": 1081,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 0,
+        "STRAIGHT_FLUSH": 0,
+        "FOUR_OF_A_KIND": 0,
+        "FULL_HOUSE": 0,
+        "FLUSH": 0,
+        "STRAIGHT": 28,
+        "THREE_OF_A_KIND": 9,
+        "TWO_PAIR": 27,
+        "JACKS_OR_BETTER": 234,
+        "NOTHING": 783
+      }
+    },
+    {
+      "mask": 24,
+      "held_cards": [
+        "Js",
+        "9c"
+      ],
+      "exact_ev": {
+        "numerator": "380",
+        "denominator": "1081",
+        "decimal_approx": 0.3515263644773358
+      },
+      "total_combinations": 16215,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 0,
+        "STRAIGHT_FLUSH": 0,
+        "FOUR_OF_A_KIND": 2,
+        "FULL_HOUSE": 18,
+        "FLUSH": 0,
+        "STRAIGHT": 148,
+        "THREE_OF_A_KIND": 281,
+        "TWO_PAIR": 711,
+        "JACKS_OR_BETTER": 2631,
+        "NOTHING": 12424
+      }
+    },
+    {
+      "mask": 22,
+      "held_cards": [
+        "Ks",
+        "Qs",
+        "9c"
+      ],
+      "exact_ev": {
+        "numerator": "363",
+        "denominator": "1081",
+        "decimal_approx": 0.33580018501387604
+      },
+      "total_combinations": 1081,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 0,
+        "STRAIGHT_FLUSH": 0,
+        "FOUR_OF_A_KIND": 0,
+        "FULL_HOUSE": 0,
+        "FLUSH": 0,
+        "STRAIGHT": 12,
+        "THREE_OF_A_KIND": 9,
+        "TWO_PAIR": 27,
+        "JACKS_OR_BETTER": 234,
+        "NOTHING": 799
+      }
+    },
+    {
+      "mask": 26,
+      "held_cards": [
+        "Ks",
+        "Js",
+        "9c"
+      ],
+      "exact_ev": {
+        "numerator": "363",
+        "denominator": "1081",
+        "decimal_approx": 0.33580018501387604
+      },
+      "total_combinations": 1081,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 0,
+        "STRAIGHT_FLUSH": 0,
+        "FOUR_OF_A_KIND": 0,
+        "FULL_HOUSE": 0,
+        "FLUSH": 0,
+        "STRAIGHT": 12,
+        "THREE_OF_A_KIND": 9,
+        "TWO_PAIR": 27,
+        "JACKS_OR_BETTER": 234,
+        "NOTHING": 799
+      }
+    },
+    {
+      "mask": 20,
+      "held_cards": [
+        "Qs",
+        "9c"
+      ],
+      "exact_ev": {
+        "numerator": "5444",
+        "denominator": "16215",
+        "decimal_approx": 0.3357385137218625
+      },
+      "total_combinations": 16215,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 0,
+        "STRAIGHT_FLUSH": 0,
+        "FOUR_OF_A_KIND": 2,
+        "FULL_HOUSE": 18,
+        "FLUSH": 0,
+        "STRAIGHT": 84,
+        "THREE_OF_A_KIND": 281,
+        "TWO_PAIR": 711,
+        "JACKS_OR_BETTER": 2631,
+        "NOTHING": 12488
+      }
+    },
+    {
+      "mask": 18,
+      "held_cards": [
+        "Ks",
+        "9c"
+      ],
+      "exact_ev": {
+        "numerator": "5252",
+        "denominator": "16215",
+        "decimal_approx": 0.3238976256552575
+      },
+      "total_combinations": 16215,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 0,
+        "STRAIGHT_FLUSH": 0,
+        "FOUR_OF_A_KIND": 2,
+        "FULL_HOUSE": 18,
+        "FLUSH": 0,
+        "STRAIGHT": 36,
+        "THREE_OF_A_KIND": 281,
+        "TWO_PAIR": 711,
+        "JACKS_OR_BETTER": 2631,
+        "NOTHING": 12536
+      }
+    },
+    {
+      "mask": 17,
+      "held_cards": [
+        "As",
+        "9c"
+      ],
+      "exact_ev": {
+        "numerator": "5108",
+        "denominator": "16215",
+        "decimal_approx": 0.31501695960530374
+      },
+      "total_combinations": 16215,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 0,
+        "STRAIGHT_FLUSH": 0,
+        "FOUR_OF_A_KIND": 2,
+        "FULL_HOUSE": 18,
+        "FLUSH": 0,
+        "STRAIGHT": 0,
+        "THREE_OF_A_KIND": 281,
+        "TWO_PAIR": 711,
+        "JACKS_OR_BETTER": 2631,
+        "NOTHING": 12572
+      }
+    },
+    {
+      "mask": 0,
+      "held_cards": [],
+      "exact_ev": {
+        "numerator": "447908",
+        "denominator": "1533939",
+        "decimal_approx": 0.2919985736069035
+      },
+      "total_combinations": 1533939,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 3,
+        "STRAIGHT_FLUSH": 27,
+        "FOUR_OF_A_KIND": 344,
+        "FULL_HOUSE": 2124,
+        "FLUSH": 3462,
+        "STRAIGHT": 7002,
+        "THREE_OF_A_KIND": 31502,
+        "TWO_PAIR": 71802,
+        "JACKS_OR_BETTER": 129552,
+        "NOTHING": 1288121
+      }
+    },
+    {
+      "mask": 19,
+      "held_cards": [
+        "As",
+        "Ks",
+        "9c"
+      ],
+      "exact_ev": {
+        "numerator": "315",
+        "denominator": "1081",
+        "decimal_approx": 0.2913968547641073
+      },
+      "total_combinations": 1081,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 0,
+        "STRAIGHT_FLUSH": 0,
+        "FOUR_OF_A_KIND": 0,
+        "FULL_HOUSE": 0,
+        "FLUSH": 0,
+        "STRAIGHT": 0,
+        "THREE_OF_A_KIND": 9,
+        "TWO_PAIR": 27,
+        "JACKS_OR_BETTER": 234,
+        "NOTHING": 811
+      }
+    },
+    {
+      "mask": 21,
+      "held_cards": [
+        "As",
+        "Qs",
+        "9c"
+      ],
+      "exact_ev": {
+        "numerator": "315",
+        "denominator": "1081",
+        "decimal_approx": 0.2913968547641073
+      },
+      "total_combinations": 1081,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 0,
+        "STRAIGHT_FLUSH": 0,
+        "FOUR_OF_A_KIND": 0,
+        "FULL_HOUSE": 0,
+        "FLUSH": 0,
+        "STRAIGHT": 0,
+        "THREE_OF_A_KIND": 9,
+        "TWO_PAIR": 27,
+        "JACKS_OR_BETTER": 234,
+        "NOTHING": 811
+      }
+    },
+    {
+      "mask": 25,
+      "held_cards": [
+        "As",
+        "Js",
+        "9c"
+      ],
+      "exact_ev": {
+        "numerator": "315",
+        "denominator": "1081",
+        "decimal_approx": 0.2913968547641073
+      },
+      "total_combinations": 1081,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 0,
+        "STRAIGHT_FLUSH": 0,
+        "FOUR_OF_A_KIND": 0,
+        "FULL_HOUSE": 0,
+        "FLUSH": 0,
+        "STRAIGHT": 0,
+        "THREE_OF_A_KIND": 9,
+        "TWO_PAIR": 27,
+        "JACKS_OR_BETTER": 234,
+        "NOTHING": 811
+      }
+    },
+    {
+      "mask": 16,
+      "held_cards": [
+        "9c"
+      ],
+      "exact_ev": {
+        "numerator": "50096",
+        "denominator": "178365",
+        "decimal_approx": 0.2808622767919715
+      },
+      "total_combinations": 178365,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 0,
+        "STRAIGHT_FLUSH": 5,
+        "FOUR_OF_A_KIND": 52,
+        "FULL_HOUSE": 288,
+        "FLUSH": 490,
+        "STRAIGHT": 951,
+        "THREE_OF_A_KIND": 4102,
+        "TWO_PAIR": 8874,
+        "JACKS_OR_BETTER": 9156,
+        "NOTHING": 154447
+      }
+    },
+    {
+      "mask": 23,
+      "held_cards": [
+        "As",
+        "Ks",
+        "Qs",
+        "9c"
+      ],
+      "exact_ev": {
+        "numerator": "9",
+        "denominator": "47",
+        "decimal_approx": 0.19148936170212766
+      },
+      "total_combinations": 47,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 0,
+        "STRAIGHT_FLUSH": 0,
+        "FOUR_OF_A_KIND": 0,
+        "FULL_HOUSE": 0,
+        "FLUSH": 0,
+        "STRAIGHT": 0,
+        "THREE_OF_A_KIND": 0,
+        "TWO_PAIR": 0,
+        "JACKS_OR_BETTER": 9,
+        "NOTHING": 38
+      }
+    },
+    {
+      "mask": 27,
+      "held_cards": [
+        "As",
+        "Ks",
+        "Js",
+        "9c"
+      ],
+      "exact_ev": {
+        "numerator": "9",
+        "denominator": "47",
+        "decimal_approx": 0.19148936170212766
+      },
+      "total_combinations": 47,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 0,
+        "STRAIGHT_FLUSH": 0,
+        "FOUR_OF_A_KIND": 0,
+        "FULL_HOUSE": 0,
+        "FLUSH": 0,
+        "STRAIGHT": 0,
+        "THREE_OF_A_KIND": 0,
+        "TWO_PAIR": 0,
+        "JACKS_OR_BETTER": 9,
+        "NOTHING": 38
+      }
+    },
+    {
+      "mask": 29,
+      "held_cards": [
+        "As",
+        "Qs",
+        "Js",
+        "9c"
+      ],
+      "exact_ev": {
+        "numerator": "9",
+        "denominator": "47",
+        "decimal_approx": 0.19148936170212766
+      },
+      "total_combinations": 47,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 0,
+        "STRAIGHT_FLUSH": 0,
+        "FOUR_OF_A_KIND": 0,
+        "FULL_HOUSE": 0,
+        "FLUSH": 0,
+        "STRAIGHT": 0,
+        "THREE_OF_A_KIND": 0,
+        "TWO_PAIR": 0,
+        "JACKS_OR_BETTER": 9,
+        "NOTHING": 38
+      }
+    },
+    {
+      "mask": 31,
+      "held_cards": [
+        "As",
+        "Ks",
+        "Qs",
+        "Js",
+        "9c"
+      ],
+      "exact_ev": {
+        "numerator": "0",
+        "denominator": "1",
+        "decimal_approx": 0
+      },
+      "total_combinations": 1,
+      "outcome_counts": {
+        "ROYAL_FLUSH": 0,
+        "STRAIGHT_FLUSH": 0,
+        "FOUR_OF_A_KIND": 0,
+        "FULL_HOUSE": 0,
+        "FLUSH": 0,
+        "STRAIGHT": 0,
+        "THREE_OF_A_KIND": 0,
+        "TWO_PAIR": 0,
+        "JACKS_OR_BETTER": 0,
+        "NOTHING": 1
+      }
+    }
+  ],
+  "selected_hold_mask": 15,
+  "selected_ev": {
+    "numerator": "872",
+    "denominator": "47",
+    "decimal_approx": 18.5531914893617
+  },
+  "ev_gap_to_second": {
+    "numerator": "19278",
+    "denominator": "1081",
+    "decimal_approx": 17.833487511563366
+  },
+  "is_tie": false,
+  "tied_masks": [
+    15
+  ],
+  "engine_a_hash": "ce26a893728206523c7fcef0d49516ef36881323a9a76e97211fc58ef3083cde",
+  "engine_b_hash": "e0822ce2a8d1da39d3943ded4166e035fb6d88d3ee5cc12bf816364c450784c0",
+  "manifest_reference": "manifest.jacks_one.v1",
+  "engines_in_agreement": true,
+  "calculation_hash": "2974a3e1e9de701314d40f4dbe0f36e236ad6cc767af15fe9632309ffd19d743",
+  "timestamp": "2026-09-18T04:41:14.911Z"
+}

@@ -1,0 +1,958 @@
+{
+  "version": 1,
+  "schema": "sylph-tick-fixture-v1",
+  "slotDurationMs": 400,
+  "frameCount": 50,
+  "ticks": [
+    {
+      "slot": -44967296,
+      "timestamp": 1700000000000,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00002502,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 1,
+          "rsi": 50,
+          "fast": 0.00002528,
+          "slow": 0.00002477,
+          "velocity": 0.2
+        }
+      ]
+    },
+    {
+      "slot": -44967295,
+      "timestamp": 1700000000400,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00002505,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 1,
+          "rsi": 50,
+          "fast": 0.0000253,
+          "slow": 0.0000248,
+          "velocity": 0.2
+        }
+      ]
+    },
+    {
+      "slot": -44967294,
+      "timestamp": 1700000000800,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00002508,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 1,
+          "rsi": 50,
+          "fast": 0.00002533,
+          "slow": 0.00002482,
+          "velocity": 0.2
+        }
+      ]
+    },
+    {
+      "slot": -44967293,
+      "timestamp": 1700000001200,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.0000251,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 1,
+          "rsi": 50,
+          "fast": 0.00002535,
+          "slow": 0.00002485,
+          "velocity": 0.2
+        }
+      ]
+    },
+    {
+      "slot": -44967292,
+      "timestamp": 1700000001600,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00002513,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 1,
+          "rsi": 50,
+          "fast": 0.00002538,
+          "slow": 0.00002487,
+          "velocity": 0.2
+        }
+      ]
+    },
+    {
+      "slot": -44967291,
+      "timestamp": 1700000002000,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00002515,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 1,
+          "rsi": 50,
+          "fast": 0.0000254,
+          "slow": 0.0000249,
+          "velocity": 0.2
+        }
+      ]
+    },
+    {
+      "slot": -44967290,
+      "timestamp": 1700000002400,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00002518,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 1,
+          "rsi": 50,
+          "fast": 0.00002543,
+          "slow": 0.00002492,
+          "velocity": 0.2
+        }
+      ]
+    },
+    {
+      "slot": -44967289,
+      "timestamp": 1700000002800,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.0000252,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 1,
+          "rsi": 50,
+          "fast": 0.00002545,
+          "slow": 0.00002495,
+          "velocity": 0.2
+        }
+      ]
+    },
+    {
+      "slot": -44967288,
+      "timestamp": 1700000003200,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00002523,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 1,
+          "rsi": 50,
+          "fast": 0.00002548,
+          "slow": 0.00002497,
+          "velocity": 0.2
+        }
+      ]
+    },
+    {
+      "slot": -44967287,
+      "timestamp": 1700000003600,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00002525,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 1,
+          "rsi": 50,
+          "fast": 0.0000255,
+          "slow": 0.000025,
+          "velocity": 0.2
+        }
+      ]
+    },
+    {
+      "slot": -44967286,
+      "timestamp": 1700000004000,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00002528,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 1,
+          "rsi": 50,
+          "fast": 0.00002553,
+          "slow": 0.00002502,
+          "velocity": 0.2
+        }
+      ]
+    },
+    {
+      "slot": -44967285,
+      "timestamp": 1700000004400,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00002629,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 3.5,
+          "rsi": 72,
+          "fast": 0.00002655,
+          "slow": 0.00002602,
+          "velocity": 1.4
+        }
+      ]
+    },
+    {
+      "slot": -44967284,
+      "timestamp": 1700000004800,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00002734,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 3.5,
+          "rsi": 72,
+          "fast": 0.00002761,
+          "slow": 0.00002707,
+          "velocity": 1.4
+        }
+      ]
+    },
+    {
+      "slot": -44967283,
+      "timestamp": 1700000005200,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00002843,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 3.5,
+          "rsi": 72,
+          "fast": 0.00002872,
+          "slow": 0.00002815,
+          "velocity": 1.4
+        }
+      ]
+    },
+    {
+      "slot": -44967282,
+      "timestamp": 1700000005600,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00002957,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 3.5,
+          "rsi": 72,
+          "fast": 0.00002987,
+          "slow": 0.00002927,
+          "velocity": 1.4
+        }
+      ]
+    },
+    {
+      "slot": -44967281,
+      "timestamp": 1700000006000,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00003075,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 3.5,
+          "rsi": 72,
+          "fast": 0.00003106,
+          "slow": 0.00003045,
+          "velocity": 1.4
+        }
+      ]
+    },
+    {
+      "slot": -44967280,
+      "timestamp": 1700000006400,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00003198,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 3.5,
+          "rsi": 72,
+          "fast": 0.0000323,
+          "slow": 0.00003166,
+          "velocity": 1.4
+        }
+      ]
+    },
+    {
+      "slot": -44967279,
+      "timestamp": 1700000006800,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00003326,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 3.5,
+          "rsi": 72,
+          "fast": 0.00003359,
+          "slow": 0.00003293,
+          "velocity": 1.4
+        }
+      ]
+    },
+    {
+      "slot": -44967278,
+      "timestamp": 1700000007200,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00003459,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 3.5,
+          "rsi": 72,
+          "fast": 0.00003494,
+          "slow": 0.00003425,
+          "velocity": 1.4
+        }
+      ]
+    },
+    {
+      "slot": -44967277,
+      "timestamp": 1700000007600,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00003598,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 3.5,
+          "rsi": 72,
+          "fast": 0.00003634,
+          "slow": 0.00003562,
+          "velocity": 1.4
+        }
+      ]
+    },
+    {
+      "slot": -44967276,
+      "timestamp": 1700000008000,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00003742,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 3.5,
+          "rsi": 72,
+          "fast": 0.00003779,
+          "slow": 0.00003704,
+          "velocity": 1.4
+        }
+      ]
+    },
+    {
+      "slot": -44967275,
+      "timestamp": 1700000008400,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00003745,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 1,
+          "rsi": 50,
+          "fast": 0.00003783,
+          "slow": 0.00003708,
+          "velocity": 0.2
+        }
+      ]
+    },
+    {
+      "slot": -44967274,
+      "timestamp": 1700000008800,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00003749,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 1,
+          "rsi": 50,
+          "fast": 0.00003786,
+          "slow": 0.00003712,
+          "velocity": 0.2
+        }
+      ]
+    },
+    {
+      "slot": -44967273,
+      "timestamp": 1700000009200,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00003753,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 1,
+          "rsi": 50,
+          "fast": 0.0000379,
+          "slow": 0.00003715,
+          "velocity": 0.2
+        }
+      ]
+    },
+    {
+      "slot": -44967272,
+      "timestamp": 1700000009600,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00003757,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 1,
+          "rsi": 50,
+          "fast": 0.00003794,
+          "slow": 0.00003719,
+          "velocity": 0.2
+        }
+      ]
+    },
+    {
+      "slot": -44967271,
+      "timestamp": 1700000010000,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.0000376,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 1,
+          "rsi": 50,
+          "fast": 0.00003798,
+          "slow": 0.00003723,
+          "velocity": 0.2
+        }
+      ]
+    },
+    {
+      "slot": -44967270,
+      "timestamp": 1700000010400,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00003764,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 1,
+          "rsi": 50,
+          "fast": 0.00003802,
+          "slow": 0.00003726,
+          "velocity": 0.2
+        }
+      ]
+    },
+    {
+      "slot": -44967269,
+      "timestamp": 1700000010800,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00003768,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 1,
+          "rsi": 50,
+          "fast": 0.00003805,
+          "slow": 0.0000373,
+          "velocity": 0.2
+        }
+      ]
+    },
+    {
+      "slot": -44967268,
+      "timestamp": 1700000011200,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00003772,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 1,
+          "rsi": 50,
+          "fast": 0.00003809,
+          "slow": 0.00003734,
+          "velocity": 0.2
+        }
+      ]
+    },
+    {
+      "slot": -44967267,
+      "timestamp": 1700000011600,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00003775,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 1,
+          "rsi": 50,
+          "fast": 0.00003813,
+          "slow": 0.00003738,
+          "velocity": 0.2
+        }
+      ]
+    },
+    {
+      "slot": -44967266,
+      "timestamp": 1700000012000,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00003779,
+          "liquidity": 400000,
+          "sigma": 0.05,
+          "volume": 1,
+          "rsi": 50,
+          "fast": 0.00003817,
+          "slow": 0.00003741,
+          "velocity": 0.2
+        }
+      ]
+    },
+    {
+      "slot": -44967265,
+      "timestamp": 1700000012400,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00003552,
+          "liquidity": 400000,
+          "sigma": 0.12,
+          "volume": 1,
+          "rsi": 28,
+          "fast": 0.00003588,
+          "slow": 0.00003517,
+          "velocity": -1.8
+        }
+      ]
+    },
+    {
+      "slot": -44967264,
+      "timestamp": 1700000012800,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00003339,
+          "liquidity": 400000,
+          "sigma": 0.12,
+          "volume": 1,
+          "rsi": 28,
+          "fast": 0.00003373,
+          "slow": 0.00003306,
+          "velocity": -1.8
+        }
+      ]
+    },
+    {
+      "slot": -44967263,
+      "timestamp": 1700000013200,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00003139,
+          "liquidity": 400000,
+          "sigma": 0.12,
+          "volume": 1,
+          "rsi": 28,
+          "fast": 0.0000317,
+          "slow": 0.00003107,
+          "velocity": -1.8
+        }
+      ]
+    },
+    {
+      "slot": -44967262,
+      "timestamp": 1700000013600,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00002951,
+          "liquidity": 400000,
+          "sigma": 0.12,
+          "volume": 1,
+          "rsi": 28,
+          "fast": 0.0000298,
+          "slow": 0.00002921,
+          "velocity": -1.8
+        }
+      ]
+    },
+    {
+      "slot": -44967261,
+      "timestamp": 1700000014000,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00002774,
+          "liquidity": 400000,
+          "sigma": 0.12,
+          "volume": 1,
+          "rsi": 28,
+          "fast": 0.00002801,
+          "slow": 0.00002746,
+          "velocity": -1.8
+        }
+      ]
+    },
+    {
+      "slot": -44967260,
+      "timestamp": 1700000014400,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00002607,
+          "liquidity": 400000,
+          "sigma": 0.12,
+          "volume": 1,
+          "rsi": 28,
+          "fast": 0.00002633,
+          "slow": 0.00002581,
+          "velocity": -1.8
+        }
+      ]
+    },
+    {
+      "slot": -44967259,
+      "timestamp": 1700000014800,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00002451,
+          "liquidity": 400000,
+          "sigma": 0.12,
+          "volume": 1,
+          "rsi": 28,
+          "fast": 0.00002475,
+          "slow": 0.00002426,
+          "velocity": -1.8
+        }
+      ]
+    },
+    {
+      "slot": -44967258,
+      "timestamp": 1700000015200,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00002304,
+          "liquidity": 400000,
+          "sigma": 0.12,
+          "volume": 1,
+          "rsi": 28,
+          "fast": 0.00002327,
+          "slow": 0.00002281,
+          "velocity": -1.8
+        }
+      ]
+    },
+    {
+      "slot": -44967257,
+      "timestamp": 1700000015600,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00002165,
+          "liquidity": 400000,
+          "sigma": 0.12,
+          "volume": 1,
+          "rsi": 28,
+          "fast": 0.00002187,
+          "slow": 0.00002144,
+          "velocity": -1.8
+        }
+      ]
+    },
+    {
+      "slot": -44967256,
+      "timestamp": 1700000016000,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00002035,
+          "liquidity": 400000,
+          "sigma": 0.12,
+          "volume": 1,
+          "rsi": 28,
+          "fast": 0.00002056,
+          "slow": 0.00002015,
+          "velocity": -1.8
+        }
+      ]
+    },
+    {
+      "slot": -44967255,
+      "timestamp": 1700000016400,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00001913,
+          "liquidity": 400000,
+          "sigma": 0.12,
+          "volume": 1,
+          "rsi": 28,
+          "fast": 0.00001932,
+          "slow": 0.00001894,
+          "velocity": -1.8
+        }
+      ]
+    },
+    {
+      "slot": -44967254,
+      "timestamp": 1700000016800,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00001799,
+          "liquidity": 400000,
+          "sigma": 0.12,
+          "volume": 1,
+          "rsi": 28,
+          "fast": 0.00001817,
+          "slow": 0.00001781,
+          "velocity": -1.8
+        }
+      ]
+    },
+    {
+      "slot": -44967253,
+      "timestamp": 1700000017200,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00001691,
+          "liquidity": 400000,
+          "sigma": 0.12,
+          "volume": 1,
+          "rsi": 28,
+          "fast": 0.00001708,
+          "slow": 0.00001674,
+          "velocity": -1.8
+        }
+      ]
+    },
+    {
+      "slot": -44967252,
+      "timestamp": 1700000017600,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00001589,
+          "liquidity": 400000,
+          "sigma": 0.12,
+          "volume": 1,
+          "rsi": 28,
+          "fast": 0.00001605,
+          "slow": 0.00001573,
+          "velocity": -1.8
+        }
+      ]
+    },
+    {
+      "slot": -44967251,
+      "timestamp": 1700000018000,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00001494,
+          "liquidity": 400000,
+          "sigma": 0.12,
+          "volume": 1,
+          "rsi": 28,
+          "fast": 0.00001509,
+          "slow": 0.00001479,
+          "velocity": -1.8
+        }
+      ]
+    },
+    {
+      "slot": -44967250,
+      "timestamp": 1700000018400,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00001404,
+          "liquidity": 400000,
+          "sigma": 0.12,
+          "volume": 1,
+          "rsi": 28,
+          "fast": 0.00001418,
+          "slow": 0.0000139,
+          "velocity": -1.8
+        }
+      ]
+    },
+    {
+      "slot": -44967249,
+      "timestamp": 1700000018800,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.0000132,
+          "liquidity": 400000,
+          "sigma": 0.12,
+          "volume": 1,
+          "rsi": 28,
+          "fast": 0.00001333,
+          "slow": 0.00001307,
+          "velocity": -1.8
+        }
+      ]
+    },
+    {
+      "slot": -44967248,
+      "timestamp": 1700000019200,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00001241,
+          "liquidity": 400000,
+          "sigma": 0.12,
+          "volume": 1,
+          "rsi": 28,
+          "fast": 0.00001253,
+          "slow": 0.00001228,
+          "velocity": -1.8
+        }
+      ]
+    },
+    {
+      "slot": -44967247,
+      "timestamp": 1700000019600,
+      "solPriceUsd": 150,
+      "assets": [
+        {
+          "id": "BONK",
+          "symbol": "BONK",
+          "price": 0.00001166,
+          "liquidity": 400000,
+          "sigma": 0.12,
+          "volume": 1,
+          "rsi": 28,
+          "fast": 0.00001178,
+          "slow": 0.00001155,
+          "velocity": -1.8
+        }
+      ]
+    }
+  ]
+}

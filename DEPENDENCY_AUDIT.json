@@ -1,0 +1,190 @@
+{
+  "advisories": {
+    "1103747": {
+      "findings": [
+        {
+          "version": "1.1.5",
+          "paths": [
+            ".>@pump-fun/pump-sdk>@pump-fun/agent-payments-sdk>@solana/spl-token>@solana/buffer-layout-utils>bigint-buffer",
+            ".>@pump-fun/pump-sdk>@pump-fun/pump-swap-sdk>@solana/spl-token>@solana/buffer-layout-utils>bigint-buffer",
+            ".>@pump-fun/pump-sdk>@solana/spl-token>@solana/buffer-layout-utils>bigint-buffer",
+            ".>@solana/spl-token>@solana/buffer-layout-utils>bigint-buffer"
+          ],
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1103747,
+      "title": "bigint-buffer Vulnerable to Buffer Overflow via toBigIntLE() Function",
+      "module_name": "bigint-buffer",
+      "vulnerable_versions": "<=1.1.5",
+      "patched_versions": ">=1.1.6",
+      "severity": "high",
+      "cwe": "CWE-120",
+      "github_advisory_id": "GHSA-3gc7-fjrx-p6mg",
+      "url": "https://github.com/advisories/GHSA-3gc7-fjrx-p6mg"
+    },
+    "1119441": {
+      "findings": [
+        {
+          "version": "8.3.2",
+          "paths": [
+            ".>@coral-xyz/anchor>@coral-xyz/borsh>@solana/web3.js>jayson>uuid",
+            ".>@coral-xyz/anchor>@solana/web3.js>jayson>uuid",
+            ".>@pump-fun/pump-sdk>@coral-xyz/anchor>@coral-xyz/borsh>@solana/web3.js>jayson>uuid",
+            ".>@pump-fun/pump-sdk>@coral-xyz/anchor>@solana/web3.js>jayson>uuid",
+            ".>@pump-fun/pump-sdk>@pump-fun/agent-payments-sdk>@coral-xyz/anchor>@coral-xyz/borsh>@solana/web3.js>jayson>uuid",
+            ".>@pump-fun/pump-sdk>@pump-fun/agent-payments-sdk>@coral-xyz/anchor>@solana/web3.js>jayson>uuid",
+            ".>@pump-fun/pump-sdk>@pump-fun/agent-payments-sdk>@solana/spl-token>@solana/buffer-layout-utils>@solana/web3.js>jayson>uuid",
+            ".>@pump-fun/pump-sdk>@pump-fun/agent-payments-sdk>@solana/spl-token>@solana/spl-token-group>@solana/web3.js>jayson>uuid",
+            ".>@pump-fun/pump-sdk>@pump-fun/agent-payments-sdk>@solana/spl-token>@solana/spl-token-metadata>@solana/web3.js>jayson>uuid",
+            ".>@pump-fun/pump-sdk>@pump-fun/agent-payments-sdk>@solana/spl-token>@solana/web3.js>jayson>uuid",
+            ".>@pump-fun/pump-sdk>@pump-fun/agent-payments-sdk>@solana/web3.js>jayson>uuid",
+            ".>@pump-fun/pump-sdk>@pump-fun/pump-swap-sdk>@coral-xyz/anchor>@coral-xyz/borsh>@solana/web3.js>jayson>uuid",
+            ".>@pump-fun/pump-sdk>@pump-fun/pump-swap-sdk>@coral-xyz/anchor>@solana/web3.js>jayson>uuid",
+            ".>@pump-fun/pump-sdk>@pump-fun/pump-swap-sdk>@solana/spl-token>@solana/buffer-layout-utils>@solana/web3.js>jayson>uuid",
+            ".>@pump-fun/pump-sdk>@pump-fun/pump-swap-sdk>@solana/spl-token>@solana/spl-token-group>@solana/web3.js>jayson>uuid",
+            ".>@pump-fun/pump-sdk>@pump-fun/pump-swap-sdk>@solana/spl-token>@solana/spl-token-metadata>@solana/web3.js>jayson>uuid",
+            ".>@pump-fun/pump-sdk>@pump-fun/pump-swap-sdk>@solana/spl-token>@solana/web3.js>jayson>uuid",
+            ".>@pump-fun/pump-sdk>@pump-fun/pump-swap-sdk>@solana/web3.js>jayson>uuid",
+            ".>@pump-fun/pump-sdk>@solana/spl-token>@solana/buffer-layout-utils>@solana/web3.js>jayson>uuid",
+            ".>@pump-fun/pump-sdk>@solana/spl-token>@solana/spl-token-group>@solana/web3.js>jayson>uuid",
+            ".>@pump-fun/pump-sdk>@solana/spl-token>@solana/spl-token-metadata>@solana/web3.js>jayson>uuid",
+            ".>@pump-fun/pump-sdk>@solana/spl-token>@solana/web3.js>jayson>uuid",
+            ".>@pump-fun/pump-sdk>@solana/web3.js>jayson>uuid",
+            ".>@solana/spl-token>@solana/buffer-layout-utils>@solana/web3.js>jayson>uuid",
+            ".>@solana/spl-token>@solana/spl-token-group>@solana/web3.js>jayson>uuid",
+            ".>@solana/spl-token>@solana/spl-token-metadata>@solana/web3.js>jayson>uuid",
+            ".>@solana/spl-token>@solana/web3.js>jayson>uuid",
+            ".>@solana/web3.js>jayson>uuid"
+          ],
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1119441,
+      "title": "uuid: Missing buffer bounds check in v3/v5/v6 when buf is provided",
+      "module_name": "uuid",
+      "vulnerable_versions": "<11.1.1",
+      "patched_versions": ">=11.1.1",
+      "severity": "moderate",
+      "cwe": "CWE-787, CWE-1285",
+      "github_advisory_id": "GHSA-w5hq-g745-h8pq",
+      "url": "https://github.com/advisories/GHSA-w5hq-g745-h8pq"
+    },
+    "1164823": {
+      "findings": [
+        {
+          "version": "1.9.1",
+          "paths": [
+            ".>@coral-xyz/anchor>@coral-xyz/borsh>@solana/web3.js>jayson>stream-json",
+            ".>@coral-xyz/anchor>@solana/web3.js>jayson>stream-json",
+            ".>@pump-fun/pump-sdk>@coral-xyz/anchor>@coral-xyz/borsh>@solana/web3.js>jayson>stream-json",
+            ".>@pump-fun/pump-sdk>@coral-xyz/anchor>@solana/web3.js>jayson>stream-json",
+            ".>@pump-fun/pump-sdk>@pump-fun/agent-payments-sdk>@coral-xyz/anchor>@coral-xyz/borsh>@solana/web3.js>jayson>stream-json",
+            ".>@pump-fun/pump-sdk>@pump-fun/agent-payments-sdk>@coral-xyz/anchor>@solana/web3.js>jayson>stream-json",
+            ".>@pump-fun/pump-sdk>@pump-fun/agent-payments-sdk>@solana/spl-token>@solana/buffer-layout-utils>@solana/web3.js>jayson>stream-json",
+            ".>@pump-fun/pump-sdk>@pump-fun/agent-payments-sdk>@solana/spl-token>@solana/spl-token-group>@solana/web3.js>jayson>stream-json",
+            ".>@pump-fun/pump-sdk>@pump-fun/agent-payments-sdk>@solana/spl-token>@solana/spl-token-metadata>@solana/web3.js>jayson>stream-json",
+            ".>@pump-fun/pump-sdk>@pump-fun/agent-payments-sdk>@solana/spl-token>@solana/web3.js>jayson>stream-json",
+            ".>@pump-fun/pump-sdk>@pump-fun/agent-payments-sdk>@solana/web3.js>jayson>stream-json",
+            ".>@pump-fun/pump-sdk>@pump-fun/pump-swap-sdk>@coral-xyz/anchor>@coral-xyz/borsh>@solana/web3.js>jayson>stream-json",
+            ".>@pump-fun/pump-sdk>@pump-fun/pump-swap-sdk>@coral-xyz/anchor>@solana/web3.js>jayson>stream-json",
+            ".>@pump-fun/pump-sdk>@pump-fun/pump-swap-sdk>@solana/spl-token>@solana/buffer-layout-utils>@solana/web3.js>jayson>stream-json",
+            ".>@pump-fun/pump-sdk>@pump-fun/pump-swap-sdk>@solana/spl-token>@solana/spl-token-group>@solana/web3.js>jayson>stream-json",
+            ".>@pump-fun/pump-sdk>@pump-fun/pump-swap-sdk>@solana/spl-token>@solana/spl-token-metadata>@solana/web3.js>jayson>stream-json",
+            ".>@pump-fun/pump-sdk>@pump-fun/pump-swap-sdk>@solana/spl-token>@solana/web3.js>jayson>stream-json",
+            ".>@pump-fun/pump-sdk>@pump-fun/pump-swap-sdk>@solana/web3.js>jayson>stream-json",
+            ".>@pump-fun/pump-sdk>@solana/spl-token>@solana/buffer-layout-utils>@solana/web3.js>jayson>stream-json",
+            ".>@pump-fun/pump-sdk>@solana/spl-token>@solana/spl-token-group>@solana/web3.js>jayson>stream-json",
+            ".>@pump-fun/pump-sdk>@solana/spl-token>@solana/spl-token-metadata>@solana/web3.js>jayson>stream-json",
+            ".>@pump-fun/pump-sdk>@solana/spl-token>@solana/web3.js>jayson>stream-json",
+            ".>@pump-fun/pump-sdk>@solana/web3.js>jayson>stream-json",
+            ".>@solana/spl-token>@solana/buffer-layout-utils>@solana/web3.js>jayson>stream-json",
+            ".>@solana/spl-token>@solana/spl-token-group>@solana/web3.js>jayson>stream-json",
+            ".>@solana/spl-token>@solana/spl-token-metadata>@solana/web3.js>jayson>stream-json",
+            ".>@solana/spl-token>@solana/web3.js>jayson>stream-json",
+            ".>@solana/web3.js>jayson>stream-json"
+          ],
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1164823,
+      "title": "stream-json: pick/ignore/filter/replace filters are O(depth²) on nested input — small crafted JSON blocks the event loop for seconds→minutes (DoS)",
+      "module_name": "stream-json",
+      "vulnerable_versions": "<=3.4.0",
+      "patched_versions": ">=3.4.1",
+      "severity": "moderate",
+      "cwe": "CWE-407",
+      "github_advisory_id": "GHSA-528h-pc64-c93x",
+      "url": "https://github.com/advisories/GHSA-528h-pc64-c93x"
+    },
+    "1164824": {
+      "findings": [
+        {
+          "version": "3.0.0",
+          "paths": [
+            ".>@coral-xyz/anchor>toml",
+            ".>@pump-fun/pump-sdk>@coral-xyz/anchor>toml",
+            ".>@pump-fun/pump-sdk>@pump-fun/agent-payments-sdk>@coral-xyz/anchor>toml",
+            ".>@pump-fun/pump-sdk>@pump-fun/pump-swap-sdk>@coral-xyz/anchor>toml"
+          ],
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1164824,
+      "title": "toml-node: Uncontrolled Recursion",
+      "module_name": "toml",
+      "vulnerable_versions": "<4.2.0",
+      "patched_versions": ">=4.2.0",
+      "severity": "high",
+      "cwe": "CWE-674",
+      "github_advisory_id": "GHSA-82x6-q7mm-w9cf",
+      "url": "https://github.com/advisories/GHSA-82x6-q7mm-w9cf"
+    },
+    "1164825": {
+      "findings": [
+        {
+          "version": "3.0.0",
+          "paths": [
+            ".>@coral-xyz/anchor>toml",
+            ".>@pump-fun/pump-sdk>@coral-xyz/anchor>toml",
+            ".>@pump-fun/pump-sdk>@pump-fun/agent-payments-sdk>@coral-xyz/anchor>toml",
+            ".>@pump-fun/pump-sdk>@pump-fun/pump-swap-sdk>@coral-xyz/anchor>toml"
+          ],
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1164825,
+      "title": "toml-node: Prototype Pollution Leads to `Object.prototype` Corruption via `__proto__` Key-Path Desynchronization",
+      "module_name": "toml",
+      "vulnerable_versions": "<4.1.2",
+      "patched_versions": ">=4.1.2",
+      "severity": "high",
+      "cwe": "CWE-1321",
+      "github_advisory_id": "GHSA-v5mp-jgw5-2x6j",
+      "url": "https://github.com/advisories/GHSA-v5mp-jgw5-2x6j"
+    }
+  },
+  "metadata": {
+    "vulnerabilities": {
+      "info": 0,
+      "low": 0,
+      "moderate": 2,
+      "high": 3,
+      "critical": 0
+    },
+    "dependencies": 120,
+    "devDependencies": 1,
+    "optionalDependencies": 4,
+    "totalDependencies": 125
+  }
+}

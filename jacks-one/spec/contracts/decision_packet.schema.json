@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DecisionPacket",
+  "type": "object",
+  "required": [
+    "hand",
+    "ruleset_id",
+    "strategy_version",
+    "selected_hold",
+    "exact_ev",
+    "alternative_evs",
+    "ev_gap",
+    "outcome_counts",
+    "certificate_id",
+    "certificate_hash",
+    "explanation_data",
+    "confidence_status"
+  ],
+  "properties": {
+    "hand": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^(10|[2-9TJQKA])[CDHScdhs]$" },
+      "minItems": 5,
+      "maxItems": 5
+    },
+    "ruleset_id": { "type": "string" },
+    "strategy_version": { "type": "string" },
+    "selected_hold": {
+      "type": "object",
+      "required": ["mask", "held_count", "held_cards", "discarded_cards"],
+      "properties": {
+        "mask": { "type": "integer", "minimum": 0, "maximum": 31 },
+        "held_count": { "type": "integer", "minimum": 0, "maximum": 5 },
+        "held_cards": { "type": "array", "items": { "type": "string" } },
+        "discarded_cards": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "exact_ev": {
+      "type": "object",
+      "required": ["numerator", "denominator", "decimal_approx"],
+      "properties": {
+        "numerator": { "type": "string" },
+        "denominator": { "type": "string" },
+        "decimal_approx": { "type": "number" }
+      }
+    },
+    "alternative_evs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["mask", "held_cards", "exact_ev", "rank"],
+        "properties": {
+          "mask": { "type": "integer", "minimum": 0, "maximum": 31 },
+          "held_cards": { "type": "array", "items": { "type": "string" } },
+          "exact_ev": {
+            "type": "object",
+            "required": ["numerator", "denominator", "decimal_approx"],
+            "properties": {
+              "numerator": { "type": "string" },
+              "denominator": { "type": "string" },
+              "decimal_approx": { "type": "number" }
+            }
+          },
+          "rank": { "type": "integer", "minimum": 1, "maximum": 32 }
+        }
+      },
+      "minItems": 32,
+      "maxItems": 32
+    },
+    "ev_gap": {
+      "type": "object",
+      "required": ["numerator", "denominator", "decimal_approx"],
+      "properties": {
+        "numerator": { "type": "string" },
+        "denominator": { "type": "string" },
+        "decimal_approx": { "type": "number" }
+      }
+    },
+    "outcome_counts": {
+      "type": "object",
+      "required": [
+        "ROYAL_FLUSH",
+        "STRAIGHT_FLUSH",
+        "FOUR_OF_A_KIND",
+        "FULL_HOUSE",
+        "FLUSH",
+        "STRAIGHT",
+        "THREE_OF_A_KIND",
+        "TWO_PAIR",
+        "JACKS_OR_BETTER",
+        "NOTHING",
+        "TOTAL_COMBINATIONS"
+      ],
+      "properties": {
+        "ROYAL_FLUSH": { "type": "integer", "minimum": 0 },
+        "STRAIGHT_FLUSH": { "type": "integer", "minimum": 0 },
+        "FOUR_OF_A_KIND": { "type": "integer", "minimum": 0 },
+        "FULL_HOUSE": { "type": "integer", "minimum": 0 },
+        "FLUSH": { "type": "integer", "minimum": 0 },
+        "STRAIGHT": { "type": "integer", "minimum": 0 },
+        "THREE_OF_A_KIND": { "type": "integer", "minimum": 0 },
+        "TWO_PAIR": { "type": "integer", "minimum": 0 },
+        "JACKS_OR_BETTER": { "type": "integer", "minimum": 0 },
+        "NOTHING": { "type": "integer", "minimum": 0 },
+        "TOTAL_COMBINATIONS": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "certificate_id": { "type": "string" },
+    "certificate_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "explanation_data": {
+      "type": "object",
+      "required": ["category_label", "rule_name", "key_reasons"],
+      "properties": {
+        "category_label": { "type": "string" },
+        "rule_name": { "type": "string" },
+        "key_reasons": { "type": "array", "items": { "type": "string" } },
+        "penalty_cards_identified": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "confidence_status": { "type": "string", "enum": ["exact_certified", "reconciled"] }
+  },
+  "additionalProperties": false
+}

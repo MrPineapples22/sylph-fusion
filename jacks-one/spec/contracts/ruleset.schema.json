@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Ruleset",
+  "type": "object",
+  "required": [
+    "id",
+    "version",
+    "name",
+    "deck_definition",
+    "payout_table",
+    "bet_units",
+    "ev_convention",
+    "rounding_policy",
+    "tie_policy",
+    "certification_state",
+    "rules_hash"
+  ],
+  "properties": {
+    "id": { "type": "string" },
+    "version": { "type": "string" },
+    "name": { "type": "string" },
+    "deck_definition": {
+      "type": "object",
+      "required": ["total_cards", "ranks", "suits"],
+      "properties": {
+        "total_cards": { "type": "integer", "const": 52 },
+        "ranks": { "type": "array", "items": { "type": "string" } },
+        "suits": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "payout_table": {
+      "type": "object",
+      "required": [
+        "ROYAL_FLUSH",
+        "STRAIGHT_FLUSH",
+        "FOUR_OF_A_KIND",
+        "FULL_HOUSE",
+        "FLUSH",
+        "STRAIGHT",
+        "THREE_OF_A_KIND",
+        "TWO_PAIR",
+        "JACKS_OR_BETTER",
+        "NOTHING"
+      ],
+      "properties": {
+        "ROYAL_FLUSH": { "type": "integer", "minimum": 0 },
+        "STRAIGHT_FLUSH": { "type": "integer", "minimum": 0 },
+        "FOUR_OF_A_KIND": { "type": "integer", "minimum": 0 },
+        "FULL_HOUSE": { "type": "integer", "minimum": 0 },
+        "FLUSH": { "type": "integer", "minimum": 0 },
+        "STRAIGHT": { "type": "integer", "minimum": 0 },
+        "THREE_OF_A_KIND": { "type": "integer", "minimum": 0 },
+        "TWO_PAIR": { "type": "integer", "minimum": 0 },
+        "JACKS_OR_BETTER": { "type": "integer", "minimum": 0 },
+        "NOTHING": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "bet_units": { "type": "integer", "minimum": 1 },
+    "max_coins": { "type": "integer", "minimum": 1 },
+    "royal_bonus_applied": { "type": "boolean" },
+    "ev_convention": { "type": "string", "enum": ["exact_rational"] },
+    "rounding_policy": { "type": "string" },
+    "tie_policy": { "type": "string" },
+    "theoretical_rtp": { "type": "string" },
+    "theoretical_variance": { "type": "string" },
+    "certification_state": { "type": "string", "enum": ["draft", "verified", "certified"] },
+    "canonical_classes": { "type": "integer" },
+    "distinct_ev_values": { "type": "integer" },
+    "rules_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,50 @@
+{
+  "name": "sylph-fusion",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "build:engine": "node ./node_modules/typescript/bin/tsc -p tsconfig.json",
+    "build:ui": "node ./terminal/node_modules/vite/bin/vite.js build --config ./terminal/vite.config.js",
+    "build": "node ./node_modules/typescript/bin/tsc -p tsconfig.json && node ./terminal/node_modules/vite/bin/vite.js build --config ./terminal/vite.config.js",
+    "test:core": "node --test --test-isolation=none test/*.test.mjs",
+    "test:intelligence": "node --test --test-isolation=none test/intelligence/*.test.mjs",
+    "test:platform": "node --test --test-isolation=none test/platform/*.test.mjs",
+    "test:terminal": "node --test --test-isolation=none terminal/test/*.test.mjs",
+    "test:all": "npm run test:core && npm run test:intelligence && npm run test:platform && npm run test:terminal",
+    "test": "npm run build:engine && npm run test:core && npm run test:intelligence && npm run test:platform && npm run test:terminal",
+    "start": "node --env-file=.env dist/fusion.js",
+    "check": "node --env-file=.env dist/fusion.js --check",
+    "ui:demo": "node dist/ui-demo.js",
+    "app": "node dist/app.js",
+    "dev": "npm --prefix terminal run dev",
+    "shadow": "node scripts/shadow-runner.mjs",
+    "test:in-process": "node scripts/test-in-process.mjs",
+    "test:edge-cases": "node scripts/test-edge-cases.mjs",
+    "test:probe": "node scripts/test-bridge-reachability.mjs",
+    "audit:synthetic": "node scripts/test-synthetic-session.mjs sessions/synthetic-test.jsonl && node scripts/verify-replay.mjs sessions/synthetic-test.jsonl && node scripts/shadow-analysis.mjs sessions/synthetic-test.jsonl",
+    "audit:replay": "node scripts/audit-populated-replay.mjs",
+    "bridge": "node scripts/live-market-bridge.mjs",
+    "test:offline": "npm run test:in-process && npm run test:edge-cases && npm run audit:synthetic"
+  },
+  "dependencies": {
+    "@pump-fun/pump-sdk": "2.0.0",
+    "@solana/web3.js": "1.98.4",
+    "@solana/spl-token": "0.4.14",
+    "@coral-xyz/anchor": "0.31.1",
+    "@triton-one/yellowstone-grpc": "4.0.2",
+    "bn.js": "5.2.5",
+    "bs58": "6.0.0",
+    "ws": "8.21.3",
+    "zod": "4.1.5"
+  },
+  "devDependencies": {
+    "@types/node": "24.3.1",
+    "@types/bn.js": "5.2.0",
+    "@types/ws": "8.18.1",
+    "typescript": "5.9.2"
+  }
+}

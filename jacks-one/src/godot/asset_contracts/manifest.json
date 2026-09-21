@@ -1,0 +1,26 @@
+{
+  "asset_manifest_version": "1.0.0",
+  "project": "JACKS ONE",
+  "status": "baseline_contract_awaiting_blender_import",
+  "scenes": [
+    {
+      "scene_id": "poker_table_main",
+      "path": "res://scenes/table.tscn",
+      "expected_nodes": ["CardSlots", "PaytableDisplay", "CoachBubble", "ActionButtons", "BetSelector"]
+    }
+  ],
+  "blender_models": [
+    {
+      "model_id": "card_mesh_standard",
+      "path": "res://assets/models/card.blend",
+      "dimensions": { "width": 63.5, "height": 88.9, "thickness": 0.3 },
+      "materials": ["card_face", "card_back"]
+    }
+  ],
+  "card_textures": {
+    "deck_theme": "classic_casino",
+    "resolution": "512x716",
+    "total_cards": 52,
+    "back_texture": "res://assets/cards/back_blue.png"
+  }
+}

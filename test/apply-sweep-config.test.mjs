@@ -1,0 +1,3 @@
+import test from 'node:test'; import assert from 'node:assert/strict'; import { transformEngineSource, selectBest } from '../scripts/apply-sweep-config.mjs';
+test('transformer applies ranked parameters in memory',()=>{const p=selectBest({rankings:[{velocity:1.4,trailing:7.5,slippageBps:250,tp:[12,28,65],netReturnPct:18}]});const s=transformEngineSource('const DEFAULT_CONFIG={velocity: 0.2, trailing: 5, slippage: 1, tp1: 10, tp2: 20, tp3: 30};',p);assert.match(s,/velocity: 1.4/);assert.match(s,/slippage: 2.5/);assert.match(s,/tp3: 65/)});
+test('transformer accepts flat results',()=>{const p=selectBest([{velocity:.9,trailing:6.2,slippageBps:180,tp:[10,22,45],netReturnPct:12}]);assert.equal(p.trailing,6.2)});

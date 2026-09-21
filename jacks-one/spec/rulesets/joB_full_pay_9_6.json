@@ -1,0 +1,34 @@
+{
+  "id": "jacks_or_better.full_pay_9_6.v1",
+  "version": "1.0.0",
+  "name": "Jacks or Better 9/6 Full Pay",
+  "deck_definition": {
+    "total_cards": 52,
+    "ranks": ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"],
+    "suits": ["C", "D", "H", "S"]
+  },
+  "payout_table": {
+    "ROYAL_FLUSH": 800,
+    "STRAIGHT_FLUSH": 50,
+    "FOUR_OF_A_KIND": 25,
+    "FULL_HOUSE": 9,
+    "FLUSH": 6,
+    "STRAIGHT": 4,
+    "THREE_OF_A_KIND": 3,
+    "TWO_PAIR": 2,
+    "JACKS_OR_BETTER": 1,
+    "NOTHING": 0
+  },
+  "bet_units": 1,
+  "max_coins": 5,
+  "royal_bonus_applied": true,
+  "ev_convention": "exact_rational",
+  "rounding_policy": "half_even_for_display_only",
+  "tie_policy": "lowest_mask_then_highest_card_rank",
+  "theoretical_rtp": "0.99543904",
+  "theoretical_variance": "19.5146",
+  "certification_state": "certified",
+  "canonical_classes": 134459,
+  "distinct_ev_values": 1153,
+  "rules_hash": "e6a4b125893a746ef741ceab80525d88f61536b30f8a846c4f74d0a1b65b6329"
+}

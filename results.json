@@ -1,0 +1,464 @@
+{
+  "version": 1,
+  "fixture": "C:\\Users\\juans\\Documents\\Codex\\2026-09-13\\d-pump-sylph-and-d-pump\\outputs\\sylph-fusion\\test\\fixtures\\sample-replay.json",
+  "workerCount": 4,
+  "trialCount": 24,
+  "results": [
+    {
+      "type": "RESULT",
+      "taskId": 0,
+      "result": {
+        "velocity": 0.8,
+        "trailing": 5,
+        "slippageBps": 300,
+        "tp": [
+          15,
+          35,
+          75
+        ],
+        "netReturnPct": 36.86,
+        "maxDrawdownPct": 0,
+        "trades": 4,
+        "winRate": 50,
+        "adverseScore": 5
+      }
+    },
+    {
+      "type": "RESULT",
+      "taskId": 1,
+      "result": {
+        "velocity": 0.8,
+        "trailing": 5,
+        "slippageBps": 300,
+        "tp": [
+          20,
+          40,
+          80
+        ],
+        "netReturnPct": 29.91,
+        "maxDrawdownPct": 0,
+        "trades": 4,
+        "winRate": 50,
+        "adverseScore": 2
+      }
+    },
+    {
+      "type": "RESULT",
+      "taskId": 2,
+      "result": {
+        "velocity": 0.8,
+        "trailing": 5,
+        "slippageBps": 800,
+        "tp": [
+          15,
+          35,
+          75
+        ],
+        "netReturnPct": 36.86,
+        "maxDrawdownPct": 0,
+        "trades": 4,
+        "winRate": 50,
+        "adverseScore": 20
+      }
+    },
+    {
+      "type": "RESULT",
+      "taskId": 3,
+      "result": {
+        "velocity": 0.8,
+        "trailing": 5,
+        "slippageBps": 800,
+        "tp": [
+          20,
+          40,
+          80
+        ],
+        "netReturnPct": 29.91,
+        "maxDrawdownPct": 0,
+        "trades": 4,
+        "winRate": 50,
+        "adverseScore": 17
+      }
+    },
+    {
+      "type": "RESULT",
+      "taskId": 4,
+      "result": {
+        "velocity": 0.8,
+        "trailing": 7,
+        "slippageBps": 300,
+        "tp": [
+          15,
+          35,
+          75
+        ],
+        "netReturnPct": 36.86,
+        "maxDrawdownPct": 0,
+        "trades": 4,
+        "winRate": 50,
+        "adverseScore": 15
+      }
+    },
+    {
+      "type": "RESULT",
+      "taskId": 5,
+      "result": {
+        "velocity": 0.8,
+        "trailing": 7,
+        "slippageBps": 300,
+        "tp": [
+          20,
+          40,
+          80
+        ],
+        "netReturnPct": 22.12,
+        "maxDrawdownPct": 0,
+        "trades": 4,
+        "winRate": 50,
+        "adverseScore": 13
+      }
+    },
+    {
+      "type": "RESULT",
+      "taskId": 6,
+      "result": {
+        "velocity": 0.8,
+        "trailing": 7,
+        "slippageBps": 800,
+        "tp": [
+          15,
+          35,
+          75
+        ],
+        "netReturnPct": 36.86,
+        "maxDrawdownPct": 0,
+        "trades": 4,
+        "winRate": 50,
+        "adverseScore": 10
+      }
+    },
+    {
+      "type": "RESULT",
+      "taskId": 7,
+      "result": {
+        "velocity": 0.8,
+        "trailing": 7,
+        "slippageBps": 800,
+        "tp": [
+          20,
+          40,
+          80
+        ],
+        "netReturnPct": 22.12,
+        "maxDrawdownPct": 0,
+        "trades": 4,
+        "winRate": 50,
+        "adverseScore": 8
+      }
+    },
+    {
+      "type": "RESULT",
+      "taskId": 8,
+      "result": {
+        "velocity": 1.2,
+        "trailing": 5,
+        "slippageBps": 300,
+        "tp": [
+          15,
+          35,
+          75
+        ],
+        "netReturnPct": 36.86,
+        "maxDrawdownPct": 0,
+        "trades": 4,
+        "winRate": 50,
+        "adverseScore": 5
+      }
+    },
+    {
+      "type": "RESULT",
+      "taskId": 9,
+      "result": {
+        "velocity": 1.2,
+        "trailing": 5,
+        "slippageBps": 300,
+        "tp": [
+          20,
+          40,
+          80
+        ],
+        "netReturnPct": 29.91,
+        "maxDrawdownPct": 0,
+        "trades": 4,
+        "winRate": 50,
+        "adverseScore": 3
+      }
+    },
+    {
+      "type": "RESULT",
+      "taskId": 10,
+      "result": {
+        "velocity": 1.2,
+        "trailing": 5,
+        "slippageBps": 800,
+        "tp": [
+          15,
+          35,
+          75
+        ],
+        "netReturnPct": 36.86,
+        "maxDrawdownPct": 0,
+        "trades": 4,
+        "winRate": 50,
+        "adverseScore": 0
+      }
+    },
+    {
+      "type": "RESULT",
+      "taskId": 11,
+      "result": {
+        "velocity": 1.2,
+        "trailing": 5,
+        "slippageBps": 800,
+        "tp": [
+          20,
+          40,
+          80
+        ],
+        "netReturnPct": 29.91,
+        "maxDrawdownPct": 0,
+        "trades": 4,
+        "winRate": 50,
+        "adverseScore": 18
+      }
+    },
+    {
+      "type": "RESULT",
+      "taskId": 12,
+      "result": {
+        "velocity": 1.2,
+        "trailing": 7,
+        "slippageBps": 300,
+        "tp": [
+          15,
+          35,
+          75
+        ],
+        "netReturnPct": 36.86,
+        "maxDrawdownPct": 0,
+        "trades": 4,
+        "winRate": 50,
+        "adverseScore": 16
+      }
+    },
+    {
+      "type": "RESULT",
+      "taskId": 13,
+      "result": {
+        "velocity": 1.2,
+        "trailing": 7,
+        "slippageBps": 300,
+        "tp": [
+          20,
+          40,
+          80
+        ],
+        "netReturnPct": 22.12,
+        "maxDrawdownPct": 0,
+        "trades": 4,
+        "winRate": 50,
+        "adverseScore": 13
+      }
+    },
+    {
+      "type": "RESULT",
+      "taskId": 14,
+      "result": {
+        "velocity": 1.2,
+        "trailing": 7,
+        "slippageBps": 800,
+        "tp": [
+          15,
+          35,
+          75
+        ],
+        "netReturnPct": 36.86,
+        "maxDrawdownPct": 0,
+        "trades": 4,
+        "winRate": 50,
+        "adverseScore": 11
+      }
+    },
+    {
+      "type": "RESULT",
+      "taskId": 15,
+      "result": {
+        "velocity": 1.2,
+        "trailing": 7,
+        "slippageBps": 800,
+        "tp": [
+          20,
+          40,
+          80
+        ],
+        "netReturnPct": 22.12,
+        "maxDrawdownPct": 0,
+        "trades": 4,
+        "winRate": 50,
+        "adverseScore": 8
+      }
+    },
+    {
+      "type": "RESULT",
+      "taskId": 16,
+      "result": {
+        "velocity": 1.6,
+        "trailing": 5,
+        "slippageBps": 300,
+        "tp": [
+          15,
+          35,
+          75
+        ],
+        "netReturnPct": 0,
+        "maxDrawdownPct": 0,
+        "trades": 0,
+        "winRate": 0,
+        "adverseScore": 6
+      }
+    },
+    {
+      "type": "RESULT",
+      "taskId": 17,
+      "result": {
+        "velocity": 1.6,
+        "trailing": 5,
+        "slippageBps": 300,
+        "tp": [
+          20,
+          40,
+          80
+        ],
+        "netReturnPct": 0,
+        "maxDrawdownPct": 0,
+        "trades": 0,
+        "winRate": 0,
+        "adverseScore": 3
+      }
+    },
+    {
+      "type": "RESULT",
+      "taskId": 18,
+      "result": {
+        "velocity": 1.6,
+        "trailing": 5,
+        "slippageBps": 800,
+        "tp": [
+          15,
+          35,
+          75
+        ],
+        "netReturnPct": 0,
+        "maxDrawdownPct": 0,
+        "trades": 0,
+        "winRate": 0,
+        "adverseScore": 1
+      }
+    },
+    {
+      "type": "RESULT",
+      "taskId": 19,
+      "result": {
+        "velocity": 1.6,
+        "trailing": 5,
+        "slippageBps": 800,
+        "tp": [
+          20,
+          40,
+          80
+        ],
+        "netReturnPct": 0,
+        "maxDrawdownPct": 0,
+        "trades": 0,
+        "winRate": 0,
+        "adverseScore": 19
+      }
+    },
+    {
+      "type": "RESULT",
+      "taskId": 20,
+      "result": {
+        "velocity": 1.6,
+        "trailing": 7,
+        "slippageBps": 300,
+        "tp": [
+          15,
+          35,
+          75
+        ],
+        "netReturnPct": 0,
+        "maxDrawdownPct": 0,
+        "trades": 0,
+        "winRate": 0,
+        "adverseScore": 16
+      }
+    },
+    {
+      "type": "RESULT",
+      "taskId": 21,
+      "result": {
+        "velocity": 1.6,
+        "trailing": 7,
+        "slippageBps": 300,
+        "tp": [
+          20,
+          40,
+          80
+        ],
+        "netReturnPct": 0,
+        "maxDrawdownPct": 0,
+        "trades": 0,
+        "winRate": 0,
+        "adverseScore": 14
+      }
+    },
+    {
+      "type": "RESULT",
+      "taskId": 22,
+      "result": {
+        "velocity": 1.6,
+        "trailing": 7,
+        "slippageBps": 800,
+        "tp": [
+          15,
+          35,
+          75
+        ],
+        "netReturnPct": 0,
+        "maxDrawdownPct": 0,
+        "trades": 0,
+        "winRate": 0,
+        "adverseScore": 11
+      }
+    },
+    {
+      "type": "RESULT",
+      "taskId": 23,
+      "result": {
+        "velocity": 1.6,
+        "trailing": 7,
+        "slippageBps": 800,
+        "tp": [
+          20,
+          40,
+          80
+        ],
+        "netReturnPct": 0,
+        "maxDrawdownPct": 0,
+        "trades": 0,
+        "winRate": 0,
+        "adverseScore": 9
+      }
+    }
+  ]
+}

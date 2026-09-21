@@ -1,0 +1,10 @@
+{
+  "manifest_version": "1.0.0",
+  "ruleset_id": "jacks_or_better.full_pay_9_6.v1",
+  "ruleset_hash": "e6a4b125893a746ef741ceab80525d88f61536b30f8a846c4f74d0a1b65b6329",
+  "canonical_classes_verified": 134459,
+  "distinct_benchmarks_verified": 10,
+  "engine_agreement_confirmed": true,
+  "timestamp": "2026-09-18T04:41:14.912Z",
+  "manifest_hash": "a10dc0b3b5919c11aa4d52cd18618fb6315acc6264922bcd0961ccb4f5a6b8a7"
+}

@@ -1,0 +1,19 @@
+{
+  "name": "jacks-one",
+  "version": "1.0.0",
+  "description": "JACKS ONE: 9/6 Full-Pay Jacks or Better Certified Truth Kernel and Intelligence Engine",
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-strip-types --test tests/**/*.test.ts",
+    "test:unit": "node --experimental-strip-types --test tests/unit/*.test.ts",
+    "test:differential": "node --experimental-strip-types --test tests/differential/*.test.ts",
+    "test:invariants": "node --experimental-strip-types --test tests/invariants/*.test.ts",
+    "test:benchmarks": "node --experimental-strip-types --test tests/benchmarks/*.test.ts",
+    "test:mutation": "node --experimental-strip-types --test tests/mutation/*.test.ts",
+    "test:simulation": "node --experimental-strip-types --test tests/simulation/*.test.ts",
+    "cli": "node --experimental-strip-types src/cli.ts",
+    "verify:all": "node --experimental-strip-types scripts/verify-all.ts"
+  },
+  "author": "Antigravity",
+  "license": "MIT"
+}

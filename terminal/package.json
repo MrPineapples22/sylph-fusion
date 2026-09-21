@@ -1,0 +1,24 @@
+{
+  "name": "sylph-paper-terminal",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5173",
+    "build": "vite build",
+    "test": "node --test --test-isolation=none test/*.test.mjs",
+    "start": "node server.mjs",
+    "build:windows": "cmd /c Build.cmd"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "lucide-react": "^0.468.0",
+    "lightweight-charts": "^5.0.0"
+  },
+  "devDependencies": {
+    "vite": "^7.0.0",
+    "tailwindcss": "^4.0.0",
+    "@tailwindcss/vite": "^4.0.0"
+  }
+}

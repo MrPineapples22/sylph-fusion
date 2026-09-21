@@ -1,0 +1,2741 @@
+{
+  "scope": "First-party Python files; no secrets, databases, model deserialization, environments, archived copies or vendored libraries read",
+  "files": [
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\advanced_position_manager.py",
+      "bytes": 17226,
+      "lines": 353,
+      "sha256": "745b02103ae1dadae4e65bd106085ab55f0024827206850748a8be93ed17245d",
+      "syntax": "valid",
+      "async_functions": 2,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\auto_tune_5m_fdv.py",
+      "bytes": 10669,
+      "lines": 253,
+      "sha256": "6e9a2d678284464c788571527ef18103b1c39f9fa12e7744260418b0c4408bbd",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\build_upgrade.py",
+      "bytes": 4712,
+      "lines": 71,
+      "sha256": "85d88ed13ed4fc80869cd18d083b1e284a026a3dfbff444b6d5f1ad4ea7cf90e",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\cabal_forensics.py",
+      "bytes": 13954,
+      "lines": 343,
+      "sha256": "e6eddd1564e9bf0c40ee53018998de9e48cea5e6608e3e260c5af38be2fed27a",
+      "syntax": "valid",
+      "async_functions": 7,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\candidate_training_pipeline.py",
+      "bytes": 14320,
+      "lines": 358,
+      "sha256": "c366c359cc6ce5c47756411f98e108a78e215a30b28ce8593ae16cb65cc23b7a",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\check_restart_state.py",
+      "bytes": 516,
+      "lines": 17,
+      "sha256": "22cd1112f87ad7e06bfdb3ed6b13f786bbe15a009d48a93eb149308d52df6e6f",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\config.py",
+      "bytes": 9738,
+      "lines": 183,
+      "sha256": "5f832670c3648028764b59d6a7e22371df19941525f05c2a69be1c0836c23933",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\dashboard_server.py",
+      "bytes": 21097,
+      "lines": 507,
+      "sha256": "8ff377e5f33ed44634d31028a547ffd552bf899503354e9eebc6f0a88ca03ab2",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\deep_audit_cron_30m.py",
+      "bytes": 27149,
+      "lines": 673,
+      "sha256": "566a8a9e048af96b3356055ae8da3e2231c10c95d911d1c92cd7d1f6dabbec71",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\exit_engine.py",
+      "bytes": 20481,
+      "lines": 447,
+      "sha256": "45b4e8632ba087f47c830812d7ed8207a2c103160d7f36a5bbe67e94c8dae5a7",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\flood_filter.py",
+      "bytes": 2015,
+      "lines": 51,
+      "sha256": "5d1768f09e41d0a6f2aea7b29bac83e2119b2c9211fc6a7d6e6def3c7f244ad2",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\forensic_pipeline.py",
+      "bytes": 6674,
+      "lines": 157,
+      "sha256": "68e599c0f3a07a57677833231ac6ff8b8fb538a254abeab82141652c3dee9605",
+      "syntax": "valid",
+      "async_functions": 2,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\graduation_arb.py",
+      "bytes": 5103,
+      "lines": 119,
+      "sha256": "c7c1f6ea699af051f6ad5a08836375544aa304dc908459044b9c0183c7424e16",
+      "syntax": "valid",
+      "async_functions": 2,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\lib\\canonical_config.py",
+      "bytes": 6064,
+      "lines": 100,
+      "sha256": "832f09128cd5024d7b15fb7281ac82c053c299775c4338c78444b995b5a549f8",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\lib\\catastrophic_risk_model.py",
+      "bytes": 6247,
+      "lines": 153,
+      "sha256": "7488a210bf9a1246936a11886f8620c080f351b8316b631932f75c2efeda8760",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\lib\\causal_blacklist.py",
+      "bytes": 3763,
+      "lines": 81,
+      "sha256": "54cc4c29ec8e2cb71f5fd7d199b8d79f7e31cf9bb81ebfa237474f339d1dffd0",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\lib\\event_parser.py",
+      "bytes": 8244,
+      "lines": 210,
+      "sha256": "12c250340604efdfb5b295ede74b0a9d0399325a7f77b1be698c7e3f4f5cc63d",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\lib\\execution_realism_model.py",
+      "bytes": 26720,
+      "lines": 646,
+      "sha256": "aa9eddc293ef4a779501f2eb5a579a2d4f8417f5bbced92439eead63cae5db94",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\lib\\yellowstone_geyser.py",
+      "bytes": 7740,
+      "lines": 187,
+      "sha256": "b13f20f51907f7e1bfff292dbcff349b89cf7887a6efe9e206f88fbd55c6556a",
+      "syntax": "valid",
+      "async_functions": 1,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\model_evaluation_engine.py",
+      "bytes": 10455,
+      "lines": 289,
+      "sha256": "16ae52bb9954882bb73a9c93e36ab8ee34935f2dd0584ac4b1cafe522bb4b81e",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\preview.py",
+      "bytes": 6097,
+      "lines": 110,
+      "sha256": "a539029acdc0f7fe058a26c8eb6d011aafa11ef973c7a4822ec34669744f92a1",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\retrain_models.py",
+      "bytes": 9303,
+      "lines": 206,
+      "sha256": "d58ffc1e00e59671821db7bbb32150521a7964794a9bd31f24658f2f63fc9ed8",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\run_pipeline_audit_and_backtest.py",
+      "bytes": 13186,
+      "lines": 193,
+      "sha256": "134f65290c2284b96f28f12a9535934292fe2268563a6ef1998bf45bd0ed7d6e",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\S0SV2_CRITICAL_FIXES.py",
+      "bytes": 68050,
+      "lines": 1581,
+      "sha256": "1d19a38946c8d180ed707bf73f62d6bcc847dc0e199c82505c6b2d28e80ef5d1",
+      "syntax": "valid",
+      "async_functions": 4,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\SOS.py",
+      "bytes": 1238285,
+      "lines": 23332,
+      "sha256": "0d0755e68fbb959d8a08500834a2497d09f187fb95b446343bb4b686532a621b",
+      "syntax": "valid",
+      "async_functions": 78,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\SOS_CoreOS.py",
+      "bytes": 30922,
+      "lines": 728,
+      "sha256": "5361469d7b572a9ee4ea1ca3260c95e1abe5c41efde1f273bc1a6de05dc72bca",
+      "syntax": "valid",
+      "async_functions": 1,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\sos_pro_ui.py",
+      "bytes": 19439,
+      "lines": 317,
+      "sha256": "313039743c6630d7edb7d5d3b1ecc76123c61e8d4584adabdc3f49e18cd235f5",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\startup_reconciliation.py",
+      "bytes": 19411,
+      "lines": 407,
+      "sha256": "4f5c31070c508ad78ad4794a0eb51b1900e5305e66778f2bf2dfc509a0ecb6f4",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\trade_lifecycle_manager.py",
+      "bytes": 67626,
+      "lines": 1338,
+      "sha256": "d1f92df3c05a8791a6a4077a4c8b1ca994521f9d107e8d892f26ca24359c4f25",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\train_5m_fdv_model.py",
+      "bytes": 9489,
+      "lines": 228,
+      "sha256": "ab9c94a47f5c0c570d33f799787451e406d4ccb7f700095f053a4e86f306fd4d",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\train_binary_model.py",
+      "bytes": 9349,
+      "lines": 194,
+      "sha256": "40e992b74980178b8aad5d159333537f1ee12c43271ab94c84bef8c1a075193f",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\train_momentum_model.py",
+      "bytes": 15627,
+      "lines": 336,
+      "sha256": "726daf205b3e661f6ce98d999dd050d3f8ca03f50ca82df8ca171424fee82796",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\SOL-SYLPH\\train_peak_model.py",
+      "bytes": 13196,
+      "lines": 275,
+      "sha256": "f7b28d9c332b68c459fb9db965b6b16561859260510ed66375f609072615c264",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\main.py",
+      "bytes": 2578,
+      "lines": 71,
+      "sha256": "b55cab68e5cbcc97c2802a43a6914e6e436eeb5bebbce06b51fcbccc02dd6890",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\_pytest\\_py\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\grimp\\adaptors\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\grimp\\application\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\grimp\\application\\ports\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\grimp\\domain\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\importlinter\\adapters\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\importlinter\\application\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\importlinter\\application\\ports\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\importlinter\\contracts\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\importlinter\\domain\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\joblib\\externals\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\joblib\\test\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\joblib\\test\\data\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\markdown_it\\cli\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\markdown_it\\common\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\mypy\\build_worker\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\mypy\\dmypy\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\mypy\\plugins\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\mypy\\server\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\mypy\\test\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\mypy\\test\\meta\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\mypyc\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\mypyc\\analysis\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\mypyc\\codegen\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\mypyc\\ir\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\mypyc\\irbuild\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\mypyc\\lower\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\mypyc\\primitives\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\mypyc\\test\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\mypyc\\transform\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\narwhals\\_arrow\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\narwhals\\_dask\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\narwhals\\_duckdb\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\narwhals\\_ibis\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\narwhals\\_interchange\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\narwhals\\_pandas_like\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\narwhals\\_polars\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\narwhals\\testing\\asserts\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\numpy\\_pyinstaller\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\numpy\\fft\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\numpy\\lib\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\numpy\\linalg\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\numpy\\ma\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\numpy\\matrixlib\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\numpy\\polynomial\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\numpy\\random\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\numpy\\random\\tests\\data\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\numpy\\testing\\_private\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\numpy\\testing\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\numpy\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\numpy\\typing\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\pathspec\\_backends\\hyperscan\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\pathspec\\_backends\\re2\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\pathspec\\_backends\\simple\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\pip\\_internal\\operations\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\pip\\_internal\\operations\\build\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\pip\\_internal\\resolution\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\pip\\_internal\\resolution\\legacy\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\pip\\_internal\\resolution\\resolvelib\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\pip\\_internal\\utils\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\pip\\_vendor\\urllib3\\contrib\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\pydantic\\_internal\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\pydantic\\deprecated\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\_external\\array_api_compat\\dask\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\_external\\pyprima\\cobyla\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\_external\\pyprima\\common\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\_lib\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\cluster\\hierarchy\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\cluster\\vq\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\constants\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\datasets\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\differentiate\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\fft\\_duccfft\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\fft\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\fftpack\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\integrate\\_ivp\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\integrate\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\interpolate\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\io\\_harwell_boeing\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\io\\arff\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\io\\matlab\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\io\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\linalg\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\odr\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\optimize\\_highspy\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\optimize\\_shgo_lib\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\optimize\\_trustregion_constr\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\optimize\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\signal\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\sparse\\csgraph\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\sparse\\linalg\\_dsolve\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\sparse\\linalg\\_eigen\\arpack\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\sparse\\linalg\\_eigen\\lobpcg\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\sparse\\linalg\\_eigen\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\sparse\\linalg\\_isolve\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\sparse\\linalg\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\sparse\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\spatial\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\spatial\\transform\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\special\\_precompute\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\special\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\special\\tests\\data\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\stats\\_unuran\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\scipy\\stats\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\_build_utils\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\_loss\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\callback\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\cluster\\_hdbscan\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\cluster\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\compose\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\covariance\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\cross_decomposition\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\datasets\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\datasets\\tests\\data\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\datasets\\tests\\data\\openml\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\datasets\\tests\\data\\openml\\id_1\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\datasets\\tests\\data\\openml\\id_1119\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\datasets\\tests\\data\\openml\\id_1590\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\datasets\\tests\\data\\openml\\id_2\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\datasets\\tests\\data\\openml\\id_292\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\datasets\\tests\\data\\openml\\id_3\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\datasets\\tests\\data\\openml\\id_40589\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\datasets\\tests\\data\\openml\\id_40675\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\datasets\\tests\\data\\openml\\id_40945\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\datasets\\tests\\data\\openml\\id_40966\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\datasets\\tests\\data\\openml\\id_42074\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\datasets\\tests\\data\\openml\\id_42585\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\datasets\\tests\\data\\openml\\id_561\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\datasets\\tests\\data\\openml\\id_61\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\datasets\\tests\\data\\openml\\id_62\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\decomposition\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\ensemble\\_hist_gradient_boosting\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\ensemble\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\experimental\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\externals\\_packaging\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\externals\\_scipy\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\externals\\_scipy\\sparse\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\externals\\array_api_compat\\dask\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\feature_extraction\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\feature_selection\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\frozen\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\gaussian_process\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\impute\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\inspection\\_plot\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\inspection\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\linear_model\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\manifold\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\metrics\\_plot\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\metrics\\cluster\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\metrics\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\mixture\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\model_selection\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\neighbors\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\neural_network\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\preprocessing\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\semi_supervised\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\svm\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\tree\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\utils\\_repr_html\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\sklearn\\utils\\tests\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\.venv\\Lib\\site-packages\\typing_inspection\\__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\__init__.py",
+      "bytes": 288,
+      "lines": 10,
+      "sha256": "6aa7f77db741176723209686f760db410b5f3a61424ddf34731b526066b13830",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\adapters\\__init__.py",
+      "bytes": 78,
+      "lines": 1,
+      "sha256": "af3546c1d0e5da532fa59774bab14ab6e9db129d6fe2ff15bf001643b7806100",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\adapters\\dexscreener.py",
+      "bytes": 3382,
+      "lines": 95,
+      "sha256": "d4bc5b2ec2d1578de4547b51f329c0bbb15bba21ab37b6707351a940de883ed1",
+      "syntax": "valid",
+      "async_functions": 3,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\adapters\\graduation.py",
+      "bytes": 3293,
+      "lines": 91,
+      "sha256": "a2351cebf0e807aa1b273cbe8c8dc81782b705ac913ff5cd99a81810635052f2",
+      "syntax": "valid",
+      "async_functions": 1,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\adapters\\helius.py",
+      "bytes": 5368,
+      "lines": 164,
+      "sha256": "47567bef9df7526bfe926998fa3e9417eb3d15b783e9fab38c1ed0478329625a",
+      "syntax": "valid",
+      "async_functions": 1,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\adapters\\http.py",
+      "bytes": 1584,
+      "lines": 47,
+      "sha256": "83bfb5af1cd1f5618c62ff17abbdb6b3bc8a3a0c01995d00448d5096fe735e0c",
+      "syntax": "valid",
+      "async_functions": 5,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\adapters\\jito.py",
+      "bytes": 4758,
+      "lines": 117,
+      "sha256": "bb7eeb34041eae4c1728912d9a8314fc2f91b7ed9ab814ea778cf0764454b896",
+      "syntax": "valid",
+      "async_functions": 3,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\adapters\\jupiter.py",
+      "bytes": 7554,
+      "lines": 193,
+      "sha256": "bae51d1506d95bb558c5ae99f41cd791785a25487cd51b4073b4f1f2ea8495c7",
+      "syntax": "valid",
+      "async_functions": 3,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\adapters\\legacy_csv.py",
+      "bytes": 5622,
+      "lines": 165,
+      "sha256": "1639e8a426371bd8cfa41c34113c3f3100a919b95ca97bb3a0596e69e65244af",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\adapters\\memory_outbox.py",
+      "bytes": 757,
+      "lines": 27,
+      "sha256": "35af7b453d82d6ebf60a91e11b0f6810598367cb996809709c6474f16880a47c",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\adapters\\memory_store.py",
+      "bytes": 3935,
+      "lines": 97,
+      "sha256": "900c5886cff36c21c5778bb32d53575df066f9f6f3290eccb4ba960368e48878",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\adapters\\notifiers.py",
+      "bytes": 3909,
+      "lines": 122,
+      "sha256": "91cf40172ad51c8f36cbb01e0dfc1503de9c90bbba67ba9e2fef073517380bc3",
+      "syntax": "valid",
+      "async_functions": 5,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\adapters\\paper.py",
+      "bytes": 1535,
+      "lines": 46,
+      "sha256": "5dcc06f03f7e2deb04cfc39057ff0c5ca8d358243109b79e398cf885974c9b64",
+      "syntax": "valid",
+      "async_functions": 1,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\adapters\\parquet_feature_store.py",
+      "bytes": 4640,
+      "lines": 132,
+      "sha256": "aeb7d5cac7cb75788abc32da6f23d14a15ffb581537cd48d47b1e96529e223ea",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\adapters\\platform.py",
+      "bytes": 4019,
+      "lines": 129,
+      "sha256": "049836135323ca3b6c381b9ee66ce9c99988855952fc2e99b46ed3ac0ed75558",
+      "syntax": "valid",
+      "async_functions": 2,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\adapters\\pumpfun.py",
+      "bytes": 4883,
+      "lines": 137,
+      "sha256": "e70f886bce3b4cd6cda79233519796f9475d20b0c007468878d2c87c2505ca52",
+      "syntax": "valid",
+      "async_functions": 1,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\adapters\\pumpportal_ws.py",
+      "bytes": 5200,
+      "lines": 150,
+      "sha256": "a261e5b66d433661cf4390948b3c3ff62618fcf536b8fec2d985405684bfd14d",
+      "syntax": "valid",
+      "async_functions": 3,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\adapters\\rugcheck.py",
+      "bytes": 1752,
+      "lines": 55,
+      "sha256": "4316049f6efef460658c18ae3ce40171a826ea3dc3296e96a1ec6305e39a3e3c",
+      "syntax": "valid",
+      "async_functions": 2,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\adapters\\serde.py",
+      "bytes": 7278,
+      "lines": 240,
+      "sha256": "b7a77b910aa430ce63e271c3cb89a4685ac4aa1849889f445ded6bd72db03c9b",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\adapters\\sqlite_feature_store.py",
+      "bytes": 4532,
+      "lines": 121,
+      "sha256": "b0fcecb906a9f9763030f79a92045a1d2372a3d94d7b8d3be71e8e5fd536f012",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\adapters\\sqlite_outbox.py",
+      "bytes": 4916,
+      "lines": 140,
+      "sha256": "6daf75a2fc96369b41546be9f6ec6ba09001cd75655fef853273c895a1759163",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\adapters\\sqlite_position_store.py",
+      "bytes": 5857,
+      "lines": 163,
+      "sha256": "2d28f1f49868aabf6b022a6431a08d5f6c04930ac2252fc84f2ac09bd5a7f91e",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\adapters\\sqlite_store.py",
+      "bytes": 9715,
+      "lines": 215,
+      "sha256": "9b9e4e587ad2acf08cf8f7c00a793842be37aa30817d0a1a7d974487ad31edfe",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\adapters\\wallet.py",
+      "bytes": 6534,
+      "lines": 198,
+      "sha256": "e35eca485b954596cfa98dbd2f8311232f67b756b3f45546f3a95f1a34d69b61",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\adapters\\yellowstone.py",
+      "bytes": 9589,
+      "lines": 251,
+      "sha256": "3994368610db96921142086a89961ccc6cf4f9c19615348d86df0241bd121386",
+      "syntax": "valid",
+      "async_functions": 5,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\application\\__init__.py",
+      "bytes": 74,
+      "lines": 1,
+      "sha256": "b70dae7115af4294cd94ca42579f098ff5ebc68bff6832e1c34e2fea9ac53b44",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\application\\application.py",
+      "bytes": 4169,
+      "lines": 120,
+      "sha256": "6f460bf3d0955a36609f98a6935e1a8a6d9bbfe1400a8ca39fe789816f32011b",
+      "syntax": "valid",
+      "async_functions": 8,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\application\\benchmark.py",
+      "bytes": 11039,
+      "lines": 317,
+      "sha256": "bab471219fd51e37a792eeab7a1345ccf25683990b2b737a31adc30b4dcb9558",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\application\\dashboard.py",
+      "bytes": 22873,
+      "lines": 544,
+      "sha256": "709d2d80b7c47df2d5f1df3128d63fabdcc9bb3e1e0ebbc7c680f2671b12be81",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\application\\emergency.py",
+      "bytes": 3129,
+      "lines": 98,
+      "sha256": "a92d5cb28d539cde6a96d972c2083e275cdd053e8b128db821b956a6b05cddbe",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\application\\engine.py",
+      "bytes": 9105,
+      "lines": 237,
+      "sha256": "a300d1fc25bbcf4fc2d7310600c1605ebb887645e38b62a4f410325996a4c832",
+      "syntax": "valid",
+      "async_functions": 3,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\application\\entry.py",
+      "bytes": 1010,
+      "lines": 30,
+      "sha256": "23fb6cc06fca4320f11e38996007dad0386d27a394d0a6c71ca8fdd437ef13cf",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\application\\execution.py",
+      "bytes": 2282,
+      "lines": 73,
+      "sha256": "5bd4a6bea1bb98c5d5fccdc6b6d0f157b456e449aa2bf7259cf9d35950c44c4b",
+      "syntax": "valid",
+      "async_functions": 1,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\application\\features.py",
+      "bytes": 7105,
+      "lines": 182,
+      "sha256": "ad82086bd72fbc1f9aebcab349635215950a44a74af2433b29976af9fb0f0d7d",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\application\\ingestion.py",
+      "bytes": 2244,
+      "lines": 69,
+      "sha256": "1a5509979fc866099ce3af258fc83c61730a41b0be068b0d85cd81406059de59",
+      "syntax": "valid",
+      "async_functions": 1,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\application\\market_cache.py",
+      "bytes": 1893,
+      "lines": 58,
+      "sha256": "70d998a66307b4edb171efd65b0d5bb4589d66194d6bcb2d413aba7948f6d951",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\application\\outbox.py",
+      "bytes": 4117,
+      "lines": 117,
+      "sha256": "2db606877cdbdd19d412924292c896b6b86c92c66e87f541eb08fa55a0b7a2e7",
+      "syntax": "valid",
+      "async_functions": 1,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\application\\portfolio.py",
+      "bytes": 2084,
+      "lines": 62,
+      "sha256": "e39dfab85eb96340e244800629d5b7cb71dec6a89dca4cc3fb02b7081ca53bbb",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\application\\positions.py",
+      "bytes": 4893,
+      "lines": 156,
+      "sha256": "1676c598fe0238a532b56ffc5c20d2382f6a40f9b8883bd16b8e4ae49f03b744",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\application\\promotion.py",
+      "bytes": 5864,
+      "lines": 166,
+      "sha256": "15f1615c3f9ace1067af67acc3367c83a7c54a603b7e911bfd28f8c59cec2c5c",
+      "syntax": "valid",
+      "async_functions": 1,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\application\\reconciliation.py",
+      "bytes": 6297,
+      "lines": 162,
+      "sha256": "e1eb5eaea686ddb880bac274e2c635ab9cdd3a3aa1fa0b8dd6106588e562c706",
+      "syntax": "valid",
+      "async_functions": 1,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\application\\replay.py",
+      "bytes": 2002,
+      "lines": 64,
+      "sha256": "deaf9f0a517ef583fd2241ce41a5af56307ea260255143536c8aa9073a4c6ed8",
+      "syntax": "valid",
+      "async_functions": 1,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\application\\risk.py",
+      "bytes": 1010,
+      "lines": 30,
+      "sha256": "f0172a3601b1b6a2345ce9e96e57c8aa573e1638079e1b51af5222533f01cb31",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\application\\signals.py",
+      "bytes": 1671,
+      "lines": 43,
+      "sha256": "6c4619748b5ea7ae99ae5f907c69e42fdbf4573db3e7e2100bce64e49a865447",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\application\\supervisor.py",
+      "bytes": 4205,
+      "lines": 120,
+      "sha256": "40e536958d9e906de94eae6728a85d4ca08e371038f8339ef9ae16fce2313612",
+      "syntax": "valid",
+      "async_functions": 3,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\bootstrap.py",
+      "bytes": 22615,
+      "lines": 626,
+      "sha256": "96987d89c7a407de1b73e27e584e8cbb72c6f7c0e3a725efa0e183d1020ab182",
+      "syntax": "valid",
+      "async_functions": 12,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\domain\\__init__.py",
+      "bytes": 167,
+      "lines": 4,
+      "sha256": "89e596f20c4ef307260e3e1cce8b8f52712e1d82a5e85a3e79f0feb3943a17b5",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\domain\\decisions.py",
+      "bytes": 1420,
+      "lines": 52,
+      "sha256": "74224e507f7223da43af7edd746800b5b7c656deb6efcef0522503c15680021f",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\domain\\enums.py",
+      "bytes": 1830,
+      "lines": 87,
+      "sha256": "245d0d35fa39bd0c18faeffce5aa2c1c0c9284cdea309c78a364972fe0509309",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\domain\\errors.py",
+      "bytes": 1676,
+      "lines": 65,
+      "sha256": "d3693c61ae8795825b20b2f6f28973a42171b9aa1262bfd2c402746133fc4084",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\domain\\events.py",
+      "bytes": 4151,
+      "lines": 176,
+      "sha256": "a9db4fec08bee522ff1357214ed3a7fdbb30f775f81d59c38a714a1c20297641",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\domain\\features.py",
+      "bytes": 1814,
+      "lines": 57,
+      "sha256": "c9f280f4e9f4c1174a0176a47c22d65d793ed78e6994118f73109c289cd1d396",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\domain\\orders.py",
+      "bytes": 1295,
+      "lines": 51,
+      "sha256": "b85a4f3dc15f181c98112bc7693a4e03084cb2420ff22968599a2b9a7c7b2e70",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\domain\\params.py",
+      "bytes": 4022,
+      "lines": 115,
+      "sha256": "3a2324e1955af89c6f42e465b95d5da1c50bbba6bea80e00d14f46acb329785a",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\domain\\policies\\__init__.py",
+      "bytes": 1520,
+      "lines": 67,
+      "sha256": "174dc29b452fdf7a10f746119150660057761de17a6f06f6d9918ec43073bd6c",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\domain\\policies\\base.py",
+      "bytes": 3720,
+      "lines": 119,
+      "sha256": "5f775fe4825dc8dd18940fe175c10c5d684b34d0169ce9485907ef3b41e7757e",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\domain\\policies\\entry.py",
+      "bytes": 10796,
+      "lines": 299,
+      "sha256": "a5e0643cbf9e905ecc4e97badd4a7515c98f0be7d4cb2503f361915548e10d89",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\domain\\policies\\escalation.py",
+      "bytes": 3427,
+      "lines": 96,
+      "sha256": "9ffe5a26a459ed9c0d61aee5c676028a55d99049ace83ba55dd94d7d2305a396",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\domain\\policies\\exit.py",
+      "bytes": 5272,
+      "lines": 148,
+      "sha256": "fdefbd46fa0b9bbf1c3d4663dc6eca5c658298a974ef3b25d0c3fac8ac30a0af",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\domain\\policies\\priority_fee.py",
+      "bytes": 2401,
+      "lines": 72,
+      "sha256": "e916d590d4256980657f91cb8ab8a8a5a46535f5baf8860a9b125305f0fc3e7d",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\domain\\policies\\risk.py",
+      "bytes": 4172,
+      "lines": 120,
+      "sha256": "97898f4e0f40d7fc13b54fae0bd7fabdf4d0dd957de0c9e78f2d4b613839ee17",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\domain\\policies\\sizing.py",
+      "bytes": 1645,
+      "lines": 43,
+      "sha256": "d2e74f2f296757d0653b965097d2c25fe2f3d87bc7dc4d41926cafbf99973a0b",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\domain\\position.py",
+      "bytes": 8409,
+      "lines": 208,
+      "sha256": "cb015c0f00780b62a2b5e67c28baca207c6f20f8a40173fb12104d6434c08687",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\domain\\signals.py",
+      "bytes": 1128,
+      "lines": 35,
+      "sha256": "ae8c53af40971be178c35bd9d7d8fbac337055da0c6c9c79b6cfe7cc786047fe",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\domain\\telemetry.py",
+      "bytes": 1010,
+      "lines": 35,
+      "sha256": "000bbe93d32ba4aa6338301736cc9769dc338f81372ed53d84afc2d67c8e0cff",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\domain\\value_objects.py",
+      "bytes": 5530,
+      "lines": 209,
+      "sha256": "65f15ab91473f070ad363f1825cc2401897869a321ecf64c262e20ce198cbfdc",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\infra\\__init__.py",
+      "bytes": 91,
+      "lines": 1,
+      "sha256": "dacaf4fed54a20961193bc0fad59cf352a6d72572bce98a483cd84260e4314a0",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\infra\\clock.py",
+      "bytes": 611,
+      "lines": 29,
+      "sha256": "3960bd9972d0e1316cdb4a85ac2e795b184dbe7466c34661702b76f83ddca7db",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\infra\\config.py",
+      "bytes": 11504,
+      "lines": 305,
+      "sha256": "fc2263452c7bd7fc55cd76384a71b99a6e386c1579dcf11022a8086c4e9f4724",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\infra\\events.py",
+      "bytes": 2178,
+      "lines": 64,
+      "sha256": "f03705af08dc9fd39a5a2e98bc21b08b0b8409e517dd9a673556ba776d945861",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\infra\\logging.py",
+      "bytes": 1804,
+      "lines": 57,
+      "sha256": "c1a0db88d0c2d826ae9e3ce47e08e45b0b6acaa99137e480dbf1cd60d4f3fb9c",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\infra\\metrics.py",
+      "bytes": 1047,
+      "lines": 29,
+      "sha256": "40e51dc4e69691d69c18cbe1fe88bef39208fcd6163b72cfb6ef654aa30db5ab",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\infra\\prometheus.py",
+      "bytes": 4119,
+      "lines": 114,
+      "sha256": "06d61e9d6794a98961cea433700d206ca59156f3a9280c964b7d165feffd6763",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\infra\\resilience.py",
+      "bytes": 3262,
+      "lines": 103,
+      "sha256": "287b171fde3c2ca7cb3ea8fc9fe7c6fe9d5379359537ab307537cfea232b7e5a",
+      "syntax": "valid",
+      "async_functions": 2,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\infra\\scheduler.py",
+      "bytes": 2602,
+      "lines": 77,
+      "sha256": "3779358fee5b16de2c946751a172dabdb4c0439fd301b886ada2154e2b2dbe87",
+      "syntax": "valid",
+      "async_functions": 3,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\interfaces\\__init__.py",
+      "bytes": 88,
+      "lines": 1,
+      "sha256": "8285b7e92a948f66f3b451f3f72596635eb9e12399c1b12d2db1f3641fa410df",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\interfaces\\api.py",
+      "bytes": 14115,
+      "lines": 316,
+      "sha256": "38c5c9eff930242f6e88576c511fd6c0c96dbf474842f5425e79edd6173ad57d",
+      "syntax": "valid",
+      "async_functions": 13,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\interfaces\\cli.py",
+      "bytes": 20442,
+      "lines": 538,
+      "sha256": "eeef254d4b8f96aecaa6e0e300ac8a06e43e57623a856342a2ef1dce9d1c847a",
+      "syntax": "valid",
+      "async_functions": 6,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\interfaces\\dashboard.py",
+      "bytes": 39252,
+      "lines": 930,
+      "sha256": "5f5bfdf6a34f0a5924e92de8b46b3b7be09a218b6df6ae501dc44da2f128a4d1",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\interfaces\\doctor.py",
+      "bytes": 11187,
+      "lines": 300,
+      "sha256": "6c1cb768eee5d5e9ee145b7a7adccc73dc72e29d9737baed4d676405bc77f8a4",
+      "syntax": "valid",
+      "async_functions": 12,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\interfaces\\wallet_cli.py",
+      "bytes": 9049,
+      "lines": 244,
+      "sha256": "1721a5fbdaddc5bbff41ba9c5ec819037f5d89ac0f3a49aa72133fd99e2ea5ea",
+      "syntax": "valid",
+      "async_functions": 4,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\ml\\__init__.py",
+      "bytes": 2015,
+      "lines": 83,
+      "sha256": "0729a033748c40b812551a45250c1bbf6e7fddb3097147ee3ebbed8df2200521",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\ml\\dataset.py",
+      "bytes": 10112,
+      "lines": 273,
+      "sha256": "da6da41efc03ea0478bf4fc4755d9e9dd25a8b67c1c20da9faebb4e2f9f38594",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\ml\\experiments.py",
+      "bytes": 7889,
+      "lines": 217,
+      "sha256": "a463135dd1a9622965f286b73e5cf38d51f175078fee0acbdcaecb543fafcbbb",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\ml\\monitors.py",
+      "bytes": 8263,
+      "lines": 230,
+      "sha256": "b63f6e5d0f2e54adac99311e7c27b1a87f85da1be6dc57411f5ccbe5295d4257",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\ml\\providers.py",
+      "bytes": 4296,
+      "lines": 117,
+      "sha256": "1a9d2a77db2a5243ae0a39187a342d1fbd2f3e59de44e6727b314ccc42dac95e",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\ml\\registry.py",
+      "bytes": 7382,
+      "lines": 193,
+      "sha256": "f4b8be758c5a2f797c908b94ac64c588a278eff4e63f1bd7b260859b12ea9b6e",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\ml\\training.py",
+      "bytes": 6953,
+      "lines": 204,
+      "sha256": "30b1d1da38afd9cf9e8bfceb9dc74d4675b412ba463575849856d33b970c8b96",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\ml\\wrappers.py",
+      "bytes": 7056,
+      "lines": 232,
+      "sha256": "be11c28032252719c4237bcbd3a855712d06a6a059e3afa848f54630f98921fb",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\ports\\__init__.py",
+      "bytes": 83,
+      "lines": 1,
+      "sha256": "b7e2541bc2a005204af9517706820e55fd52ed1974e08e594d89b4912143fc03",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\ports\\chain.py",
+      "bytes": 725,
+      "lines": 22,
+      "sha256": "e1af97fa4dae5e787b1c4ab31cca7ad2e2e9f2f7d048dfa3fbac93fc89e7a869",
+      "syntax": "valid",
+      "async_functions": 2,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\ports\\clock.py",
+      "bytes": 456,
+      "lines": 19,
+      "sha256": "b36e19810909af23dc5cda4b8615c07606724c11f5c1d6a718251c8bfde40af5",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\ports\\events.py",
+      "bytes": 1762,
+      "lines": 55,
+      "sha256": "20d1f746ac6b94b6dddb41cde0a9e6546efcb7da742ce2ca5427a0779188ef2b",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\ports\\execution.py",
+      "bytes": 912,
+      "lines": 35,
+      "sha256": "fd4fd661bd1d567039580a485b2179cd25e89e04b978a680b0b7d78259bed1a5",
+      "syntax": "valid",
+      "async_functions": 2,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\ports\\features.py",
+      "bytes": 742,
+      "lines": 23,
+      "sha256": "033c4edd18f3f20ea4675d84c435b969fcc8a84fd55d620a8b6d9592344c4ecb",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\ports\\market_data.py",
+      "bytes": 1189,
+      "lines": 45,
+      "sha256": "582d36fbf96a174583adcdeccbf8739294c95bc229913bdfa1ac093f925260dd",
+      "syntax": "valid",
+      "async_functions": 1,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\ports\\metrics.py",
+      "bytes": 362,
+      "lines": 13,
+      "sha256": "062ff953a9b2ca595710cf0e64029ba5861a5d50a0c30a75657f1685d9ac9359",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\ports\\model.py",
+      "bytes": 1102,
+      "lines": 44,
+      "sha256": "c36973a4d89f368ea6f69bfc944a127aa24ef1424c94294a4d662ed3060ef417",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\ports\\notifier.py",
+      "bytes": 359,
+      "lines": 16,
+      "sha256": "498aa9e6ef85e268b24eefd4dd53d43da13be27387b9bdc0f3ee1e2eb89af546",
+      "syntax": "valid",
+      "async_functions": 1,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\ports\\outbox.py",
+      "bytes": 996,
+      "lines": 36,
+      "sha256": "1497b5cb00131a79cb107db4eb0508e65e5f3f94b9d092dc3f21b8c54b8a7865",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\ports\\positions.py",
+      "bytes": 756,
+      "lines": 28,
+      "sha256": "8d3e2dfea3e7ae5308faedfad2576eadadb78cc7521ec6dd66f09d1d40cd343e",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\ports\\signals.py",
+      "bytes": 456,
+      "lines": 18,
+      "sha256": "a3d3797d3b3a0490fa68b24e9065899021520e46270253cb8663171207e1150b",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\ports\\strategy.py",
+      "bytes": 588,
+      "lines": 21,
+      "sha256": "a0c397cfe68fa9ce341b3b18ef6266761121085d767716c98e553978386ea902",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\ports\\telemetry.py",
+      "bytes": 513,
+      "lines": 18,
+      "sha256": "3faed9f63e26446444508a88d8e39240ed7c0be64c9ad514a9db52502948c00c",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\research\\__init__.py",
+      "bytes": 86,
+      "lines": 1,
+      "sha256": "9763ce602793da5cc0efeec2e9adb31cd4542b7393196b3bb6fc52bb670e85d1",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\research\\heuristic_signals.py",
+      "bytes": 1846,
+      "lines": 52,
+      "sha256": "4804a1eb8460e16d2a618c09fba32d358073e59233ccac0c8aea1f82a6684109",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\research\\twox_research.py",
+      "bytes": 1584,
+      "lines": 46,
+      "sha256": "e830813a574d051b279c730611ac698406f6a78293eabff7d5a8e776c6f8ce19",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    },
+    {
+      "path": "D:\\pump\\sylph\\sylph\\strategies\\__init__.py",
+      "bytes": 62,
+      "lines": 1,
+      "sha256": "9c6386823be49bccde0bd40ee284e77a2cab1f02f291f6430ebdf071e9732ac7",
+      "syntax": "valid",
+      "async_functions": 0,
+      "repeated_top_level_definitions": {}
+    }
+  ]
+}

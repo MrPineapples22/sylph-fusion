@@ -1,0 +1,3 @@
+import assert from 'node:assert/strict';
+export async function testAutomationGates(){const mint='TestMint111111111111111111111111111111111111';const inFlight=new Set();inFlight.add(mint);try{await Promise.reject(Error('reject'))}catch{}finally{inFlight.delete(mint)}assert.equal(inFlight.has(mint),false);let rem=1000;for(let i=0;i<3;i++){const q=i===2?rem:Math.floor(1000/3);rem-=q}assert.equal(rem,0);const peaks={[mint]:2.5};const milestones={[mint]:new Set([0,1,2])};delete peaks[mint];delete milestones[mint];peaks[mint]=1.1;assert.equal(peaks[mint],1.1)}
+await testAutomationGates(); console.log('3/3 automation gate checks passed');

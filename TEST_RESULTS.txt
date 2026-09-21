@@ -1,0 +1,55 @@
+✔ live configuration rejects missing keys, insecure endpoints and duplicate fallback (5.9128ms)
+✔ configuration rejects NaN, fractional units and inconsistent caps (2.9013ms)
+✔ fifty percent at twenty percent does not imply principal recovered (3.9121ms)
+✔ integer quantity and cost basis conserved across thousands of partial sequences (438.9233ms)
+✔ overfills and repeated settlement cannot corrupt inventory (0.521ms)
+✔ panic takes precedence over profit ladders (0.4218ms)
+✔ hard stop responds to gaps below threshold (0.2522ms)
+✔ take-profit stage advances only with a settled fill (1.3161ms)
+✔ runner trailing stop widens at six times original value (0.2918ms)
+✔ basis points and CU fees round conservatively above floating-point precision (0.3695ms)
+✔ deduplication is bounded and expires entries (0.2837ms)
+✔ SQLite persists pending bytes across restart (277.3803ms)
+✔ finalized metadata drives actual SOL and token deltas (2.8194ms)
+✔ unknown send outcome remains pending when any RPC cannot prove expiry (1.6979ms)
+✔ expiry requires every RPC to report finalized height beyond validity margin (0.7399ms)
+✔ a landed transaction found by fallback prevents false expiry (0.7037ms)
+✔ durability failure prevents broadcast and propagates out of the actor (23.3545ms)
+{"time":"2026-09-14T04:10:43.424Z","event":"rpc_failover","endpointIndex":1}
+✔ RPC failover preserves method and request body (12.8007ms)
+{"time":"2026-09-14T04:10:43.428Z","event":"bundle_accepted","signature":"signature","bundleId":"bundle-id"}
+{"time":"2026-09-14T04:10:43.428Z","event":"bundle_accepted","signature":"signature","bundleId":"bundle-id"}
+✔ Jito retry transmits identical signed bytes and explicit base64 (3.1486ms)
+✔ Anchor parser rejects spoofed event from unrelated invocation (18.9453ms)
+✔ SDK curve quotes use integer reserves and cannot produce profitable immediate roundtrip (4.7996ms)
+{"time":"2026-09-14T04:10:43.493Z","event":"transaction_prepared","side":"buy","computeUnits":116000,"priorityLamports":"200000","tipLamports":10000,"buildMs":38}
+✔ live builder puts tip and swap in one signed transaction with bounded CU fee (43.4776ms)
+✔ live builder rejects simulation errors and stale snapshots without producing an order (39.1636ms)
+✔ real IDL event decodes once across duplicate feeds and rejects stale slots (72.9414ms)
+{"time":"2026-09-14T04:10:43.869Z","event":"yellowstone_subscribed"}
+{"time":"2026-09-14T04:10:43.891Z","event":"yellowstone_reconnecting"}
+✔ Yellowstone path writes an actual transaction subscription and consumes updates (282.5033ms)
+✔ dashboard protects reads and writes, validates actions and serves local assets (191.5774ms)
+✔ dashboard snapshot excludes credentials and signed transaction bytes (18.0677ms)
+{"time":"2026-09-14T04:10:44.121Z","event":"entries_paused"}
+{"time":"2026-09-14T04:10:44.122Z","event":"entries_resumed"}
+✔ operator resume persists without clearing a safety halt (19.6011ms)
+{"time":"2026-09-14T04:10:44.140Z","event":"entries_paused"}
+✔ pause arriving during buy construction prevents submission (18.4566ms)
+✔ market pairs use Solana addresses, retain unknown prices, and select highest liquidity (0.7801ms)
+✔ Kolscan parser preserves transactions when later components contain empty arrays (1.059ms)
+✔ watchlist validates addresses and persists additions and removal (16.5088ms)
+✔ cumulative performance survives journal truncation and includes failed fees (1.1144ms)
+✔ Kolscan buy direction comes from token output, not unsigned SOL volume (0.9484ms)
+✔ rolling circuit breaker halts after three failures and drawdown breach
+✔ strategy gates keep unsupported routes explicit and preserve atomicity
+✔ paper auto mode enters only after safety approval and writes an analysis CSV
+✔ paper exit ladder realizes an early gain and protects the remainder
+ℹ tests 39
+ℹ suites 0
+ℹ pass 39
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3042

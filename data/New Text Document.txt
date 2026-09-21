@@ -1,0 +1,390 @@
+
+
+Act as a Principal Product Designer and Design Systems Architect specializing in Web3 FinTech and low-latency trading terminals.
+
+Design a god-tier, highly usable, Solana-themed user interface (UI/UX) for a high-frequency trading and token analytics dashboard.
+
+Follow these strict design guidelines:
+
+### 1. Color Theory & Palette (Solana Cyber-Obsidian)
+
+- **Base Surfaces:** Avoid flat #000000. Use a layered obsidian/zinc hierarchy:
+  - Deepest Canvas: `#080A0F`
+  - Elevated Cards/Surfaces: `#0E131F`
+  - Border/Dividers: `rgba(255, 255, 255, 0.08)` and `rgba(153, 69, 255, 0.2)`
+- **Brand Accents (The Solana Spectrum):**
+  - Primary Electric Purple: `#9945FF`
+  - Primary Neon Turquoise/Green: `#14F195`
+  - Secondary Cyber Cyan: `#00C2FF`
+- **Semantic Data Colors:**
+  - Bullish/Buy/Success: Emerald Neon (`#00E676`) with glowing muted tint `#00E6761A`
+  - Bearish/Sell/Danger: Crimson Flame (`#FF3B69`) with muted tint `#FF3B691A`
+  - Neutral/Subtle: Slate Muted (`#94A3B8`)
+- **Accessibility:** Ensure every text and numerical element strictly satisfies WCAG 2.1 AA/AAA contrast standards against dark surfaces.
+
+### 2. Layout & Information Architecture
+
+- High-density, zero-clutter modular grid (3-column layout: Token Watchlist & Signals | TradingView / Liquidity Depth Chart | Order Execution & Live Tapes).
+- Focus on ergonomic "hot zones" where users execute quick actions (slippage controls, priority fees/Jito tips, instant buy buttons) without shifting focus.
+- Micro-interactions: Subtle 1px gradient borders, soft neon blur glows on active triggers, and crisp, micro-damped hover states.
+
+### 3. Deliverables Expected:
+
+1. **Design Tokens & Palette Specs:** HEX, RGB, opacity layers, and semantic mapping.
+2. **Component Anatomy:** Detailed styling for Token Cards, Order Execution Widget, and Live Transaction Feed.
+3. **Frontend Implementation:** Complete, copy-paste ready React + Tailwind CSS component code for the primary dashboard shell (including lucide-react icons, custom gradients, and tabular-numbers typography).
+I’ll keep this as a research briefing for now. I’m not switching/building yet because you asked for the +EV strategy deep dive; when you ask me to turn this into code or app logic, that’s the moment to use the build path.
+
+**Solana +EV Trading Brief**
+
+A sustainable Solana micro-cap strategy should avoid “predicting memes” and instead exploit measurable flow imbalances where entry, risk, exit, and adverse selection can be bounded. The system should paper trade first, log every candidate and rejected token, and optimize for cumulative expectancy:
+
+```text
+EV = (win_rate * avg_win_after_fees) - (loss_rate * avg_loss_after_slippage) - execution_costs
+```
+
+The practical edge is not one signal. It is a stack: fast ingestion, toxic-token rejection, volume authenticity scoring, wallet-cluster detection, execution cost control, and ruthless exits.
+
+**1. Market Microstructure**
+
+Pump-style launches begin with a bonding curve. Pump.fun describes its curve as a deterministic constant-product AMM using virtual reserves, where price moves as a direct function of buy/sell pressure; there is no external market maker at launch ([Pump.fun bonding curve docs](https://pump.fun/docs/bonding-curve)). Raydium LaunchLab documents the same broad virtual-reserve constant-product model and explains how graduation transfers the token into a post-graduation AMM/CPMM-style pool with the marginal price mechanically linked to the final curve state ([Raydium LaunchLab bonding curve](https://docs.raydium.io/products/launchlab/bonding-curve)).
+
+The lifecycle has three tradable regimes:
+
+| Phase | Liquidity Shape | Edge | Main Risk |
+|---|---:|---|---|
+| Bonding curve launch | Thin virtual liquidity, extreme elasticity | Early momentum scalps | Bundled insiders, dev sell, failed exits |
+| Graduation / migration | Liquidity deepens, spread compresses, volatility spikes | Post-migration reversal | Sniper dump, fake recovery |
+| Secondary DEX market | CPMM/CLMM/DLMM routing across Raydium, Orca, Meteora | Momentum continuation, arb, liquidity decay exits | Wash volume, holder concentration, toxic routing |
+
+Raydium now documents AMM v4, CPMM, CLMM, LaunchLab, and Token-2022 support as separate integration surfaces ([Raydium docs](https://docs.raydium.io/)). Orca Whirlpools are concentrated-liquidity AMMs with SDK support for swaps, positions, and pool reads ([Orca Whirlpools SDK](https://orca-so.github.io/whirlpools/)). Meteora DLMM uses bin-based dynamic liquidity and dynamic fees, which makes price impact and fill quality depend heavily on active-bin depth rather than headline pool TVL ([Meteora DLMM guide](https://github.com/MeteoraAg/docs/blob/main/developer-guides/dlmm/index.mdx)).
+
+The key implication: liquidity numbers are not enough. The engine should estimate executable depth at target size, not total liquidity.
+
+**MEV And Blockspace**
+
+Jito is the dominant Solana execution primitive for competitive trades. Jito bundles are groups of up to five transactions executed sequentially and atomically, and competing bundles are ranked through a tip auction. Jito’s docs describe parallel auctions at 50ms ticks, grouped by overlapping account lock patterns, with ordering based on tip efficiency relative to requested compute units ([Jito low-latency transaction send](https://docs.jito.wtf/lowlatencytxnsend/)).
+
+Solana priority fees are separate from Jito tips. The priority fee is:
+
+```text
+priority_fee_lamports = ceil(compute_unit_price * compute_unit_limit / 1,000,000)
+```
+
+Solana’s docs also warn that the fee is based on requested CU limit, not actual CU usage, so inflated CU limits waste money and can hurt net EV ([Solana fee docs](https://solana.com/docs/core/fees), [Solana compute budget](https://solana.com/docs/core/fees/compute-budget)).
+
+Execution rules:
+
+| Situation | Routing |
+|---|---|
+| Public speculative buy | Avoid unless paper/testing |
+| Competitive launch entry | Private RPC or Jito send path |
+| Atomic arbitrage | Jito bundle only |
+| Multi-leg liquidation | Jito bundle only |
+| Simple paper trade | No transaction, record simulated fill |
+| Sandwich-sensitive swap | Use tight slippage, private route, and Jito anti-front-run account where supported |
+
+Tip sizing should be bounded by expected gross edge:
+
+```text
+max_tip = min(
+  0.50 to 0.75 * expected_gross_profit,
+  strategy_tip_cap,
+  drawdown_adjusted_tip_cap
+)
+```
+
+For speculative launch trades, the tip should scale with slot congestion and recent landing failures, not with emotion. If the strategy cannot clear expected fees, priority fees, Jito tip, platform fee, and slippage, it should skip.
+
+**2. Quantitative Edge**
+
+The most useful short-horizon metric is order flow imbalance:
+
+```text
+OFI_5s = (buy_volume_5s - sell_volume_5s) / (buy_volume_5s + sell_volume_5s)
+```
+
+But raw OFI is easy to fake. The better signal is adjusted OFI:
+
+```text
+adjusted_OFI =
+  OFI_5s
+  * unique_buyer_score
+  * median_trade_quality
+  * holder_growth_score
+  * anti_wash_score
+```
+
+Volume is more likely organic when:
+
+| Metric | Strong Signal |
+|---|---|
+| Unique buyer delta | Rising across 1m, 5m, 15m |
+| Median buy size | Stable or rising |
+| Buy size distribution | Not identical repeated clips |
+| Wallet age | Mixed, not all freshly funded |
+| Sell pressure | No large insider clips into retail flow |
+| Holder growth | Expands with price, not after price stalls |
+| Liquidity | Deepens or remains stable during rally |
+
+Wash trading / self-fill loops often show repeated same-size trades, alternating buy/sell from linked wallets, volume spikes without holder growth, and high transaction count with flat or decaying liquidity.
+
+A useful authenticity score:
+
+```text
+volume_authenticity =
+  0.25 * unique_wallet_ratio
++ 0.20 * holder_delta_score
++ 0.20 * median_trade_entropy
++ 0.15 * wallet_age_diversity
++ 0.10 * liquidity_follow_through
++ 0.10 * sell_absorption_score
+```
+
+Reject if below `0.62`. Trade only aggressively above `0.75`.
+
+**Smart Money And Insider Footprints**
+
+High-quality setups usually show:
+
+| Signal | Interpretation |
+|---|---|
+| Known profitable wallets enter after safety checks | Better than deployer-linked buys |
+| Holder count rises before price expansion | Organic accumulation |
+| Top holders do not sell into first pump | Supply overhang is lower |
+| Liquidity rises with volume | Market can absorb exits |
+| Creator wallet inactive or small | Lower dev-dump risk |
+| Funding sources are diverse | Lower sybil/cabal risk |
+
+High-risk insider footprints:
+
+| Signal | Action |
+|---|---|
+| Top 10 non-pool wallets >20% | Reject |
+| Same funding parent for top wallets | Reject or size tiny |
+| Wallets funded minutes before launch | Penalize heavily |
+| Creator launched failed tokens in past 24h | Reject |
+| Bundled slot-0 buys >15-20% | Reject |
+| Dev sells before 5m stability | Exit immediately |
+
+**Failed Breakout Vs True Expansion**
+
+Use multiple windows. A breakout is not valid just because price rises.
+
+| Metric | True Expansion | Failed Breakout |
+|---|---|---|
+| 1m volume / market cap | 3-12% with holder growth | >20% with flat holders |
+| 5m holder delta | +8-25% | <3% |
+| 15m liquidity trend | Stable/rising | Falling |
+| Buy count / sell count | >1.4 and stable | Spikes then collapses |
+| Median buy size | Rising or stable | Shrinking |
+| Top-holder balance | Flat or decreasing slowly | Sharp distribution |
+| Price retest | Holds VWAP/base | Loses base fast |
+
+A practical rule:
+
+```text
+Enter continuation only if:
+  price > local_vwap
+  holder_delta_5m > 8%
+  volume_to_mcap_5m between 5% and 35%
+  liquidity_drawdown_5m < 12%
+  adjusted_OFI_5s > 0.18
+  top10_non_pool <= 20%
+```
+
+**3. Risk Elimination**
+
+The risk engine should reject before ranking. Token-2022 extensions create real rug vectors. Solana documents extensions such as transfer hooks and permanent delegates; permanent delegate can transfer or burn tokens from any account for that mint, and owners cannot revoke it themselves ([Solana Token Extensions](https://solana.com/docs/tokens/extensions), [Permanent Delegate](https://solana.com/docs/tokens/extensions/permanent-delegate)).
+
+Automated hard rejects:
+
+| Check | Reject Condition |
+|---|---|
+| Mint authority | Active |
+| Freeze authority | Active |
+| Transfer hook | Present and unaudited |
+| Permanent delegate | Present |
+| Transfer fee | Mutable or excessive |
+| Default account state | Frozen |
+| Metadata | Mutable with suspicious update authority |
+| LP | Removable by deployer |
+| Top holders | Top 10 non-pool >20% |
+| Bundle forensics | Slot-0 linked wallets >15-20% |
+| Deployer history | Recent failed/rug tokens |
+| Liquidity | Under minimum executable depth |
+| Quote age | Stale |
+| Honeypot simulation | Sell fails or output collapses |
+
+For speculative trades, “unknown” should be treated as “no trade.” For paper trading, unknown can be logged as a separate label so the model learns what unavailable data correlates with.
+
+**Sybil And Bundle Detection**
+
+The strongest sybil detector is funding graph similarity:
+
+```text
+wallet_cluster_score =
+  shared_parent_weight
++ same_slot_entry_weight
++ same_amount_funding_weight
++ timing_similarity_weight
++ behavioral_similarity_weight
+```
+
+Flag wallets as coordinated if they share two or more of:
+
+| Feature | Example |
+|---|---|
+| Same parent wallet | Multiple top holders funded by one wallet |
+| Same funding time | Funded within 5-30 minutes |
+| Same buy slot | Entered in launch slot or adjacent slot |
+| Same buy size | Identical SOL clips |
+| Same exit behavior | Sell within same window |
+| Same intermediate hop | Disperse wallet, CEX hot wallet, mixer-like routing |
+
+Reject when:
+
+```text
+clustered_supply_percent > 15% on launch
+or
+clustered_supply_percent > 20% after migration
+```
+
+**4. PnL Mathematics**
+
+For meme/micro-cap systems, full Kelly sizing is too aggressive because returns are fat-tailed and slippage is regime-dependent. Use fractional Kelly with hard caps.
+
+```text
+kelly_fraction = (p * b - q) / b
+
+where:
+p = estimated win probability
+q = 1 - p
+b = average win / average loss
+```
+
+Then haircut it:
+
+```text
+position_size =
+  capital
+  * min(
+      0.25 * kelly_fraction,
+      max_strategy_risk,
+      liquidity_capacity_limit,
+      drawdown_adjusted_limit
+    )
+```
+
+Suggested caps:
+
+| Strategy | Risk Per Trade |
+|---|---:|
+| Atomic arb | Size by executable spread, inventory should be zero |
+| Liquidation | Size by repay capacity and unwind depth |
+| Post-migration reversal | 0.5-1.0% of liquid capital |
+| Bonding curve scalp | 0.25-0.75% |
+| Smart-money mirror | 0.5-1.5%, only after wallet proof |
+
+Slippage-adjusted expected value:
+
+```text
+net_EV =
+  p_win * avg_win
+- p_loss * avg_loss
+- platform_fees
+- priority_fee
+- jito_tip
+- expected_slippage
+- failed_tx_cost
+```
+
+The paper engine should store every component separately. If “profit” is positive only before fees/tips/slippage, the strategy is fake positive.
+
+**Exit Architecture**
+
+Use staged exits because micro-cap winners often pull back 30-40% before continuing. A good exit engine should combine price, liquidity, and flow:
+
+| Trigger | Action |
+|---|---|
+| +20% | Sell 25-50%, move stop near breakeven |
+| +50% | Sell another 25%, activate trailing |
+| +100% | Recover initial capital if not already done |
+| Peak >150% | 30% trailing stop, floor +50% |
+| Peak >500% | 40% trailing stop, floor +100% |
+| Liquidity drops >20% in 60s | Exit or halve |
+| OFI flips negative for 3 windows | Exit |
+| Dev/top-holder sell | Immediate exit |
+| Sell simulation fails | Emergency flag |
+| Price loses VWAP + holder growth stalls | Exit |
+
+Stops should not be purely price-based. A 25% drawdown with rising holders and stable liquidity is different from a 10% drawdown caused by liquidity removal.
+
+**5. Playbook**
+
+| Playbook | Entry Trigger | Invalidation | Exit | Target R:R |
+|---|---|---|---|---|
+| Slot-1 Momentum Sniping | New launch, safety known, OFI positive, no bundle cluster, dev allocation low | Slot-0 cluster >15%, freeze/mint active, sell sim fails | +20/+50 scale-outs, max hold <120s | 1.5:1 to 3:1 |
+| Bonding Curve Micro-Scalp | 15-45s after launch, rising unique buyers, median buy stable, no dev sell | OFI decay, buy count collapse, creator sells | Hard stop -12%, take +15-35% | 1.2:1 to 2.5:1 |
+| Post-Graduation Consolidation | Migration dump -50% to -80%, floor forms, holders stable/rising | Liquidity decay, top holders distributing | Trail from base, target previous high | 2:1 to 5:1 |
+| Smart Money Mirror | Proven wallet enters, token passes rug filters, wallet historically exits well | Wallet linked to deployer, copy-trade crowd already entered | Mirror exit or fixed 2x / -25% | 1.5:1 to 4:1 |
+| Secondary Momentum | MC >500k, volume/mcap healthy, holders + liquidity rising | Failed retest, liquidity down, sell velocity spike | VWAP stop plus staged scale-out | 2:1 to 6:1 |
+| Atomic Cross-DEX Arb | Net executable spread > all costs + margin | Simulation fails, route stale, tip consumes edge | Atomic buy/sell same bundle | Small but repeatable |
+| Liquidation Harvester | Health factor breach, collateral discount exceeds unwind cost | Collateral route illiquid, oracle stale | Repay/seize/swap atomically | Cost-bounded |
+
+The highest-quality system should prioritize these in order:
+
+1. Atomic arbitrage and liquidation harvesting because they avoid directional exposure.
+2. Post-graduation reversals because risk is more observable after sniper exits.
+3. Smart-money mirroring only after wallet-level performance tracking.
+4. Bonding curve scalping only with strict safety and short holds.
+5. Slot-1 sniping only when latency stack and bundle forensics are strong.
+
+**Implementation Requirements For The App**
+
+For the current app, the next concrete upgrade should be a scoring engine that writes every candidate to CSV, even rejects:
+
+```text
+timestamp
+mint
+symbol
+source
+phase
+price
+market_cap
+liquidity
+volume_1m
+volume_5m
+holder_delta_1m
+holder_delta_5m
+ofi_5s
+volume_authenticity
+top10_percent
+clustered_supply_percent
+mint_authority
+freeze_authority
+token2022_flags
+lp_status
+deployer_risk
+entry_score
+reject_reason
+paper_entry_price
+paper_exit_price
+realized_sol
+unrealized_sol
+strategy
+```
+
+Trade only when:
+
+```text
+safety_score >= 0.85
+volume_authenticity >= 0.62
+entry_score >= 0.70
+quote_age_seconds <= 15
+liquidity >= strategy_min_liquidity
+expected_net_EV > 0
+open_risk <= risk_budget
+```
+
+The key to positive realized SOL is not forcing more trades. It is making the app skip almost everything, then recording enough rejected tokens to prove which filters actually improve expectancy. For your app, the smart path is: paper auto-trade, CSV everything, review expectancy by strategy, then tighten the filter until realized PnL improves over a meaningful sample.
