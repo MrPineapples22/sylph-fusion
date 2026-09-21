@@ -266,9 +266,31 @@ async function handleRequest(req,res){
   try{const data=await readLive(upstream+requested.search);res.setHeader('Content-Type','application/json');res.end(JSON.stringify(data));}
   catch{res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({error:'Live request unavailable. The collector will retry its feeds automatically.'}));}return;
  }
- try{const path=decodeURIComponent(new URL(req.url,`http://${req.headers.host || '127.0.0.1'}`).pathname);const file=resolve(root,'.'+(path==='/'?'/index.html':path));if(!file.startsWith(resolve(root)+sep)){res.writeHead(403);res.end();return;}
- const data=await readFile(file);res.setHeader('Cache-Control','no-store, no-cache, must-revalidate');res.setHeader('Content-Type',({'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml'})[extname(file)]||'application/octet-stream');res.writeHead(200);res.end(req.method==='HEAD'?undefined:data);
- }catch{res.writeHead(404);res.end('Not found');}
+  try {
+    const path = decodeURIComponent(new URL(req.url, `http://${req.headers.host || '127.0.0.1'}`).pathname);
+    let file = resolve(root, '.' + (path === '/' ? '/index.html' : path));
+    let data;
+    try {
+      if (file.startsWith(resolve(root) + sep)) {
+        data = await readFile(file);
+      }
+    } catch {
+      const fallbackRoot = resolve(project, 'ui');
+      const fallbackFile = resolve(fallbackRoot, '.' + (path === '/' ? '/index.html' : path));
+      if (fallbackFile.startsWith(fallbackRoot + sep)) {
+        data = await readFile(fallbackFile);
+        file = fallbackFile;
+      }
+    }
+    if (!data) throw new Error('Not found');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.setHeader('Content-Type', ({ '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' })[extname(file)] || 'application/octet-stream');
+    res.writeHead(200);
+    res.end(req.method === 'HEAD' ? undefined : data);
+  } catch {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>SYLPH Terminal</title><style>body{background:#0d131a;color:#e1e7ed;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;}div{text-align:center;max-width:520px;padding:32px;background:#152331;border-radius:12px;border:1px solid #233547;box-shadow:0 8px 32px rgba(0,0,0,0.5);}h1{color:#14F195;margin-bottom:8px;font-size:24px;}p{color:#8ea3b7;line-height:1.6;font-size:14px;}pre{background:#0b1118;padding:12px;border-radius:6px;color:#7adfff;font-size:13px;border:1px solid #1c2b3a;}a{color:#00C2FF;text-decoration:none;font-weight:bold;display:inline-block;margin-top:10px;}</style></head><body><div><h1>SYLPH Terminal Online</h1><p>The engine and market feeds are active. To load the full UI bundle, run in your Codespace terminal:</p><pre>git fetch origin && git reset --hard origin/main && node terminal/server.mjs</pre><p><a href="/live/api/system/health">View Live System Health Telemetry &rarr;</a></p></div></body></html>`);
+  }
 }
 const astraFeed=createAstraFeed(readLive);
 server.requestTimeout = 15_000;
