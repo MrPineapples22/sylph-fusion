@@ -211,7 +211,7 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
             </div>
             <div style={{background:'rgba(0,0,0,0.2)',padding:'8px 10px',borderRadius:'4px',border:'1px solid rgba(255,255,255,0.04)'}}>
               <span style={{color:'rgba(255,255,255,0.4)',display:'block',marginBottom:'2px'}}>OPTIMAL BUY BOUNDS</span>
-              <b style={{fontSize:'13px',color:'#14F195'}}>$10.00 — $75.00 / token</b>
+              <b style={{fontSize:'13px',color:'#14F195'}}>$5.00 — $250.00 / token</b>
             </div>
             <div style={{background:'rgba(0,0,0,0.2)',padding:'8px 10px',borderRadius:'4px',border:'1px solid rgba(255,255,255,0.04)'}}>
               <span style={{color:'rgba(255,255,255,0.4)',display:'block',marginBottom:'2px'}}>AMM DEPTH LIMIT</span>

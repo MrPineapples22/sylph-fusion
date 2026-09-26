@@ -52,7 +52,7 @@ test('Position Sizer: High conviction (PRIME tier, HSI 95, UP) scales via Half-K
 
   assert.ok(result.convictionMultiplier >= 1.20, `Expected Kelly >= 1.20, got ${result.convictionMultiplier}`);
   assert.equal(result.confidenceGrade, 'PRIME_AGGRESSIVE');
-  assert.ok(result.optimalUsd >= 50.0 && result.optimalUsd <= 100.0);
+  assert.ok(result.optimalUsd >= 50.0 && result.optimalUsd <= 250.0);
   assert.match(result.rationale, /Prime tier, HSI 95, UP momentum/);
 });
 

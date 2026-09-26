@@ -152,7 +152,7 @@ export function calculateOptimalBuyPositionValue(
   const boundedByLiquidity = Math.min(rawTargetUsd, liquidityCapUsd);
 
   // Absolute & percentage diversification limits
-  const defaultMaxCap = Math.max(25.0, Math.min(100.0, unreservedCashUsd * 0.75));
+  const defaultMaxCap = Math.max(25.0, Math.min(250.0, unreservedCashUsd * 0.75));
   const maxOrderCapUsd = options.maxOrderCapUsd ?? defaultMaxCap;
   const boundedByCap = Math.min(boundedByLiquidity, maxOrderCapUsd);
 
@@ -160,7 +160,7 @@ export function calculateOptimalBuyPositionValue(
   let targetUsd = Math.min(boundedByCap, unreservedCashUsd);
 
   // Floor constraint: minimum viable order
-  const minFloorUsd = Math.min(options.minOrderFloorUsd ?? 10.0, unreservedCashUsd);
+  const minFloorUsd = Math.min(options.minOrderFloorUsd ?? 5.0, unreservedCashUsd);
   if (targetUsd < minFloorUsd) {
     targetUsd = minFloorUsd;
   }
