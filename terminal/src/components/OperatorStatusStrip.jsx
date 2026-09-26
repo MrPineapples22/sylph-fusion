@@ -1,38 +1,61 @@
 import React, { useState, useEffect } from 'react';
 import { FlaskConical, Radio, ShieldAlert, ChevronDown } from 'lucide-react';
+import { useOperator } from '../OperatorProvider.jsx';
+import { selectSystemStrip } from '../operator-status-strip-state.js';
+
+function useOptionalOperator() {
+  try {
+    return useOperator();
+  } catch {
+    return null;
+  }
+}
 
 export function OperatorStatusStrip({
-  mode = 'paper',
-  feedAgeMs = null,
-  feedFresh = false,
-  halted = false,
-  haltReason = null,
-  running = false,
-  pendingCount = 0,
-  notice = '',
+  mode: propMode = 'paper',
+  feedAgeMs: propFeedAgeMs = null,
+  feedFresh: propFeedFresh = false,
+  halted: propHalted = false,
+  haltReason: propHaltReason = null,
+  running: propRunning = false,
+  pendingCount: propPendingCount = 0,
+  notice: propNotice = '',
 }) {
+  const oxr = useOptionalOperator();
+  const oxrProjection = oxr?.projection;
+  const isStaleFromOxr = oxr?.isStale;
+
   const [systemTrust, setSystemTrust] = useState(null);
-  const [systemStrip, setSystemStrip] = useState(null);
+  const [cachedSystemStrip, setSystemStrip] = useState(null);
 
   useEffect(() => {
+    // If unified projection is available from OXR, use it and avoid redundant polling
+    if (oxrProjection) {
+      setSystemStrip(isStaleFromOxr ? null : (oxrProjection.systemStrip ?? null));
+      // Fallback polling belongs to a different evidence source and must not
+      // decorate an authoritative projection with stale trust assertions.
+      setSystemTrust(null);
+      return;
+    }
+
     let cancelled = false;
     async function fetchTrust() {
       try {
-        const res = await fetch('/live/api/system/trust');
+        const res = await fetch('/live/api/system/trust', { signal: AbortSignal.timeout(8000) });
         if (res.ok) {
           const data = await res.json();
           if (!cancelled) setSystemTrust(data);
-        }
-      } catch {}
+        } else if (!cancelled) setSystemTrust(null);
+      } catch { if (!cancelled) setSystemTrust(null); }
     }
     async function fetchStrip() {
       try {
-        const res = await fetch('/api/system/strip');
+        const res = await fetch('/api/system/strip', { signal: AbortSignal.timeout(2500) });
         if (res.ok) {
           const data = await res.json();
           if (!cancelled) setSystemStrip(data);
-        }
-      } catch {}
+        } else if (!cancelled) setSystemStrip(null);
+      } catch { if (!cancelled) setSystemStrip(null); }
     }
     fetchTrust();
     fetchStrip();
@@ -43,19 +66,36 @@ export function OperatorStatusStrip({
       clearInterval(intervalTrust);
       clearInterval(intervalStrip);
     };
-  }, []);
+  }, [oxrProjection, isStaleFromOxr]);
+
+  // Read the current projection directly: effects run after paint, so a cached
+  // healthy strip must never be displayed during a stale or missing update.
+  const systemStrip = selectSystemStrip(oxrProjection, isStaleFromOxr, cachedSystemStrip);
+
+  const feedAgeMs = oxrProjection?.marketData?.ageMs ?? propFeedAgeMs;
+  const feedFresh = oxrProjection ? oxrProjection.marketData?.state === 'CURRENT' && !isStaleFromOxr : propFeedFresh;
+  const mode = oxrProjection?.environment?.mode?.toLowerCase() ?? propMode;
+  const halted = (oxrProjection?.system?.state === 'HALTED') || propHalted;
+  const haltReason = oxrProjection?.system?.reason || propHaltReason;
+  const running = propRunning;
+  const pendingCount = oxrProjection?.executions?.pendingCount ?? propPendingCount;
+  const notice = propNotice;
 
   const ageKnown = Number.isFinite(feedAgeMs);
-  const stale = !feedFresh || !ageKnown || feedAgeMs > 5000;
-  const connection = !ageKnown ? 'Awaiting data' : stale ? 'Data delayed' : 'Connected';
+  const stale = isStaleFromOxr || !feedFresh || !ageKnown || feedAgeMs > 5000;
+  const connection = isStaleFromOxr ? 'Projection stale' : !ageKnown ? 'Awaiting data' : stale ? 'Data delayed' : 'Connected';
 
-  const operationalState = systemTrust?.operationalState || (halted ? 'HALTED' : stale ? 'DEGRADED' : 'HEALTHY');
-  const trustColor = operationalState === 'HEALTHY' ? 'text-good' : operationalState === 'DEGRADED' || operationalState === 'CAUTIOUS' ? 'text-warn' : 'text-danger';
+  const operationalState = isStaleFromOxr ? 'UNKNOWN' : oxrProjection?.system?.state || systemTrust?.operationalState || (halted ? 'HALTED' : stale ? 'DEGRADED' : 'UNKNOWN');
+  const trustColor = operationalState === 'HEALTHY' || operationalState === 'READY' || operationalState === 'OPERATIONAL' ? 'text-good' : operationalState === 'DEGRADED' || operationalState === 'CAUTIOUS' ? 'text-warn' : 'text-danger';
   const vector = systemTrust?.trustVector || null;
   const audit = systemTrust?.audit || null;
 
   return (
-    <div className="operator-status-strip compact-health" aria-label="Current browser simulation health">
+    <div
+      className={`operator-status-strip compact-health ${stale ? 'stale-lockout' : ''}`}
+      aria-label="Permanent operator safety and truth shell"
+      role="region"
+    >
       {/* Blueprint Part CXXIX — System Health Indicator */}
       <span className={`sylph-health-pill ${trustColor}`}>
         <span className="indicator-dot">●</span> SYLPH · {operationalState}
@@ -101,16 +141,16 @@ export function OperatorStatusStrip({
             CERT: <b style={{ color: systemStrip.certification === 'PASS' ? '#14F195' : '#FFBE6B' }}>{systemStrip.certification}</b>
           </span>
           <span className="health-pill-badge" style={{ background: '#1c2430', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', border: '1px solid #2d3848' }}>
-            LEADER: <b style={{ color: systemStrip.isJitoLeader ? '#14F195' : '#83c5e6' }}>{systemStrip.isJitoLeader ? 'JITO-MEV' : 'AGAVE-TPU'}</b>
+            LEADER: <b className="text-muted">{typeof systemStrip.isJitoLeader === 'boolean' ? (systemStrip.isJitoLeader ? 'JITO-MEV' : 'AGAVE-TPU') : 'UNKNOWN'}</b>
           </span>
           <span className="health-pill-badge" style={{ background: '#1c2430', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', border: '1px solid #2d3848' }}>
-            TIP: <b style={{ color: '#00f0ff' }}>{systemStrip.tipFloorP75 ? `${(systemStrip.tipFloorP75 / 1e9).toFixed(4)} SOL` : '0.0010 SOL'}</b>
+            TIP: <b style={{ color: '#00f0ff' }}>{systemStrip.tipFloorP75 ? `${(systemStrip.tipFloorP75 / 1e9).toFixed(4)} SOL` : 'UNKNOWN'}</b>
           </span>
           <span className="health-pill-badge" style={{ background: '#1c2430', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', border: '1px solid #2d3848' }}>
-            CONTENTION: <b style={{ color: systemStrip.contentionTier === 'CRITICAL' ? '#FF3B69' : systemStrip.contentionTier === 'HIGH' ? '#FFBE6B' : '#14F195' }}>{systemStrip.contentionTier || 'NOMINAL'}</b>
+            CONTENTION: <b style={{ color: systemStrip.contentionTier === 'CRITICAL' ? '#FF3B69' : systemStrip.contentionTier === 'HIGH' ? '#FFBE6B' : '#FFBE6B' }}>{systemStrip.contentionTier || 'UNKNOWN'}</b>
           </span>
-          <span className="health-pill-badge" style={{ background: '#1c2430', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', border: '1px solid #2d3848' }} title="HELIOS-DIRECT: Leader TPU QUIC wire dispatch with multi-leader pipelining">
-            HELIOS: <b style={{ color: '#14F195' }}>DIRECT ⚡</b>
+          <span className="health-pill-badge" style={{ background: '#1c2430', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', border: '1px solid #2d3848' }} title="No verified live delivery evidence">
+            HELIOS: <b className="text-warn">UNKNOWN</b>
           </span>
         </div>
       )}
@@ -128,11 +168,11 @@ export function OperatorStatusStrip({
             <dt>Active Leader</dt>
             <dd>{systemStrip?.activeLeaderPubkey ? `${systemStrip.activeLeaderPubkey.slice(0, 8)}… (${systemStrip.isJitoLeader ? 'Jito-Solana MEV' : 'Vanilla Agave'})` : 'Tracking'}</dd>
             <dt>HELIOS Direct TPU</dt>
-            <dd>{systemStrip?.helios ? `${systemStrip.helios.directTransmissionsCount} sent (${systemStrip.helios.avgTransmissionDurationMs}ms avg latency, ${systemStrip.helios.activeTpuEndpointsCount} nodes)` : 'Sub-25ms Leader Pipelining'}</dd>
+            <dd>{systemStrip?.helios ? `${systemStrip.helios.directTransmissionsCount} sent (${systemStrip.helios.avgTransmissionDurationMs}ms avg latency, ${systemStrip.helios.activeTpuEndpointsCount} nodes)` : 'UNKNOWN'}</dd>
             <dt>Jito Tip Floor (p75)</dt>
-            <dd>{systemStrip?.tipFloorP75 ? `${(systemStrip.tipFloorP75 / 1e9).toFixed(4)} SOL` : '0.0010 SOL'}</dd>
+            <dd>{systemStrip?.tipFloorP75 ? `${(systemStrip.tipFloorP75 / 1e9).toFixed(4)} SOL` : 'UNKNOWN'}</dd>
             <dt>Contention Tier</dt>
-            <dd>{systemStrip?.contentionTier || 'NOMINAL'}</dd>
+            <dd>{systemStrip?.contentionTier || 'UNKNOWN'}</dd>
             <dt>Latest observation</dt>
             <dd>{ageKnown ? `${(feedAgeMs / 1000).toFixed(1)}s ago` : 'Not received'}</dd>
             <dt>Pending orders</dt>

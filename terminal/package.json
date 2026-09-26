@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173",
-    "build": "vite build",
+    "build": "node build.js",
     "test": "node --test --test-isolation=none test/*.test.mjs",
     "start": "node server.mjs",
     "build:windows": "cmd /c Build.cmd"

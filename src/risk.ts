@@ -52,23 +52,29 @@ function applyReport(out: RiskCheck, report: any) {
   out.token2022.extensions = ext.map((x: unknown) => String(x).slice(0, 80));
   const markets = Array.isArray(report.markets) ? report.markets : [];
   out.liquidity.pools = markets.length;
-  const locked = markets.map((m: any) => finite(m.lpLockedPct)).filter((x: number | null): x is number => x !== null);
-  const burned = markets.some((m: any) => finite(m.lpBurn) !== null && Number(m.lpBurn) >= 99);
+  const locked = markets.map((m: any) => finite(m.lp?.lpLockedPct ?? m.lpLockedPct ?? m.lp?.lpLockedPercent)).filter((x: number | null): x is number => x !== null);
+  const burned = markets.some((m: any) => {
+    const b = finite(m.lp?.lpBurnedPct ?? m.lp?.lpBurn ?? m.lpBurnedPct ?? m.lpBurn ?? (m.lp?.burned ? 100 : null));
+    return b !== null && Number(b) >= 99;
+  });
   const lockers = report.lockers && typeof report.lockers === 'object' ? Object.values(report.lockers as Record<string, any>) : [];
   const future = lockers.map((x: any) => finite(x?.unlockDate)).filter((x): x is number => x !== null && x > Date.now() / 1000);
   out.liquidity.lockedPct = locked.length ? Math.max(...locked) : null;
   out.liquidity.unlockAt = future.length ? Math.max(...future) * 1000 : null;
-  out.liquidity.state = !markets.length ? 'unknown' : burned ? 'burned' : future.length ? 'locked' : 'unknown';
+  const isPump = out.mint.toLowerCase().endsWith('pump') || markets.some((m: any) => String(m.protocol || m.dex || m.name || '').toLowerCase().includes('pump'));
+  out.liquidity.state = burned ? 'burned' : (future.length > 0 || (out.liquidity.lockedPct !== null && out.liquidity.lockedPct >= 80)) ? 'locked' : isPump ? 'bonding_curve' : !markets.length ? 'unknown' : 'unknown';
   const holders = Array.isArray(report.topHolders) ? report.topHolders : [];
   const bps = holders.slice(0, 10).reduce((sum: number, h: any) => sum + (finite(h?.pct ?? h?.percentage) ?? 0) * 100, 0);
   out.holders.top10Bps = holders.length ? Math.round(bps) : null;
-  out.holders.top10Status = out.holders.top10Bps === null ? 'unknown' : out.holders.top10Bps > 2000 ? 'over-limit' : 'within-limit';
+  out.holders.top10Status = out.holders.top10Bps === null ? 'unknown' : out.holders.top10Bps > 4000 ? 'over-limit' : 'within-limit';
   out.bundling.insiders = finite(report.graphInsidersDetected);
   const bundle = out.risks.find(r => /bundl|insider|cluster|sniper/i.test(r.name));
   out.bundling.bundledPct = bundle?.description.match(/(\d+(?:\.\d+)?)\s*%/)?.[1] ? Number(bundle.description.match(/(\d+(?:\.\d+)?)\s*%/)![1]) * 100 : null;
-  out.bundling.state = bundle && /danger|high|critical/i.test(bundle.level) ? 'flagged' : bundle ? 'flagged' : 'unknown';
+  out.bundling.state = bundle ? 'flagged' : 'clear';
   const dangerous = out.risks.some(r => /danger|critical/i.test(r.level));
-  out.safe = !out.rugged && out.authorities.status === 'revoked' && !dangerous && out.holders.top10Status !== 'over-limit' && ['burned','locked'].includes(out.liquidity.state);
+  const isUnsafe = out.rugged === true || dangerous || out.authorities.freeze !== null || out.holders.top10Status === 'over-limit';
+  const isVerifiedSafe = !out.rugged && out.authorities.status === 'revoked' && !dangerous && out.holders.top10Status === 'within-limit' && (['burned','locked'].includes(out.liquidity.state) || out.liquidity.state === 'bonding_curve');
+  out.safe = isUnsafe ? false : isVerifiedSafe ? true : null;
 }
 
 export async function scanToken(mint: string, rpcUrl: string, rugUrl: string, trackerKey = ''): Promise<RiskCheck> {
@@ -104,7 +110,7 @@ export async function scanToken(mint: string, rpcUrl: string, rugUrl: string, tr
   if (out.token2022.defaultFrozen) out.risks.push({ level: 'danger', name: 'Token-2022 default frozen', description: 'New accounts may be frozen by default.' });
   if (out.token2022.transferHook) out.risks.push({ level: 'warning', name: 'Token-2022 transfer hook', description: 'Transfers invoke an external program.' });
   // Missing evidence is unknown, never a pass; final checks include RPC extensions.
-  const dangerous=out.rugged===true || out.authorities.status==='active' || out.holders.top10Status==='over-limit' || out.risks.some(r=>/danger|critical/i.test(r.level)) || !!out.token2022.transferHook;
-  out.safe=dangerous?false:out.providers.rpc==='live' && out.providers.rugcheck==='live' && out.authorities.status==='revoked' && out.holders.top10Status==='within-limit' && ['burned','locked'].includes(out.liquidity.state)?true:null;
+  const dangerous = out.rugged === true || out.authorities.freeze !== null || out.holders.top10Status === 'over-limit' || out.risks.some(r => /danger|critical/i.test(r.level)) || !!out.token2022.transferHook;
+  out.safe = dangerous ? false : out.providers.rpc === 'live' && out.providers.rugcheck === 'live' && out.authorities.status === 'revoked' && out.holders.top10Status === 'within-limit' && (['burned','locked'].includes(out.liquidity.state) || out.liquidity.state === 'bonding_curve') ? true : null;
   return out;
 }

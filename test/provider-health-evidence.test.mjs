@@ -20,6 +20,8 @@ test('RPC freshness enforcement agrees with displayed stale state', (t) => {
   let now = 1_700_000_000_000;
   t.mock.method(Date, 'now', () => now);
   const tracker = new ProviderHealthTracker();
+  tracker.setProviderConfiguration('SOLANA_RPC', true, true, true);
+  tracker.setProviderConfiguration('PUMPPORTAL_WS', true, true, true);
   tracker.recordSuccess('SOLANA_RPC', 20);
   now += 10_001;
   tracker.recordSuccess('PUMPPORTAL_WS', 20);
@@ -36,6 +38,7 @@ test('invalid latency cannot establish a healthy provider observation', () => {
 
 test('circuit recovery is not evidence of an endpoint failover', () => {
   const tracker = new ProviderHealthTracker();
+  tracker.setProviderConfiguration('SOLANA_RPC', true, true, true);
   for (let i = 0; i < 6; i++) tracker.recordFailure('SOLANA_RPC');
   assert.equal(tracker.getReport().providers.SOLANA_RPC.circuitBreakerTripped, true);
   tracker.recordSuccess('SOLANA_RPC', 20);
@@ -44,6 +47,8 @@ test('circuit recovery is not evidence of an endpoint failover', () => {
 
 test('projection exposes rate limiting and cannot certify unverified operation', (t) => {
   const tracker = new ProviderHealthTracker();
+  tracker.setProviderConfiguration('SOLANA_RPC', true, true, true);
+  tracker.setProviderConfiguration('PUMPPORTAL_WS', true, true, true);
   tracker.recordSuccess('SOLANA_RPC', 20);
   tracker.recordSuccess('PUMPPORTAL_WS', 20);
   tracker.recordRateLimit('SOLANA_RPC', 5000);

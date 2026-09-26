@@ -3,6 +3,13 @@ import assert from 'node:assert/strict';
 import {globalProjectionService as projection} from '../dist/projection-service.js';
 import {globalCommandGateway} from '../dist/command-gateway.js';
 
+test('operator health does not promote simulated routing into observed infrastructure', () => {
+  const strip = projection.getSystemStrip();
+  for (const field of ['activeLeaderPubkey', 'isJitoLeader', 'tipFloorP75', 'contentionTier', 'helios']) {
+    assert.equal(strip[field], undefined, field);
+  }
+});
+
 test('public listing preserves zero, missing, and malformed metrics distinctly', () => {
   const [zero, missing, malformed] = projection.projectEnrichedTokens([
     {mint: 'zero', price: 0, liquidity: 0, cap: 0, txCount: 0, at: Date.now()},

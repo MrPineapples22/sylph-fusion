@@ -88,40 +88,22 @@ export class LeaderScheduleTracker {
     }
   }
 
-  public getSlotLeader(slot: number): LeaderSlotInfo {
+  public getSlotLeader(slot: number): LeaderSlotInfo | undefined {
     const existing = this.scheduleBySlot.get(slot);
-    if (existing) {
-      return existing;
-    }
-
-    // Deterministic fallback heuristic if slot is beyond cached index
-    const chunkIndex = Math.floor(slot / SLOTS_PER_LEADER_CHUNK);
-    const mockValidatorIndex = (chunkIndex * 2654435761) >>> 0;
-    const isJito = (mockValidatorIndex % 100) < 80; // ~80% of top stake runs Jito
-    const fallbackPubkey = `val_${(mockValidatorIndex % 1000).toString().padStart(4, '0')}111111111111111111111111111111`;
-
-    const info: LeaderSlotInfo = {
-      slot,
-      leaderPubkey: fallbackPubkey,
-      isJitoLeader: this.jitoValidators.has(fallbackPubkey) || isJito,
-      stakeWeightLamports: 500_000_000_000_000n,
-      epochSlotIndex: slot % SLOTS_PER_EPOCH,
-      clusterStakeShareBps: 250,
-    };
-    this.scheduleBySlot.set(slot, info);
-    return info;
+    return existing;
   }
 
   public getUpcomingWindow(startSlot: number, count = 16): LeaderSlotInfo[] {
     const window: LeaderSlotInfo[] = [];
     for (let s = startSlot; s < startSlot + count; s++) {
-      window.push(this.getSlotLeader(s));
+      const leader = this.getSlotLeader(s);
+      if (leader) window.push(leader);
     }
     return window;
   }
 
   public isJitoLeaderAtSlot(slot: number): boolean {
-    return this.getSlotLeader(slot).isJitoLeader;
+    return this.getSlotLeader(slot)?.isJitoLeader ?? false;
   }
 
   public calculateChunkInfo(slot: number): {

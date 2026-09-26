@@ -8,7 +8,7 @@ import { request } from 'node:http';
 
 test('dashboard protects reads and writes, validates actions and serves local assets', async () => {
   const source = { paused: false, snapshot() { return { paused: this.paused }; }, async setPaused(value) { this.paused = value; } };
-  const server = await startDashboard(source, 18787);
+  const server = await startDashboard(source, 0);
   try {
     const page = await fetch(server.url); const html = await page.text();
     const token = html.match(/name="dashboard-token" content="([a-f0-9]+)"/)[1];

@@ -54,6 +54,7 @@ export interface SignatureResponse {
   readonly denial_reason?: string;
   readonly quarantine_reason?: string;
   readonly execution_timestamp_ms: number;
+  readonly simulation_only?: boolean;
 }
 
 export interface CapitalFirewallStatus {
@@ -73,6 +74,7 @@ export class VaultSigner {
   private currentControlEpoch = 1;
   private currentRevocationEpoch = 1;
   private readonly productionRoot: string;
+  private readonly allowSimulation: boolean;
   private totalSignedCount = 0;
   private readonly signedRegistry = new Map<string, {
     signature: string;
@@ -86,12 +88,15 @@ export class VaultSigner {
     maxSolPerTx?: number;
     dailyCapSol?: number;
     productionRoot?: string;
+    /** Test-only. This class is not an isolated production signing service. */
+    allowSimulation?: boolean;
   }) {
     // Generate isolated keypair if not provided (Zone 0 custody isolation)
     this.keypair = options?.keypair ?? Keypair.fromSeed(Uint8Array.from(Buffer.alloc(32, 42)));
     this.maxSolPerTx = options?.maxSolPerTx ?? 2.5;
     this.dailyCapSol = options?.dailyCapSol ?? 25.0;
     this.productionRoot = options?.productionRoot ?? 'sylph_production_root_sha256_v1';
+    this.allowSimulation = options?.allowSimulation === true;
   }
 
   public getPublicKey(): string {
@@ -127,6 +132,16 @@ export class VaultSigner {
    */
   public processSignatureRequest(request: SignatureRequest): SignatureResponse {
     const opId = `sign_op_${request.intent_id}_${Date.now()}`;
+
+    if (!this.allowSimulation) {
+      return {
+        success: false,
+        sign_operation_id: opId,
+        signing_state: 'REJECTED',
+        denial_reason: 'SIGNER_UNAVAILABLE: VaultSigner only supports explicit test simulation',
+        execution_timestamp_ms: Date.now(),
+      };
+    }
 
     // 1. Verify capability (Part XIX: no arbitrary transfers)
     if (!['SIGN_ENTRY', 'SIGN_POSITION_REDUCTION', 'SIGN_EXIT', 'SIGN_EXECUTION_FEE'].includes(request.capability)) {
@@ -206,10 +221,10 @@ export class VaultSigner {
     }
 
     // 8. Sign transaction atomically (Zone 0 Signer)
-    const simulatedSignature = createHash('sha256')
+    const simulatedSignature = 'simulation_sig_' + createHash('sha256')
       .update(request.serialized_tx_bytes)
       .update(this.keypair.secretKey)
-      .digest('base64');
+      .digest('hex');
 
     this.totalSignedCount++;
 
@@ -244,6 +259,7 @@ export class VaultSigner {
       sign_operation_id: opId,
       signature_base58: simulatedSignature,
       signing_state: 'RELEASED',
+      simulation_only: true,
       execution_timestamp_ms: Date.now(),
     };
   }

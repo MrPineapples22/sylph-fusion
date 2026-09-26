@@ -11,6 +11,7 @@ if errorlevel 1 (
  exit /b 1
 )
 :run
+if "%TERMINAL_PORT%"=="" set "TERMINAL_PORT=8793"
 
 "%SYLPH_NODE%" "%~dp0start-app.mjs" %*
 if errorlevel 1 (

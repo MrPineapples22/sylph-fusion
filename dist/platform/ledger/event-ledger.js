@@ -15,13 +15,13 @@ export class EventLedger {
         return this.currentHash;
     }
     getEvents() {
-        return this.events;
+        return this.events.map(event => ({ ...event }));
     }
     getEventsByVault(vaultId) {
-        return this.events.filter(e => e.vaultId === vaultId);
+        return this.events.filter(e => e.vaultId === vaultId).map(event => ({ ...event }));
     }
     getEventsByUser(userId) {
-        return this.events.filter(e => e.userId === userId);
+        return this.events.filter(e => e.userId === userId).map(event => ({ ...event }));
     }
     append(params) {
         const sequenceNumber = this.events.length + 1;
@@ -40,7 +40,7 @@ export class EventLedger {
         };
         this.events.push(completeEvent);
         this.currentHash = currentLedgerHash;
-        return completeEvent;
+        return { ...completeEvent };
     }
     /**
      * Cryptographically re-verifies the entire hash chain from genesis.
@@ -162,7 +162,7 @@ export class EventLedger {
         this.events = [];
         this.currentHash = GENESIS_HASH;
         for (const event of events) {
-            this.events.push(event);
+            this.events.push({ ...event });
         }
         const result = this.verifyChain();
         if (!result.valid) {

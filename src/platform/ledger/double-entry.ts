@@ -2,6 +2,7 @@ import { AccountName, DoubleEntryPosting, JournalEntry } from './types.js';
 
 export class DoubleEntryJournal {
   private entries: JournalEntry[] = [];
+  private entriesByPostingIdentity = new Map<string, JournalEntry>();
   private balances = new Map<AccountName, bigint>();
 
   constructor() {
@@ -41,14 +42,41 @@ export class DoubleEntryJournal {
    * Throws an error if sum(debits) != sum(credits).
    */
   post(eventId: string, postings: DoubleEntryPosting[], description: string): JournalEntry {
+    if (typeof eventId !== 'string' || eventId.trim().length === 0) {
+      throw new Error('Journal eventId is required');
+    }
     if (postings.length === 0) {
       throw new Error('Cannot post empty journal entry');
+    }
+
+    const normalizedPostings = postings.map(p => ({ ...p }));
+    // One source event can legitimately produce several accounting legs
+    // (fee, payable, payout). The idempotency identity therefore includes the
+    // account/direction shape, while amount changes for the same leg conflict.
+    const postingShape = normalizedPostings
+      .map(p => `${p.account}:${p.debitLamports > 0n ? 'D' : ''}${p.creditLamports > 0n ? 'C' : ''}`)
+      .join('|');
+    const postingIdentity = `${eventId}|${postingShape}`;
+    const existing = this.entriesByPostingIdentity.get(postingIdentity);
+    if (existing) {
+      const sameDescription = existing.description === description;
+      const samePostings = existing.postings.length === normalizedPostings.length &&
+        existing.postings.every((p, index) => {
+          const candidate = normalizedPostings[index];
+          return candidate !== undefined && p.account === candidate.account &&
+            p.debitLamports === candidate.debitLamports &&
+            p.creditLamports === candidate.creditLamports;
+        });
+      if (!sameDescription || !samePostings) {
+        throw new Error(`Conflicting replay for journal event ${eventId}`);
+      }
+      return existing;
     }
 
     let totalDebits = 0n;
     let totalCredits = 0n;
 
-    for (const p of postings) {
+    for (const p of normalizedPostings) {
       if (p.debitLamports < 0n || p.creditLamports < 0n) {
         throw new Error(`Negative amounts prohibited in posting for ${p.account}`);
       }
@@ -67,14 +95,14 @@ export class DoubleEntryJournal {
       journalId,
       eventId,
       timestamp: Date.now(),
-      postings,
+      postings: normalizedPostings,
       description,
     };
 
     // Apply postings to ledger accounts:
     // For Assets and Expenses: Balance = Balance + Debits - Credits
     // For Liabilities and Revenue: Balance = Balance + Credits - Debits
-    for (const p of postings) {
+    for (const p of normalizedPostings) {
       const current = this.balances.get(p.account) ?? 0n;
       if (p.account.startsWith('Assets:') || p.account.startsWith('Expenses:')) {
         this.balances.set(p.account, current + p.debitLamports - p.creditLamports);
@@ -84,6 +112,7 @@ export class DoubleEntryJournal {
     }
 
     this.entries.push(entry);
+    this.entriesByPostingIdentity.set(postingIdentity, entry);
     return entry;
   }
 

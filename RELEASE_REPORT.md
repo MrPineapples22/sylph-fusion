@@ -56,11 +56,11 @@ An end-to-end engineering audit, repair, and hardening cycle was performed on `s
 ### Automated Test Suites Summary
 | Test Suite | File Pattern | Total Tests | Passed | Failed | Success Rate |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Core Architecture** | `test/*.test.mjs` | 136 | 136 | 0 | **100%** |
+| **Core Architecture** | `test/*.test.mjs` | 137 | 137 | 0 | **100%** |
 | **Intelligence Engine** | `test/intelligence/*.test.mjs` | 179 | 179 | 0 | **100%** |
 | **Platform Infrastructure**| `test/platform/*.test.mjs` | 15 | 15 | 0 | **100%** |
-| **Terminal & UI** | `terminal/test/*.test.mjs` | 114 | 114 | 0 | **100%** |
-| **Total Automated Tests**| | **444** | **444** | **0** | **100.0%** |
+| **Terminal & UI** | `terminal/test/*.test.mjs` | 119 | 119 | 0 | **100%** |
+| **Total Automated Tests**| | **450** | **450** | **0** | **100.0%** |
 
 ### New Dedicated Test Suites
 1. **`test/execution-lifecycle.test.mjs`:**

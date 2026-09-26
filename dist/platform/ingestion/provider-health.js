@@ -21,12 +21,12 @@ export class ProviderHealthTracker {
     }
     initDefaultProviders() {
         const defs = [
-            { id: 'PUMPPORTAL_WS', role: 'DISCOVERY_STREAM', authoritative: true, configured: true, enabled: true, authenticated: true, url: 'wss://pumpportal.fun/api/data' },
-            { id: 'DEXSCREENER_API', role: 'MARKET_ENRICHMENT', authoritative: false, configured: true, enabled: true, authenticated: true, url: 'https://api.dexscreener.com/latest/dex' },
-            { id: 'RUGCHECK_API', role: 'SECURITY_RISK', authoritative: true, configured: true, enabled: true, authenticated: true, url: 'https://api.rugcheck.xyz/v1/tokens' },
-            { id: 'JUPITER_QUOTE', role: 'EXECUTION_ROUTING', authoritative: false, configured: true, enabled: true, authenticated: true, url: 'https://quote-api.jup.ag/v6/quote' },
-            { id: 'SOLANA_RPC', role: 'ON_CHAIN_TRUTH', authoritative: true, configured: true, enabled: true, authenticated: true, url: 'https://api.mainnet-beta.solana.com' },
-            { id: 'SOLANA_WSS', role: 'ON_CHAIN_TRUTH', authoritative: true, configured: true, enabled: true, authenticated: true, url: 'wss://api.mainnet-beta.solana.com' },
+            { id: 'PUMPPORTAL_WS', role: 'DISCOVERY_STREAM', authoritative: true, configured: false, enabled: false, authenticated: false, url: 'wss://pumpportal.fun/api/data' },
+            { id: 'DEXSCREENER_API', role: 'MARKET_ENRICHMENT', authoritative: false, configured: false, enabled: false, authenticated: false, url: 'https://api.dexscreener.com/latest/dex' },
+            { id: 'RUGCHECK_API', role: 'SECURITY_RISK', authoritative: true, configured: false, enabled: false, authenticated: false, url: 'https://api.rugcheck.xyz/v1/tokens' },
+            { id: 'JUPITER_QUOTE', role: 'EXECUTION_ROUTING', authoritative: false, configured: false, enabled: false, authenticated: false, url: 'https://quote-api.jup.ag/v6/quote' },
+            { id: 'SOLANA_RPC', role: 'ON_CHAIN_TRUTH', authoritative: true, configured: false, enabled: false, authenticated: false, url: 'https://api.mainnet-beta.solana.com' },
+            { id: 'SOLANA_WSS', role: 'ON_CHAIN_TRUTH', authoritative: true, configured: false, enabled: false, authenticated: false, url: 'wss://api.mainnet-beta.solana.com' },
             // HELIOS Direct TPU is an optional optimization; unconfigured/disabled by default so it does NOT make platform CRITICAL
             { id: 'HELIOS_DIRECT_TPU', role: 'DIRECT_TPU_DISPATCH', authoritative: false, configured: false, enabled: false, authenticated: false, url: 'udp://validator-leader-tpu:8003' },
         ];
@@ -57,7 +57,7 @@ export class ProviderHealthTracker {
             });
         }
     }
-    setProviderConfiguration(providerId, configured, enabled, authenticated = true) {
+    setProviderConfiguration(providerId, configured, enabled, authenticated = false) {
         const entry = this.metrics.get(providerId);
         if (!entry)
             return;
@@ -192,23 +192,19 @@ export class ProviderHealthTracker {
     isMarketFeedStale(now = Date.now(), thresholdMs = 10_000) {
         // Only check active, configured, authoritative discovery and RPC feeds
         const pump = this.metrics.get('PUMPPORTAL_WS');
-        if (pump && pump.configured && pump.enabled) {
-            if (pump.lastSuccessMs === 0 ||
-                now - pump.lastSuccessMs > thresholdMs ||
-                pump.circuitState === 'OPEN' ||
-                pump.rateLimitedUntilMs > now) {
-                return true;
-            }
-        }
+        if (!pump || !pump.configured || !pump.enabled || !pump.authenticated || !pump.observationValidated || !pump.transportReachable ||
+            pump.lastSuccessMs === 0 ||
+            now - pump.lastSuccessMs > thresholdMs ||
+            pump.circuitState === 'OPEN' ||
+            pump.rateLimitedUntilMs > now)
+            return true;
         const rpc = this.metrics.get('SOLANA_RPC');
-        if (rpc && rpc.configured && rpc.enabled) {
-            if (rpc.lastSuccessMs === 0 ||
-                now - rpc.lastSuccessMs > thresholdMs ||
-                rpc.circuitState === 'OPEN' ||
-                rpc.rateLimitedUntilMs > now) {
-                return true;
-            }
-        }
+        if (!rpc || !rpc.configured || !rpc.enabled || !rpc.authenticated || !rpc.observationValidated || !rpc.transportReachable ||
+            rpc.lastSuccessMs === 0 ||
+            now - rpc.lastSuccessMs > thresholdMs ||
+            rpc.circuitState === 'OPEN' ||
+            rpc.rateLimitedUntilMs > now)
+            return true;
         return false;
     }
     getReport(now = Date.now()) {
@@ -349,7 +345,7 @@ export class ProviderHealthTracker {
                 enabled: m.enabled,
                 transportReachable: m.transportReachable,
                 authenticated: m.authenticated,
-                capabilityAvailable: m.transportReachable && m.circuitState !== 'OPEN' && now >= m.rateLimitedUntilMs,
+                capabilityAvailable: m.configured && m.enabled && m.authenticated && m.transportReachable && m.observationValidated && freshness === 'FRESH' && m.circuitState !== 'OPEN' && now >= m.rateLimitedUntilMs,
                 observationValidated: m.observationValidated,
                 freshness,
                 slotLag: m.slotLag,

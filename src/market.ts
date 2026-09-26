@@ -53,6 +53,7 @@ export class Market {
   }
   async safety(s: Snapshot, creator: string): Promise<void> {
     this.validateEntry(s);
+    if (!this.cfg.RUGCHECK_URL) throw new Error('RUGCHECK_ADAPTER_CONFIGURATION_UNAVAILABLE');
     const owner = new PublicKey(creator), c = this.rpc.connection;
     const [balance, held, largest, report] = await Promise.all([
       c.getBalance(owner, 'confirmed'),

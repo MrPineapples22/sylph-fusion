@@ -18,7 +18,7 @@ const FUNNEL_GATES = [
   { id: 'buyerThreshold', label: 'Buyer Threshold', desc: 'Buyers >= 5 & Buy > 2x Sell' },
   { id: 'safetyPassed', label: 'Safety Passed', desc: 'Authorities revoked, creator intact' },
   { id: 'driftPassed', label: 'Drift Passed', desc: 'Reserves drift within +-200 BPS' },
-  { id: 'eligible', label: 'Eligible', desc: 'Curve open & cash reserve clear' },
+  { id: 'eligible', label: 'Eligible', desc: 'Active curve or verified AMM route' },
   { id: 'paperFilled', label: 'Paper-Filled', desc: 'Settled paper position' },
 ];
 
@@ -65,9 +65,9 @@ export function CandidateFunnel({ funnelData, liveCandidates = [], onSelectStage
     discovered: funnelData?.discovered ?? liveCandidates.length,
     aged: funnelData?.aged ?? liveCandidates.filter(c => (c.age ?? 0) >= 10_000).length,
     buyerThreshold: funnelData?.buyerThreshold ?? liveCandidates.filter(c => (c.buyers ?? 0) >= 5 && !c.devSold).length,
-    safetyPassed: funnelData?.safetyPassed ?? liveCandidates.filter(c => (c.buyers ?? 0) >= 5 && !c.devSold && c.curve && !c.curve.complete).length,
+    safetyPassed: funnelData?.safetyPassed ?? liveCandidates.filter(c => (c.buyers ?? 0) >= 5 && !c.devSold && (!c.curve || !c.curve.complete || c.migrationState === 'RAYDIUM_ACTIVE' || c.migrationState === 'AMM_STABILIZED' || c.migrationState === 'MIGRATION_PENDING')).length,
     driftPassed: funnelData?.driftPassed ?? liveCandidates.filter(c => c.drift?.passed).length,
-    eligible: funnelData?.eligible ?? liveCandidates.filter(c => c.drift?.passed && c.curve && !c.curve.complete && !c.devSold).length,
+    eligible: funnelData?.eligible ?? liveCandidates.filter(c => c.drift?.passed && (!c.curve || !c.curve.complete || c.migrationState === 'RAYDIUM_ACTIVE' || c.migrationState === 'AMM_STABILIZED') && !c.devSold).length,
     paperFilled: funnelData?.paperFilled ?? 0,
   };
 
@@ -84,7 +84,7 @@ export function CandidateFunnel({ funnelData, liveCandidates = [], onSelectStage
     { from: 'aged', to: 'buyer threshold', dropCount: Math.max(0, counts.aged - counts.buyerThreshold), topReason: 'Buyer accumulation or RPC rate limits' },
     { from: 'buyer threshold', to: 'safety passed', dropCount: Math.max(0, counts.buyerThreshold - counts.safetyPassed), topReason: 'Creator concentration or rug check failure' },
     { from: 'safety passed', to: 'drift passed', dropCount: Math.max(0, counts.safetyPassed - counts.driftPassed), topReason: 'Dual drift exceeded (+-200 BPS)' },
-    { from: 'drift passed', to: 'eligible', dropCount: Math.max(0, counts.driftPassed - counts.eligible), topReason: 'Curve completed or cash reserve limit' },
+    { from: 'drift passed', to: 'eligible', dropCount: Math.max(0, counts.driftPassed - counts.eligible), topReason: 'Unverified AMM migration or cash reserve limit' },
     { from: 'eligible', to: 'paper-filled', dropCount: Math.max(0, counts.eligible - counts.paperFilled), topReason: 'In-flight execution pending or max positions cap' },
   ];
 

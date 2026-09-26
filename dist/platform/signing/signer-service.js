@@ -11,10 +11,12 @@
  */
 import { createHash } from 'node:crypto';
 export class ZeroTrustSignerService {
+    allowSimulation;
     policies = new Map();
     txRegistry = new Map();
     emergencyHalt = false;
-    constructor() {
+    constructor(allowSimulation = false) {
+        this.allowSimulation = allowSimulation;
         // Default strict domain policies
         this.policies.set('TRADING', {
             maxAmountLamportsPerTx: 50000000000n, // 50 SOL ceiling per single order
@@ -58,6 +60,9 @@ export class ZeroTrustSignerService {
      * Authorize and produce an idempotent signature for a request.
      */
     signTransaction(request, isReconciliationClean) {
+        if (!this.allowSimulation) {
+            return { success: false, error: 'SIGNER_UNAVAILABLE: synthetic signer is disabled outside explicit simulation' };
+        }
         if (this.emergencyHalt) {
             return { success: false, error: 'Signer rejected: Global emergency halt active' };
         }
@@ -88,10 +93,10 @@ export class ZeroTrustSignerService {
                 error: `Signer rejected: Reconciliation is not clean for domain ${request.domain}`,
             };
         }
-        if (request.amountLamports > policy.maxAmountLamportsPerTx) {
+        if (request.amountLamports < 0n || request.amountLamports > policy.maxAmountLamportsPerTx) {
             return {
                 success: false,
-                error: `Signer rejected: Amount ${request.amountLamports} exceeds policy max ${policy.maxAmountLamportsPerTx}`,
+                error: `Signer rejected: Amount ${request.amountLamports} is outside the permitted range 0..${policy.maxAmountLamportsPerTx}`,
             };
         }
         // Domain target restrictions: TRADING can only invoke authorized DEX/Token programs
@@ -110,7 +115,7 @@ export class ZeroTrustSignerService {
                 };
             }
         }
-        // Produce deterministic simulated or cryptographic signature
+        // Produce an explicitly non-chain-valid, deterministic test artifact.
         const sigHash = createHash('sha256')
             .update(request.transactionId)
             .update(request.domain)
@@ -119,9 +124,10 @@ export class ZeroTrustSignerService {
             .digest('hex');
         const result = {
             transactionId: request.transactionId,
-            signature: `sig_${sigHash}`,
+            signature: `simulation_sig_${sigHash}`,
             signedAt: Date.now(),
             domain: request.domain,
+            simulationOnly: true,
         };
         // Register / update transaction state
         this.txRegistry.set(request.transactionId, {
@@ -140,7 +146,10 @@ export class ZeroTrustSignerService {
             record.submittedAt = Date.now();
         }
     }
-    recordConfirmation(transactionId) {
+    /** Test-only lifecycle helper; it is not chain confirmation evidence. */
+    recordSimulatedConfirmation(transactionId) {
+        if (!this.allowSimulation)
+            return;
         const record = this.txRegistry.get(transactionId);
         if (record) {
             record.state = 'CONFIRMED';

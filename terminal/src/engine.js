@@ -1,4 +1,6 @@
 // Pure deterministic reducer: no timers, DOM, network, or random side effects.
+import { ExecutionReviewContract } from './execution-contract.js';
+
 export const START_USD = 111.18;
 export const DEFAULT_CONFIG = { size: .1, slippage: 3, priority: 50000, tip: .0001, tp1: 15, tp2: 35, tp3: 75, stop: 7, trailing: 7, interval: 500, velocity: .8, volume: 3, rsi: 35, strategy: 'breakout', maxPositions: 3 };
 export const ASSETS = [
@@ -56,18 +58,35 @@ function enqueue(s,assetId,side,source,reason,fraction=1,tier=null) {
  if(metrics(s).available<(side==='buy'?budget:0)+fee){s.notice='Insufficient available virtual balance for order and network fees.';log(s,{asset:assetId,side,source,reason:s.notice,status:'rejected'});return;}
  if(side==='buy'&&!riskBudget(metrics(s).equity,budget,s.config.stop,s.config.slippage,fee*2).allowed){s.notice='Entry rejected: modeled loss exceeds 2% of equity.';log(s,{asset:assetId,source,side,status:'rejected',reason:s.notice});return;}
  const latency=100+Math.floor(random(s)*301);
- const order={id:++s.sequence,asset:assetId,side,source,reason,submitted:s.now,due:s.now+latency,latency,reference:asset.price,config:{...s.config},fee,budget,qty:pos?Math.min(pos.qty,pos.initialQty*fraction):0,tier};
+ const contract = new ExecutionReviewContract({
+   mint: asset.mint || asset.id,
+   side,
+   source,
+   reason,
+   amount: side === 'buy' ? budget : (pos ? Math.min(pos.qty, pos.initialQty * fraction) : 0),
+   config: { ...s.config },
+ });
+ contract.advance('REVIEWING', 'Order created in engine');
+ contract.advance('CONFIRMED', 'Risk and capital checks passed');
+ contract.advance('SUBMITTED', 'Order pending network latency simulation');
+
+ const order={id:++s.sequence,contract,contractId:contract.contractId,asset:assetId,side,source,reason,submitted:s.now,due:s.now+latency,latency,reference:asset.price,config:{...s.config},fee,budget,qty:pos?Math.min(pos.qty,pos.initialQty*fraction):0,tier};
  s.pending.push(order);log(s,{...order,at:s.now,status:'pending'});s.notice=`${side.toUpperCase()} ${assetId} pending · ${latency} ms confirmation`;
 }
 function fill(s,o,emergency=false) {
  const a=s.assets.find(a=>a.id===o.asset),p=s.positions.find(p=>p.asset===o.asset);
- if(o.side==='sell'&&!p)return;
+ if(o.side==='sell'&&!p){
+   if(o.contract&&!o.contract.isTerminal)try{o.contract.advance('CANCELLED','Position already closed');}catch{}
+   return;
+ }
  if(s.liveMode&&(!Number.isFinite(a?.observedAt)||s.now-a.observedAt>15000||a.observedAt>s.now)){
+   if(o.contract&&!o.contract.isTerminal)try{o.contract.advance('CANCELLED','Asset observation stale');}catch{}
    log(s,{...o,status:'cancelled',at:s.now,reason:'Fill cancelled: asset observation is stale; no fee charged.'});
    s.notice='Waiting for a fresh asset observation. Position remains open.';return;
  }
  // Revalidate at settlement: data may disappear after submission.
  if(!a||!Number.isFinite(a.price)||a.price<=0||!Number.isFinite(a.liquidity)||a.liquidity<=0||(o.side==='buy'&&s.liveMode&&(!s.eligibleIds.includes(o.asset)||s.now-s.basketAt>15000))){
+   if(o.contract&&!o.contract.isTerminal)try{o.contract.advance('CANCELLED','Fresh market data unavailable');}catch{}
    log(s,{...o,status:'cancelled',at:s.now,reason:'Fill cancelled: fresh executable market data unavailable; no fee charged.'});
    s.notice='Fill cancelled: market data unavailable. Existing positions remain open.';return;
  }
@@ -76,6 +95,7 @@ function fill(s,o,emergency=false) {
  const slippage=Math.abs(quote.price/(o.reference||a.price)-1)*100;
  const fee=o.fee;
  if(!emergency&&slippage>o.config.slippage){
+   if(o.contract&&!o.contract.isTerminal)try{o.contract.advance('REJECTED','Slippage exceeded limit');}catch{}
    s.cash-=fee;s.fees+=fee;s.realized-=fee;
    log(s,{...o,status:'rejected',at:s.now,reason:'Slippage exceeded limit',fee,slippage});
    s.notice=`${o.side.toUpperCase()} ${o.asset} rejected · Slippage exceeded limit`;
@@ -94,6 +114,19 @@ function fill(s,o,emergency=false) {
    if(p.qty<=p.initialQty*1e-9)s.positions=s.positions.filter(x=>x!==p);
  }
  s.fees+=fee+quote.dexFee;s.trades++;
+ if(o.contract&&!o.contract.isTerminal){
+   try{
+     o.contract.advance('ACKNOWLEDGED','Order filled on book');
+     o.contract.advance('SETTLED','Settlement confirmed on ledger', {
+       fillPrice: quote.price,
+       fillQty: o.side==='buy'?o.budget/quote.price:sellQty,
+       slippage,
+       fee: fee+quote.dexFee,
+       pnl,
+     });
+     o.contract.advance('RECONCILED','Ledger reconciled');
+   }catch{}
+ }
  log(s,{...o,status:'filled',at:s.now,price:quote.price,slippage,fee:fee+quote.dexFee,pnl,qty:o.side==='buy'?o.budget/quote.price:sellQty});
  s.notice=`${o.side.toUpperCase()} ${o.asset} filled · ${o.reason}`;
 }

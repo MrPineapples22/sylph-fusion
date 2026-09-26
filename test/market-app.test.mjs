@@ -29,7 +29,7 @@ test('cumulative performance survives journal truncation and includes failed fee
 test('paper portfolio opens, marks, scales at 2x, and persists', async()=>{
  const dir=await mkdtemp(join(tmpdir(),'sylph-paper-')); try {
   const file=join(dir,'paper.json'), p=new PaperPortfolio(file,3,100000000); await p.start();
-  const token={mint,address:'',symbol:'TEST',name:'Test',price:1,change:null,liquidity:1000,volume:1000,cap:10000,pair:'',dex:'',at:Date.now()};
+  const token={mint:'Test111111111111111111111111111111111111111',address:'',symbol:'TEST',name:'Test',price:1,change:null,liquidity:1000,volume:1000,cap:10000,pair:'',dex:'',at:Date.now()};
   const sol={...token,mint:'So11111111111111111111111111111111111111112',symbol:'SOL',price:100};
   await p.buy(token,[token,sol]); let snap=p.snapshot([{...token,price:2},sol]); assert.equal(snap.positions.length,1);
   await p.tick([{...token,price:2},sol]); snap=p.snapshot([{...token,price:2},sol]); assert.equal(snap.positions[0].stage,1); assert.equal(snap.positions[0].cost,'50000000');

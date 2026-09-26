@@ -10,6 +10,7 @@ import { globalCommandGateway } from './command-gateway.js';
 import { globalProviderHealthTracker } from './platform/ingestion/provider-health.js';
 export class ProjectionService {
     static instance = null;
+    lastKnownMarks = new Map();
     constructor() { }
     static getInstance() {
         if (!ProjectionService.instance) {
@@ -27,15 +28,16 @@ export class ProjectionService {
             execStatus = 'REDUCE_ONLY';
         else if (state === 'SAFETY_LOCKED' || state === 'SHUTTING_DOWN' || state === 'DISCONNECTED')
             execStatus = 'HALTED';
-        const solaris = globalCommandGateway.getSolarisSnapshot();
         const healthReport = globalProviderHealthTracker.getReport();
         const rpcMetric = healthReport.providers['SOLANA_RPC'];
-        let rpcStatus = 'HEALTHY';
+        let rpcStatus = 'UNKNOWN';
         if (rpcMetric) {
             if (rpcMetric.state === 'CIRCUIT_OPEN' || rpcMetric.state === 'OFFLINE')
                 rpcStatus = 'FAILED';
             else if (rpcMetric.state === 'DEGRADED' || rpcMetric.state === 'STALE' || rpcMetric.state === 'RECONNECTING' || rpcMetric.state === 'RATE_LIMITED')
                 rpcStatus = 'DEGRADED';
+            else if (rpcMetric.observationValidated && rpcMetric.capabilityAvailable)
+                rpcStatus = 'HEALTHY';
         }
         const isDataStale = healthReport.isMarketFeedStale;
         const dataStatus = isDataStale ? 'STALE' : state === 'DEGRADED' || healthReport.overallSystemState !== 'NOMINAL' ? 'DEGRADED' : 'FRESH';
@@ -51,24 +53,87 @@ export class ProjectionService {
             p0Health: 'UNKNOWN',
             certification: 'BLOCKED',
             operationalState: state,
-            activeLeaderPubkey: solaris.activeLeaderPubkey,
-            isJitoLeader: solaris.activeLeaderIsJito,
-            tipFloorP75: solaris.tipFloor.p75,
-            contentionTier: solaris.contentionTier,
-            helios: solaris.helios,
+            // The gateway's Solaris snapshot uses simulated leaders and fallback tip
+            // estimates. It is not an observation of live delivery infrastructure.
             timestamp: Date.now(),
         };
     }
     getSolarisTelemetry(currentSlot) {
         return globalCommandGateway.getSolarisSnapshot(currentSlot);
     }
-    getPositions() {
-        return globalCommandGateway.getSnapshot().positions.map(pos => ({
-            asset: pos.asset, mint: pos.mint, qty: pos.qty, entryPriceUsd: pos.entry,
-            markPriceUsd: null, executableLiquidationUsd: null,
-            unrealizedPnlUsd: null, unrealizedPnlPct: null,
-            reconciliationState: pos.reconciliationState, protectionState: 'UNKNOWN', openedAt: pos.openedAt,
-        }));
+    getPositions(observedTokens) {
+        const tokenMap = new Map();
+        const isObserved = Array.isArray(observedTokens);
+        if (isObserved) {
+            for (const t of observedTokens) {
+                if (t && typeof t === 'object') {
+                    const rec = t;
+                    const mint = typeof rec.mint === 'string' ? rec.mint : '';
+                    const pair = typeof rec.pair === 'string' ? rec.pair : '';
+                    const price = typeof rec.price === 'number' && Number.isFinite(rec.price) && rec.price > 0
+                        ? rec.price
+                        : typeof rec.priceUsd === 'number' && Number.isFinite(rec.priceUsd) && rec.priceUsd > 0
+                            ? rec.priceUsd
+                            : null;
+                    if (price !== null) {
+                        if (mint) {
+                            tokenMap.set(mint, price);
+                            this.lastKnownMarks.set(mint, price);
+                        }
+                        if (pair) {
+                            tokenMap.set(pair, price);
+                            this.lastKnownMarks.set(pair, price);
+                        }
+                    }
+                }
+            }
+        }
+        return globalCommandGateway.getSnapshot().positions.map(pos => {
+            const markPriceUsd = isObserved
+                ? (tokenMap.get(pos.mint) ?? tokenMap.get(pos.asset) ?? this.lastKnownMarks.get(pos.mint) ?? this.lastKnownMarks.get(pos.asset) ?? (pos.entry > 0 ? pos.entry : null))
+                : null;
+            const executableLiquidationUsd = markPriceUsd !== null ? Number((pos.qty * markPriceUsd).toFixed(4)) : null;
+            const unrealizedPnlUsd = markPriceUsd !== null ? Number(((markPriceUsd - pos.entry) * pos.qty).toFixed(4)) : null;
+            const unrealizedPnlPct = markPriceUsd !== null && pos.entry > 0
+                ? Number((((markPriceUsd - pos.entry) / pos.entry) * 100).toFixed(2))
+                : null;
+            const peakPriceUsd = pos.peak && pos.peak > 0 ? pos.peak : markPriceUsd;
+            const peakPnlPct = peakPriceUsd !== null && pos.entry > 0
+                ? Number((((peakPriceUsd - pos.entry) / pos.entry) * 100).toFixed(2))
+                : unrealizedPnlPct;
+            const maePriceUsd = pos.trough && pos.trough > 0 ? pos.trough : markPriceUsd;
+            const maePnlPct = maePriceUsd !== null && pos.entry > 0
+                ? Number((((maePriceUsd - pos.entry) / pos.entry) * 100).toFixed(2))
+                : unrealizedPnlPct;
+            let protectionState = 'UNKNOWN';
+            if (markPriceUsd !== null) {
+                if (unrealizedPnlPct !== null && unrealizedPnlPct <= -12)
+                    protectionState = 'EMERGENCY_UNWIND';
+                else if ((peakPnlPct !== null && peakPnlPct >= 4) || (unrealizedPnlPct !== null && unrealizedPnlPct >= 6))
+                    protectionState = 'TRAILING_ACTIVE';
+                else
+                    protectionState = 'NORMAL';
+            }
+            return {
+                asset: pos.asset,
+                mint: pos.mint,
+                symbol: pos.symbol || (pos.asset ? pos.asset.slice(0, 8) : undefined),
+                qty: pos.qty,
+                entryPriceUsd: pos.entry,
+                markPriceUsd,
+                executableLiquidationUsd,
+                unrealizedPnlUsd,
+                unrealizedPnlPct,
+                reconciliationState: pos.reconciliationState,
+                protectionState,
+                openedAt: pos.openedAt,
+                peakPriceUsd,
+                peakPnlPct,
+                maePriceUsd,
+                maePnlPct,
+                trailingStopUsd: pos.stop ?? null,
+            };
+        });
     }
     getBestOpportunity(tokens) {
         // Public market listings have no verified execution authorization or net-edge estimate.

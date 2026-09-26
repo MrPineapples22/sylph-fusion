@@ -42,7 +42,21 @@ export class ContinuousReconciler {
       });
     }
 
-    // 2. Invariant 2: Fundamental Conservation Identity
+    // 2. The signing-service record is an independent accounting witness.
+    // A clean ledger/on-chain pair must not conceal a signer divergence.
+    const signerVsLedgerDiff = inputs.signerConfirmedTotalLamports - inputs.ledgerControlledAssetsLamports;
+    if (signerVsLedgerDiff !== 0n) {
+      alerts.push({
+        alertId: randomUUID(),
+        timestamp: now,
+        severity: 'CRITICAL',
+        discrepancyLamports: signerVsLedgerDiff > 0n ? signerVsLedgerDiff : -signerVsLedgerDiff,
+        explanation: `Signing service confirmed total (${inputs.signerConfirmedTotalLamports}) does not match internal ledger controlled assets (${inputs.ledgerControlledAssetsLamports}). Delta: ${signerVsLedgerDiff}`,
+        affectedDomains: ['SIGNING_SERVICE', 'LEDGER'],
+      });
+    }
+
+    // 3. Invariant 3: Fundamental Conservation Identity
     // Controlled Assets ≈ Customer Liabilities + Platform Treasury + Explicitly Accounted Differences
     const totalAccountedLiabilities = inputs.vaultCustomerLiabilitiesLamports + inputs.platformTreasuryLamports + inputs.explicitDiscrepancyLamports;
     const conservationDelta = inputs.ledgerControlledAssetsLamports - totalAccountedLiabilities;

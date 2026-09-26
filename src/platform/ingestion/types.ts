@@ -19,6 +19,9 @@ export interface SlotGap {
 }
 
 export interface ReconciliationReport {
+  readonly unresolvedHistoryTruncated: boolean;
+  readonly backfillFailures: number;
+  readonly pendingBackfills: number;
   readonly gapsDetected: number;
   readonly gapsResolved: number;
   readonly totalSlotsBackfilled: number;

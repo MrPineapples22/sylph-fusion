@@ -42,6 +42,8 @@ export interface SignatureResult {
   readonly signature: string;
   readonly signedAt: number;
   readonly domain: AuthorizationDomain;
+  /** A local test artifact, never a chain-valid signature. */
+  readonly simulationOnly: boolean;
 }
 
 export type SettlementState =

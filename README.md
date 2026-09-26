@@ -30,7 +30,7 @@ The modular separation and durable outbox concept come from `D:\pump\sylph`. The
    pnpm start
    ```
 
-`check` validates configuration, wallet format when live, mainnet genesis, RPC agreement, and Jito tip-account access when live. It does not claim a full feed or trading acceptance test. Paper mode uses real market data but synthetic fills and an unfunded deterministic test identity. It does not read `KEYPAIR_PATH` and does not call `sendBundle`.
+`check` validates the currently configured mode, mainnet genesis, RPC agreement, and Jito tip-account access where the configured execution authority is available. It does not claim a full feed or trading acceptance test. Paper mode uses real market data but synthetic fills and an unfunded deterministic test identity. It does not call `sendBundle`.
 
 ## Local dashboard
 
@@ -49,7 +49,7 @@ Then open http://127.0.0.1:8788. The preview uses a separate port (`UI_DEMO_PORT
 
 ## Live operation details
 
-Use a dedicated wallet with a Solana CLI keypair file containing a JSON array of 64 byte values. Keep the file outside this directory. Use a different database from paper mode. Set `MODE=live`, `KEYPAIR_PATH`, and `DB_PATH=fusion-live.sqlite`, then rerun `pnpm check`. Review the release gates in `VALIDATION.md` before starting.
+Do not enable `MODE=live` from this local candidate. The former in-process keypair route is deliberately disabled: a production deployment requires a separately deployed isolated signer, durable signing journal, independent signing firewall, and a wallet pinned to that service. The AWS staging foundation documents the required separation, but it is not a deployed signer service. Keep this workspace in paper/observation mode until those controls, provider evidence, reconciliation drills, and the release gates in `VALIDATION.md` are complete.
 
 Defaults are operational examples, not a recommended strategy or optimized position size. Small orders can lose a substantial percentage to account rent and transaction fees. `MAX_EXPOSURE_LAMPORTS` includes remaining cost basis; entry reservation additionally allows `RESERVE_LAMPORTS` for costs. The daily loss cap uses realized net PnL and failed-transaction fees, resets at UTC midnight, and prevents new entries; it is not an equity drawdown guarantee.
 

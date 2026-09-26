@@ -43,11 +43,23 @@ try {
   assert.equal(data.capitalAuthority.signingGate.gateReady, false);
   const command = await request('/live/api/command', {method: 'POST', headers: {'content-type': 'application/json'},
     body: JSON.stringify({commandId: 'smoke-disable-' + Date.now(), type: 'SET_AUTOMATION', timestamp: Date.now(), initiator: 'smoke', payload: {enabled: false}})});
-  assert.equal(command.status, 200);
-  assert.equal((await command.json()).ok, true);
+  assert.equal(command.status, 409, 'Live command alias must remain unavailable');
+  assert.match((await command.json()).error, /^LIVE_UNAVAILABLE\b/);
+  const paperCommand = await request('/api/command', {method: 'POST', headers: {'content-type': 'application/json'},
+    body: JSON.stringify({commandId: 'smoke-disable-paper-' + Date.now(), type: 'SET_AUTOMATION', timestamp: Date.now(), initiator: 'smoke', payload: {enabled: false}})});
+  assert.equal(paperCommand.status, 200);
+  assert.equal((await paperCommand.json()).ok, true);
   const badOrigin = await request('/live/api/command', {method: 'POST', headers: {origin: 'https://example.invalid', 'content-type': 'application/json'}, body: '{}'});
   assert.equal(badOrigin.status, 403);
-  console.log('PASS: server readiness, UI assets, market schema, unverified capital, command response, and origin rejection.');
+  const mobileRes = await request('/mobile');
+  assert.equal(mobileRes.status, 200, 'Mobile operations window route /mobile must return 200');
+  const discovery = await request('/api/discovery');
+  assert.equal(discovery.status, 200);
+  const discData = await discovery.json();
+  assert.ok(discData.systemStatus, 'Discovery snapshot must include authoritative systemStatus');
+  assert.equal(discData.systemStatus.executionAuthority, 'LOCKED');
+  assert.equal(discData.systemStatus.riskAuthority, 'LOCKED');
+  console.log('PASS: server readiness, UI assets, mobile window, discovery systemStatus, market schema, unverified capital, command response, and origin rejection.');
 } catch (error) {
   console.error('SMOKE FAILED: ' + error.message);
   process.exitCode = 1;

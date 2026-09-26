@@ -48,10 +48,12 @@ export class DecisionTrace {
     }
     serializeTrace() {
         const now = Date.now();
-        const hasVeto = this.steps.some((s) => s.status === 'VETO');
+        const hasBlock = this.steps.some((s) => s.status === 'BLOCK');
         const hasFail = this.steps.some((s) => s.status === 'FAIL');
+        const hasDegraded = this.steps.some((s) => s.status === 'DEGRADED');
+        const hasAbstain = this.steps.some((s) => s.status === 'ABSTAIN');
         const hasWarn = this.steps.some((s) => s.status === 'WARN');
-        const overallStatus = hasVeto ? 'VETO' : hasFail ? 'FAIL' : hasWarn ? 'WARN' : 'PASS';
+        const overallStatus = hasBlock ? 'BLOCK' : hasFail ? 'FAIL' : hasDegraded ? 'DEGRADED' : hasAbstain ? 'ABSTAIN' : hasWarn ? 'WARN' : 'PASS';
         return {
             context: this.context,
             steps: this.steps,

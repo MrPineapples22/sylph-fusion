@@ -106,11 +106,13 @@ test('Fifth Pass: Provider Capability Model independently exposes 15 fields and 
   const tracker = new ProviderHealthTracker();
   const report = tracker.getReport();
 
-  // Active authoritative provider has valid capability entry
+  // Provider identities are metadata only until runtime configuration is supplied.
   const pump = report.providers.PUMPPORTAL_WS;
   assert.ok(pump);
-  assert.equal(pump.configured, true);
-  assert.equal(pump.enabled, true);
+  assert.equal(pump.configured, false);
+  assert.equal(pump.enabled, false);
+  assert.equal(pump.authenticated, false);
+  assert.equal(pump.capabilityAvailable, false);
   assert.equal(typeof pump.transportReachable, 'boolean');
   assert.equal(typeof pump.authenticated, 'boolean');
   assert.equal(typeof pump.capabilityAvailable, 'boolean');
@@ -132,6 +134,7 @@ test('Fifth Pass: Provider Capability Model independently exposes 15 fields and 
 
 test('Fifth Pass: Bounded Rolling-Window Circuit Breaker requires 3 consecutive observations to recover', () => {
   const tracker = new ProviderHealthTracker();
+  tracker.setProviderConfiguration('SOLANA_RPC', true, true, true);
 
   // Record initial successes
   tracker.recordSuccess('SOLANA_RPC', 50);
@@ -165,6 +168,7 @@ test('Fifth Pass: Bounded Rolling-Window Circuit Breaker requires 3 consecutive 
 
 test('Fifth Pass: Endpoint failover is only reported when an actual transition occurs', () => {
   const tracker = new ProviderHealthTracker();
+  tracker.setProviderConfiguration('SOLANA_RPC', true, true, true);
   assert.equal(tracker.getReport().providers.SOLANA_RPC.failoverActive, false);
 
   // Record transition
@@ -291,7 +295,7 @@ test('Fifth Pass: ReleaseCertificationAuthority evaluates 13 gates and maintains
   assert.equal(report.releaseStatus, 'UNVERIFIED_CANDIDATE — PRODUCTION RELEASE BLOCKED');
   assert.equal(report.isProductionPermitted, false);
   assert.equal(report.gatesCount, 13);
-  assert.ok(report.passedGatesCount >= 10);
+  assert.equal(report.passedGatesCount, 0);
   assert.ok(report.blockedGatesCount >= 1); // soakGate is BLOCKED
   assert.ok(report.primaryBlockers.length > 0);
 

@@ -12,7 +12,7 @@ export interface LeaderSlotInfo {
   readonly clusterStakeShareBps: number;
 }
 
-export type BimodalRouteType = 'JITO_BUNDLE' | 'DIRECT_TPU_QUIC' | 'ABSTAIN_CONGESTION';
+export type BimodalRouteType = 'JITO_BUNDLE' | 'DIRECT_TPU_QUIC' | 'ABSTAIN_CONGESTION' | 'ABSTAIN_LEADER_UNAVAILABLE' | 'ABSTAIN_FEE_EVIDENCE_UNAVAILABLE';
 
 export interface BimodalRoutePlan {
   readonly routeType: BimodalRouteType;
@@ -46,6 +46,7 @@ export interface AccountContentionEstimate {
   readonly recommendedMicroLamportsPerCu: bigint;
   readonly contentionTier: ContentionTier;
   readonly polledAtMs: number;
+  readonly isObserved: boolean;
 }
 
 export type GraduationStatus =
@@ -79,13 +80,14 @@ export interface ReconcilerSlotGap {
 
 export interface SolarisTelemetrySnapshot {
   readonly currentSlot: number;
-  readonly activeLeaderPubkey: string;
-  readonly activeLeaderIsJito: boolean;
-  readonly activeLeaderStakeBps: number;
+  readonly activeLeaderPubkey?: string;
+  readonly activeLeaderIsJito?: boolean;
+  readonly activeLeaderStakeBps?: number;
   readonly remainingSlotsInChunk: number;
-  readonly nextLeaderPubkey: string;
-  readonly nextLeaderIsJito: boolean;
-  readonly tipFloor: {
+  readonly nextLeaderPubkey?: string;
+  readonly nextLeaderIsJito?: boolean;
+  readonly leaderScheduleStatus: 'VERIFIED' | 'UNAVAILABLE';
+  readonly tipFloor?: {
     readonly p25: string;
     readonly p50: string;
     readonly p75: string;

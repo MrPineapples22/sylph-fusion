@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 
 import { evaluateTokenDecision, MAX_PRICE_DRIFT_BPS, MAX_LIQUIDITY_DROP_BPS } from '../token-decision-eval.js';
+import { VetoProofInspectorDrawer } from './VetoProofInspectorDrawer.jsx';
 
 export function TokenDecisionCard({
   asset,
@@ -39,6 +40,7 @@ export function TokenDecisionCard({
   onInspectProvenance = null,
 }) {
   const [showWhyPanel, setShowWhyPanel] = useState(false);
+  const [showProofInspector, setShowProofInspector] = useState(false);
 
   if (!asset || asset.id === 'loading') {
     return (
@@ -148,6 +150,105 @@ export function TokenDecisionCard({
     )
   ).toString(16).padStart(8, '0')}`;
 
+  const quality = asset.quality || candidate?.quality || (blocked ? 'FAIL' : 'PASS');
+  const opportunity = asset.opportunity || candidate?.opportunity || (blocked ? 'INELIGIBLE' : isTelemetryPending ? 'PENDING' : 'ELIGIBLE');
+  const execution = asset.execution || candidate?.execution || 'BLOCKED';
+  const qualityVetoes = asset.qualityVetoes || candidate?.qualityVetoes || (blocked && !isTelemetryPending ? [blockedExplanation] : []);
+
+  const traceSteps = asset.decisionTrace || asset.decision?.trace || candidate?.decisionTrace || [
+    {
+      stage: 'Discovery',
+      label: '1. Discovery Stream',
+      status: 'PASS',
+      observed: isRaydiumActive ? 'RAYDIUM_AMM' : 'PUMP_CURVE',
+      meaning: 'Token discovered via authoritative WebSocket / stream',
+    },
+    {
+      stage: 'Canonical State',
+      label: '2. Canonical State',
+      status: canonicalMint ? 'PASS' : 'UNKNOWN',
+      observed: canonicalMint ? `${canonicalMint.slice(0, 4)}…${canonicalMint.slice(-4)}` : 'UNKNOWN',
+      meaning: canonicalMint ? 'Canonical Solana mint address verified' : 'Awaiting address',
+    },
+    {
+      stage: 'Freshness',
+      label: '3. Freshness',
+      status: rawStatus === 'STALE' ? 'STALE' : 'PASS',
+      observed: ageDisplay,
+      meaning: rawStatus === 'STALE' ? 'Telemetry exceeds freshness threshold (>45s)' : 'Feed freshness verified',
+    },
+    {
+      stage: 'Liquidity Floor',
+      label: '4. Liquidity Floor',
+      status: realSolReserve != null ? (realSolReserve >= 1.0 ? 'PASS' : 'FAIL') : asset.liquidity ? (asset.liquidity >= 1000 ? 'PASS' : 'FAIL') : 'PENDING',
+      observed: realSolReserve != null ? `${realSolReserve.toFixed(2)} SOL` : asset.liquidity ? `$${Math.round(asset.liquidity)}` : 'Awaiting snapshot',
+      meaning: 'Liquidity threshold (≥1.0 SOL or $1,000 floor)',
+    },
+    {
+      stage: 'Market Cap Floor',
+      label: '5. Market Cap Floor',
+      status: (asset.cap || asset.mcap) ? ((asset.cap || asset.mcap) >= 5000 ? 'PASS' : 'FAIL') : 'PENDING',
+      observed: (asset.cap || asset.mcap) ? `$${Math.round(asset.cap || asset.mcap)}` : 'Awaiting mcap',
+      meaning: 'Minimum market capitalization (≥$5,000)',
+    },
+    {
+      stage: 'Min Transactions',
+      label: '6. Min Transactions',
+      status: (asset.txs ?? asset.txCount ?? actualBuyers) != null ? ((asset.txs ?? asset.txCount ?? actualBuyers) >= 5 ? 'PASS' : 'PENDING') : 'PENDING',
+      observed: (asset.txs ?? asset.txCount ?? actualBuyers) != null ? `${asset.txs ?? asset.txCount ?? actualBuyers} txs` : 'Awaiting trade count',
+      meaning: 'Activity verification (≥5 observed transactions)',
+    },
+    {
+      stage: 'Rug Risk',
+      label: '7. Rug Risk',
+      status: isDevSold ? 'FAIL' : (isMintRevoked === false || isFreezeRevoked === false) ? 'FAIL' : (isMintRevoked && isFreezeRevoked) ? 'PASS' : 'PENDING',
+      observed: isDevSold ? 'DEV_DUMP' : (isMintRevoked && isFreezeRevoked) ? '0 high-risk hazards' : 'Pending contract audit',
+      meaning: isDevSold ? 'Creator sell detected on active curve' : 'Contract risk, mint/freeze authorities',
+    },
+    {
+      stage: 'HSI Integrity',
+      label: '8. HSI Integrity',
+      status: asset.hsi != null ? (asset.hsi >= 0.5 ? 'PASS' : 'FAIL') : 'PENDING',
+      observed: asset.hsi != null ? asset.hsi.toFixed(2) : 'Awaiting holder scan',
+      meaning: 'Holder Suspicion Index (HSI ≥ 0.50)',
+    },
+    {
+      stage: 'Curve Lifecycle',
+      label: '9. Curve Lifecycle',
+      status: isRaydiumActive ? 'PASS' : isCurveComplete ? 'PASS' : isCurveActive ? 'PASS' : 'PENDING',
+      observed: isRaydiumActive ? 'RAYDIUM_ACTIVE' : isCurveComplete ? 'CURVE_COMPLETED' : isCurveActive ? 'CURVE_PROGRESSING' : 'PENDING',
+      meaning: isCurveComplete && !isRaydiumActive ? 'Bonding complete; awaiting AMM transition' : 'Curve state verified',
+    },
+    {
+      stage: 'DEX Transition',
+      label: '10. DEX Transition',
+      status: isRaydiumActive ? 'PASS' : isCurveComplete ? 'PENDING' : 'PASS',
+      observed: isRaydiumActive ? 'RAYDIUM_CPMM' : isCurveComplete ? 'PENDING_MIGRATION' : 'ON_CURVE',
+      meaning: isCurveComplete && !isRaydiumActive ? 'Awaiting Raydium AMM pool creation' : 'DEX transition verified or not yet due',
+    },
+    {
+      stage: 'Market Evidence',
+      label: '11. Market Evidence',
+      status: (asset.price || realSolReserve != null) ? 'PASS' : 'UNKNOWN',
+      observed: asset.price ? `$${Number(asset.price).toFixed(6)}` : 'Awaiting quote',
+      meaning: 'Corroborated market price & pool depth',
+    },
+    {
+      stage: 'Opportunity Cert',
+      label: '12. Opportunity Cert',
+      status: !blocked && !isTelemetryPending ? 'PASS' : 'PENDING',
+      observed: asset.spieNetEv || asset.netEdge || 'WATCH',
+      meaning: 'Expected value & net edge certificate',
+    },
+    {
+      stage: 'Execution Authority',
+      label: '13. Execution Authority',
+      status: 'BLOCKED',
+      observed: 'PAPER_MODE',
+      meaning: 'Execution authority locked: paper mode / safety firewall active',
+    },
+  ];
+
   const safeExternalLinks = [
     {
       name: 'DexScreener',
@@ -211,7 +312,7 @@ export function TokenDecisionCard({
           </span>
 
           <span className="route-badge font-mono" style={{ background: '#1c2430', color: executionRoute?.includes('JITO') ? '#14F195' : '#83c5e6', padding: '3px 8px', borderRadius: '4px', fontSize: '11px', border: '1px solid #2d3848' }} title={`SOLARIS execution route: ${executionRoute}`}>
-            {executionRoute || 'JITO_MEV_OPTIMAL'}
+            {executionRoute || 'UNKNOWN'}
           </span>
           {onInspectProvenance && (
             <button
@@ -232,11 +333,61 @@ export function TokenDecisionCard({
         </div>
       </header>
 
+      {/* ── Tri-State Decision Triad Classification Bar ── */}
+      <div className="decision-triad-bar font-mono" style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(3, 1fr)',
+        gap: '8px',
+        background: '#080C14',
+        border: '1px solid #1E293B',
+        borderRadius: '8px',
+        padding: '8px 10px',
+        margin: '2px 0 6px',
+        textAlign: 'center',
+      }}>
+        <div style={{ background: 'rgba(255,255,255,0.02)', padding: '6px 4px', borderRadius: '6px' }}>
+          <small style={{ display: 'block', fontSize: '9px', color: '#94A3B8', letterSpacing: '0.5px' }}>TOKEN QUALITY</small>
+          <b style={{
+            fontSize: '12px',
+            color: quality === 'PASS' ? '#14F195' : quality === 'FAIL' ? '#FF3B69' : '#F59E0B',
+          }}>
+            {quality}
+          </b>
+          <span style={{ display: 'block', fontSize: '9px', color: '#64748B', marginTop: '2px' }}>
+            {quality === 'PASS' ? 'Security clean' : quality === 'FAIL' ? (qualityVetoes[0] || 'VETOED') : 'Telemetry incomplete'}
+          </span>
+        </div>
+        <div style={{ background: 'rgba(255,255,255,0.02)', padding: '6px 4px', borderRadius: '6px' }}>
+          <small style={{ display: 'block', fontSize: '9px', color: '#94A3B8', letterSpacing: '0.5px' }}>ENTRY ELIGIBILITY</small>
+          <b style={{
+            fontSize: '12px',
+            color: opportunity === 'ELIGIBLE' ? '#14F195' : opportunity === 'INELIGIBLE' ? '#FF3B69' : '#F59E0B',
+          }}>
+            {opportunity}
+          </b>
+          <span style={{ display: 'block', fontSize: '9px', color: '#64748B', marginTop: '2px' }}>
+            {opportunity === 'ELIGIBLE' ? 'Gates passed' : opportunity === 'PENDING' ? (isMigrationPending ? 'DEX transition' : 'Awaiting data') : 'Filter breached'}
+          </span>
+        </div>
+        <div style={{ background: 'rgba(255,255,255,0.02)', padding: '6px 4px', borderRadius: '6px' }}>
+          <small style={{ display: 'block', fontSize: '9px', color: '#94A3B8', letterSpacing: '0.5px' }}>EXECUTION AUTHORITY</small>
+          <b style={{
+            fontSize: '12px',
+            color: execution === 'AVAILABLE' ? '#14F195' : '#F59E0B',
+          }}>
+            {execution}
+          </b>
+          <span style={{ display: 'block', fontSize: '9px', color: '#64748B', marginTop: '2px' }}>
+            {execution === 'AVAILABLE' ? 'Permit granted' : 'Paper mode / locked'}
+          </span>
+        </div>
+      </div>
+
       {/* Decision Summary Reason Banner */}
       <div className={`decision-reason-banner ${blocked ? 'reason-blocked' : isTelemetryPending ? 'reason-pending' : 'reason-eligible'}`}>
         {blocked ? <AlertTriangle size={15} /> : isTelemetryPending ? <Clock size={15} /> : <ShieldCheck size={15} />}
         <div>
-          <b>{blocked ? 'Entry Blocked by Strategy / Safety Filter' : isTelemetryPending ? 'Candidate Telemetry Pending Verification' : 'Pre-Trade Safety Filters Passed'}</b>
+          <b>{quality === 'FAIL' ? 'Token Quality Defect / Security Veto' : blocked ? 'Execution Blocked (Token Quality Clean)' : isTelemetryPending ? 'Candidate Telemetry Pending Verification' : 'Pre-Trade Safety Filters Passed'}</b>
           <p>{blockedExplanation}</p>
         </div>
       </div>
@@ -244,26 +395,26 @@ export function TokenDecisionCard({
       {/* SPIE Profit Intelligence Strip */}
       <div className="spie-profit-strip font-mono flex items-center justify-between p-2 my-2 rounded border border-[#233142] bg-[#0d131a] text-xs">
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1 text-[#14F195]">
+          <div className="flex items-center gap-1 text-muted">
             <Zap size={13} />
             <span className="text-muted text-[10px]">NET EV:</span>
-            <b>{asset.spieNetEv || asset.netEdge || '+420 BPS'}</b>
+            <b>{asset.spieNetEv ?? asset.netEdge ?? 'UNKNOWN'}</b>
           </div>
           <div className="flex items-center gap-1 text-[#38bdf8]">
             <Activity size={13} />
             <span className="text-muted text-[10px]">FRICTION:</span>
-            <b>{asset.frictionRatio ? `${(asset.frictionRatio * 100).toFixed(1)}%` : '24.2%'}</b>
+            <b>{Number.isFinite(asset.frictionRatio) ? `${(asset.frictionRatio * 100).toFixed(1)}%` : 'UNKNOWN'}</b>
             <small className="text-muted text-[9px]">(≤45% cap)</small>
           </div>
           <div className="flex items-center gap-1 text-[#f59e0b]">
             <TrendingUp size={13} />
             <span className="text-muted text-[10px]">STAGE:</span>
-            <b>{asset.opportunityStage || 'HIGH_CONFIDENCE'}</b>
+            <b>{asset.opportunityStage || 'UNKNOWN'}</b>
           </div>
         </div>
         <div className="flex items-center gap-2 text-muted text-[11px]">
           <span className="text-accent">Dominant:</span>
-          <span>{asset.dominantFactor ? asset.dominantFactor.toUpperCase() : 'MOMENTUM (+1.8σ)'}</span>
+          <span>{asset.dominantFactor ? asset.dominantFactor.toUpperCase() : 'UNKNOWN'}</span>
         </div>
       </div>
 
@@ -388,13 +539,13 @@ export function TokenDecisionCard({
             {isRaydiumActive ? <CheckCircle2 size={12} /> : isCurveActive ? <CheckCircle2 size={12} /> : isCurveActive === false ? <XCircle size={12} /> : <Clock size={12} />}
             {isRaydiumActive ? 'Raydium AMM Active' : isCurveActive ? 'Curve Active' : isCurveActive === false ? (isSniperCooldown ? 'Sniper Cooldown (30s)' : 'Curve Complete (Blocked)') : 'Curve Telemetry Pending'}
           </span>
-          <span className={`check-chip ${isMintRevoked ? 'chip-pass' : 'chip-fail'}`}>
-            {isMintRevoked ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
-            Mint Auth Revoked
+          <span className={`check-chip ${isMintRevoked === null ? 'chip-pending' : isMintRevoked ? 'chip-pass' : 'chip-fail'}`}>
+            {isMintRevoked === null ? <Clock size={12} /> : isMintRevoked ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
+            {isMintRevoked === null ? 'Mint Auth UNKNOWN' : isMintRevoked ? 'Mint Auth Revoked' : 'Mint Auth Active'}
           </span>
-          <span className={`check-chip ${isFreezeRevoked ? 'chip-pass' : 'chip-fail'}`}>
-            {isFreezeRevoked ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
-            Freeze Auth Revoked
+          <span className={`check-chip ${isFreezeRevoked === null ? 'chip-pending' : isFreezeRevoked ? 'chip-pass' : 'chip-fail'}`}>
+            {isFreezeRevoked === null ? <Clock size={12} /> : isFreezeRevoked ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
+            {isFreezeRevoked === null ? 'Freeze Auth UNKNOWN' : isFreezeRevoked ? 'Freeze Auth Revoked' : 'Freeze Auth Active'}
           </span>
           <span className={`check-chip ${isReserveSufficient ? 'chip-pass' : isReserveSufficient === false ? 'chip-fail' : 'chip-pending'}`}>
             {isReserveSufficient ? <CheckCircle2 size={12} /> : isReserveSufficient === false ? <XCircle size={12} /> : <Clock size={12} />}
@@ -428,6 +579,70 @@ export function TokenDecisionCard({
 
         {showWhyPanel && (
           <div className="why-investigation-panel">
+            {/* Section 0: Deterministic Decision & Veto Trace (13 Stages) */}
+            <div className="why-section">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                <span className="why-section-title">
+                  <Sliders size={13} className="text-[#14F195]" />
+                  <span>DETERMINISTIC DECISION &amp; VETO TRACE (13 STAGES)</span>
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span className="font-mono text-[10px]" style={{ color: '#64748B' }}>
+                    VETO !== UNKNOWN · VETO !== PENDING · VETO !== BLOCKED
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowProofInspector(true)}
+                    style={{
+                      background: 'rgba(20, 241, 149, 0.1)',
+                      border: '1px solid rgba(20, 241, 149, 0.3)',
+                      color: '#14F195',
+                      fontSize: '10px',
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontWeight: 600,
+                    }}
+                  >
+                    🔬 Inspect Proof
+                  </button>
+                </div>
+              </div>
+              <div style={{ overflowX: 'auto', borderRadius: '6px', border: '1px solid #1A2335' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left', background: '#0C1018' }}>
+                  <thead>
+                    <tr style={{ background: '#111722', borderBottom: '1px solid #1A2335', color: '#64748B' }}>
+                      <th style={{ padding: '6px 8px' }}>Stage</th>
+                      <th style={{ padding: '6px 8px' }}>Status</th>
+                      <th style={{ padding: '6px 8px' }}>Observed</th>
+                      <th style={{ padding: '6px 8px' }}>Meaning</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {traceSteps.map((step, idx) => {
+                      const isPass = step.status === 'PASS';
+                      const isFail = step.status === 'FAIL';
+                      const isBlock = step.status === 'BLOCKED';
+                      const color = isPass ? '#14F195' : isFail ? '#FF3B69' : isBlock ? '#FF7595' : '#F59E0B';
+                      const bg = isPass ? 'rgba(20,241,149,0.12)' : isFail ? 'rgba(255,59,105,0.12)' : isBlock ? 'rgba(255,59,105,0.1)' : 'rgba(245,158,11,0.12)';
+                      return (
+                        <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                          <td style={{ padding: '5px 8px', fontWeight: 600, color: '#F1F5F9', whiteSpace: 'nowrap' }}>{step.label || step.stage}</td>
+                          <td style={{ padding: '5px 8px' }}>
+                            <span style={{ fontSize: '9px', fontWeight: 700, padding: '2px 5px', borderRadius: '3px', background: bg, color }}>
+                              {step.status}
+                            </span>
+                          </td>
+                          <td style={{ padding: '5px 8px', fontFamily: 'monospace', color: '#CBD5E1', fontSize: '10px' }}>{step.observed ?? '—'}</td>
+                          <td style={{ padding: '5px 8px', color: '#94A3B8', fontSize: '10px' }}>{step.meaning}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             {/* Section 1: Decision Explanations (Section 35) */}
             <div className="why-section">
               <span className="why-section-title">
@@ -455,18 +670,18 @@ export function TokenDecisionCard({
                 </div>
                 <div className="why-reason-item">
                   <span className={`reason-tag ${blocked ? 'tag-denied' : 'tag-allowed'}`}>
-                    {blocked ? 'WHY TRADE DENIED' : 'WHY TRADE ALLOWED'}
+                    {blocked ? 'WHY TRADE DENIED' : 'SIMULATION ELIGIBILITY'}
                   </span>
                   <p>
                     {blocked
                       ? 'TRADE DENIED: Safety gates intercepted candidate before execution authorization.'
-                      : `TRADE ALLOWED: Positive Net EV (${asset.spieNetEv || '+420 BPS'}), friction ratio ${asset.frictionRatio ? (asset.frictionRatio * 100).toFixed(1) + '%' : '24.2%'} ≤ 45% cap, Jito MEV route armed.`}
+                      : `SIMULATION ONLY: Reported net EV (${asset.spieNetEv ?? 'UNKNOWN'}), friction ratio ${Number.isFinite(asset.frictionRatio) ? (asset.frictionRatio * 100).toFixed(1) + '%' : 'UNKNOWN'} ; live execution authorization unavailable.`}
                   </p>
                 </div>
                 <div className="why-reason-item">
                   <span className="reason-tag tag-protected">WHY PROTECTED</span>
                   <p>
-                    PROTECTED: PoD Trailing-stop active at 5.0%, Tier 1 TP at +25%, Ghost-Town liquidity-removal guard active.
+                    Protection status requires an active position and verified exit-controller evidence. No live protection is established by this candidate view.
                   </p>
                 </div>
               </div>
@@ -517,7 +732,7 @@ export function TokenDecisionCard({
                 <div className="matrix-row">
                   <span className="provider-name">Jupiter / Jito Router</span>
                   <span className="text-muted">Execution &amp; Pricing Route</span>
-                  <span className="text-[#14F195]">{executionRoute || 'JITO_MEV_OPTIMAL'}</span>
+                  <span className="text-[#14F195]">{executionRoute || 'UNKNOWN'}</span>
                   <span>Slippage Cap: ≤ 2.0%</span>
                   <span>45 ms</span>
                 </div>
@@ -554,7 +769,7 @@ export function TokenDecisionCard({
                 <div className="threat-item">
                   <span className="threat-label">Authority Revocation:</span>
                   <span className="threat-val text-[#14F195]">
-                    Mint Revoked: {isMintRevoked ? 'YES' : 'NO'} · Freeze Revoked: {isFreezeRevoked ? 'YES' : 'NO'}
+                    Mint Revoked: {isMintRevoked === null ? 'UNKNOWN' : isMintRevoked ? 'YES' : 'NO'} · Freeze Revoked: {isFreezeRevoked === null ? 'UNKNOWN' : isFreezeRevoked ? 'YES' : 'NO'}
                   </span>
                 </div>
               </div>
@@ -591,6 +806,11 @@ export function TokenDecisionCard({
           </div>
         )}
       </div>
+      <VetoProofInspectorDrawer
+        isOpen={showProofInspector}
+        onClose={() => setShowProofInspector(false)}
+        token={{ mint: canonicalMint, symbol: asset.symbol || candidate?.symbol }}
+      />
     </article>
   );
 }

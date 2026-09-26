@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { hasCompleteVerifiedEvidence } from '../evidence-receipt.js';
 import {
   Activity,
   Shield,
@@ -19,11 +20,11 @@ import {
 export function SystemIntelligenceDrawer({ data, onClose }) {
   const [activeTab, setActiveTab] = useState('health');
 
-  if (!data || data.evidenceStatus === 'UNAVAILABLE') {
+  if (!hasCompleteVerifiedEvidence(data)) {
     return <aside className="system-intelligence-drawer" aria-label="System evidence">
       <button type="button" onClick={onClose} aria-label="Close system evidence">Close</button>
       <h3>System assurance unavailable</h3>
-      <p>{data?.reason || 'Waiting for verified system telemetry.'}</p>
+      <p>{data?.reason || 'A complete, current, independently verifiable system receipt has not been supplied.'}</p>
     </aside>;
   }
   const omega = data || {
@@ -163,7 +164,7 @@ export function SystemIntelligenceDrawer({ data, onClose }) {
         <div className="drawer-title">
           <Shield size={18} className="icon-cyan" />
           <h3>System Intelligence & Deep Architecture Telemetry</h3>
-          <span className="pill-system-mode">{omega.systemHealth?.currentMode || 'NORMAL'}</span>
+          <span className="pill-system-mode">{omega.systemHealth?.currentMode || 'UNKNOWN'}</span>
         </div>
         <button
           type="button"

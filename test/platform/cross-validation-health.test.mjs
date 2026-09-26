@@ -72,6 +72,9 @@ test('MultiSourceCrossValidator: Flags STALE data when observations exceed thres
 test('ProviderHealthTracker: Tracks latency, error rates, circuit breaker, and system state', () => {
   const tracker = new ProviderHealthTracker();
   const now = Date.now();
+  tracker.setProviderConfiguration('PUMPPORTAL_WS', true, true, true);
+  tracker.setProviderConfiguration('SOLANA_RPC', true, true, true);
+  tracker.setProviderConfiguration('DEXSCREENER_API', true, true, true);
 
   // 1. Startup has no observations and must remain unverified.
   let report = tracker.getReport(now);

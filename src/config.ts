@@ -46,10 +46,15 @@ export const schema = z.object({
   MAX_PRIORITY_LAMPORTS: integer(200_000, 1000, 10_000_000),
   JITO_URL: z.string().url().startsWith('https://').default('https://mainnet.block-engine.jito.wtf/api/v1/bundles'),
   JITO_AUTH: z.string().default(''),
-  RUGCHECK_URL: z.string().url().startsWith('https://').default('https://api.rugcheck.xyz/v1/tokens'),
+  // A risk provider is required at the use boundary.  An empty value is
+  // deliberately retained here so paper/test configuration cannot silently
+  // acquire a public production dependency.
+  RUGCHECK_URL: z.union([z.literal(''), z.string().url().startsWith('https://')]).default(''),
   RUGCHECK_MAX_SCORE: integer(1000, 0, 100_000),
   JUPITER_API_KEY: z.string().default(''),
-  JUPITER_URL: z.string().url().startsWith('https://').default('https://api.jup.ag/swap/v1'),
+  // Routing is an explicit capability.  Never acquire a public execution
+  // dependency merely because a caller constructed the core configuration.
+  JUPITER_URL: z.union([z.literal(''), z.string().url().startsWith('https://')]).default(''),
   SESSION_DIR: z.string().default(''),
   CHECKPOINT_INTERVAL_MS: integer(3_600_000, 10_000, 86_400_000),
 }).superRefine((c, ctx) => {

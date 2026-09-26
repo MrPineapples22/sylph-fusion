@@ -43,6 +43,12 @@ export class Store {
     }
     async load() { const text = await this.call('load'); return text ? JSON.parse(text) : null; }
     async save(state, event) { await this.call('save', JSON.stringify(state), event); }
+    async prepareSigningIntent(intent) {
+        await this.call('prepare-signing', JSON.stringify(intent));
+    }
+    async markSigningIntentSigned(economicIntentId, messageSha256, signatureBase64) {
+        await this.call('mark-signed', JSON.stringify({ economicIntentId, messageSha256, signatureBase64 }));
+    }
     async backup(destinationPath) { await this.call('backup', destinationPath); }
     async pruneAudit(maxAgeMs) { await this.call('prune', maxAgeMs ? String(maxAgeMs) : undefined); }
     close() {

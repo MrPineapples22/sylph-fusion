@@ -1350,4 +1350,338 @@ input:not([type=range]),select,.rpc-stat,.empty-substate,.soak-table-wrap,
   position: relative;
 }
 
+/* ==========================================================================
+   Phase 18 UI/UX Polish: Missing CSS Definitions
+   These classes are referenced in LiveDashboard.jsx but had no CSS rules.
+   ========================================================================== */
 
+/* Token symbol button in the discovery table */
+.token-symbol-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: none;
+  color: var(--cyan);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  padding: 2px 0;
+  transition: color 0.15s ease;
+}
+.token-symbol-btn:hover {
+  color: #e8edf3;
+}
+.token-symbol-btn b {
+  font-weight: 650;
+}
+
+/* Refresh feed button extracted from inline styles */
+.btn-refresh-feed {
+  padding: 4px 10px;
+  background: rgba(131, 197, 230, 0.1);
+  border: 1px solid rgba(131, 197, 230, 0.25);
+  border-radius: 5px;
+  color: var(--cyan);
+  font-size: 11px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+.btn-refresh-feed:hover:not(:disabled) {
+  background: rgba(131, 197, 230, 0.2);
+  border-color: rgba(131, 197, 230, 0.5);
+}
+.btn-refresh-feed:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* PoD (Probability of Dump) badge — semantic color by risk tier */
+.pod-badge {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  font-family: var(--font-mono, monospace);
+}
+.pod-badge.pod-LOW,
+.pod-badge.pod-low {
+  background: rgba(137, 199, 165, 0.18);
+  color: var(--good);
+  border: 1px solid rgba(137, 199, 165, 0.3);
+}
+.pod-badge.pod-MEDIUM,
+.pod-badge.pod-medium,
+.pod-badge.pod-MED {
+  background: rgba(231, 188, 118, 0.18);
+  color: var(--warn);
+  border: 1px solid rgba(231, 188, 118, 0.3);
+}
+.pod-badge.pod-HIGH,
+.pod-badge.pod-high {
+  background: rgba(239, 156, 156, 0.18);
+  color: var(--danger);
+  border: 1px solid rgba(239, 156, 156, 0.3);
+}
+.pod-badge.pod-UNKNOWN {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--muted);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Confidence badge — semantic color by conviction level */
+.conf-badge {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  font-family: var(--font-mono, monospace);
+}
+.conf-badge.conf-LOW,
+.conf-badge.conf-low {
+  background: rgba(239, 156, 156, 0.12);
+  color: var(--danger);
+  border: 1px solid rgba(239, 156, 156, 0.25);
+}
+.conf-badge.conf-MED,
+.conf-badge.conf-MEDIUM,
+.conf-badge.conf-medium {
+  background: rgba(231, 188, 118, 0.12);
+  color: var(--warn);
+  border: 1px solid rgba(231, 188, 118, 0.25);
+}
+.conf-badge.conf-HIGH,
+.conf-badge.conf-high {
+  background: rgba(137, 199, 165, 0.12);
+  color: var(--good);
+  border: 1px solid rgba(137, 199, 165, 0.25);
+}
+
+/* Status pill variants (OBSERVE, ENTRY, BLOCK, WATCH, HOLD, EXIT, REJECT, PASS) */
+.status-pill.status-observe {
+  background: rgba(131, 197, 230, 0.15);
+  color: var(--cyan);
+  border: 1px solid rgba(131, 197, 230, 0.3);
+}
+.status-pill.status-entry {
+  background: rgba(137, 199, 165, 0.2);
+  color: var(--good);
+  border: 1px solid rgba(137, 199, 165, 0.35);
+}
+.status-pill.status-block,
+.status-pill.status-reject,
+.status-pill.status-blocked {
+  background: rgba(239, 156, 156, 0.18);
+  color: var(--danger);
+  border: 1px solid rgba(239, 156, 156, 0.35);
+}
+.status-pill.status-watch {
+  background: rgba(231, 188, 118, 0.15);
+  color: var(--warn);
+  border: 1px solid rgba(231, 188, 118, 0.3);
+}
+.status-pill.status-hold {
+  background: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+.status-pill.status-exit {
+  background: rgba(239, 156, 156, 0.12);
+  color: var(--danger);
+  border: 1px solid rgba(239, 156, 156, 0.25);
+}
+.status-pill.status-pass {
+  background: rgba(137, 199, 165, 0.15);
+  color: var(--good);
+  border: 1px solid rgba(137, 199, 165, 0.3);
+}
+.status-pill.status-unknown {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--muted);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Mobile touch target minimums (WCAG 2.5.5: 44×44px) */
+@media (max-width: 700px) {
+  .btn-urgent-action,
+  .btn-dismiss-alert,
+  .capital-assurance-toggle,
+  .btn-refresh-feed {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 8px 14px;
+    font-size: 12px;
+  }
+  .urgent-alert-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .urgent-alert-actions {
+    width: 100%;
+  }
+  .urgent-alert-actions button {
+    flex: 1;
+  }
+  .capital-authority-strip {
+    padding: 8px;
+    gap: 4px;
+  }
+  .capital-strip-badge {
+    font-size: 10px;
+    padding: 4px 6px;
+  }
+  .capital-assurance-grid {
+    grid-template-columns: 1fr;
+  }
+  .signing-assurance-strip {
+    gap: 4px;
+    font-size: 9px;
+  }
+  .market-context-strip {
+    gap: 6px;
+    padding: 6px 10px;
+  }
+  .live-grid {
+    grid-template-columns: 1fr;
+  }
+  .token-symbol-btn {
+    min-height: 44px;
+    padding: 8px 4px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SPOTLIGHT VISUAL HIERARCHY — Token Row Variants
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Micro-animation keyframes ───────────────────────────── */
+@keyframes spotlightPulse {
+  0%, 100% { box-shadow: inset 3px 0 var(--good), 0 0 12px rgba(137,199,165,.08); }
+  50% { box-shadow: inset 3px 0 var(--good), 0 0 22px rgba(137,199,165,.16); }
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes badgeNeonGlow {
+  0%, 100% { text-shadow: 0 0 5px rgba(137,199,165,.5); }
+  50% { text-shadow: 0 0 10px rgba(137,199,165,.8); }
+}
+
+/* ── PRIME / Spotlight Row ───────────────────────────────── */
+.token-row.spotlight {
+  border-left-color: var(--good);
+  background: rgba(137,199,165,.04);
+  animation: spotlightPulse 3s ease-in-out infinite, fadeInUp 300ms ease backwards;
+}
+.token-row.spotlight:hover {
+  background: rgba(137,199,165,.08);
+  border-left-color: var(--good);
+}
+
+/* ── VETOED / Dimmed Row ─────────────────────────────────── */
+.token-row.dimmed {
+  opacity: .35;
+  filter: saturate(.3);
+  border-left-color: var(--danger);
+  transition: opacity 200ms ease, filter 200ms ease;
+}
+.token-row.dimmed:hover, .token-row.dimmed:focus-visible {
+  opacity: .8;
+  filter: saturate(.65);
+}
+
+/* ── Developing Row ──────────────────────────────────────── */
+.token-row.developing {
+  opacity: .7;
+  border-left-color: var(--warn);
+}
+.token-row.developing:hover { opacity: .9; }
+
+/* ── Conviction badges ───────────────────────────────────── */
+.badge-conviction {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 8px; letter-spacing: .5px; font-weight: 700;
+  padding: 2px 6px; border-radius: 3px;
+  vertical-align: middle;
+}
+.badge-conviction.badge-high {
+  background: rgba(137,199,165,.12);
+  color: var(--good);
+  animation: badgeNeonGlow 2s ease-in-out infinite;
+}
+.badge-conviction.badge-med {
+  background: rgba(231,188,118,.1);
+  color: var(--warn);
+}
+.badge-conviction.badge-low {
+  background: rgba(239,156,156,.08);
+  color: var(--danger);
+}
+
+/* ── Gate indicator dots ─────────────────────────────────── */
+.gate-dots {
+  display: inline-flex; gap: 3px; margin-left: 6px;
+  vertical-align: middle;
+}
+.gate-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+}
+.gate-dot.pass { background: var(--good); box-shadow: 0 0 3px var(--good); }
+.gate-dot.fail { background: var(--danger); box-shadow: 0 0 3px var(--danger); }
+.gate-dot.pending { background: var(--warn); }
+
+/* ═══════════════════════════════════════════════════════════════
+   DENSITY CONTROLS
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Density: Compact ────────────────────────────────────── */
+.density-compact .token-row { padding-block: 6px; }
+.density-compact .token-row .token-symbol-btn { min-height: 32px; font-size: 11px; }
+.density-compact td { font-size: 10px; padding: 4px 8px; }
+.density-compact .metric strong { font-size: 18px; }
+.density-compact .metric-label { font-size: 9px; }
+.density-compact .panel-heading h2 { font-size: 12px; }
+
+/* ── Density: Detailed (default — no overrides needed) ──── */
+
+/* ── Density: Operations ─────────────────────────────────── */
+.density-operations .token-row { padding-block: 18px; }
+.density-operations .token-row .token-symbol-btn { min-height: 48px; font-size: 14px; }
+.density-operations td { font-size: 13px; padding: 14px 16px; }
+.density-operations .metric strong { font-size: 32px; }
+.density-operations .metric-label { font-size: 12px; }
+.density-operations .panel-heading h2 { font-size: 17px; }
+
+/* ── Density toggle control ──────────────────────────────── */
+.density-toggle {
+  display: inline-flex; gap: 2px;
+  background: var(--cockpit-raised);
+  border: 1px solid var(--line);
+  border-radius: 6px; padding: 2px;
+}
+.density-toggle button {
+  padding: 4px 8px; border-radius: 4px;
+  border: none; background: transparent;
+  color: var(--muted); font-size: 9px;
+  letter-spacing: .04em; cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+  min-height: 24px;
+}
+.density-toggle button.active {
+  background: var(--cockpit-panel);
+  color: #e8edf3;
+}
+.density-toggle button:hover:not(.active) { color: #e8edf3; }
+
+@media (prefers-reduced-motion: reduce) {
+  .token-row.spotlight, .badge-conviction.badge-high { animation: none; }
+}

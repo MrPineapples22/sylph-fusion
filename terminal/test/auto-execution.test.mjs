@@ -15,7 +15,7 @@ test('Auto-Simulate fills a breakout, takes one TP slice, and sweeps a trailing 
   const tasks = [], fills = [];
   const execution = {
     submitUsdOrder(input) {
-      const task = submitPaperOrder(engine, action => { s = reducer(s, action); }, 150, input).then(r => { fills.push(r); return r; });
+      const task = submitPaperOrder(engine, action => { s = reducer(s, action); }, 150, {...input, allowLocalSimulationFallback: true}).then(r => { fills.push(r); return r; });
       tasks.push(task); return task;
     },
     panicCloseUsd(poolAddress, tokenMint, tokenQty) { return this.submitUsdOrder({ poolAddress, tokenMint, tokenQty, side: 'SELL', maxSlippageBps: 5000, emergency: true }); }
@@ -67,6 +67,23 @@ test('in-flight entries consume capacity and paused automation submits nothing',
   await new Promise(resolve=>setImmediate(resolve));
   controller.evaluate({...s,running:false,now:now+20000},execution,150);
   assert.equal(count,1);
+});
+
+test('browser command-gateway outage cannot silently execute through a local paper engine', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('offline'); };
+  let executed = false;
+  const actions = [];
+  try {
+    const result = await submitPaperOrder({ execute: async () => { executed = true; } }, action => actions.push(action), 150, {
+      poolAddress: 'POOL', tokenMint: 'TOKEN', side: 'BUY', usdAmount: 10,
+    });
+    assert.equal(result, null);
+    assert.equal(executed, false);
+    assert.equal(actions.at(-1).payload.reason, 'COMMAND_GATEWAY_UNAVAILABLE');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('failed TP remains retryable and does not complete its tier', async () => {

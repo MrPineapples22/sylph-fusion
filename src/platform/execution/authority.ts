@@ -16,7 +16,7 @@ import { randomUUID } from 'node:crypto';
 import type { Config } from '../../config.js';
 import type { RpcPool } from '../../rpc.js';
 import { Market, type Snapshot } from '../../market.js';
-import { Executor, type Built } from '../../execution.js';
+import { Executor, type BroadcastOutcome, type Built } from '../../execution.js';
 import { mulBps, type Pending } from '../../core.js';
 
 export type AuthorityExecutionMode = 'SIMULATION' | 'LIVE';
@@ -42,7 +42,7 @@ export interface ExecutionAuthority {
     reason: string,
     panic: boolean
   ): Promise<Built>;
-  broadcast(order: Pending): Promise<void>;
+  broadcast(order: Pending): Promise<BroadcastOutcome>;
   reconcile(order: Pending): Promise<ExecutionReconcileResult>;
   getWalletBalance(commitment?: 'processed' | 'confirmed' | 'finalized'): Promise<bigint>;
   getTokenBalance(mint: PublicKey, commitment?: 'processed' | 'confirmed' | 'finalized'): Promise<bigint>;
@@ -136,10 +136,11 @@ export class SimulationExecutionAuthority implements ExecutionAuthority {
     };
   }
 
-  async broadcast(order: Pending): Promise<void> {
+  async broadcast(order: Pending): Promise<BroadcastOutcome> {
     if (!order.signature.startsWith('sim_') && order.signature !== 'paper') {
       throw new Error(`SimulationAuthority cannot broadcast live signature: ${order.signature}`);
     }
+    return { status: 'NOT_SENT', signature: order.signature, attemptedAt: Date.now(), reason: 'SIMULATION' };
   }
 
   async reconcile(order: Pending): Promise<ExecutionReconcileResult> {
@@ -237,11 +238,11 @@ export class LiveExecutionAuthority implements ExecutionAuthority {
     return built;
   }
 
-  async broadcast(order: Pending): Promise<void> {
+  async broadcast(order: Pending): Promise<BroadcastOutcome> {
     if (order.signature === 'paper' || order.signature.startsWith('sim_')) {
       throw new Error(`LiveExecutionAuthority cannot broadcast simulated signature: ${order.signature}`);
     }
-    await this.executor.broadcast(order);
+    return this.executor.broadcast(order);
   }
 
   async reconcile(order: Pending): Promise<ExecutionReconcileResult> {

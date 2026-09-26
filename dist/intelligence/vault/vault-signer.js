@@ -15,6 +15,7 @@ export class VaultSigner {
     currentControlEpoch = 1;
     currentRevocationEpoch = 1;
     productionRoot;
+    allowSimulation;
     totalSignedCount = 0;
     signedRegistry = new Map();
     constructor(options) {
@@ -23,6 +24,7 @@ export class VaultSigner {
         this.maxSolPerTx = options?.maxSolPerTx ?? 2.5;
         this.dailyCapSol = options?.dailyCapSol ?? 25.0;
         this.productionRoot = options?.productionRoot ?? 'sylph_production_root_sha256_v1';
+        this.allowSimulation = options?.allowSimulation === true;
     }
     getPublicKey() {
         return this.keypair.publicKey.toBase58();
@@ -53,6 +55,15 @@ export class VaultSigner {
      */
     processSignatureRequest(request) {
         const opId = `sign_op_${request.intent_id}_${Date.now()}`;
+        if (!this.allowSimulation) {
+            return {
+                success: false,
+                sign_operation_id: opId,
+                signing_state: 'REJECTED',
+                denial_reason: 'SIGNER_UNAVAILABLE: VaultSigner only supports explicit test simulation',
+                execution_timestamp_ms: Date.now(),
+            };
+        }
         // 1. Verify capability (Part XIX: no arbitrary transfers)
         if (!['SIGN_ENTRY', 'SIGN_POSITION_REDUCTION', 'SIGN_EXIT', 'SIGN_EXECUTION_FEE'].includes(request.capability)) {
             return {
@@ -124,10 +135,10 @@ export class VaultSigner {
             };
         }
         // 8. Sign transaction atomically (Zone 0 Signer)
-        const simulatedSignature = createHash('sha256')
+        const simulatedSignature = 'simulation_sig_' + createHash('sha256')
             .update(request.serialized_tx_bytes)
             .update(this.keypair.secretKey)
-            .digest('base64');
+            .digest('hex');
         this.totalSignedCount++;
         // 9. Last-moment revocation check: if revocation advanced during sign, QUARANTINE! (Part LXI)
         if (request.active_revocation_epoch < this.currentRevocationEpoch) {
@@ -157,6 +168,7 @@ export class VaultSigner {
             sign_operation_id: opId,
             signature_base58: simulatedSignature,
             signing_state: 'RELEASED',
+            simulation_only: true,
             execution_timestamp_ms: Date.now(),
         };
     }

@@ -3,7 +3,8 @@ import { readFile } from 'node:fs/promises';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 export async function startDashboard(source, port) {
     const token = randomBytes(32).toString('hex');
-    const origin = `http://127.0.0.1:${port}`;
+    let origin = '';
+    let expectedHost = '';
     const html = await readFile(new URL('../ui/index.html', import.meta.url), 'utf8');
     const script = await readFile(new URL('../ui/app.js', import.meta.url));
     const css = await readFile(new URL('../ui/style.css', import.meta.url));
@@ -13,7 +14,7 @@ export async function startDashboard(source, port) {
         res.setHeader('X-Content-Type-Options', 'nosniff');
         res.setHeader('Referrer-Policy', 'no-referrer');
         res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
-        if (req.headers.host !== `127.0.0.1:${port}` || (req.headers.origin && req.headers.origin !== origin) || req.headers['sec-fetch-site'] === 'cross-site') {
+        if (req.headers.host !== expectedHost || (req.headers.origin && req.headers.origin !== origin) || req.headers['sec-fetch-site'] === 'cross-site') {
             reply(res, 403, { error: 'Local dashboard access only' });
             return;
         }
@@ -116,6 +117,11 @@ export async function startDashboard(source, port) {
     server.requestTimeout = 5000;
     server.headersTimeout = 5000;
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
+    const address = server.address();
+    if (!address || typeof address === 'string')
+        throw new Error('Dashboard did not bind to a TCP port');
+    expectedHost = `127.0.0.1:${address.port}`;
+    origin = `http://${expectedHost}`;
     return { url: origin, close: () => new Promise((resolve, reject) => { server.close(e => e ? reject(e) : resolve()); server.closeAllConnections(); }) };
 }
 //# sourceMappingURL=dashboard.js.map

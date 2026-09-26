@@ -30,6 +30,13 @@ import { SystemicMarketSafetyEngine } from './sentinel/market-safety.js';
 import { AIRiskSentinel } from './sentinel/risk-sentinel.js';
 import { StrategyGovernanceEngine } from './strategy/governance.js';
 import { IncidentFlightRecorder } from './recovery/flight-recorder.js';
+/**
+ * This experimental platform has no isolated signer, broadcast adapter, or
+ * authoritative chain reconciliation. These codes deliberately prevent its
+ * model components from being interpreted as financial execution.
+ */
+export const ECONOMIC_EXECUTION_UNAVAILABLE = 'ECONOMIC_EXECUTION_UNAVAILABLE';
+export const ECONOMIC_SETTLEMENT_UNAVAILABLE = 'ECONOMIC_SETTLEMENT_UNAVAILABLE';
 export class SOLSYLPHPlatform {
     config;
     vaultManager;
@@ -53,6 +60,10 @@ export class SOLSYLPHPlatform {
     sentinel;
     strategyGovernance;
     flightRecorder;
+    /** Kept non-configurable: this model has no reviewed economic adapter. */
+    isEconomicExecutionAvailable() {
+        return false;
+    }
     constructor(config = { platformId: 'solsylph-v1', defaultFeeRateBps: 2000 }) {
         this.config = config;
         this.vaultManager = new VaultManager();
@@ -225,7 +236,7 @@ export class SOLSYLPHPlatform {
             },
         });
         if (!consensus.overallAccepted) {
-            return { success: false, reason: `Consensus vetoed: ${consensus.hardVetoes.join(', ')}` };
+            return { success: false, reason: `Consensus blocked entry: ${consensus.entryBlockers.join(', ')}` };
         }
         // 7. Cohort Engine: Fair Pro-Rata Allocation Capped by Exit Capacity
         const cohort = this.cohortEngine.createCohort(`cohort_${randomUUID()}`, params.tokenSecurity.mint, cohortRequests, consensus.maxCapacityLamports);
@@ -240,6 +251,17 @@ export class SOLSYLPHPlatform {
         });
         if (reval.outcome !== 'PROCEED') {
             return { success: false, reason: `Pre-signing revalidation failed: ${reval.reason}` };
+        }
+        // Validation can produce a non-financial execution proposal, but this
+        // class has neither a real signing/broadcast boundary nor chain evidence.
+        // Do not fabricate a transaction, fill, confirmation, or ledger posting.
+        if (!this.isEconomicExecutionAvailable()) {
+            return {
+                success: false,
+                reason: ECONOMIC_EXECUTION_UNAVAILABLE,
+                plannedCohortId: cohort.cohortId,
+                requestedLamports: cohort.totalAllocatedCapitalLamports,
+            };
         }
         // 9. Zero-Trust Signer Dispatch
         const txId = `tx_${randomUUID()}`;
@@ -259,7 +281,7 @@ export class SOLSYLPHPlatform {
             return { success: false, reason: `Signer rejected: ${signResult.error}` };
         }
         this.signer.recordSubmission(txId);
-        this.signer.recordConfirmation(txId);
+        this.signer.recordSimulatedConfirmation(txId);
         // 10. Distribute exact integer conservation fills across participating vaults
         const totalFilledTokens = 10000000n;
         const executedCohort = this.cohortEngine.distributeExecutionFill(cohort, totalFilledTokens, cohort.totalAllocatedCapitalLamports);
@@ -304,6 +326,11 @@ export class SOLSYLPHPlatform {
         const vault = this.vaultManager.getVault(vaultId);
         if (!vault)
             throw new Error(`Vault ${vaultId} not found`);
+        // Settlement requires independent wallet, chain, signer-journal and ledger
+        // evidence. This experimental class has none, so preserve state exactly.
+        if (!this.isEconomicExecutionAvailable()) {
+            return { success: false, reason: ECONOMIC_SETTLEMENT_UNAVAILABLE, vaultId, requestedAt: now };
+        }
         // Transition through lifecycle de-risking and settlement
         let state = vault.state;
         state = this.lifecycle.transition(state, 'PRESERVATION', vaultId);

@@ -16,6 +16,7 @@ const cfg = (extra = {}) => config({
   RPC_URLS: 'https://rpc1.invalid,https://rpc2.invalid',
   WS_URLS: 'wss://feed.invalid',
   KEYPAIR_PATH: 'test-key.json',
+  JUPITER_URL: 'https://jupiter.invalid/swap/v1',
   ...extra,
 });
 

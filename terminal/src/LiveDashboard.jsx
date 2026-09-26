@@ -180,11 +180,19 @@ export default React.memo(function LiveDashboard() {
     }
   };
 
+  const isFeedUnobserved = !feedError && (
+    market?.systemOmega?.systemHealth?.marketFeed === 'NEVER_RECEIVED' ||
+    ['solana', 'pump'].every((k) => {
+      const s = market?.sources?.[k];
+      return !s || !s.at || s.state === 'unobserved' || s.state === 'never_received';
+    })
+  );
+
   const isFeedStale = Boolean(feedError) ||
     market?.systemOmega?.systemHealth?.marketFeed === 'STALE' ||
     ['solana', 'pump'].some((k) => {
       const s = market?.sources?.[k];
-      return s && (s.state === 'stale' || s.state === 'rate_limited' || (s.at && Date.now() - s.at > 10000));
+      return s && (s.state === 'stale' || s.state === 'rate_limited' || (s.at && typeof s.at === 'number' && Date.now() - s.at > 10000));
     });
 
   const rateLimitedSources = Object.entries(market?.sources || {}).filter(([_, s]) => s?.state === 'rate_limited');
@@ -220,18 +228,6 @@ export default React.memo(function LiveDashboard() {
             onClick={handleForceRefresh}
             disabled={refreshing}
             title="Poll authoritative market feeds now"
-            style={{
-              padding: '4px 10px',
-              background: 'rgba(0, 194, 255, 0.1)',
-              border: '1px solid rgba(0, 194, 255, 0.25)',
-              borderRadius: '5px',
-              color: '#7adfff',
-              fontSize: '11px',
-              cursor: refreshing ? 'not-allowed' : 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '4px'
-            }}
           >
             <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
             {refreshing ? 'Syncing…' : 'Sync feeds'}
@@ -781,7 +777,11 @@ export default React.memo(function LiveDashboard() {
             </table>
             {!rows.length && (
               <div className="empty-state">
-                {market ? 'No rows available for this view.' : 'Connecting to live discovery…'}
+                {isFeedUnobserved
+                  ? 'Pool ranking unavailable · Waiting for validated market observations.'
+                  : market
+                  ? 'No tokens indexed matching the current filter.'
+                  : 'Connecting to live discovery…'}
               </div>
             )}
           </div>

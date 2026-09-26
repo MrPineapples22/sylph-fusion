@@ -23,7 +23,7 @@ export class DynamicTipAndContentionOracle {
             p75Lamports: 60000n,
             p95Lamports: 250000n,
             polledAtMs: Date.now(),
-            isFresh: true,
+            isFresh: false,
             source: 'FALLBACK_MANDATE',
         };
     }
@@ -34,14 +34,14 @@ export class DynamicTipAndContentionOracle {
             p75Lamports: p75 >= p50 ? p75 : p50,
             p95Lamports: p95 >= p75 ? p95 : p75,
             polledAtMs: Date.now(),
-            isFresh: true,
+            isFresh: source === 'LIVE_API',
             source,
         };
         return this.cachedTipFloor;
     }
     getTipFloor() {
         const age = Date.now() - this.cachedTipFloor.polledAtMs;
-        const isFresh = age <= this.cacheTtlMs;
+        const isFresh = this.cachedTipFloor.source === 'LIVE_API' && age <= this.cacheTtlMs;
         return {
             ...this.cachedTipFloor,
             isFresh,
@@ -90,6 +90,7 @@ export class DynamicTipAndContentionOracle {
                 recommendedMicroLamportsPerCu: this.minPriorityMicroLamports,
                 contentionTier: 'NOMINAL',
                 polledAtMs: Date.now(),
+                isObserved: false,
             };
         }
         allSamples.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
@@ -121,6 +122,7 @@ export class DynamicTipAndContentionOracle {
             recommendedMicroLamportsPerCu: recommended,
             contentionTier,
             polledAtMs: Date.now(),
+            isObserved: true,
         };
     }
     getRecommendedPriorityFee(writeLockedAccounts, urgency = 'STANDARD') {

@@ -20,7 +20,30 @@ export function normalizePairs(rows, at = Date.now()) {
             continue;
         const dex = String(p.dexId || '');
         const isDexPool = Boolean(dex && dex !== 'pumpfun');
-        const row = { mint: p.baseToken.address, symbol: String(p.baseToken.symbol || '?').slice(0, 24), name: String(p.baseToken.name || 'Unknown token').slice(0, 80), price: numeric(p.priceUsd), change: numeric(p.priceChange?.h24), liquidity: numeric(p.liquidity?.usd), volume: numeric(p.volume?.h24), volume1h: numeric(p.volume?.h1), volume5m: numeric(p.volume?.m5), cap: numeric(p.marketCap ?? p.fdv), pair: String(p.pairAddress || ''), dex, complete: isDexPool, migrated: isDexPool, at };
+        const totalTxns = p.txns?.h24 ? ((p.txns.h24.buys || 0) + (p.txns.h24.sells || 0))
+            : p.txns?.h1 ? ((p.txns.h1.buys || 0) + (p.txns.h1.sells || 0))
+                : p.txns?.m5 ? ((p.txns.m5.buys || 0) + (p.txns.m5.sells || 0))
+                    : null;
+        const txCount = numeric(p.txCount ?? p.txs ?? totalTxns);
+        const row = {
+            mint: p.baseToken.address,
+            symbol: String(p.baseToken.symbol || '?').slice(0, 24),
+            name: String(p.baseToken.name || 'Unknown token').slice(0, 80),
+            price: numeric(p.priceUsd),
+            change: numeric(p.priceChange?.h24),
+            liquidity: numeric(p.liquidity?.usd),
+            volume: numeric(p.volume?.h24),
+            volume1h: numeric(p.volume?.h1),
+            volume5m: numeric(p.volume?.m5),
+            cap: numeric(p.marketCap ?? p.fdv),
+            pair: String(p.pairAddress || ''),
+            dex,
+            complete: isDexPool,
+            migrated: isDexPool,
+            at,
+            txs: txCount ?? undefined,
+            txCount: txCount ?? undefined,
+        };
         if (!result.has(row.mint) || (row.liquidity ?? -1) > (result.get(row.mint).liquidity ?? -1))
             result.set(row.mint, row);
     }
@@ -84,6 +107,9 @@ export class MarketHub {
     kolFile;
     rugUrl;
     trackerKey;
+    dexUrl;
+    kolUrl;
+    pumpUrl;
     tokens = [];
     launches = [];
     kol = [];
@@ -102,15 +128,20 @@ export class MarketHub {
     pumpValidator = new PumpPortalFrameValidator();
     rpcList = [];
     rpcIndex = 0;
-    constructor(watchFile, rpc = 'https://api.mainnet-beta.solana.com', kolFile, rugUrl = 'https://api.rugcheck.xyz/v1/tokens', trackerKey = '') {
+    positionMintsProvider;
+    constructor(watchFile, rpc = '', kolFile, rugUrl = '', trackerKey = '', dexUrl = '', kolUrl = '', pumpUrl = '') {
         this.watchFile = watchFile;
         this.rpc = rpc;
         this.kolFile = kolFile;
         this.rugUrl = rugUrl;
         this.trackerKey = trackerKey;
+        this.dexUrl = dexUrl;
+        this.kolUrl = kolUrl;
+        this.pumpUrl = pumpUrl;
         this.rpcList = rpc.split(',').map(s => s.trim()).filter(Boolean);
-        if (!this.rpcList.length)
-            this.rpcList = ['https://api.mainnet-beta.solana.com'];
+    }
+    setPositionMintsProvider(provider) {
+        this.positionMintsProvider = provider;
     }
     snapshot() {
         const convergence = new Map();
@@ -146,10 +177,34 @@ export class MarketHub {
                 this.kolWallets = new Set(raw.split(/\r?\n/).map(x => x.trim()).filter(x => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(x)));
             }
             catch { }
-        this.loop(() => this.dex(), 10000);
-        this.loop(() => this.kolscan(), 60000);
-        this.loop(() => this.solana(), 4000);
-        this.pump();
+        // Register active providers with the health tracker so the operator read model sees them as configured.
+        if (this.pumpUrl)
+            globalProviderHealthTracker.setProviderConfiguration('PUMPPORTAL_WS', true, true, true);
+        if (this.dexUrl)
+            globalProviderHealthTracker.setProviderConfiguration('DEXSCREENER_API', true, true, true);
+        if (this.rugUrl)
+            globalProviderHealthTracker.setProviderConfiguration('RUGCHECK_API', true, true, true);
+        if (this.rpcList.length)
+            globalProviderHealthTracker.setProviderConfiguration('SOLANA_RPC', true, true, true);
+        // Discovery accepts market observations for five seconds.  Poll faster
+        // than that fence so a healthy provider does not oscillate between
+        // CURRENT and STALE solely because its own refresh cadence is too slow.
+        if (this.dexUrl)
+            this.loop(() => this.dex(), 4000);
+        else
+            this.status.dex = { state: 'unconfigured', at: Date.now() };
+        if (this.kolUrl)
+            this.loop(() => this.kolscan(), 60000);
+        else
+            this.status.kol = { state: 'unconfigured', at: Date.now() };
+        if (this.rpcList.length)
+            this.loop(() => this.solana(), 4000);
+        else
+            this.status.solana = { state: 'unconfigured', at: Date.now() };
+        if (this.pumpUrl)
+            this.pump();
+        else
+            this.status.pump = { state: 'unconfigured', at: Date.now() };
     }
     stop() { this.stopped = true; for (const t of this.timers)
         clearTimeout(t); this.ws?.terminate(); }
@@ -187,13 +242,15 @@ export class MarketHub {
         query = query.trim();
         if (!query || query.length > 80)
             throw new Error('Search with 1–80 characters');
+        if (!this.dexUrl)
+            throw new Error('DexScreener adapter is not explicitly configured');
         const cached = this.searches.get(query);
         if (cached && Date.now() - cached.at < 30000)
             return cached.rows;
         if (Date.now() - this.lastSearch < 1500)
             throw new Error('Wait a moment before searching again');
         this.lastSearch = Date.now();
-        const data = await json('https://api.dexscreener.com/latest/dex/search?q=' + encodeURIComponent(query));
+        const data = await json(this.dexUrl + '/latest/dex/search?q=' + encodeURIComponent(query));
         if (!Array.isArray(data.pairs))
             throw new Error('Search provider unavailable');
         const rows = normalizePairs(data.pairs).slice(0, 30);
@@ -205,6 +262,8 @@ export class MarketHub {
     async risk(mint) {
         if (!validMint(mint))
             throw new Error('Enter a valid Solana token address');
+        if (!this.rpcList.length || !this.rugUrl)
+            throw new Error('Risk adapters are not explicitly configured');
         const now = Date.now();
         const cached = this.riskCache.get(mint);
         if (cached && now - cached.at < 45_000)
@@ -229,14 +288,16 @@ export class MarketHub {
         }
     }
     async dex() {
+        if (!this.dexUrl)
+            throw new Error('DexScreener adapter is not explicitly configured');
         const start = Date.now();
         try {
-            const [profiles, pairs] = await Promise.all([json('https://api.dexscreener.com/token-profiles/latest/v1'), json('https://api.dexscreener.com/tokens/v1/solana/So11111111111111111111111111111111111111112')]);
-            const mints = [...new Set([...this.watches, ...this.kol.map(x => x.mint), ...(Array.isArray(profiles) ? profiles.filter(p => p.chainId === 'solana').map(p => p.tokenAddress).filter(validMint) : [])])].slice(0, 30);
-            const expanded = mints.length ? await json('https://api.dexscreener.com/tokens/v1/solana/' + mints.join(',')) : [];
+            const [profiles, pairs] = await Promise.all([json(this.dexUrl + '/token-profiles/latest/v1'), json(this.dexUrl + '/tokens/v1/solana/So11111111111111111111111111111111111111112')]);
+            const posMints = this.positionMintsProvider ? this.positionMintsProvider().filter(validMint) : [];
+            const mints = [...new Set([...posMints, ...this.watches, ...this.kol.map(x => x.mint), ...(Array.isArray(profiles) ? profiles.filter(p => p.chainId === 'solana').map(p => p.tokenAddress).filter(validMint) : [])])].slice(0, 30);
+            const expanded = mints.length ? await json(this.dexUrl + '/tokens/v1/solana/' + mints.join(',')) : [];
             const normalized = normalizePairs([...(Array.isArray(expanded) ? expanded : []), ...(Array.isArray(pairs) ? pairs : [])]).slice(0, 60);
             this.tokens = normalized.map(t => {
-                const isLaunched = this.launches.some(l => l.mint === t.mint);
                 const obs = [];
                 if (t.price !== null) {
                     obs.push({
@@ -247,15 +308,8 @@ export class MarketHub {
                         confidence: 0.92,
                     });
                 }
-                if (isLaunched && t.price !== null) {
-                    obs.push({
-                        provider: 'PUMPPORTAL_WS',
-                        value: t.price,
-                        timestampMs: t.at,
-                        latencyMs: 15,
-                        confidence: 0.88,
-                    });
-                }
+                // A PumpPortal launch establishes discovery only. It does not supply
+                // an independent USD price, so DexScreener remains a single source.
                 const validated = this.crossValidator.evaluateToken({
                     mint: t.mint,
                     symbol: t.symbol,
@@ -285,7 +339,9 @@ export class MarketHub {
     }
     async kolscan() {
         try {
-            const r = await fetch('https://kolscan.io/', { signal: AbortSignal.timeout(10000) });
+            if (!this.kolUrl)
+                throw new Error('Kolscan adapter is not explicitly configured');
+            const r = await fetch(this.kolUrl, { signal: AbortSignal.timeout(10000) });
             if (!r.ok)
                 throw new Error();
             const html = await r.text();
@@ -333,7 +389,11 @@ export class MarketHub {
     pump() {
         if (this.stopped)
             return;
-        const ws = new WebSocket('wss://pumpportal.fun/api/data', { handshakeTimeout: 8000, maxPayload: 1024 * 1024 });
+        if (!this.pumpUrl) {
+            this.status.pump = { state: 'unconfigured', at: Date.now() };
+            return;
+        }
+        const ws = new WebSocket(this.pumpUrl, { handshakeTimeout: 8000, maxPayload: 1024 * 1024 });
         this.ws = ws;
         let pong = Date.now();
         const heartbeat = setInterval(() => { if (Date.now() - pong > 45000)

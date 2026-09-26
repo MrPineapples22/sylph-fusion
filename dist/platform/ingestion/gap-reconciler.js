@@ -13,6 +13,13 @@ export class IngestionGapReconciler {
     gaps = [];
     totalSlotsBackfilled = 0;
     backfillHandler;
+    pendingBackfills = [];
+    backfillRunning = false;
+    generation = 0;
+    gapsDetected = 0;
+    gapsResolved = 0;
+    historyOverflow = false;
+    backfillFailures = 0;
     constructor(bufferCapacity = 1_000) {
         if (!Number.isSafeInteger(bufferCapacity) || bufferCapacity < 1 || bufferCapacity > 100_000) {
             throw new Error('Invalid slot buffer capacity');
@@ -22,14 +29,15 @@ export class IngestionGapReconciler {
     }
     setBackfillHandler(handler) {
         this.backfillHandler = handler;
+        void this.drainBackfills();
     }
-    registerSlot(slot, signatureCount = 1) {
+    registerSlot(slot, signatureCount = 1, expectContiguous = true) {
         if (!Number.isSafeInteger(slot) || slot <= 0)
             return null;
         if (this.seenSlots.has(slot))
             return null;
         let detectedGap = null;
-        if (this.latestContinuousSlot > 0 && slot > this.latestContinuousSlot + 1) {
+        if (expectContiguous && this.latestContinuousSlot > 0 && slot > this.latestContinuousSlot + 1) {
             const missingCount = slot - this.latestContinuousSlot - 1;
             detectedGap = {
                 startSlot: this.latestContinuousSlot + 1,
@@ -38,18 +46,19 @@ export class IngestionGapReconciler {
                 detectedAtMs: Date.now(),
                 isResolved: false,
             };
-            this.gaps.push(detectedGap);
-            // Trigger asynchronous backfill if handler registered
-            if (this.backfillHandler) {
-                const gapRef = detectedGap;
-                this.backfillHandler(gapRef)
-                    .then(success => {
-                    if (success) {
-                        this.markGapResolved(gapRef.startSlot, gapRef.endSlot);
-                    }
-                })
-                    .catch(() => { });
+            this.gapsDetected++;
+            if (this.gaps.length === this.bufferCapacity) {
+                const removed = this.gaps.shift();
+                if (!removed.isResolved)
+                    this.historyOverflow = true;
             }
+            this.gaps.push(detectedGap);
+            if (this.pendingBackfills.length === this.bufferCapacity) {
+                this.pendingBackfills.shift();
+                this.historyOverflow = true;
+            }
+            this.pendingBackfills.push(detectedGap);
+            void this.drainBackfills();
         }
         // Push into circular buffer
         if (this.ringSize === this.bufferCapacity)
@@ -69,27 +78,65 @@ export class IngestionGapReconciler {
             gap.isResolved = true;
             gap.resolvedAtMs = Date.now();
             this.totalSlotsBackfilled += gap.missingSlotCount;
+            this.gapsResolved++;
             // Resolution is represented by the interval itself. Enumerating every slot
             // can allocate billions of entries and does not constitute a slot receipt.
         }
     }
     hasUnresolvedGaps() {
-        return this.gaps.some(g => !g.isResolved);
+        return this.historyOverflow || this.gaps.some(g => !g.isResolved);
+    }
+    async drainBackfills() {
+        if (this.backfillRunning || !this.backfillHandler)
+            return;
+        this.backfillRunning = true;
+        try {
+            while (this.pendingBackfills.length && this.backfillHandler) {
+                const gap = this.pendingBackfills.shift();
+                if (gap.isResolved)
+                    continue;
+                const generation = this.generation;
+                try {
+                    const success = await this.backfillHandler({ ...gap });
+                    if (generation !== this.generation)
+                        continue;
+                    if (success)
+                        this.markGapResolved(gap.startSlot, gap.endSlot);
+                    else
+                        this.backfillFailures++;
+                }
+                catch {
+                    if (generation === this.generation)
+                        this.backfillFailures++;
+                }
+            }
+        }
+        finally {
+            this.backfillRunning = false;
+        }
     }
     getUnresolvedGaps() {
-        return this.gaps.filter(g => !g.isResolved);
+        return this.gaps.filter(g => !g.isResolved).map(g => ({ ...g }));
     }
     getReport() {
-        const resolved = this.gaps.filter(g => g.isResolved).length;
         return {
-            gapsDetected: this.gaps.length,
-            gapsResolved: resolved,
+            gapsDetected: this.gapsDetected,
+            gapsResolved: this.gapsResolved,
+            unresolvedHistoryTruncated: this.historyOverflow,
+            backfillFailures: this.backfillFailures,
+            pendingBackfills: this.pendingBackfills.length,
             totalSlotsBackfilled: this.totalSlotsBackfilled,
             latestContinuousSlot: this.latestContinuousSlot,
             circularBufferSize: this.ringSize,
         };
     }
     reset() {
+        this.generation++;
+        this.pendingBackfills = [];
+        this.gapsDetected = 0;
+        this.gapsResolved = 0;
+        this.historyOverflow = false;
+        this.backfillFailures = 0;
         this.ringHead = 0;
         this.ringSize = 0;
         this.seenSlots.clear();

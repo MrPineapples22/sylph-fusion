@@ -22,6 +22,11 @@ export interface SecurityGatewayResult {
   flags: string[];
   reason: string;
   evaluatedAt: number;
+  readonly isStructuralFailure?: boolean;
+  readonly domainDispositions?: {
+    readonly tokenSafety: 'PASS' | 'FAIL' | 'UNKNOWN';
+    readonly policy: 'ALLOW' | 'LIMIT' | 'QUARANTINE' | 'POLICY_EXCLUDED';
+  };
 }
 
 export class TokenAdmissionGateway {
@@ -29,30 +34,75 @@ export class TokenAdmissionGateway {
     const flags: string[] = [];
     let score = 0;
 
-    // 1. Hard Disqualifiers -> Immediate BLOCK
+    // 1. Hard Disqualifiers -> Immediate BLOCK (Structural Failure)
     if (input.rugged === true) {
       flags.push('confirmed_rugged');
-      return { verdict: 'BLOCK', allowedMaxPositionSizeLamports: null, riskScore: 100, flags, reason: 'Confirmed rug on record', evaluatedAt: Date.now() };
+      return {
+        verdict: 'BLOCK',
+        allowedMaxPositionSizeLamports: null,
+        riskScore: 100,
+        flags,
+        reason: 'Confirmed rug on record',
+        evaluatedAt: Date.now(),
+        isStructuralFailure: true,
+        domainDispositions: { tokenSafety: 'FAIL', policy: 'POLICY_EXCLUDED' },
+      };
     }
 
     if (!input.isFreezeAuthorityRevoked) {
       flags.push('active_freeze_authority');
-      return { verdict: 'BLOCK', allowedMaxPositionSizeLamports: null, riskScore: 100, flags, reason: 'Active freeze authority present', evaluatedAt: Date.now() };
+      return {
+        verdict: 'BLOCK',
+        allowedMaxPositionSizeLamports: null,
+        riskScore: 100,
+        flags,
+        reason: 'Active freeze authority present',
+        evaluatedAt: Date.now(),
+        isStructuralFailure: true,
+        domainDispositions: { tokenSafety: 'FAIL', policy: 'POLICY_EXCLUDED' },
+      };
     }
 
     if (input.hasPermanentDelegate) {
       flags.push('permanent_delegate_enabled');
-      return { verdict: 'BLOCK', allowedMaxPositionSizeLamports: null, riskScore: 100, flags, reason: 'Token-2022 permanent delegate backdoor detected', evaluatedAt: Date.now() };
+      return {
+        verdict: 'BLOCK',
+        allowedMaxPositionSizeLamports: null,
+        riskScore: 100,
+        flags,
+        reason: 'Token-2022 permanent delegate backdoor detected',
+        evaluatedAt: Date.now(),
+        isStructuralFailure: true,
+        domainDispositions: { tokenSafety: 'FAIL', policy: 'POLICY_EXCLUDED' },
+      };
     }
 
     if (input.token2022TransferFeeBps !== null && input.token2022TransferFeeBps > 500) { // > 5% fee
       flags.push(`excessive_transfer_fee_${input.token2022TransferFeeBps}bps`);
-      return { verdict: 'BLOCK', allowedMaxPositionSizeLamports: null, riskScore: 95, flags, reason: 'Transfer fee exceeds 5% threshold', evaluatedAt: Date.now() };
+      return {
+        verdict: 'BLOCK',
+        allowedMaxPositionSizeLamports: null,
+        riskScore: 95,
+        flags,
+        reason: 'Transfer fee exceeds 5% threshold',
+        evaluatedAt: Date.now(),
+        isStructuralFailure: true,
+        domainDispositions: { tokenSafety: 'FAIL', policy: 'POLICY_EXCLUDED' },
+      };
     }
 
     if (input.knownIncidentHistoryCount > 0) {
       flags.push(`creator_incident_history_${input.knownIncidentHistoryCount}`);
-      return { verdict: 'BLOCK', allowedMaxPositionSizeLamports: null, riskScore: 100, flags, reason: 'Creator linked to past malicious incidents', evaluatedAt: Date.now() };
+      return {
+        verdict: 'BLOCK',
+        allowedMaxPositionSizeLamports: null,
+        riskScore: 100,
+        flags,
+        reason: 'Creator linked to past malicious incidents',
+        evaluatedAt: Date.now(),
+        isStructuralFailure: false,
+        domainDispositions: { tokenSafety: 'PASS', policy: 'POLICY_EXCLUDED' },
+      };
     }
 
     // 2. Additive Risk Scoring
@@ -104,6 +154,8 @@ export class TokenAdmissionGateway {
         flags,
         reason: `Cumulative risk score (${score}/100) exceeds safety ceiling`,
         evaluatedAt: Date.now(),
+        isStructuralFailure: false,
+        domainDispositions: { tokenSafety: 'PASS', policy: 'POLICY_EXCLUDED' },
       };
     } else if (score >= 45) {
       return {
@@ -113,6 +165,8 @@ export class TokenAdmissionGateway {
         flags,
         reason: 'Quarantined for shadow observation; real capital prohibited',
         evaluatedAt: Date.now(),
+        isStructuralFailure: false,
+        domainDispositions: { tokenSafety: 'PASS', policy: 'QUARANTINE' },
       };
     } else if (score >= 20) {
       // LIMIT: Allowed but position size capped to 0.5 SOL
@@ -123,6 +177,8 @@ export class TokenAdmissionGateway {
         flags,
         reason: 'Authorized with limited position size due to elevated metrics',
         evaluatedAt: Date.now(),
+        isStructuralFailure: false,
+        domainDispositions: { tokenSafety: 'PASS', policy: 'LIMIT' },
       };
     } else {
       return {
@@ -132,6 +188,8 @@ export class TokenAdmissionGateway {
         flags,
         reason: 'All safety and integrity requirements verified',
         evaluatedAt: Date.now(),
+        isStructuralFailure: false,
+        domainDispositions: { tokenSafety: 'PASS', policy: 'ALLOW' },
       };
     }
   }

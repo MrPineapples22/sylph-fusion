@@ -49,7 +49,7 @@ export function createAutomationController() {
         const previous = history.slice(0, -1).reverse().find(p => p.time < latest?.time);
         if (!latest || !previous) { waiting = 'Collecting two price observations'; skip(a,'INSUFFICIENT_HISTORY',waiting); continue; }
         const velocity = calculateVelocityBps(latest.value, previous.value, (latest.time - previous.time) * 1000);
-        if (Math.abs(velocity) > 800) { waiting = 'Waiting for volatility to settle'; skip(a,'EXCESS_VOLATILITY',`Velocity ${(velocity/100).toFixed(2)}%/sec exceeds the 8%/sec volatility limit`); continue; }
+        if (velocity < -1000 || velocity > 3500) { waiting = 'Waiting for volatility to settle'; skip(a,'EXCESS_VOLATILITY',`Velocity ${(velocity/100).toFixed(2)}%/sec exceeds safety bounds (-10%/sec to +35%/sec)`); continue; }
         const breakout = velocity >= state.config.velocity * 100 && Number.isFinite(a.volume) && a.volume >= state.config.volume;
         const dip = [a.previousRsi, a.rsi, a.fast, a.slow].every(Number.isFinite) && a.previousRsi < state.config.rsi && a.rsi >= state.config.rsi && a.fast > a.slow;
         if (!(state.config.strategy === 'dip' ? dip : breakout)) {

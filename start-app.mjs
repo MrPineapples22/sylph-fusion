@@ -2,28 +2,12 @@ import { spawn } from 'node:child_process';
 import { mkdirSync, openSync, closeSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {terminalPort, probeTerminal, waitForTerminal} from './scripts/terminal-launcher.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
-const port = Number(process.env.TERMINAL_PORT || 8793);
-if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Invalid TERMINAL_PORT.');
+const port = terminalPort(process.env.TERMINAL_PORT);
 const url = `http://127.0.0.1:${port}/`;
-async function ready() {
-  try {
-    const health = await fetch(`${url}health`, { signal: AbortSignal.timeout(1500) });
-    if (health.ok) {
-      if ((await health.json()).service !== 'sylph-paper-terminal') return false;
-    } else if (health.status === 404) {
-      // Older running instances predate /health; verify their actual market API.
-      const market = await fetch(`${url}live/api/market`, { signal: AbortSignal.timeout(1500) });
-      if (!market.ok) return false;
-      const data = await market.json();
-      if (!Array.isArray(data.tokens) || !data.sources) return false;
-    } else return false;
-    const response = await fetch(url, { signal: AbortSignal.timeout(1500) });
-    const page = await response.text();
-    return response.ok && page.includes('name="sylph-terminal"') && /sylph/i.test(page);
-  } catch { return false; }
-}
+const ready = () => probeTerminal(url);
 
 try {
   if (!await ready()) {
@@ -35,17 +19,13 @@ try {
     const err = openSync(join(root, 'data/app-error.log'), 'a');
     const child = spawn(process.execPath, ['terminal/server.mjs'], {
       cwd: root, detached: true, windowsHide: true, stdio: ['ignore', out, err],
+      env: {...process.env, TERMINAL_PORT: String(port)},
     });
-    let launchError;
-    child.on('error', error => { launchError = error; });
+    // Keep a handler after the startup wait so a late process error is contained.
+    child.on('error', () => {});
     child.unref();
     closeSync(out); closeSync(err);
-    let started = false;
-    for (let attempt = 0; attempt < 30; attempt++) {
-      if (launchError) throw launchError;
-      if (await ready()) { started = true; break; }
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
+    const started = await waitForTerminal({probe: ready, child});
     if (!started) throw new Error(`App could not start. Check data/app-error.log. Port ${port} may already be occupied.`);
   }
   if (!process.argv.includes('--check')) {

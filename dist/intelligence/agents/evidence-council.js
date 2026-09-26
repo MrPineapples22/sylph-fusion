@@ -47,8 +47,10 @@ export class EvidenceCouncil {
     }
     evaluate(assessments, skepticVeto) {
         const now = Date.now();
-        const hardVetoes = [];
+        // Council blockers represent strategy-level abstention or skepticism, NOT a protected token VETO
+        const strategyDisqualifiers = [];
         if (assessments.length === 0) {
+            const blockers = ['zero_assessments_submitted'];
             return {
                 state: 'INSUFFICIENT_EVIDENCE',
                 effectiveEvidenceCount: 0,
@@ -56,13 +58,14 @@ export class EvidenceCouncil {
                 consensusProbability: 0,
                 meanConfidence: 0,
                 contradictionDetected: false,
-                hardVetoes: ['zero_assessments_submitted'],
+                strategyDisqualifiers: blockers,
+                hardVetoes: blockers,
                 authorizedToProceed: false,
                 evaluatedAtMs: now,
             };
         }
         if (skepticVeto) {
-            hardVetoes.push('skeptic_veto');
+            strategyDisqualifiers.push('skeptic_veto');
         }
         // 1. Calculate Effective Evidence Count
         const agentIds = assessments.map((a) => a.agentId);
@@ -87,7 +90,7 @@ export class EvidenceCouncil {
                 contradictionDetails = `Contradiction: Agent ${a.agentId} claims high bullish (${a.bullishProbability}) while in extreme OOD`;
             }
             if (a.violatedAssumptions.length > 0) {
-                hardVetoes.push(...a.violatedAssumptions.map((v) => `violated_assumption: ${v}`));
+                strategyDisqualifiers.push(...a.violatedAssumptions.map((v) => `violated_assumption: ${v}`));
             }
         }
         const meanProb = sumProb / assessments.length;
@@ -112,7 +115,7 @@ export class EvidenceCouncil {
             state = 'CONFLICTED';
         }
         const authorized = !skepticVeto &&
-            hardVetoes.length === 0 &&
+            strategyDisqualifiers.length === 0 &&
             !contradictionDetected &&
             (state === 'STRONG_CONSENSUS' || state === 'WEAK_CONSENSUS') &&
             effectiveCount >= 2.0;
@@ -124,7 +127,8 @@ export class EvidenceCouncil {
             meanConfidence: Number(meanConf.toFixed(3)),
             contradictionDetected,
             contradictionDetails,
-            hardVetoes,
+            strategyDisqualifiers,
+            hardVetoes: strategyDisqualifiers,
             authorizedToProceed: authorized,
             evaluatedAtMs: now,
         };

@@ -21,6 +21,12 @@ export class ApprovalLeaseEngine {
         if (prev === 'QUARANTINED' && nextState === 'EXECUTION_READY') {
             throw new Error(`ILLEGAL_TRANSITION: Cannot move directly from QUARANTINED to EXECUTION_READY for ${mint}`);
         }
+        if (nextState === 'EXECUTION_READY') {
+            const lease = this.validateLease(mint);
+            if (prev !== 'APPROVED' || !lease.valid || lease.lease?.proofState !== '3/3') {
+                throw new Error(`ILLEGAL_TRANSITION: EXECUTION_READY requires an active 3/3 lease from APPROVED for ${mint}`);
+            }
+        }
         this.states.set(mint, nextState);
         if (nextState === 'REJECTED' || nextState === 'REVOKED' || nextState === 'QUARANTINED') {
             this.revokeLease(mint, reason);
@@ -32,6 +38,13 @@ export class ApprovalLeaseEngine {
         const ttl = params.ttlMs ?? 15000; // 15 second default lease
         if (params.proofState !== '3/3') {
             throw new Error(`LEASE_REJECTED: Proof state must be 3/3 to issue approval lease (got ${params.proofState})`);
+        }
+        if (!Number.isFinite(ttl) || ttl <= 0) {
+            throw new Error('LEASE_REJECTED: TTL must be finite and positive');
+        }
+        const current = this.getApprovalState(params.mint);
+        if (current === 'QUARANTINED' || current === 'REJECTED' || current === 'REVOKED') {
+            throw new Error(`LEASE_REJECTED: Cannot issue a lease from ${current}`);
         }
         const lease = {
             leaseId: `lease_${params.mint.slice(0, 8)}_${now}`,
@@ -49,7 +62,7 @@ export class ApprovalLeaseEngine {
             isValid: true,
         };
         this.leases.set(params.mint, lease);
-        this.states.set(params.mint, 'EXECUTION_READY');
+        this.states.set(params.mint, 'APPROVED');
         return lease;
     }
     validateLease(mint) {

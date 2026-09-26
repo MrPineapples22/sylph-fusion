@@ -73,6 +73,15 @@ export class BoundedSet {
         this.max = max;
         this.ttl = ttl;
     }
+    has(key, now = Date.now()) {
+        const previous = this.values.get(key);
+        if (previous === undefined || now - previous >= this.ttl) {
+            if (previous !== undefined)
+                this.values.delete(key);
+            return false;
+        }
+        return true;
+    }
     add(key, now = Date.now()) {
         const previous = this.values.get(key);
         if (previous !== undefined && now - previous < this.ttl)

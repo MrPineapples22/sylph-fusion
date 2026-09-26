@@ -8,6 +8,10 @@ export type Pending = {
   id: string; mint: string; side: 'buy' | 'sell'; signature: string; wire: string;
   lastValidBlockHeight: number; created: number; creator: string; tokenProgram: string;
   stage: number; reserve: string; reason: string; requested: string; creatorTokens?: string;
+  deliveryAttempts?: Array<{
+    status: 'ACCEPTED' | 'UNKNOWN' | 'NOT_SENT'; attemptedAt: number;
+    bundleId?: string; reason?: string;
+  }>;
 };
 export type Performance = { since: number; realized: string; fills: { at:number; mint:string; side:string; signature:string; net:string; pnl:string }[]; count:number };
 export type RiskState = {
@@ -16,6 +20,14 @@ export type RiskState = {
   highWater: string;
   haltReason?: string;
   lifetimePeak?: string;
+};
+export type ReconciliationBlock = {
+  signature: string;
+  mint: string;
+  side: 'buy' | 'sell';
+  lastValidBlockHeight: number;
+  detectedAt: number;
+  reason: 'LIVE_RECONCILIATION_UNRESOLVED';
 };
 export function recordResult(state: State, mint:string, side:string, signature:string, net:bigint, pnl:bigint) {
  const report = state.performance ??= {since:Date.now(), realized:'0', fills:[], count:0};
@@ -27,6 +39,8 @@ export type State = {
   version: 1; wallet: string; mode: string; positions: Record<string, Position>;
   pending: Pending | null; cash: string; day: string; dayPnl: string;
   closed: Record<string, number>; halted: boolean; operatorPaused?: boolean; performance?: Performance; risk?: RiskState;
+  /** Blocks every automatic economic action until finalized wallet balances are reconciled. */
+  reconciliationBlocked?: ReconciliationBlock;
 };
 export const mulBps = (x: bigint, bps: number) => x * BigInt(bps) / 10_000n;
 export const ceilDiv = (a: bigint, b: bigint) => (a + b - 1n) / b;
@@ -75,6 +89,14 @@ export function settle(state: State, tokenDelta: bigint, solDelta: bigint): void
 export class BoundedSet {
   private values = new Map<string, number>();
   constructor(private max: number, private ttl: number) {}
+  has(key: string, now = Date.now()): boolean {
+    const previous = this.values.get(key);
+    if (previous === undefined || now - previous >= this.ttl) {
+      if (previous !== undefined) this.values.delete(key);
+      return false;
+    }
+    return true;
+  }
   add(key: string, now = Date.now()): boolean {
     const previous = this.values.get(key);
     if (previous !== undefined && now - previous < this.ttl) return false;

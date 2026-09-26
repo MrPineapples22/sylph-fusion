@@ -16,7 +16,7 @@ export interface GlobalSystemStripViewModel {
   readonly execution: 'READY' | 'OPEN_LOCKED' | 'REDUCE_ONLY' | 'HALTED';
   readonly positions: 'RECONCILED' | 'UNKNOWN' | 'EMPTY';
   readonly risk: 'NORMAL' | 'RESTRICTED' | 'HALTED';
-  readonly rpc: 'HEALTHY' | 'DEGRADED' | 'FAILED';
+  readonly rpc: 'HEALTHY' | 'DEGRADED' | 'FAILED' | 'UNKNOWN';
   readonly p0Health: 'HEALTHY' | 'LATE' | 'UNKNOWN';
   readonly certification: 'PASS' | 'DEGRADED' | 'BLOCKED';
   readonly operationalState: LifecycleState;
@@ -101,19 +101,26 @@ export interface BestOpportunityViewModel {
 export interface PositionRowViewModel {
   readonly asset: string;
   readonly mint: string;
+  readonly symbol?: string;
   readonly qty: number;
   readonly entryPriceUsd: number;
   readonly markPriceUsd: number | null;
   readonly executableLiquidationUsd: number | null;
   readonly unrealizedPnlUsd: number | null;
   readonly unrealizedPnlPct: number | null;
-  readonly reconciliationState: 'RECONCILED' | 'PENDING' | 'DISCREPANCY';
+  readonly reconciliationState: 'SIMULATED' | 'RECONCILED' | 'PENDING' | 'DISCREPANCY';
   readonly protectionState: 'NORMAL' | 'TRAILING_ACTIVE' | 'EMERGENCY_UNWIND' | 'UNKNOWN';
   readonly openedAt: number;
+  readonly peakPriceUsd?: number | null;
+  readonly peakPnlPct?: number | null;
+  readonly maePriceUsd?: number | null;
+  readonly maePnlPct?: number | null;
+  readonly trailingStopUsd?: number | null;
 }
 
 export class ProjectionService {
   private static instance: ProjectionService | null = null;
+  private readonly lastKnownMarks = new Map<string, number>();
   private constructor() {}
 
   public static getInstance(): ProjectionService {
@@ -132,14 +139,13 @@ export class ProjectionService {
     else if (state === 'REDUCE_ONLY') execStatus = 'REDUCE_ONLY';
     else if (state === 'SAFETY_LOCKED' || state === 'SHUTTING_DOWN' || state === 'DISCONNECTED') execStatus = 'HALTED';
 
-    const solaris = globalCommandGateway.getSolarisSnapshot();
-
     const healthReport = globalProviderHealthTracker.getReport();
     const rpcMetric = healthReport.providers['SOLANA_RPC'];
-    let rpcStatus: 'HEALTHY' | 'DEGRADED' | 'FAILED' = 'HEALTHY';
+    let rpcStatus: 'HEALTHY' | 'DEGRADED' | 'FAILED' | 'UNKNOWN' = 'UNKNOWN';
     if (rpcMetric) {
       if (rpcMetric.state === 'CIRCUIT_OPEN' || rpcMetric.state === 'OFFLINE') rpcStatus = 'FAILED';
       else if (rpcMetric.state === 'DEGRADED' || rpcMetric.state === 'STALE' || rpcMetric.state === 'RECONNECTING' || rpcMetric.state === 'RATE_LIMITED') rpcStatus = 'DEGRADED';
+      else if (rpcMetric.observationValidated && rpcMetric.capabilityAvailable) rpcStatus = 'HEALTHY';
     }
 
     const isDataStale = healthReport.isMarketFeedStale;
@@ -156,11 +162,8 @@ export class ProjectionService {
       p0Health: 'UNKNOWN',
       certification: 'BLOCKED',
       operationalState: state,
-      activeLeaderPubkey: solaris.activeLeaderPubkey,
-      isJitoLeader: solaris.activeLeaderIsJito,
-      tipFloorP75: solaris.tipFloor.p75,
-      contentionTier: solaris.contentionTier,
-      helios: solaris.helios,
+      // The gateway's Solaris snapshot uses simulated leaders and fallback tip
+      // estimates. It is not an observation of live delivery infrastructure.
       timestamp: Date.now(),
     };
   }
@@ -169,13 +172,81 @@ export class ProjectionService {
     return globalCommandGateway.getSolarisSnapshot(currentSlot);
   }
 
-  public getPositions(): PositionRowViewModel[] {
-    return globalCommandGateway.getSnapshot().positions.map(pos => ({
-      asset: pos.asset, mint: pos.mint, qty: pos.qty, entryPriceUsd: pos.entry,
-      markPriceUsd: null, executableLiquidationUsd: null,
-      unrealizedPnlUsd: null, unrealizedPnlPct: null,
-      reconciliationState: pos.reconciliationState, protectionState: 'UNKNOWN', openedAt: pos.openedAt,
-    }));
+  public getPositions(observedTokens?: unknown[]): PositionRowViewModel[] {
+    const tokenMap = new Map<string, number>();
+    const isObserved = Array.isArray(observedTokens);
+    if (isObserved) {
+      for (const t of observedTokens) {
+        if (t && typeof t === 'object') {
+          const rec = t as Record<string, unknown>;
+          const mint = typeof rec.mint === 'string' ? rec.mint : '';
+          const pair = typeof rec.pair === 'string' ? rec.pair : '';
+          const price = typeof rec.price === 'number' && Number.isFinite(rec.price) && rec.price > 0
+            ? rec.price
+            : typeof rec.priceUsd === 'number' && Number.isFinite(rec.priceUsd) && rec.priceUsd > 0
+              ? rec.priceUsd
+              : null;
+          if (price !== null) {
+            if (mint) {
+              tokenMap.set(mint, price);
+              this.lastKnownMarks.set(mint, price);
+            }
+            if (pair) {
+              tokenMap.set(pair, price);
+              this.lastKnownMarks.set(pair, price);
+            }
+          }
+        }
+      }
+    }
+
+    return globalCommandGateway.getSnapshot().positions.map(pos => {
+      const markPriceUsd = isObserved
+        ? (tokenMap.get(pos.mint) ?? tokenMap.get(pos.asset) ?? this.lastKnownMarks.get(pos.mint) ?? this.lastKnownMarks.get(pos.asset) ?? (pos.entry > 0 ? pos.entry : null))
+        : null;
+      const executableLiquidationUsd = markPriceUsd !== null ? Number((pos.qty * markPriceUsd).toFixed(4)) : null;
+      const unrealizedPnlUsd = markPriceUsd !== null ? Number(((markPriceUsd - pos.entry) * pos.qty).toFixed(4)) : null;
+      const unrealizedPnlPct = markPriceUsd !== null && pos.entry > 0
+        ? Number((((markPriceUsd - pos.entry) / pos.entry) * 100).toFixed(2))
+        : null;
+
+      const peakPriceUsd = pos.peak && pos.peak > 0 ? pos.peak : markPriceUsd;
+      const peakPnlPct = peakPriceUsd !== null && pos.entry > 0
+        ? Number((((peakPriceUsd - pos.entry) / pos.entry) * 100).toFixed(2))
+        : unrealizedPnlPct;
+
+      const maePriceUsd = pos.trough && pos.trough > 0 ? pos.trough : markPriceUsd;
+      const maePnlPct = maePriceUsd !== null && pos.entry > 0
+        ? Number((((maePriceUsd - pos.entry) / pos.entry) * 100).toFixed(2))
+        : unrealizedPnlPct;
+
+      let protectionState: 'NORMAL' | 'TRAILING_ACTIVE' | 'EMERGENCY_UNWIND' | 'UNKNOWN' = 'UNKNOWN';
+      if (markPriceUsd !== null) {
+        if (unrealizedPnlPct !== null && unrealizedPnlPct <= -12) protectionState = 'EMERGENCY_UNWIND';
+        else if ((peakPnlPct !== null && peakPnlPct >= 4) || (unrealizedPnlPct !== null && unrealizedPnlPct >= 6)) protectionState = 'TRAILING_ACTIVE';
+        else protectionState = 'NORMAL';
+      }
+
+      return {
+        asset: pos.asset,
+        mint: pos.mint,
+        symbol: pos.symbol || (pos.asset ? pos.asset.slice(0, 8) : undefined),
+        qty: pos.qty,
+        entryPriceUsd: pos.entry,
+        markPriceUsd,
+        executableLiquidationUsd,
+        unrealizedPnlUsd,
+        unrealizedPnlPct,
+        reconciliationState: pos.reconciliationState,
+        protectionState,
+        openedAt: pos.openedAt,
+        peakPriceUsd,
+        peakPnlPct,
+        maePriceUsd,
+        maePnlPct,
+        trailingStopUsd: pos.stop ?? null,
+      };
+    });
   }
 
   public getBestOpportunity(tokens: MainTableRowViewModel[]): BestOpportunityViewModel {

@@ -9,17 +9,24 @@ import { createSocket } from 'node:dgram';
 export class HeliosDirectClient {
     leaderTracker;
     defaultPort;
+    directDispatchEnabled;
     socket = null;
     tpuDirectory = new Map();
     directTransmissions = 0;
     pipelinedTransmissions = 0;
     fallbackTransmissions = 0;
     totalDurationMs = 0;
-    constructor(leaderTracker, defaultPort = 8003) {
+    constructor(leaderTracker, defaultPort = 8003, 
+    /**
+     * Direct TPU dispatch is unavailable by default.  Enabling it requires a
+     * separately reviewed runtime integration with a verified directory and
+     * signer/execution authority; this model alone is never that authority.
+     */
+    directDispatchEnabled = false) {
         this.leaderTracker = leaderTracker;
         this.defaultPort = defaultPort;
+        this.directDispatchEnabled = directDispatchEnabled;
         this.initSocket();
-        this.seedDefaultEndpoints();
     }
     initSocket() {
         try {
@@ -28,26 +35,6 @@ export class HeliosDirectClient {
         }
         catch {
             this.socket = null;
-        }
-    }
-    /**
-     * Pre-seeds prominent validator TPU endpoints for sub-millisecond lookups.
-     */
-    seedDefaultEndpoints() {
-        const knownValidators = [
-            ['Jito111111111111111111111111111111111111111', '147.28.154.21'],
-            ['Certus1111111111111111111111111111111111111', '65.109.112.84'],
-            ['Figment111111111111111111111111111111111111', '135.181.140.230'],
-            ['Chorus1111111111111111111111111111111111111', '95.216.14.78'],
-        ];
-        for (const [pubkey, ip] of knownValidators) {
-            this.tpuDirectory.set(pubkey, {
-                pubkey,
-                ip,
-                tpuPort: 8003,
-                tpuQuicPort: 8009,
-                lastResolvedAt: Date.now(),
-            });
         }
     }
     /**
@@ -67,21 +54,10 @@ export class HeliosDirectClient {
      */
     resolveLeaderTpu(slot) {
         const leader = this.leaderTracker.getSlotLeader(slot);
+        if (!leader)
+            return undefined;
         const existing = this.tpuDirectory.get(leader.leaderPubkey);
-        if (existing) {
-            return existing;
-        }
-        // Default fallback routing using deterministic subnet mapping
-        const hash = leader.leaderPubkey.charCodeAt(0) % 250;
-        const syntheticEndpoint = {
-            pubkey: leader.leaderPubkey,
-            ip: `147.28.${hash}.10`,
-            tpuPort: this.defaultPort,
-            tpuQuicPort: 8009,
-            lastResolvedAt: Date.now(),
-        };
-        this.tpuDirectory.set(leader.leaderPubkey, syntheticEndpoint);
-        return syntheticEndpoint;
+        return existing;
     }
     /**
      * Transmits a raw signed wire transaction directly to the target slot leader's TPU socket.
@@ -89,8 +65,34 @@ export class HeliosDirectClient {
      */
     async sendWireTransactionDirect(wireTx, targetSlot, pipelineToNextLeader = true) {
         const startTime = Date.now();
+        if (!this.directDispatchEnabled) {
+            this.fallbackTransmissions++;
+            return {
+                success: false,
+                wireBytes: wireTx.length,
+                targetLeaderPubkey: 'UNAVAILABLE',
+                targetEndpoint: 'UNAVAILABLE',
+                targetSlot,
+                transmissionDurationMs: Date.now() - startTime,
+                mode: 'NOT_SENT',
+                error: 'DIRECT_TPU_DISPATCH_UNAVAILABLE: direct transport is disabled pending reviewed runtime integration',
+            };
+        }
         const primaryEndpoint = this.resolveLeaderTpu(targetSlot);
         let pipelinedPubkey;
+        if (!primaryEndpoint) {
+            this.fallbackTransmissions++;
+            return {
+                success: false,
+                wireBytes: wireTx.length,
+                targetLeaderPubkey: 'UNAVAILABLE',
+                targetEndpoint: 'UNAVAILABLE',
+                targetSlot,
+                transmissionDurationMs: Date.now() - startTime,
+                mode: 'NOT_SENT',
+                error: 'TPU_ENDPOINT_UNAVAILABLE: verified leader schedule and registered TPU endpoint are required',
+            };
+        }
         try {
             if (!this.socket) {
                 this.initSocket();
@@ -104,6 +106,20 @@ export class HeliosDirectClient {
                 if (chunk.remainingSlotsInChunk <= 2) {
                     const nextSlot = chunk.chunkEndSlot + 1;
                     const nextEndpoint = this.resolveLeaderTpu(nextSlot);
+                    if (!nextEndpoint) {
+                        const duration = Date.now() - startTime;
+                        this.totalDurationMs += duration;
+                        return {
+                            success: false,
+                            wireBytes: wireTx.length,
+                            targetLeaderPubkey: primaryEndpoint.pubkey,
+                            targetEndpoint: `${primaryEndpoint.ip}:${primaryEndpoint.tpuPort}`,
+                            targetSlot,
+                            transmissionDurationMs: duration,
+                            mode: 'NOT_SENT',
+                            error: 'TPU_PIPELINE_ENDPOINT_UNAVAILABLE: no secondary dispatch was attempted',
+                        };
+                    }
                     pipelinedPubkey = nextEndpoint.pubkey;
                     // Dispatch parallel wire packet to ensure landing during slot transition
                     await this.sendUdpDatagram(wireTx, nextEndpoint.ip, nextEndpoint.tpuPort);
@@ -132,7 +148,7 @@ export class HeliosDirectClient {
                 targetEndpoint: `${primaryEndpoint.ip}:${primaryEndpoint.tpuPort}`,
                 targetSlot,
                 transmissionDurationMs: Date.now() - startTime,
-                mode: 'RPC_FALLBACK',
+                mode: 'NOT_SENT',
                 error: err.message || 'Direct TPU socket send failure',
             };
         }
@@ -140,7 +156,7 @@ export class HeliosDirectClient {
     sendUdpDatagram(data, ip, port) {
         return new Promise((resolve, reject) => {
             if (!this.socket) {
-                return resolve();
+                return reject(new Error('TPU_SOCKET_UNAVAILABLE'));
             }
             this.socket.send(data, 0, data.length, port, ip, (err) => {
                 if (err)

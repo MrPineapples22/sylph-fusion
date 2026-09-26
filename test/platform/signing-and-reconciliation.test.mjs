@@ -8,8 +8,9 @@ import { PreSigningRevalidator } from '../../dist/platform/execution/revalidator
 import { ContinuousReconciler } from '../../dist/platform/reconciliation/reconciler.js';
 import { SolvencyMonitor } from '../../dist/platform/reconciliation/solvency-monitor.js';
 
-test('ZeroTrustSignerService: enforces domains, halts, and transaction idempotency', () => {
-  const signer = new ZeroTrustSignerService();
+test('ZeroTrustSignerService: is disabled by default and labels explicit simulation artifacts', () => {
+  const disabled = new ZeroTrustSignerService();
+  const signer = new ZeroTrustSignerService(true);
 
   const req = {
     transactionId: 'tx-1001',
@@ -24,12 +25,18 @@ test('ZeroTrustSignerService: enforces domains, halts, and transaction idempoten
     metadata: {},
   };
 
-  // Happy path signing
+  assert.equal(disabled.signTransaction(req, true).success, false);
+  // Explicit simulation signing
   const signRes = signer.signTransaction(req, true);
   assert.equal(signRes.success, true);
   if (signRes.success) {
-    assert.match(signRes.result.signature, /^sig_/);
+    assert.match(signRes.result.signature, /^simulation_sig_/);
+    assert.equal(signRes.result.simulationOnly, true);
   }
+
+  const negativeAmount = signer.signTransaction({ ...req, transactionId: 'tx-negative', amountLamports: -1n }, true);
+  assert.equal(negativeAmount.success, false);
+  assert.match(negativeAmount.error, /outside the permitted range/);
 
   // Idempotency: cannot re-sign signed/submitted/confirmed tx
   const reSignRes = signer.signTransaction(req, true);
@@ -37,7 +44,7 @@ test('ZeroTrustSignerService: enforces domains, halts, and transaction idempoten
   assert.match(reSignRes.error, /already in state SIGNED/);
 
   // Confirm tx
-  signer.recordConfirmation('tx-1001');
+  signer.recordSimulatedConfirmation('tx-1001');
   const confirmReSign = signer.signTransaction(req, true);
   assert.equal(confirmReSign.success, false);
   assert.match(confirmReSign.error, /already CONFIRMED/);
@@ -120,10 +127,43 @@ test('SettlementFirewall: blocks unauthorized destinations, unclean reconciliati
   assert.equal(validRes.approved, true);
   assert.equal(validRes.netPayableLamports, 10_000_000_000n);
 
+  const sameCycleDifferentId = firewall.authorizeSettlement({
+    ...baseReq,
+    settlementId: 'settle-cycle-1-second-id',
+  });
+  assert.equal(sameCycleDifferentId.approved, false);
+  assert.match(sameCycleDifferentId.rejectionReason, /Duplicate settlement cycle/);
+
   // 5. Idempotent duplicate check -> REJECT duplicate settlementId
   const dupRes = firewall.authorizeSettlement(baseReq);
   assert.equal(dupRes.approved, false);
   assert.match(dupRes.rejectionReason, /Duplicate settlement request/);
+
+  const negativeAmount = firewall.authorizeSettlement({
+    ...baseReq,
+    settlementId: 'settle-negative',
+    cycleId: 'cycle-negative',
+    netPayableLamports: -1n,
+  });
+  assert.equal(negativeAmount.approved, false);
+  assert.match(negativeAmount.rejectionReason, /non-negative/);
+
+  firewall.recordConfirmation(baseReq.settlementId, 'settled-signature');
+  const postSettlement = firewall.authorizeSettlement({
+    ...baseReq,
+    settlementId: 'settle-cycle-1-replay',
+    cycleId: 'cycle-settled',
+    cycleState: 'SETTLED',
+  });
+  assert.equal(postSettlement.approved, false);
+  assert.match(postSettlement.rejectionReason, /SETTLEMENT_READY/);
+
+  firewall.recordFailure(baseReq.settlementId, 'uncertain transport outcome');
+  const failedRetry = firewall.authorizeSettlement(baseReq);
+  assert.equal(failedRetry.approved, false);
+  assert.match(failedRetry.rejectionReason, /Duplicate settlement request/);
+
+  assert.throws(() => firewall.registerConfirmedDestination(vaultId, 'ReplacedOfficialSolanaAddress1111111111111'), /immutable/);
 });
 
 test('MarketTruthEngine & PreSigningRevalidator: quarantines divergent feeds and aborts stale trades', () => {
@@ -210,6 +250,17 @@ test('ContinuousReconciler & SolvencyMonitor: detects accounting gaps and assess
   assert.equal(alertRun.isClean, false);
   assert.ok(alertRun.alerts.length > 0);
   assert.match(alertRun.alerts[0].explanation, /On-chain balance .* does not match internal ledger/);
+
+  const signerDivergence = reconciler.reconcile({
+    onChainBalanceLamports: 100_000_000_000n,
+    signerConfirmedTotalLamports: 0n,
+    ledgerControlledAssetsLamports: 100_000_000_000n,
+    vaultCustomerLiabilitiesLamports: 95_000_000_000n,
+    platformTreasuryLamports: 5_000_000_000n,
+    explicitDiscrepancyLamports: 0n,
+  });
+  assert.equal(signerDivergence.isClean, false);
+  assert.ok(signerDivergence.alerts.some(alert => /Signing service confirmed total/.test(alert.explanation)));
 
   // Solvency Monitor
   const monitor = new SolvencyMonitor();

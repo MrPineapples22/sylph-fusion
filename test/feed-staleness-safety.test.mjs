@@ -5,6 +5,7 @@ import { SimulatedEngine } from '../dist/execution-engine.js';
 
 test('ProviderHealthTracker transitions to RATE_LIMITED on HTTP 429 and computes backoff', () => {
   const tracker = new ProviderHealthTracker();
+  tracker.setProviderConfiguration('SOLANA_RPC', true, true, true);
 
   // Initially healthy after a success
   tracker.recordSuccess('SOLANA_RPC', 20);
@@ -20,6 +21,8 @@ test('ProviderHealthTracker transitions to RATE_LIMITED on HTTP 429 and computes
 
 test('ProviderHealthTracker reports isMarketFeedStale when authoritative feed exceeds 10s', (t) => {
   const tracker = new ProviderHealthTracker();
+  tracker.setProviderConfiguration('PUMPPORTAL_WS', true, true, true);
+  tracker.setProviderConfiguration('SOLANA_RPC', true, true, true);
   let fakeTime = 1_700_000_000_000;
   t.mock.method(Date, 'now', () => fakeTime);
 
@@ -39,6 +42,8 @@ test('ProviderHealthTracker reports isMarketFeedStale when authoritative feed ex
 
 test('ProviderHealthTracker reports isMarketFeedStale when authoritative provider is RATE_LIMITED', () => {
   const tracker = new ProviderHealthTracker();
+  tracker.setProviderConfiguration('PUMPPORTAL_WS', true, true, true);
+  tracker.setProviderConfiguration('SOLANA_RPC', true, true, true);
   tracker.recordSuccess('PUMPPORTAL_WS', 15);
   tracker.recordSuccess('SOLANA_RPC', 20);
 

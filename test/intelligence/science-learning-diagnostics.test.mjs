@@ -123,11 +123,14 @@ test('Layer 8 - Galileo Reality Reconciliation & Pavlov Decision Credit', () => 
   assert.equal(recLuck.policy_reinforcement_action, 'DO_NOT_REINFORCE_LUCK');
 });
 
-test('Layer 8 - Edison 25 Golden Verification Scenarios', () => {
+test('Layer 8 - Edison golden scenario catalogue does not fabricate verification', () => {
   const results = EdisonContinuousVerificationEngine.runAllGoldenScenarios();
   assert.equal(results.length, 25);
   for (const r of results) {
-    assert.equal(r.passed, true, `Scenario ${r.id} (${r.name}) failed verification`);
+    assert.equal(r.passed, false, `Scenario ${r.id} (${r.name}) must not claim verification without a harness`);
+    assert.equal(r.status, 'UNIMPLEMENTED');
+    assert.match(r.notes, /No executable scenario harness/);
     assert.ok(r.invariant_verified.length > 0);
   }
+  assert.equal(results.some((result) => result.passed), false);
 });

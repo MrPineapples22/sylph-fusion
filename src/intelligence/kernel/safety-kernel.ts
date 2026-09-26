@@ -20,9 +20,21 @@ export interface SafetyKernelInvariants {
   readonly requireNonNegativeDtf: boolean;
 }
 
+export interface DomainDispositions {
+  readonly tokenSafety: 'PASS' | 'FAIL' | 'UNKNOWN';
+  readonly portfolio: 'PASS' | 'FAIL';
+  readonly execution: 'PASS' | 'FAIL';
+  readonly system: 'PASS' | 'FAIL';
+}
+
 export interface KernelVerificationResult {
   readonly passed: boolean;
   readonly violatedInvariants: readonly string[];
+  readonly portfolioViolations: readonly string[];
+  readonly executionViolations: readonly string[];
+  readonly tokenSafetyViolations: readonly string[];
+  readonly systemViolations: readonly string[];
+  readonly domains: DomainDispositions;
   readonly evaluatedAtMs: number;
   readonly permitIssuanceAllowed: boolean;
 }
@@ -55,58 +67,80 @@ export class SafetyKernel {
     distanceToFailure: number;
     systemIntegrityValid: boolean;
   }): KernelVerificationResult {
-    const violations: string[] = [];
+    const portfolioViolations: string[] = [];
+    const executionViolations: string[] = [];
+    const tokenSafetyViolations: string[] = [];
+    const systemViolations: string[] = [];
 
-    // Invariant 1: Order size limit
+    // Invariant 1: Order size limit (Execution)
     if (params.orderSizeSol > this.invariants.maxOrderSizeSol) {
-      violations.push(`ORDER_SIZE_EXCEEDS_LIMIT: ${params.orderSizeSol} > ${this.invariants.maxOrderSizeSol} SOL`);
+      executionViolations.push(`ORDER_SIZE_EXCEEDS_LIMIT: ${params.orderSizeSol} > ${this.invariants.maxOrderSizeSol} SOL`);
     }
 
-    // Invariant 2: Total portfolio exposure limit
+    // Invariant 2: Total portfolio exposure limit (Portfolio)
     if (params.currentPortfolioExposureSol + params.orderSizeSol > this.invariants.maxPortfolioTotalExposureSol) {
-      violations.push(`PORTFOLIO_EXPOSURE_EXCEEDED: ${params.currentPortfolioExposureSol + params.orderSizeSol} > ${this.invariants.maxPortfolioTotalExposureSol} SOL`);
+      portfolioViolations.push(`PORTFOLIO_EXPOSURE_EXCEEDED: ${params.currentPortfolioExposureSol + params.orderSizeSol} > ${this.invariants.maxPortfolioTotalExposureSol} SOL`);
     }
 
-    // Invariant 3: Quote staleness
+    // Invariant 3: Quote staleness (Execution)
     if (params.quoteAgeMs > this.invariants.maxQuoteAgeMs) {
-      violations.push(`QUOTE_TOO_STALE: ${params.quoteAgeMs}ms > ${this.invariants.maxQuoteAgeMs}ms`);
+      executionViolations.push(`QUOTE_TOO_STALE: ${params.quoteAgeMs}ms > ${this.invariants.maxQuoteAgeMs}ms`);
     }
 
-    // Invariant 4: Slippage limit
+    // Invariant 4: Slippage limit (Execution)
     if (params.slippageBps > this.invariants.maxSlippageBps) {
-      violations.push(`SLIPPAGE_EXCESSIVE: ${params.slippageBps}bps > ${this.invariants.maxSlippageBps}bps`);
+      executionViolations.push(`SLIPPAGE_EXCESSIVE: ${params.slippageBps}bps > ${this.invariants.maxSlippageBps}bps`);
     }
 
-    // Invariant 5: Proof State
+    // Invariant 5: Proof State (Execution Precondition)
     if (this.invariants.requireProof3of3 && params.proofState !== '3/3') {
-      violations.push(`PROOF_STATE_INVALID: Required 3/3, got ${params.proofState}`);
+      executionViolations.push(`PROOF_STATE_INVALID: Required 3/3, got ${params.proofState}`);
     }
 
-    // Invariant 6: Structural freeze authority
+    // Invariant 6: Structural freeze authority (Token Safety)
     if (this.invariants.forbidActiveFreeze && params.hasFreezeAuthority) {
-      violations.push('ACTIVE_FREEZE_AUTHORITY_PRESENT');
+      tokenSafetyViolations.push('ACTIVE_FREEZE_AUTHORITY_PRESENT');
     }
 
-    // Invariant 7: Permanent delegate backdoor
+    // Invariant 7: Permanent delegate backdoor (Token Safety)
     if (this.invariants.forbidPermanentDelegate && params.hasPermanentDelegate) {
-      violations.push('PERMANENT_DELEGATE_BACKDOOR_PRESENT');
+      tokenSafetyViolations.push('PERMANENT_DELEGATE_BACKDOOR_PRESENT');
     }
 
-    // Invariant 8: Distance to Failure
+    // Invariant 8: Distance to Failure (Portfolio / Risk)
     if (this.invariants.requireNonNegativeDtf && params.distanceToFailure <= 0.05) {
-      violations.push(`DTF_BREACH: Distance to failure ${params.distanceToFailure} <= 0.05`);
+      portfolioViolations.push(`DTF_BREACH: Distance to failure ${params.distanceToFailure} <= 0.05`);
     }
 
-    // Invariant 9: System Integrity
+    // Invariant 9: System Integrity (System)
     if (!params.systemIntegrityValid) {
-      violations.push('SYSTEM_INTEGRITY_CERTIFICATE_INVALID');
+      systemViolations.push('SYSTEM_INTEGRITY_CERTIFICATE_INVALID');
     }
+
+    const allViolations = [
+      ...portfolioViolations,
+      ...executionViolations,
+      ...tokenSafetyViolations,
+      ...systemViolations,
+    ];
+
+    const domains: DomainDispositions = {
+      tokenSafety: tokenSafetyViolations.length === 0 ? 'PASS' : 'FAIL',
+      portfolio: portfolioViolations.length === 0 ? 'PASS' : 'FAIL',
+      execution: executionViolations.length === 0 ? 'PASS' : 'FAIL',
+      system: systemViolations.length === 0 ? 'PASS' : 'FAIL',
+    };
 
     return {
-      passed: violations.length === 0,
-      violatedInvariants: violations,
+      passed: allViolations.length === 0,
+      violatedInvariants: allViolations,
+      portfolioViolations,
+      executionViolations,
+      tokenSafetyViolations,
+      systemViolations,
+      domains,
       evaluatedAtMs: Date.now(),
-      permitIssuanceAllowed: violations.length === 0,
+      permitIssuanceAllowed: allViolations.length === 0,
     };
   }
 

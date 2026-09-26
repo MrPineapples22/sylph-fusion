@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { CapitalTruthEngine } from '../../dist/intelligence/capital/capital-truth-engine.js';
+import { AuthoritativeCapitalLedger } from '../../dist/intelligence/capital/authoritative-ledger.js';
 import { CapitalKernel } from '../../dist/intelligence/capital/capital-kernel.js';
 import { HierarchicalReservationEngine } from '../../dist/intelligence/capital/reservations.js';
 import { VeritasTransactionDecoder } from '../../dist/intelligence/vault/effect-spec.js';
@@ -75,6 +76,49 @@ test('Capital Truth Engine: Double-Entry Conservation & Append-Only Hash-Chainin
   }
 });
 
+test('Capital authorities reject invalid reservation and settlement amounts without mutation', () => {
+  const engine = new CapitalTruthEngine(100);
+  const initial = engine.getSnapshot();
+  for (const amount_sol of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    const result = engine.reserveCapital({
+      reservation_id: `invalid-${String(amount_sol)}`,
+      owner_id: 'strategy', amount_sol, max_fee_sol: 0, max_tip_sol: 0,
+      expected_state_version: initial.state_version, slot: 10,
+    });
+    assert.equal(result.success, false);
+    assert.equal(engine.getSnapshot().reserved_cash_sol, 0);
+    assert.equal(engine.getSnapshot().state_version, initial.state_version);
+  }
+  const zero = engine.reserveCapital({
+    reservation_id: 'zero', owner_id: 'strategy', amount_sol: 0, max_fee_sol: 0, max_tip_sol: 0,
+    expected_state_version: initial.state_version, slot: 10,
+  });
+  assert.equal(zero.success, false);
+  const reserved = engine.reserveCapital({
+    reservation_id: 'valid', owner_id: 'strategy', amount_sol: 1, max_fee_sol: 0.1, max_tip_sol: 0.1,
+    expected_state_version: initial.state_version, slot: 10,
+  });
+  assert.equal(reserved.success, true);
+  const beforeSettlement = engine.getSnapshot();
+  assert.throws(() => engine.settleExecution({
+    intent_id: 'intent', reservation_id: 'valid', mint: 'mint', actual_sol_spent: Number.NaN,
+    base_fee_sol: 0, priority_fee_sol: 0, jito_tip_sol: 0, slot: 11,
+  }), /INVALID_SETTLEMENT_INPUT/);
+  assert.equal(engine.getSnapshot().reserved_cash_sol, beforeSettlement.reserved_cash_sol);
+  assert.throws(() => engine.settleExecution({
+    intent_id: 'intent', reservation_id: 'valid', mint: 'mint', actual_sol_spent: 2,
+    base_fee_sol: 0, priority_fee_sol: 0, jito_tip_sol: 0, slot: 11,
+  }), /SETTLEMENT_EXCEEDS_RESERVATION/);
+  assert.equal(engine.getSnapshot().capital_state_root, beforeSettlement.capital_state_root);
+
+  const ledger = new AuthoritativeCapitalLedger();
+  const beforeLedger = ledger.auditExposures();
+  for (const amount of [-1, Number.NaN, Number.POSITIVE_INFINITY, 0]) {
+    assert.equal(ledger.reserveCapital(amount), false);
+    assert.deepEqual(ledger.auditExposures(), beforeLedger);
+  }
+});
+
 test('Capital Kernel: Formal Invariants & Authority Lattice Enforcement', () => {
   const kernel = new CapitalKernel({ maxOpenPositions: 3, maxUnknownCapitalSol: 5.0 });
 
@@ -135,6 +179,7 @@ test('VAULT: Custody Isolation & Atomic Signature Gate', () => {
     maxSolPerTx: 2.0,
     dailyCapSol: 10.0,
     productionRoot: 'prod_hash_123',
+    allowSimulation: true,
   });
   vault.setEpochs(2, 3);
 
@@ -222,6 +267,13 @@ test('VAULT: Custody Isolation & Atomic Signature Gate', () => {
   });
   assert.equal(badCapResp.success, false);
   assert.equal(badCapResp.signing_state, 'REJECTED');
+});
+
+test('VAULT: synthetic signing is unavailable unless a test explicitly enables it', () => {
+  const vault = new VaultSigner();
+  const response = vault.processSignatureRequest({ intent_id: 'blocked', request_id: 'blocked', capability: 'SIGN_ENTRY' });
+  assert.equal(response.success, false);
+  assert.match(response.denial_reason, /SIGNER_UNAVAILABLE/);
 });
 
 test('Survival Core & Evacuation: Dual Admission & Tranche Safety Envelope', () => {

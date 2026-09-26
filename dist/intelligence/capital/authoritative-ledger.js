@@ -13,6 +13,8 @@ export class AuthoritativeCapitalLedger {
      * Reserve capital before transaction signing.
      */
     reserveCapital(amount_sol) {
+        if (!Number.isFinite(amount_sol) || amount_sol <= 0)
+            return false;
         if (this.availableCashSol < amount_sol)
             return false;
         this.availableCashSol -= amount_sol;

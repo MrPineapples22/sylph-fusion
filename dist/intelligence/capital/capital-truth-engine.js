@@ -95,11 +95,20 @@ export class CapitalTruthEngine {
      * Reserves capital atomically with version check (Parts VIII & IX).
      */
     reserveCapital(params) {
+        const nonNegativeFinite = [params.amount_sol, params.max_fee_sol, params.max_tip_sol]
+            .every(value => Number.isFinite(value) && value >= 0);
+        if (!params.reservation_id.trim() || !params.owner_id.trim() || !nonNegativeFinite ||
+            !Number.isSafeInteger(params.expected_state_version) || params.expected_state_version < 0 ||
+            !Number.isSafeInteger(params.slot) || params.slot < 0) {
+            return { success: false, reason: 'INVALID_RESERVATION_INPUT' };
+        }
         // Serializable optimistic concurrency: abort if state version changed
         if (params.expected_state_version !== this.stateVersion) {
             return { success: false, reason: `STATE_VERSION_MISMATCH: expected ${params.expected_state_version}, current ${this.stateVersion}` };
         }
         const totalRequired = params.amount_sol + params.max_fee_sol + params.max_tip_sol;
+        if (!Number.isFinite(totalRequired) || totalRequired <= 0)
+            return { success: false, reason: 'INVALID_RESERVATION_INPUT' };
         const effectiveAvailable = this.confirmedCashSol - this.reservedCashSol - this.emergencyReserveSol;
         if (effectiveAvailable < totalRequired) {
             return {
@@ -184,11 +193,19 @@ export class CapitalTruthEngine {
      * Finalizes on-chain settlement, updates double-entry ledgers (Parts IV & LXIX).
      */
     settleExecution(params) {
+        const amounts = [params.actual_sol_spent, params.base_fee_sol, params.priority_fee_sol, params.jito_tip_sol];
+        if (!params.intent_id.trim() || !params.reservation_id.trim() || !params.mint.trim() ||
+            !amounts.every(value => Number.isFinite(value) && value >= 0) ||
+            !Number.isSafeInteger(params.slot) || params.slot < 0) {
+            throw new Error('INVALID_SETTLEMENT_INPUT');
+        }
         const reservation = this.activeReservations.get(params.reservation_id);
         if (!reservation)
             throw new Error(`Reservation not found ${params.reservation_id}`);
         const reservedAmount = reservation.amount_sol;
         const totalSpent = params.actual_sol_spent + params.base_fee_sol + params.priority_fee_sol + params.jito_tip_sol;
+        if (totalSpent > reservedAmount)
+            throw new Error('SETTLEMENT_EXCEEDS_RESERVATION');
         // Release reservation
         this.reservedCashSol = Math.max(0, this.reservedCashSol - reservedAmount);
         this.activeReservations.delete(params.reservation_id);

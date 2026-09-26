@@ -18,9 +18,38 @@ export class BimodalExecutionRouter {
         this.totalRoutesGenerated++;
         const urgency = req.urgency ?? 'STANDARD';
         const lookaheadCount = Math.max(1, req.maxAllowedSlotDelay ?? 4);
+        const immediateLeader = this.leaderTracker.getSlotLeader(req.currentSlot);
+        if (!immediateLeader) {
+            this.congestionAbstainCount++;
+            return {
+                routeType: 'ABSTAIN_LEADER_UNAVAILABLE',
+                targetSlot: req.currentSlot,
+                targetLeaderPubkey: 'UNAVAILABLE',
+                isJitoLeader: false,
+                recommendedJitoTipLamports: 0n,
+                recommendedPriorityMicroLamports: 0n,
+                computeUnitLimit: 0,
+                rationale: 'Leader schedule is unavailable for the target slot; no execution route may be inferred.',
+                evaluatedAtMs: Date.now(),
+            };
+        }
+        const tipFloor = this.tipOracle.getTipFloor();
+        const contention = this.tipOracle.estimateContention(req.writeLockedAccounts);
+        if (!tipFloor.isFresh || !contention.isObserved) {
+            this.congestionAbstainCount++;
+            return {
+                routeType: 'ABSTAIN_FEE_EVIDENCE_UNAVAILABLE',
+                targetSlot: req.currentSlot,
+                targetLeaderPubkey: immediateLeader.leaderPubkey,
+                isJitoLeader: immediateLeader.isJitoLeader,
+                recommendedJitoTipLamports: 0n,
+                recommendedPriorityMicroLamports: 0n,
+                computeUnitLimit: 0,
+                rationale: 'Current observed tip-floor and account-contention evidence are required before planning an execution route.',
+                evaluatedAtMs: Date.now(),
+            };
+        }
         const window = this.leaderTracker.getUpcomingWindow(req.currentSlot, lookaheadCount);
-        // Look for earliest landing slot
-        const immediateLeader = window[0] ?? this.leaderTracker.getSlotLeader(req.currentSlot);
         const tip = this.tipOracle.getRecommendedTip(urgency);
         const { priorityMicroLamports, contentionTier } = this.tipOracle.getRecommendedPriorityFee(req.writeLockedAccounts, urgency);
         // If critical contention and standard urgency, check if friction would burn edge

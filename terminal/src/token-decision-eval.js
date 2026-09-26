@@ -135,49 +135,64 @@ export function evaluateTokenDecision({
     : 'Awaiting timestamp';
 
   // 5. Pre-Trade Security Checks
-  const isMintRevoked = asset.mintAuthority === false || asset.mintAuthority == null;
-  const isFreezeRevoked = asset.freezeAuthority === false || asset.freezeAuthority == null;
+  const isMintRevoked = typeof asset.mintAuthority === 'boolean' ? !asset.mintAuthority : null;
+  const isFreezeRevoked = typeof asset.freezeAuthority === 'boolean' ? !asset.freezeAuthority : null;
   const isReserveSufficient = realSolReserve != null ? realSolReserve >= 1.0 : null;
   const isCurveActive = isCurveKnown ? !isCurveComplete : null;
 
   // 6. AMM Migration Bridge & Bimodal Route Planning
   const migrationState = candidate?.migrationState || asset?.migrationState || (isCurveComplete ? 'MIGRATION_PENDING' : 'BONDING_CURVE');
-  const executionRoute = candidate?.executionRoute || asset?.executionRoute || 'JITO_MEV_OPTIMAL';
-  const isRaydiumActive = migrationState === 'RAYDIUM_ACTIVE';
+  const executionRoute = candidate?.executionRoute || asset?.executionRoute || 'UNKNOWN';
+  // A completed Pump curve is not itself a rejection.  It becomes a distinct
+  // AMM venue once the feed has identified a Raydium pool with observed
+  // reserves.  Do not fabricate this from a token's name or a price alone.
+  const hasObservedAmmReserves = asset?.reserves?.sol != null || asset?.poolReserves?.sol != null;
+  // Pool identity is venue data, not a Raydium-only lifecycle assertion.
+  // PumpSwap/PumpAMM and other observed AMMs are valid post-curve venues.
+  const observedDex = String(candidate?.dex || asset?.dex || '').toLowerCase();
+  const hasObservedAmmPool = Boolean(observedDex && observedDex !== 'pumpfun' && observedDex !== 'pump')
+    && hasObservedAmmReserves;
+  const isRaydiumActive = migrationState === 'RAYDIUM_ACTIVE'
+    || migrationState === 'AMM_STABILIZED'
+    || hasObservedAmmPool;
   const isSniperCooldown = migrationState === 'SNIPER_COOLDOWN';
 
   // 7. Final Decision Verdict
-  const hasRecordedRejection = !!rejectionReason;
+  // Audit logs are historical evidence only.  A previous portfolio, provider,
+  // model, or strategy rejection must never become current token authority.
   const isReserveViolated = isReserveSufficient === false;
   const isDriftViolated = driftPct != null && !isDriftSafe;
-  const isCurveViolated = isCurveComplete === true && !isRaydiumActive;
+  // A completed curve without an active Raydium pool is a transitional
+  // state (MIGRATION_PENDING), not an economic or security rejection.
+  const isMigrationPending = isCurveComplete === true && !isRaydiumActive;
   const isDevSoldViolated = isDevSold === true;
 
-  const blocked = hasRecordedRejection || isReserveViolated || isDriftViolated || isCurveViolated || isDevSoldViolated;
-  const isTelemetryPending = !blocked && (realSolReserve == null || driftPct == null || !isCurveKnown);
+  const authorityViolated = isMintRevoked === false || isFreezeRevoked === false;
+  const blocked = isReserveViolated || isDriftViolated || isDevSoldViolated || authorityViolated;
+  const isTelemetryPending = !blocked && (isMigrationPending || realSolReserve == null || driftPct == null || !isCurveKnown || isMintRevoked === null || isFreezeRevoked === null);
 
   let decisionBadge = 'DECISION: ELIGIBLE';
   let decisionTone = 'decision-eligible';
   let blockedExplanation = '';
 
-  if (rejectionReason) {
-    blockedExplanation = `Rejection: ${rejectionReason}`;
+  if (authorityViolated) {
+    blockedExplanation = 'Rejection: Mint or freeze authority remains active.';
   } else if (isDevSoldViolated) {
     blockedExplanation = 'Rejection: creator_sell_detected (Dev / insider sold on active curve).';
-  } else if (isCurveViolated) {
-    if (isSniperCooldown) {
-      blockedExplanation = 'Rejection: CURVE_COMPLETED (SNIPER_COOLDOWN_ACTIVE: 30s AMM sniper dump defense active).';
-    } else {
-      blockedExplanation = 'Rejection: CURVE_COMPLETED (Bonding curve is complete; pool migrated).';
-    }
   } else if (isReserveViolated) {
     blockedExplanation = `Rejection: Real reserves (${realSolReserve} SOL) below 1.0 SOL safety floor.`;
   } else if (isExcessivePriceDrift) {
     blockedExplanation = `Rejection: EXCESSIVE_PRICE_DRIFT (+${driftPct.toFixed(2)}% > +2.00% limit / +200 BPS). Front-run defense.`;
   } else if (isExcessiveLiquidityDrop) {
     blockedExplanation = `Rejection: EXCESSIVE_LIQUIDITY_DROP (${driftPct.toFixed(2)}% < -2.00% limit / -200 BPS). Dump defense.`;
+  } else if (isMigrationPending) {
+    if (isSniperCooldown) {
+      blockedExplanation = 'Pending transition: CURVE_COMPLETED (SNIPER_COOLDOWN_ACTIVE: 30s AMM sniper dump defense active).';
+    } else {
+      blockedExplanation = 'Pending transition: CURVE_COMPLETED (Bonding curve complete; awaiting observed AMM venue).';
+    }
   } else if (isTelemetryPending) {
-    blockedExplanation = 'Awaiting real candidate curve and dual-snapshot drift telemetry before qualifying execution.';
+    blockedExplanation = 'Awaiting verified mint/freeze authority, candidate curve and dual-snapshot drift telemetry before qualifying execution.';
   } else {
     blockedExplanation = eligibilityNotes || (isRaydiumActive ? 'Qualified for execution via Post-Graduation Raydium AMM Bridge.' : 'All configured dual-metric drift bounds and safety filters qualified for execution.');
   }
@@ -185,6 +200,9 @@ export function evaluateTokenDecision({
   if (blocked) {
     decisionBadge = 'DECISION: BLOCKED';
     decisionTone = 'decision-blocked';
+  } else if (isMigrationPending) {
+    decisionBadge = isSniperCooldown ? 'DECISION: SNIPER COOLDOWN' : 'DECISION: PENDING TRANSITION';
+    decisionTone = 'decision-pending';
   } else if (isTelemetryPending) {
     decisionBadge = 'DECISION: PENDING TELEMETRY';
     decisionTone = 'decision-pending';
@@ -221,6 +239,8 @@ export function evaluateTokenDecision({
     executionRoute,
     isRaydiumActive,
     isSniperCooldown,
+    isMigrationPending,
+    isTransitionPending: isMigrationPending,
     netEdge: asset.netEdgePct || asset.edge || '+0.0%',
     opportunityStage: asset.decision || 'WATCH',
     spieNetEv: asset.netEdgePct || asset.edge || '+0.0%',

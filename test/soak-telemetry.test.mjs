@@ -204,7 +204,12 @@ test('Engine instruments exit-blocked-by-pending when an order is in flight', as
   };
   const mockExecutor = {
     reconcile: async () => ({ status: 'pending' }),
-    broadcast: async () => {},
+    broadcast: async order => ({
+      status: 'NOT_SENT',
+      signature: order.signature,
+      attemptedAt: Date.now(),
+      reason: 'TEST_TRANSPORT_DISABLED',
+    }),
   };
   const mockStore = {
     save: async () => {},
@@ -309,4 +314,3 @@ test('Engine records rejection taxonomy and emits periodic soak checkpoint', asy
   assert.equal(checkpoint.openPositionsCount, 0);
   assert.equal(checkpoint.blockedExitsCount, 0);
 });
-

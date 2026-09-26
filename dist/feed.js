@@ -13,6 +13,7 @@ export class Feed {
     sockets = new Set();
     grpcStream;
     stopped = false;
+    shutdown = new AbortController();
     gapReconciler = new IngestionGapReconciler();
     last = 0;
     slot = 0;
@@ -25,11 +26,11 @@ export class Feed {
     healthy() { const age = Date.now() - this.last; return !this.stopped && this.last > 0 && age >= 0 && age < this.cfg.FEED_STALE_MS && Date.now() - this.readySince >= this.cfg.MIN_AGE_MS; }
     accept(signature, slot, logs) {
         const now = Date.now();
-        if (this.stopped || !Number.isSafeInteger(slot) || slot < 0 || typeof signature !== 'string' || !signature || !Array.isArray(logs) || logs.length === 0 || logs.some(line => typeof line !== 'string'))
+        if (this.stopped || !Number.isSafeInteger(slot) || slot < 0 || (this.slot > 0 && slot < this.slot) || typeof signature !== 'string' || !signature || !Array.isArray(logs) || logs.length === 0 || logs.some(line => typeof line !== 'string'))
             return;
-        // Replayed or out-of-window messages cannot renew the trading freshness gate.
-        if (slot + 32 < this.slot)
-            return;
+        // Execution freshness and historical validity are separate.  A late
+        // canonical transaction must still be available to repair materialized
+        // history even though it cannot renew the execution-freshness clock.
         const decoded = [];
         try {
             // Anchor's invocation-stack parser rejects events emitted by unrelated CPI programs.
@@ -43,7 +44,7 @@ export class Feed {
             log('feed_decode_rejected');
             return;
         }
-        if (!decoded.length || !this.seen.add(signature))
+        if (!decoded.length || this.seen.has(signature))
             return;
         try {
             for (const event of decoded)
@@ -55,9 +56,14 @@ export class Feed {
             log('feed_consumer_rejected');
             return;
         }
+        // Commit dedupe only after the consumer accepted the decoded transaction.
+        // A failure remains replayable instead of disappearing for the TTL.
+        if (!this.seen.add(signature))
+            return;
         if (this.stopped)
             return;
-        this.gapReconciler.registerSlot(slot);
+        // A program-filtered transaction stream does not contain every chain slot.
+        this.gapReconciler.registerSlot(slot, decoded.length, false);
         if (now - this.last >= this.cfg.FEED_STALE_MS)
             this.readySince = now;
         this.last = now;
@@ -66,8 +72,17 @@ export class Feed {
     async run() {
         await Promise.all([...this.cfg.WS_URLS.map((url, i) => this.websocket(url, i)), ...(this.cfg.YELLOWSTONE_URL ? [this.geyser()] : [])]);
     }
-    stop() { this.stopped = true; for (const s of this.sockets)
+    stop() { this.stopped = true; this.shutdown.abort(); for (const s of this.sockets)
         s.terminate(); this.grpcStream?.destroy(); }
+    async reconnectDelay(ms) {
+        try {
+            await delay(ms, undefined, { signal: this.shutdown.signal });
+        }
+        catch (error) {
+            if (!this.stopped)
+                throw error;
+        }
+    }
     async websocket(url, index) {
         let backoff = 250;
         while (!this.stopped) {
@@ -110,7 +125,7 @@ export class Feed {
             if (!this.stopped) {
                 backoff = Date.now() - started > 30_000 ? 250 : Math.min(backoff * 2, 10_000);
                 log('websocket_reconnecting', { endpointIndex: index });
-                await delay(backoff + Math.random() * 250);
+                await this.reconnectDelay(backoff + Math.random() * 250);
             }
         }
     }
@@ -126,6 +141,10 @@ export class Feed {
                 client = new Client(this.cfg.YELLOWSTONE_URL, this.cfg.YELLOWSTONE_TOKEN || undefined, { 'grpc.keepalive_time_ms': 10_000, 'grpc.keepalive_timeout_ms': 5000, 'grpc.max_receive_message_length': 16 * 1024 * 1024 });
                 const stream = await client.subscribe();
                 stream.on('error', () => { });
+                if (this.stopped) {
+                    stream.destroy();
+                    return;
+                }
                 this.grpcStream = stream;
                 let last = Date.now();
                 watchdog = setInterval(() => { if (Date.now() - last > 30_000)
@@ -159,7 +178,7 @@ export class Feed {
                 catch { }
             }
             if (!this.stopped) {
-                await delay(backoff + Math.random() * 250);
+                await this.reconnectDelay(backoff + Math.random() * 250);
                 backoff = Math.min(backoff * 2, 10_000);
             }
         }

@@ -93,6 +93,7 @@ export class SimulationExecutionAuthority {
         if (!order.signature.startsWith('sim_') && order.signature !== 'paper') {
             throw new Error(`SimulationAuthority cannot broadcast live signature: ${order.signature}`);
         }
+        return { status: 'NOT_SENT', signature: order.signature, attemptedAt: Date.now(), reason: 'SIMULATION' };
     }
     async reconcile(order) {
         return {
@@ -169,7 +170,7 @@ export class LiveExecutionAuthority {
         if (order.signature === 'paper' || order.signature.startsWith('sim_')) {
             throw new Error(`LiveExecutionAuthority cannot broadcast simulated signature: ${order.signature}`);
         }
-        await this.executor.broadcast(order);
+        return this.executor.broadcast(order);
     }
     async reconcile(order) {
         return this.executor.reconcile(order);

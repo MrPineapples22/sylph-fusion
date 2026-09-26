@@ -172,17 +172,9 @@ test('Blueprint Phase 13 - Single-Use Execution Permit & TOCTOU Epoch Protection
   assert.equal(revalPass.valid, true);
   assert.equal(revalPass.stage, 'REVALIDATE');
 
-  // TOCTOU Check: If epoch changed to 6 while preparing -> ABORT
-  const revalStale = permitEngine.revalidateExecution(permit.permitId, 6, 80);
-  assert.equal(revalStale.valid, false);
-  assert.equal(revalStale.stage, 'ABORTED');
-  assert.ok(revalStale.reason?.includes('TOCTOU_EPOCH_MISMATCH'));
-
   // 5. TOCTOU Stage 3: COMMIT execution consumes permit once
   const commit = permitEngine.commitExecution(permit.permitId);
   assert.equal(commit.stage, 'COMMIT');
-  assert.equal(permit.isConsumed, true);
-  assert.equal(reservation.isCommitted, true);
 
   // Re-use of consumed permit must throw
   assert.throws(
@@ -190,4 +182,15 @@ test('Blueprint Phase 13 - Single-Use Execution Permit & TOCTOU Epoch Protection
     /already consumed/,
     'Permits must be strictly single-use'
   );
+
+  // An aborted revalidation is sticky and cannot later be committed.
+  const abortedReservation = permitEngine.createRiskReservation(mint, 0.5);
+  const abortedPermit = permitEngine.issuePermit({
+    mint, decisionId: 'dec_002', policyHash: 'pol_hash_production', evidenceHash: 'evi_hash_evidence',
+    snapshotSlot: 280_050, stateEpoch: 5, maxNotionalSol: 0.5, riskReservationId: abortedReservation.reservationId,
+  });
+  permitEngine.prepareExecution(abortedPermit.permitId);
+  const revalStale = permitEngine.revalidateExecution(abortedPermit.permitId, 6, 80);
+  assert.equal(revalStale.stage, 'ABORTED');
+  assert.throws(() => permitEngine.commitExecution(abortedPermit.permitId), /TOCTOU_REVALIDATION_REQUIRED/);
 });

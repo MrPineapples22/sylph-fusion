@@ -8,8 +8,8 @@
   },
   "scripts": {
     "build:engine": "node ./node_modules/typescript/bin/tsc -p tsconfig.json",
-    "build:ui": "node ./terminal/node_modules/vite/bin/vite.js build --config ./terminal/vite.config.js",
-    "build": "node ./node_modules/typescript/bin/tsc -p tsconfig.json && node ./terminal/node_modules/vite/bin/vite.js build --config ./terminal/vite.config.js",
+    "build:ui": "npm --prefix terminal run build",
+    "build": "node ./node_modules/typescript/bin/tsc -p tsconfig.json && npm --prefix terminal run build",
     "test:core": "node --test --test-isolation=none test/*.test.mjs",
     "test:intelligence": "node --test --test-isolation=none test/intelligence/*.test.mjs",
     "test:platform": "node --test --test-isolation=none test/platform/*.test.mjs",
@@ -27,6 +27,7 @@
     "test:probe": "node scripts/test-bridge-reachability.mjs",
     "audit:synthetic": "node scripts/test-synthetic-session.mjs sessions/synthetic-test.jsonl && node scripts/verify-replay.mjs sessions/synthetic-test.jsonl && node scripts/shadow-analysis.mjs sessions/synthetic-test.jsonl",
     "audit:replay": "node scripts/audit-populated-replay.mjs",
+    "audit:god-tier": "node scripts/god-tier-25-audit.mjs",
     "bridge": "node scripts/live-market-bridge.mjs",
     "test:offline": "npm run test:in-process && npm run test:edge-cases && npm run audit:synthetic"
   },

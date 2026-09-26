@@ -58,6 +58,7 @@ export interface DecisionTraceStep {
   readonly durationMs: number;
   readonly inputsHash: string;
   readonly outputsHash: string;
-  readonly status: 'PASS' | 'WARN' | 'FAIL' | 'VETO';
+  /** Generic tracing is intentionally unable to confer token-safety authority. */
+  readonly status: 'PASS' | 'WARN' | 'FAIL' | 'ABSTAIN' | 'BLOCK' | 'DEGRADED';
   readonly details?: Record<string, unknown>;
 }

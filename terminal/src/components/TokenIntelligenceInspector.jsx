@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { hasCompleteVerifiedEvidence } from '../evidence-receipt.js';
 import {
   ShieldCheck,
   ShieldAlert,
@@ -31,6 +32,7 @@ import {
   Lock,
   Atom,
 } from 'lucide-react';
+import { DecisionTimeline } from './DecisionTimeline.jsx';
 
 export function TokenIntelligenceInspector({ mint, initialData = null }) {
   const [data, setData] = useState(initialData);
@@ -42,9 +44,13 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
     if (!mint) return;
     if (initialData && (initialData.token?.mint === mint || initialData.mint === mint)) {
       setData(initialData);
+      setLoading(false);
+      setError(null);
       return;
     }
     let cancelled = false;
+    // Never retain a prior token's intelligence while the next receipt is in flight.
+    setData(null);
     setLoading(true);
     setError(null);
 
@@ -98,6 +104,15 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
     );
   }
 
+  if (data.evidenceStatus === 'UNOBSERVED' || data.evidenceStatus === 'NEVER_RECEIVED') {
+    return (
+      <div className="intelligence-error">
+        <AlertTriangle size={18} className="text-warning" />
+        <span>ASTRA INTELLIGENCE: WAITING FOR VERIFIED MARKET EVIDENCE</span>
+      </div>
+    );
+  }
+
   if (data.evidenceStatus === 'PARTIAL') {
     const token = data.token;
     return <section className="token-intelligence-inspector" aria-label="Token evidence">
@@ -112,6 +127,19 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
       </dl>
       <p>Use the token safety panel for the current risk scan. Buyer provenance and yield benchmarks are unavailable.</p>
     </section>;
+  }
+
+  // The deep legacy panels contain explanatory presentation fallbacks. They
+  // are safe to expose only when the source explicitly attests both identity
+  // and completeness; current-but-partial observations use the bounded
+  // partial view above instead.
+  if (!hasCompleteVerifiedEvidence(data)) {
+    return (
+      <div className="intelligence-error" role="status">
+        <AlertTriangle size={18} className="text-warning" />
+        <span>Detailed intelligence is unavailable until a complete, current, independently verifiable evidence receipt is supplied.</span>
+      </div>
+    );
   }
 
   const {
@@ -331,7 +359,7 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
               THESIS: {blueprintTelemetry?.thesis?.state || 'INTACT'}
             </span>
             <span className="pill-behavior" style={{ background: 'rgba(137, 199, 165, 0.2)', color: 'var(--good)' }}>
-              PROOF: {blueprintTelemetry?.proof?.proofState || '3/3'}
+              PROOF: {blueprintTelemetry?.proof?.proofState || 'UNVERIFIED'}
             </span>
           </div>
 
@@ -485,6 +513,15 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
               ))}
             </ul>
           </div>
+
+          {/* Temporal Decision Timeline */}
+          <div className="forensics-section mt-4 pt-4 border-t border-[#1f2937]">
+            <h4 style={{ color: 'var(--cyan)' }}><Clock size={15} /> DECISION PIPELINE &amp; TEMPORAL TRANSITIONS</h4>
+            <DecisionTimeline
+              currentStage={overview?.disposition === 'REJECTED' || specialStates?.podProtectionActive ? 'GATED' : overview?.confidenceScore > 75 ? 'EVALUATED' : 'SCREENED'}
+              evaluatedAt={data?.timestamp || Date.now()}
+            />
+          </div>
         </div>
       )}
 
@@ -493,31 +530,31 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
         <div className="inspector-content twin-panel">
           <div className="panel-heading" style={{ marginBottom: '8px' }}>
             <h4 style={{ margin: 0, fontSize: '11px', color: 'var(--cyan)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <ShieldCheck size={14} /> THREE INDEPENDENT CERTIFICATES &middot; PROOF {blueprintTelemetry?.proof?.proofState || '3/3'}
+              <ShieldCheck size={14} /> THREE INDEPENDENT CERTIFICATES &middot; PROOF {blueprintTelemetry?.proof?.proofState || 'UNVERIFIED'}
             </h4>
           </div>
 
           <div className="certificates-grid">
-            <div className={`cert-card ${blueprintTelemetry?.proof?.structuralValid !== false ? 'cert-pass' : 'cert-fail'}`}>
+            <div className={`cert-card ${blueprintTelemetry?.proof?.structuralValid === true ? 'cert-pass' : blueprintTelemetry?.proof?.structuralValid === false ? 'cert-fail' : 'cert-unknown'}`}>
               <small>STRUCTURAL</small>
-              <strong className={blueprintTelemetry?.proof?.structuralValid !== false ? 'text-good' : 'text-danger'}>
-                {blueprintTelemetry?.proof?.structuralValid !== false ? 'PASSED (1/3)' : 'FAILED'}
+              <strong className={blueprintTelemetry?.proof?.structuralValid === true ? 'text-good' : blueprintTelemetry?.proof?.structuralValid === false ? 'text-danger' : 'text-warning'}>
+                {blueprintTelemetry?.proof?.structuralValid === true ? 'PASSED (1/3)' : blueprintTelemetry?.proof?.structuralValid === false ? 'FAILED' : 'UNVERIFIED'}
               </strong>
               <small style={{ marginTop: '3px' }}>Mint &amp; Freeze: Revoked<br/>Token-2022: Safe</small>
             </div>
 
-            <div className={`cert-card ${blueprintTelemetry?.proof?.marketValid !== false ? 'cert-pass' : 'cert-fail'}`}>
+            <div className={`cert-card ${blueprintTelemetry?.proof?.marketValid === true ? 'cert-pass' : blueprintTelemetry?.proof?.marketValid === false ? 'cert-fail' : 'cert-unknown'}`}>
               <small>MARKET</small>
-              <strong className={blueprintTelemetry?.proof?.marketValid !== false ? 'text-good' : 'text-danger'}>
-                {blueprintTelemetry?.proof?.marketValid !== false ? 'PASSED (2/3)' : 'FAILED'}
+              <strong className={blueprintTelemetry?.proof?.marketValid === true ? 'text-good' : blueprintTelemetry?.proof?.marketValid === false ? 'text-danger' : 'text-warning'}>
+                {blueprintTelemetry?.proof?.marketValid === true ? 'PASSED (2/3)' : blueprintTelemetry?.proof?.marketValid === false ? 'FAILED' : 'UNVERIFIED'}
               </strong>
               <small style={{ marginTop: '3px' }}>Actors: Independent<br/>Wash Trading: Bounded</small>
             </div>
 
-            <div className={`cert-card ${blueprintTelemetry?.proof?.executionValid !== false ? 'cert-pass' : 'cert-fail'}`}>
+            <div className={`cert-card ${blueprintTelemetry?.proof?.executionValid === true ? 'cert-pass' : blueprintTelemetry?.proof?.executionValid === false ? 'cert-fail' : 'cert-unknown'}`}>
               <small>EXECUTION</small>
-              <strong className={blueprintTelemetry?.proof?.executionValid !== false ? 'text-good' : 'text-danger'}>
-                {blueprintTelemetry?.proof?.executionValid !== false ? 'PASSED (3/3)' : 'FAILED'}
+              <strong className={blueprintTelemetry?.proof?.executionValid === true ? 'text-good' : blueprintTelemetry?.proof?.executionValid === false ? 'text-danger' : 'text-warning'}>
+                {blueprintTelemetry?.proof?.executionValid === true ? 'PASSED (3/3)' : blueprintTelemetry?.proof?.executionValid === false ? 'FAILED' : 'UNVERIFIED'}
               </strong>
               <small style={{ marginTop: '3px' }}>Round-trip: Valid<br/>Exit Depth: Verified</small>
             </div>
@@ -530,29 +567,29 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
           <div className="grid-metrics">
             <div className="metric-box">
               <small>Robust Exit Cap</small>
-              <strong className="text-accent">{blueprintTelemetry?.twin?.robustExitCapacitySol ? `${blueprintTelemetry.twin.robustExitCapacitySol.toFixed(2)} SOL` : '4.50 SOL'}</strong>
+              <strong className="text-accent">{blueprintTelemetry?.twin?.robustExitCapacitySol != null ? `${blueprintTelemetry.twin.robustExitCapacitySol.toFixed(2)} SOL` : '—'}</strong>
             </div>
             <div className="metric-box">
               <small>Distance to Failure (DTF)</small>
-              <strong className="text-good">{blueprintTelemetry?.twin?.distanceToFailure ? `${Math.round(blueprintTelemetry.twin.distanceToFailure * 100)}%` : '82%'}</strong>
+              <strong className={blueprintTelemetry?.twin?.distanceToFailure != null ? 'text-good' : 'text-warning'}>{blueprintTelemetry?.twin?.distanceToFailure != null ? `${Math.round(blueprintTelemetry.twin.distanceToFailure * 100)}%` : '—'}</strong>
             </div>
             <div className="metric-box">
               <small>DTF Velocity</small>
-              <strong>{blueprintTelemetry?.twin?.dtfVelocity ? `${blueprintTelemetry.twin.dtfVelocity.toFixed(2)}/s` : '+0.02/s'}</strong>
+              <strong>{blueprintTelemetry?.twin?.dtfVelocity != null ? `${blueprintTelemetry.twin.dtfVelocity.toFixed(2)}/s` : '—'}</strong>
             </div>
             <div className="metric-box">
               <small>Cascade Risk</small>
-              <strong className={Number(blueprintTelemetry?.twin?.cascadeSusceptibility || 0.3) > 0.6 ? 'text-danger' : 'text-good'}>
-                {blueprintTelemetry?.twin?.cascadeSusceptibility ? `${Math.round(blueprintTelemetry.twin.cascadeSusceptibility * 100)}%` : '30%'}
+              <strong className={blueprintTelemetry?.twin?.cascadeSusceptibility == null ? 'text-warning' : blueprintTelemetry.twin.cascadeSusceptibility > 0.6 ? 'text-danger' : 'text-good'}>
+                {blueprintTelemetry?.twin?.cascadeSusceptibility != null ? `${Math.round(blueprintTelemetry.twin.cascadeSusceptibility * 100)}%` : '—'}
               </strong>
             </div>
             <div className="metric-box">
               <small>Min Shock Breaching</small>
-              <strong>{blueprintTelemetry?.twin?.minShockRequiredSol ? `${blueprintTelemetry.twin.minShockRequiredSol.toFixed(2)} SOL` : '3.50 SOL'}</strong>
+              <strong>{blueprintTelemetry?.twin?.minShockRequiredSol != null ? `${blueprintTelemetry.twin.minShockRequiredSol.toFixed(2)} SOL` : '—'}</strong>
             </div>
             <div className="metric-box">
               <small>Safety Kernel</small>
-              <strong className="text-good">PERMITTED</strong>
+              <strong className={blueprintTelemetry?.proof?.executionValid === true ? 'text-good' : 'text-warning'}>{blueprintTelemetry?.proof?.executionValid === true ? 'PERMITTED' : 'UNVERIFIED'}</strong>
             </div>
           </div>
         </div>
@@ -1858,4 +1895,3 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
   );
 }
 export default TokenIntelligenceInspector;
-

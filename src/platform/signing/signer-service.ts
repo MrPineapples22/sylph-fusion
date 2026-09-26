@@ -36,7 +36,7 @@ export class ZeroTrustSignerService {
   private readonly txRegistry: Map<string, IdempotentTxRecord> = new Map();
   private emergencyHalt = false;
 
-  constructor() {
+  constructor(private readonly allowSimulation = false) {
     // Default strict domain policies
     this.policies.set('TRADING', {
       maxAmountLamportsPerTx: 50_000_000_000n, // 50 SOL ceiling per single order
@@ -89,6 +89,9 @@ export class ZeroTrustSignerService {
     request: SigningRequest,
     isReconciliationClean: boolean
   ): { success: true; result: SignatureResult } | { success: false; error: string } {
+    if (!this.allowSimulation) {
+      return { success: false, error: 'SIGNER_UNAVAILABLE: synthetic signer is disabled outside explicit simulation' };
+    }
     if (this.emergencyHalt) {
       return { success: false, error: 'Signer rejected: Global emergency halt active' };
     }
@@ -123,10 +126,10 @@ export class ZeroTrustSignerService {
       };
     }
 
-    if (request.amountLamports > policy.maxAmountLamportsPerTx) {
+    if (request.amountLamports < 0n || request.amountLamports > policy.maxAmountLamportsPerTx) {
       return {
         success: false,
-        error: `Signer rejected: Amount ${request.amountLamports} exceeds policy max ${policy.maxAmountLamportsPerTx}`,
+        error: `Signer rejected: Amount ${request.amountLamports} is outside the permitted range 0..${policy.maxAmountLamportsPerTx}`,
       };
     }
 
@@ -147,7 +150,7 @@ export class ZeroTrustSignerService {
       }
     }
 
-    // Produce deterministic simulated or cryptographic signature
+    // Produce an explicitly non-chain-valid, deterministic test artifact.
     const sigHash = createHash('sha256')
       .update(request.transactionId)
       .update(request.domain)
@@ -157,9 +160,10 @@ export class ZeroTrustSignerService {
 
     const result: SignatureResult = {
       transactionId: request.transactionId,
-      signature: `sig_${sigHash}`,
+      signature: `simulation_sig_${sigHash}`,
       signedAt: Date.now(),
       domain: request.domain,
+      simulationOnly: true,
     };
 
     // Register / update transaction state
@@ -182,7 +186,9 @@ export class ZeroTrustSignerService {
     }
   }
 
-  public recordConfirmation(transactionId: string): void {
+  /** Test-only lifecycle helper; it is not chain confirmation evidence. */
+  public recordSimulatedConfirmation(transactionId: string): void {
+    if (!this.allowSimulation) return;
     const record = this.txRegistry.get(transactionId);
     if (record) {
       record.state = 'CONFIRMED';

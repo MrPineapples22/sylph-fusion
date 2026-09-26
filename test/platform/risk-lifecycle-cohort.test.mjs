@@ -108,7 +108,7 @@ test('IndependentRiskEngine: enforces mandate ceilings, phase scaling, and globa
   assert.ok(authGlobal.appliedConstraints.includes('capped_by_global_single_token_concentration'));
 });
 
-test('TokenAdmissionGateway: blocks backdoors and hard veto cannot be bypassed', () => {
+test('TokenAdmissionGateway: blocks backdoors without manufacturing a protected veto', () => {
   const gateway = new TokenAdmissionGateway();
 
   // Token with active freeze authority -> BLOCK
@@ -150,7 +150,7 @@ test('TokenAdmissionGateway: blocks backdoors and hard veto cannot be bypassed',
   assert.match(delegateRes.reason, /permanent delegate backdoor/);
 });
 
-test('TradeConsensusEngine: hard security/risk vetoes cannot be overridden by alpha', () => {
+test('TradeConsensusEngine: entry blocks cannot be overridden by alpha', () => {
   const consensusEngine = new TradeConsensusEngine();
 
   // High Alpha (98/100), but Security Gateway returned BLOCK
@@ -193,7 +193,7 @@ test('TradeConsensusEngine: hard security/risk vetoes cannot be overridden by al
   });
 
   assert.equal(blockedPacket.overallAccepted, false, 'High Alpha MUST NOT override security block');
-  assert.ok(blockedPacket.hardVetoes.some(v => v.includes('security_block')));
+  assert.ok(blockedPacket.entryBlockers.some(v => v.includes('security_block')));
   assert.equal(blockedPacket.maxCapacityLamports, 0n);
 });
 

@@ -2,7 +2,7 @@ import { orderFromUsd, fillToTerminal, tokenQtyToBaseUnits } from './execution-b
 
 // Converts only confirmed execution amounts to ledger actions.
 export async function submitPaperOrder(engine, dispatch, solPriceUsd, input) {
-  const { poolAddress, tokenMint, side, usdAmount, tokenQty, tokenDecimals = 9, maxSlippageBps = 300, emergency = false, tier, fallbackPriceSol } = input;
+  const { poolAddress, tokenMint, side, usdAmount, tokenQty, tokenDecimals = 9, maxSlippageBps = 300, emergency = false, tier, fallbackPriceSol, allowLocalSimulationFallback = false } = input;
   const orderId = input.orderId || crypto.randomUUID();
   try {
     // 1. Authoritative Command Gateway submission (Sections 5, 43)
@@ -61,12 +61,21 @@ export async function submitPaperOrder(engine, dispatch, solPriceUsd, input) {
             }
           }
         }
-      } catch {
-        // Fallback for offline test environments where no HTTP backend is listening
+        throw new Error('COMMAND_GATEWAY_UNAVAILABLE');
+      } catch (error) {
+        // A browser client must never silently create a second execution ledger.
+        // Test harnesses can opt into the local simulator explicitly.
+        if (!allowLocalSimulationFallback) {
+          dispatch({ type: 'REJECT', payload: { orderId, asset: poolAddress, side, feeUsd: 0, reason: 'COMMAND_GATEWAY_UNAVAILABLE' } });
+          return null;
+        }
       }
+    } else if (!allowLocalSimulationFallback) {
+      dispatch({ type: 'REJECT', payload: { orderId, asset: poolAddress, side, feeUsd: 0, reason: 'COMMAND_GATEWAY_UNAVAILABLE' } });
+      return null;
     }
 
-    // 2. Offline / mock test fallback
+    // 2. Explicit test-only local simulator fallback.
     const request = side === 'BUY'
       ? orderFromUsd({ orderId, tokenMint, poolAddress, side, usdAmount, solPriceUsd, tokenDecimals, maxSlippageBps, emergency })
       : { orderId, tokenMint, poolAddress, side: 'SELL', amountLamports: tokenQtyToBaseUnits(tokenQty, tokenDecimals), amountDecimals: tokenDecimals, maxSlippageBps, triggerTimestamp: Date.now(), emergency, fallbackPriceSol };

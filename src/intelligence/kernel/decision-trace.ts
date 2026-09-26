@@ -33,7 +33,7 @@ export class DecisionTrace {
     durationMs: number;
     inputs: unknown;
     outputs: unknown;
-    status: 'PASS' | 'WARN' | 'FAIL' | 'VETO';
+    status: 'PASS' | 'WARN' | 'FAIL' | 'ABSTAIN' | 'BLOCK' | 'DEGRADED';
     details?: Record<string, unknown>;
   }): DecisionTraceStep {
     const bigintReplacer = (_: string, v: unknown) => (typeof v === 'bigint' ? v.toString() : v);
@@ -67,13 +67,15 @@ export class DecisionTrace {
     context: DecisionTraceContext;
     steps: readonly DecisionTraceStep[];
     totalDurationMs: number;
-    overallStatus: 'PASS' | 'WARN' | 'FAIL' | 'VETO';
+    overallStatus: 'PASS' | 'WARN' | 'FAIL' | 'ABSTAIN' | 'BLOCK' | 'DEGRADED';
   } {
     const now = Date.now();
-    const hasVeto = this.steps.some((s) => s.status === 'VETO');
+    const hasBlock = this.steps.some((s) => s.status === 'BLOCK');
     const hasFail = this.steps.some((s) => s.status === 'FAIL');
+    const hasDegraded = this.steps.some((s) => s.status === 'DEGRADED');
+    const hasAbstain = this.steps.some((s) => s.status === 'ABSTAIN');
     const hasWarn = this.steps.some((s) => s.status === 'WARN');
-    const overallStatus = hasVeto ? 'VETO' : hasFail ? 'FAIL' : hasWarn ? 'WARN' : 'PASS';
+    const overallStatus = hasBlock ? 'BLOCK' : hasFail ? 'FAIL' : hasDegraded ? 'DEGRADED' : hasAbstain ? 'ABSTAIN' : hasWarn ? 'WARN' : 'PASS';
 
     return {
       context: this.context,

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { SOLSYLPHPlatform } from '../../dist/platform/orchestrator.js';
 
-test('SOL-SYLPH Multi-User Platform: Complete End-to-End Autonomous Lifecycle & Settlement', () => {
+test('SOL-SYLPH multi-user model: validation is preserved while economic execution and settlement are quarantined', () => {
   const platform = new SOLSYLPHPlatform({
     platformId: 'solsylph-main-test',
     defaultFeeRateBps: 2000, // 20% performance fee
@@ -66,7 +66,7 @@ test('SOL-SYLPH Multi-User Platform: Complete End-to-End Autonomous Lifecycle & 
     maxObservedTradeBurstPerMin: 5,
   });
 
-  // 5. Evaluate and Execute Opportunity: Token Passes All Gates
+  // 5. Evaluate valid opportunity: it may pass model gates but cannot execute.
   const mint = 'TokenGood1111111111111111111111111111111111';
   const creator = 'CreatorLegit1111111111111111111111111111111';
 
@@ -101,34 +101,21 @@ test('SOL-SYLPH Multi-User Platform: Complete End-to-End Autonomous Lifecycle & 
     now: now + 3600 * 1000, // Hour 1 of cycle
   });
 
-  assert.equal(tradeRes.success, true, tradeRes.reason);
-  if (tradeRes.success) {
-    assert.ok(tradeRes.cohortId);
-    assert.ok(tradeRes.transactionId);
-    assert.equal(tradeRes.executedCohort.executed, true);
-    // Exact Integer Conservation Check: Sum(Tokens) == Total Tokens Filled
-    const sumTokens = tradeRes.executedCohort.allocations.reduce((s, a) => s + (a.tokensFilled ?? 0n), 0n);
-    assert.equal(sumTokens, 10_000_000n);
-  }
-
-  // Verify Signer Recorded and Confirmed Tx
-  assert.equal(platform.signer.getTxRecord(tradeRes.transactionId)?.state, 'CONFIRMED');
-
-  // Verify Ledger Remains Cryptographically Sound
+  assert.equal(tradeRes.success, false);
+  assert.equal(tradeRes.reason, 'ECONOMIC_EXECUTION_UNAVAILABLE');
+  assert.ok(tradeRes.plannedCohortId);
+  assert.equal(platform.signer.getTxRecord('no-transaction'), undefined);
+  assert.equal(platform.eventLedger.length, 2, 'proposal may not write a fabricated trade event');
   assert.equal(platform.eventLedger.verifyChain().valid, true);
 
-  // 6. Finalize & Settle Vault A after 72h autonomous cycle
+  // 6. Settlement is likewise unavailable without independent chain evidence.
   const settlementTime = now + 72 * 3600 * 1000;
   const settleRes = platform.finalizeAndSettleVault('vault-a', settlementTime);
 
-  assert.equal(settleRes.success, true);
-  if (settleRes.success) {
-    assert.ok(settleRes.signature);
-    assert.ok(settleRes.netPayableLamports > 0n);
-  }
-
-  // Verify Vault A is CLOSED
-  assert.equal(platform.vaultManager.getVault('vault-a')?.state, 'CLOSED');
+  assert.equal(settleRes.success, false);
+  assert.equal(settleRes.reason, 'ECONOMIC_SETTLEMENT_UNAVAILABLE');
+  assert.equal(platform.eventLedger.length, 2, 'settlement may not write a fabricated event');
+  assert.equal(platform.vaultManager.getVault('vault-a')?.state, 'ACTIVE');
 
   // Verify Double-Entry Accounting Invariance Holds after Settlement
   const postSettleConservation = platform.doubleEntry.checkConservation();

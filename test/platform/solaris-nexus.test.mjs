@@ -86,7 +86,8 @@ test('SOLARIS DynamicTipAndContentionOracle: Calculates tip percentiles and writ
 
   // Default baseline
   const baselineFloor = oracle.getTipFloor();
-  assert.equal(baselineFloor.isFresh, true);
+  assert.equal(baselineFloor.isFresh, false);
+  assert.equal(baselineFloor.source, 'FALLBACK_MANDATE');
   assert.equal(baselineFloor.p75Lamports, 60_000n);
 
   // Recommends tip by urgency
@@ -101,6 +102,7 @@ test('SOLARIS DynamicTipAndContentionOracle: Calculates tip percentiles and writ
   // Update tip floor with live auction data
   oracle.updateTipFloor(50_000n, 100_000n, 250_000n, 1_000_000n, 'LIVE_API');
   const updatedFloor = oracle.getTipFloor();
+  assert.equal(updatedFloor.isFresh, true);
   assert.equal(updatedFloor.p75Lamports, 250_000n);
   assert.equal(updatedFloor.p95Lamports, 1_000_000n);
   assert.equal(updatedFloor.source, 'LIVE_API');
@@ -112,6 +114,7 @@ test('SOLARIS DynamicTipAndContentionOracle: Calculates tip percentiles and writ
   ]);
 
   const nominalEst = oracle.estimateContention([tokenAccount]);
+  assert.equal(nominalEst.isObserved, true);
   assert.equal(nominalEst.contentionTier, 'NOMINAL');
 
   // High / Critical contention scenario
@@ -140,6 +143,8 @@ test('SOLARIS BimodalExecutionRouter: Plans JITO MEV bundle vs Direct TPU QUIC v
   );
 
   const oracle = new DynamicTipAndContentionOracle();
+  oracle.updateTipFloor(10_000n, 25_000n, 60_000n, 250_000n, 'LIVE_API');
+  oracle.registerAccountPrioritizationSamples('AccountA', [50_000n, 60_000n, 70_000n]);
   const router = new BimodalExecutionRouter(tracker, oracle);
 
   // Case 1: Slot 250,000 is a Jito leader -> JITO_BUNDLE
@@ -191,6 +196,32 @@ test('SOLARIS BimodalExecutionRouter: Plans JITO MEV bundle vs Direct TPU QUIC v
   assert.equal(stats.jitoBundleCount, 1);
   assert.equal(stats.directTpuCount, 1);
   assert.equal(stats.congestionAbstainCount, 1);
+});
+
+test('SOLARIS BimodalExecutionRouter: abstains rather than fabricating a leader route', () => {
+  const router = new BimodalExecutionRouter(new LeaderScheduleTracker(), new DynamicTipAndContentionOracle());
+  const plan = router.planRoute({
+    intentId: 'INTENT_NO_SCHEDULE',
+    currentSlot: 250_000,
+    writeLockedAccounts: [],
+  });
+  assert.equal(plan.routeType, 'ABSTAIN_LEADER_UNAVAILABLE');
+  assert.equal(plan.targetLeaderPubkey, 'UNAVAILABLE');
+  assert.equal(plan.computeUnitLimit, 0);
+});
+
+test('SOLARIS BimodalExecutionRouter: abstains when fee evidence is not observed', () => {
+  const leader = 'KnownLeader111111111111111111111111111111111';
+  const tracker = new LeaderScheduleTracker([leader]);
+  tracker.loadEpochSchedule(0, { [leader]: [0] }, 250_000);
+  const plan = new BimodalExecutionRouter(tracker, new DynamicTipAndContentionOracle()).planRoute({
+    intentId: 'INTENT_NO_FEE_EVIDENCE',
+    currentSlot: 250_000,
+    writeLockedAccounts: ['AccountA'],
+  });
+  assert.equal(plan.routeType, 'ABSTAIN_FEE_EVIDENCE_UNAVAILABLE');
+  assert.equal(plan.recommendedJitoTipLamports, 0n);
+  assert.equal(plan.recommendedPriorityMicroLamports, 0n);
 });
 
 test('SOLARIS PostGraduationAmmBridge: Enforces 30s sniper dump cooldown while allowing sell exits', () => {
@@ -289,23 +320,25 @@ test('SOLARIS End-to-End System Integration: CommandGateway and ProjectionServic
   });
 
   assert.ok(route);
-  assert.ok(['JITO_BUNDLE', 'DIRECT_TPU_QUIC', 'ABSTAIN_CONGESTION'].includes(route.routeType));
+  assert.equal(route.routeType, 'ABSTAIN_LEADER_UNAVAILABLE');
   assert.ok(route.targetSlot >= 250_000);
 
   // 2. CommandGateway telemetry snapshot
   const snapshot = globalCommandGateway.getSolarisSnapshot();
   assert.equal(snapshot.currentSlot, 250_000);
-  assert.ok(snapshot.activeLeaderPubkey);
-  assert.equal(typeof snapshot.activeLeaderIsJito, 'boolean');
-  assert.ok(snapshot.tipFloor.p75);
+  assert.equal(snapshot.leaderScheduleStatus, 'UNAVAILABLE');
+  assert.equal(snapshot.activeLeaderPubkey, undefined);
+  assert.equal(snapshot.activeLeaderIsJito, undefined);
+  assert.equal(snapshot.tipFloor, undefined);
   assert.ok(['NOMINAL', 'ELEVATED', 'HIGH', 'CRITICAL'].includes(snapshot.contentionTier));
 
   // 3. ProjectionService strip view model
   const strip = globalProjectionService.getSystemStrip();
-  assert.equal(strip.activeLeaderPubkey, snapshot.activeLeaderPubkey);
-  assert.equal(strip.isJitoLeader, snapshot.activeLeaderIsJito);
-  assert.equal(strip.contentionTier, snapshot.contentionTier);
-  assert.equal(strip.tipFloorP75, snapshot.tipFloor.p75);
+  // Simulator estimates are not live infrastructure evidence.
+  assert.equal(strip.activeLeaderPubkey, undefined);
+  assert.equal(strip.isJitoLeader, undefined);
+  assert.equal(strip.contentionTier, undefined);
+  assert.equal(strip.tipFloorP75, undefined);
 
   // 4. Market entry validation integration with PostGraduationAmmBridge
   const market = new Market();

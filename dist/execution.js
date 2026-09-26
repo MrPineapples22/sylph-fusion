@@ -55,6 +55,8 @@ export class Executor {
     }
     tip(panic) { return Math.min(this.cfg.MAX_TIP_LAMPORTS, Math.max(this.cfg.MIN_TIP_LAMPORTS, this.floor * (panic ? 2 : 1))); }
     async graduatedSell(mint, amount, slippage) {
+        if (!this.cfg.JUPITER_URL)
+            throw new Error('Jupiter routing adapter is not explicitly configured');
         const headers = { 'content-type': 'application/json', ...(this.cfg.JUPITER_API_KEY ? { 'x-api-key': this.cfg.JUPITER_API_KEY } : {}) };
         const url = `${this.cfg.JUPITER_URL}/quote?inputMint=${mint}&outputMint=${NATIVE_MINT}&amount=${amount}&slippageBps=${slippage}&restrictIntermediateTokens=true&maxAccounts=32`;
         const quote = await httpJson(url, this.cfg.RPC_TIMEOUT_MS, { headers });
@@ -179,21 +181,33 @@ export class Executor {
         };
     }
     async broadcast(order) {
-        if (Date.now() - this.lastSubmit < 2000)
-            return;
-        this.lastSubmit = Date.now();
+        const attemptedAt = Date.now();
+        if (attemptedAt - this.lastSubmit < 2000) {
+            const outcome = { status: 'NOT_SENT', signature: order.signature, attemptedAt, reason: 'THROTTLED' };
+            log('bundle_not_sent', outcome);
+            return outcome;
+        }
+        this.lastSubmit = attemptedAt;
         // Retry only these exact signed bytes. A timeout does not authorize another economic order.
         try {
             const bundleId = await this.jito('sendBundle', [[order.wire], { encoding: 'base64' }]);
-            log('bundle_accepted', { signature: order.signature, bundleId });
+            const outcome = { status: 'ACCEPTED', signature: order.signature, attemptedAt, bundleId };
+            log('bundle_accepted', outcome);
+            return outcome;
         }
-        catch {
-            log('bundle_submission_uncertain', { signature: order.signature });
+        catch (error) {
+            const outcome = {
+                status: 'UNKNOWN', signature: order.signature, attemptedAt,
+                reason: error instanceof Error ? error.name || 'SUBMISSION_ERROR' : 'SUBMISSION_ERROR',
+            };
+            log('bundle_submission_uncertain', outcome);
+            return outcome;
         }
     }
     async reconcile(order) {
         const results = await Promise.allSettled(this.rpc.endpoints.map(async (c) => {
-            const tx = await c.getTransaction(order.signature, { commitment: 'finalized', maxSupportedTransactionVersion: 0 });
+            // Support legacy, v0 and v1 transactions; opt into version 1 on RPC
+            const tx = await c.getTransaction(order.signature, { commitment: 'finalized', maxSupportedTransactionVersion: 1 });
             const height = tx ? 0 : await c.getBlockHeight('finalized');
             return { tx, height };
         }));
@@ -207,7 +221,7 @@ export class Executor {
             const delta = transactionDeltas(tx, this.key.publicKey.toBase58(), order.mint);
             return { status: 'filled', ...delta };
         }
-        if (results.every(r => r.status === 'fulfilled' && r.value.height > order.lastValidBlockHeight + 32))
+        if (results.length > 0 && results.every(r => r.status === 'fulfilled' && Number.isSafeInteger(r.value.height) && r.value.height > order.lastValidBlockHeight + 32))
             return { status: 'expired' };
         return { status: 'pending' };
     }

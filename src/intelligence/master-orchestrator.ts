@@ -163,7 +163,6 @@ import { FranklinControlledExperimentationEngine } from './experimentation/frank
 import { DaVinciStrategySynthesisEngine } from './synthesis/davinci-synthesis.js';
 import { GalileoRealityReconciliationEngine } from './reconciliation/galileo-reconciliation.js';
 import { PavlovOutcomeAttributionEngine } from './attribution/pavlov-attribution.js';
-import { EdisonContinuousVerificationEngine } from './verification/edison-verification.js';
 import type { CanonicalContextSnapshot, DecisionCandidate, ScientificExecutionPermit } from './contracts/scientific-contracts.js';
 
 import { CapitalTruthEngine, type CapitalState, type CommitCertificate } from './capital/capital-truth-engine.js';
@@ -1458,20 +1457,9 @@ export class MasterIntelligenceEngine {
       systemIntegrityValid: sysIntegrityCert.status !== 'INVALID',
     });
 
-    let executionPermit: ExecutionPermit | undefined;
-    if (kernelCheck.passed && proofReport.isExecutionReady) {
-      const reservation = this.permitEngine.createRiskReservation(event.mint, 0.5);
-      executionPermit = this.permitEngine.issuePermit({
-        mint: event.mint,
-        decisionId: trace.context.decisionId ?? event.eventId,
-        policyHash: 'pol_hash_production_v2.4',
-        evidenceHash: 'evi_hash_multi_agent_consensus',
-        snapshotSlot: event.slot,
-        stateEpoch: this.stateEpochs.getCurrentEpoch(),
-        maxNotionalSol: 0.5,
-        riskReservationId: reservation.reservationId,
-      });
-    }
+    // Withhold permits until policy and evidence are real, traceable records.
+    // Literal labels and synthetic consensus are not provenance.
+    const executionPermit: ExecutionPermit | undefined = undefined;
 
     // Phase 11 & 14: Forensic Explainability Report (WHY, WHY NOT, WHAT CHANGED, WHY STILL VALID)
     const forensicsReport = this.explainabilityEngine.generateReport({
@@ -1997,8 +1985,8 @@ export class MasterIntelligenceEngine {
       circulating_supply: 1_000_000_000,
       pool_token_reserve: 800_000_000,
       pool_sol_reserve: context.liquiditySol,
-      mint_authority_revoked: tokenSecurity.isAllowed,
-      freeze_authority_revoked: tokenSecurity.isAllowed,
+      mint_authority_revoked: context.hasMintAuthority === false,
+      freeze_authority_revoked: context.hasFreezeAuthority === false,
       lp_burn_percentage: 100,
       volume_5m_sol: context.liquiditySol * 1.5,
       market_cap_sol: context.marketCapSol

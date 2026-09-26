@@ -34,3 +34,12 @@ test('decoded transaction event count is bounded before any consumer mutation', 
   f.accept('oversized',100,['fixture']);
   assert.equal(consumed,0);assert.equal(f.last,0);
 });
+
+test('stopping a feed interrupts reconnect backoff immediately', async () => {
+  const f=feed();
+  const waiting=f.reconnectDelay(10000);
+  f.stop();
+  const timeout=new Promise((_,reject)=>{const timer=setTimeout(()=>reject(Error('Backoff did not stop')),500);timer.unref();});
+  await Promise.race([waiting,timeout]);
+  assert.equal(f.healthy(),false);
+});

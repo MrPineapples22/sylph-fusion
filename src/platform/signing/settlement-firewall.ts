@@ -36,7 +36,12 @@ export interface SettlementRecord {
 
 export class SettlementFirewall {
   private readonly settlementStore: Map<string, SettlementRecord> = new Map();
+  private readonly settlementByCycle: Map<string, string> = new Map();
   private readonly confirmedDestinationsByVault: Map<string, string> = new Map();
+
+  private cycleKey(vaultId: string, cycleId: string): string {
+    return JSON.stringify([vaultId, cycleId]);
+  }
 
   /**
    * Register the user's confirmed payout destination during vault initialization.
@@ -44,6 +49,10 @@ export class SettlementFirewall {
   public registerConfirmedDestination(vaultId: string, confirmedDestinationAddress: string): void {
     if (!confirmedDestinationAddress || confirmedDestinationAddress.length < 32) {
       throw new Error(`Invalid Solana destination address: ${confirmedDestinationAddress}`);
+    }
+    const existing = this.confirmedDestinationsByVault.get(vaultId);
+    if (existing && existing !== confirmedDestinationAddress) {
+      throw new Error(`Confirmed destination is immutable for vault ${vaultId}`);
     }
     this.confirmedDestinationsByVault.set(vaultId, confirmedDestinationAddress);
   }
@@ -61,20 +70,31 @@ export class SettlementFirewall {
     // 1. Idempotency Check
     const existing = this.settlementStore.get(req.settlementId);
     if (existing) {
-      if (existing.state === 'CONFIRMED' || existing.state === 'SUBMITTED' || existing.state === 'AUTHORIZED') {
-        return {
-          approved: false,
-          settlementId: req.settlementId,
-          netPayableLamports: 0n,
-          platformFeeLamports: 0n,
-          rejectionReason: `Duplicate settlement request: Settlement ${req.settlementId} is already in state ${existing.state}`,
-          timestamp: now,
-        };
-      }
+      return {
+        approved: false,
+        settlementId: req.settlementId,
+        netPayableLamports: 0n,
+        platformFeeLamports: 0n,
+        rejectionReason: `Duplicate settlement request: Settlement ${req.settlementId} is already in state ${existing.state}`,
+        timestamp: now,
+      };
+    }
+
+    const cycleKey = this.cycleKey(req.vaultId, req.cycleId);
+    const existingForCycle = this.settlementByCycle.get(cycleKey);
+    if (existingForCycle) {
+      return {
+        approved: false,
+        settlementId: req.settlementId,
+        netPayableLamports: 0n,
+        platformFeeLamports: 0n,
+        rejectionReason: `Duplicate settlement cycle: Vault ${req.vaultId} cycle ${req.cycleId} is already bound to settlement ${existingForCycle}`,
+        timestamp: now,
+      };
     }
 
     // 2. Cycle State Invariant
-    if (req.cycleState !== 'SETTLEMENT_READY' && req.cycleState !== 'SETTLED') {
+    if (req.cycleState !== 'SETTLEMENT_READY') {
       return {
         approved: false,
         settlementId: req.settlementId,
@@ -122,6 +142,16 @@ export class SettlementFirewall {
     }
 
     // 5. Balance & Solvency Invariant
+    if (req.netPayableLamports < 0n || req.platformFeeLamports < 0n || req.verifiedLiquidBalanceLamports < 0n) {
+      return {
+        approved: false,
+        settlementId: req.settlementId,
+        netPayableLamports: 0n,
+        platformFeeLamports: 0n,
+        rejectionReason: 'Settlement amounts and verified liquid balance must be non-negative',
+        timestamp: now,
+      };
+    }
     const totalRequired = req.netPayableLamports + req.platformFeeLamports;
     if (totalRequired > req.verifiedLiquidBalanceLamports) {
       return {
@@ -148,6 +178,7 @@ export class SettlementFirewall {
     };
 
     this.settlementStore.set(req.settlementId, record);
+    this.settlementByCycle.set(cycleKey, req.settlementId);
 
     return {
       approved: true,

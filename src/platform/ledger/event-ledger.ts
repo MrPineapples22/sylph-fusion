@@ -22,15 +22,15 @@ export class EventLedger {
   }
 
   getEvents(): readonly LedgerEvent[] {
-    return this.events;
+    return this.events.map(event => ({ ...event }));
   }
 
   getEventsByVault(vaultId: string): LedgerEvent[] {
-    return this.events.filter(e => e.vaultId === vaultId);
+    return this.events.filter(e => e.vaultId === vaultId).map(event => ({ ...event }));
   }
 
   getEventsByUser(userId: string): LedgerEvent[] {
-    return this.events.filter(e => e.userId === userId);
+    return this.events.filter(e => e.userId === userId).map(event => ({ ...event }));
   }
 
   append(params: Omit<LedgerEvent, 'eventId' | 'sequenceNumber' | 'previousLedgerHash' | 'currentLedgerHash'>): LedgerEvent {
@@ -53,7 +53,7 @@ export class EventLedger {
 
     this.events.push(completeEvent);
     this.currentHash = currentLedgerHash;
-    return completeEvent;
+    return { ...completeEvent };
   }
 
   /**
@@ -203,7 +203,7 @@ export class EventLedger {
     this.events = [];
     this.currentHash = GENESIS_HASH;
     for (const event of events) {
-      this.events.push(event);
+      this.events.push({ ...event });
     }
     const result = this.verifyChain();
     if (!result.valid) {

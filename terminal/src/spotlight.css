@@ -1,0 +1,439 @@
+/* ═══════════════════════════════════════════════════════════════
+   SYLPH SPOTLIGHT — Cyber-Obsidian Design System v2
+   Visual hierarchy: PRIME → DEVELOPING → VETOED
+   Semantic colors: verified #14F195, caution #F5BC66, danger #FF3B69
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Design tokens ────────────────────────────────────────── */
+.spotlight {
+  --s-bg: #090e13;
+  --s-panel: #101820;
+  --s-line: #26333d;
+  --s-text: #e6edf1;
+  --s-muted: #9cabb7;
+  --s-verified: #14F195;
+  --s-caution: #F5BC66;
+  --s-danger: #FF3B69;
+  --s-purple: #9945FF;
+  --s-cyan: #00C2FF;
+  --s-prime-glow: rgba(20, 241, 149, .18);
+  --s-prime-border: rgba(20, 241, 149, .45);
+  --s-veto-glow: rgba(255, 59, 105, .08);
+  --s-veto-border: rgba(164, 74, 88, .5);
+  background: var(--s-bg);
+  color: var(--s-text);
+  min-height: 100vh;
+  padding: 0 28px 28px;
+  font: 14px/1.5 Inter, Segoe UI, sans-serif;
+  box-sizing: border-box;
+}
+.spotlight * { box-sizing: border-box; }
+.spotlight button, .spotlight a, .spotlight input { touch-action: manipulation; }
+.spotlight button { font: inherit; cursor: pointer; }
+.spotlight button:disabled { cursor: not-allowed; opacity: .6; }
+.spotlight :focus-visible { outline: 3px solid #a3c8ff; outline-offset: 3px; }
+
+/* ── Micro-animation keyframes ───────────────────────────── */
+@keyframes spotlightPulse {
+  0%, 100% { box-shadow: 0 0 20px var(--s-prime-glow), inset 0 1px rgba(20,241,149,.06); }
+  50% { box-shadow: 0 0 32px rgba(20,241,149,.28), inset 0 1px rgba(20,241,149,.12); }
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes badgeGlow {
+  0%, 100% { text-shadow: 0 0 6px rgba(20,241,149,.5); }
+  50% { text-shadow: 0 0 12px rgba(20,241,149,.8); }
+}
+@keyframes dangerFlicker {
+  0%, 100% { border-color: var(--s-veto-border); }
+  50% { border-color: rgba(255,59,105,.35); }
+}
+
+/* ── Header ──────────────────────────────────────────────── */
+.spot-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 22px 0; border-bottom: 1px solid var(--s-line); gap: 16px;
+}
+.spot-brand {
+  font-size: 25px; letter-spacing: 5px; font-weight: 800;
+  color: white; text-decoration: none;
+}
+.spot-brand span { color: #66d8ac; }
+.spot-brand small { font-size: 9px; letter-spacing: 2px; display: block; color: var(--s-muted); }
+.spot-head nav { display: flex; gap: 24px; }
+.spotlight a { color: #b7c9d7; transition: color 140ms ease; }
+.spotlight a:hover { color: var(--s-cyan); }
+
+/* ── Safety strip ────────────────────────────────────────── */
+.spot-safety {
+  position: sticky; top: 0; z-index: 10;
+  background: #121c25; display: flex; flex-wrap: wrap;
+  gap: 12px 24px; padding: 12px 16px;
+  border: 1px solid var(--s-line); border-radius: 8px; margin-top: 16px;
+  font-size: 11px;
+}
+.spot-safety b { color: var(--s-caution); margin-left: 5px; }
+.spot-mode { letter-spacing: 1.5px; border-right: 1px solid var(--s-line); padding-right: 20px; }
+.spot-red { color: var(--s-danger); }
+.spot-muted, .spot-note { color: var(--s-muted); }
+
+/* ── Title area ──────────────────────────────────────────── */
+.spot-title {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 32px 0 24px;
+}
+.spot-eyebrow { font-size: 10px; letter-spacing: 3px; color: #86a9b7; }
+.spot-title h1 { font-size: 30px; letter-spacing: -1px; margin: 6px 0; }
+.spot-title p { color: var(--s-muted); margin: 5px 0; }
+.spot-count { text-align: right; }
+.spot-count b { display: block; font-size: 30px; }
+.spot-count span { font-size: 11px; color: var(--s-muted); }
+
+/* ── Layout grid ─────────────────────────────────────────── */
+.spot-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 1.05fr) minmax(280px, 1.25fr) minmax(250px, .9fr);
+  gap: 16px; align-items: start;
+}
+.spot-panel {
+  background: var(--s-panel); border: 1px solid var(--s-line);
+  border-radius: 12px; padding: 18px; min-width: 0;
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+.spot-panel:hover { border-color: rgba(153,69,255,.25); }
+.spot-panel-title {
+  display: flex; gap: 10px; align-items: center;
+  justify-content: space-between; margin-bottom: 14px;
+}
+.spot-panel h2 { font-size: 14px; margin: 0; }
+.spot-panel h3 { font-size: 13px; }
+.spot-panel-title > span { font-size: 10px; color: var(--s-muted); }
+
+/* ── Filter tabs ─────────────────────────────────────────── */
+.spot-filters { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 16px; }
+.spot-filters button {
+  border: 1px solid var(--s-line); background: transparent;
+  color: var(--s-muted); border-radius: 6px; font-size: 10px; padding: 8px;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+.spot-filters button:hover { border-color: var(--s-purple); color: var(--s-text); }
+.spot-filters button[aria-selected=true] {
+  background: #263541; color: white; border-color: #678292;
+}
+
+/* ── Token card grid ─────────────────────────────────────── */
+.spot-cards {
+  display: grid; gap: 10px; max-height: 660px; overflow: auto; padding: 3px;
+}
+.spot-token {
+  width: 100%; text-align: left;
+  background: #16212b; border: 1px solid #33424f;
+  border-radius: 9px; color: var(--s-text); padding: 14px;
+  transition: transform 180ms ease, box-shadow 200ms ease,
+              border-color 200ms ease, opacity 200ms ease, filter 200ms ease;
+  animation: fadeInUp 300ms ease backwards;
+  position: relative;
+}
+.spot-token:hover { transform: translateY(-2px); }
+.spot-token:active:not(:disabled) { transform: translateY(1px); }
+
+/* ── PRIME Spotlight Tier ────────────────────────────────── */
+.spot-token.prime {
+  border-color: var(--s-prime-border);
+  background: linear-gradient(145deg, #0f2a1f, #112a22 60%, #0d1f1a);
+  box-shadow: 0 0 24px var(--s-prime-glow), inset 0 1px rgba(20,241,149,.08);
+  animation: spotlightPulse 3s ease-in-out infinite, fadeInUp 300ms ease backwards;
+}
+.spot-token.prime:hover {
+  border-color: var(--s-verified);
+  box-shadow: 0 0 36px rgba(20,241,149,.32), 0 8px 24px rgba(0,0,0,.25),
+              inset 0 1px rgba(20,241,149,.12);
+  transform: translateY(-3px);
+}
+.spot-token.prime::before {
+  content: '';
+  position: absolute; inset: -1px; border-radius: 10px;
+  background: linear-gradient(135deg, rgba(20,241,149,.2), transparent 40%, transparent 60%, rgba(0,194,255,.1));
+  pointer-events: none; z-index: 0;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude; padding: 1px;
+}
+
+/* ── DEVELOPING Tier ─────────────────────────────────────── */
+.spot-token.developing {
+  border-color: #33424f;
+  opacity: .75;
+}
+.spot-token.developing:hover { opacity: 1; border-color: rgba(153,69,255,.3); }
+
+/* ── VETOED Tier — Smart Dimming ─────────────────────────── */
+.spot-token.vetoed {
+  opacity: .35;
+  filter: saturate(.3);
+  border-color: var(--s-veto-border);
+  animation: dangerFlicker 4s ease-in-out infinite;
+}
+.spot-token.vetoed:focus-visible,
+.spot-token.vetoed:hover,
+.spot-token.vetoed.selected {
+  opacity: .85; filter: saturate(.7);
+}
+
+/* ── Selected state ──────────────────────────────────────── */
+.spot-token.selected { outline: 2px solid rgba(161,184,201,.6); outline-offset: -1px; }
+
+/* ── Token card anatomy ──────────────────────────────────── */
+.spot-token-top {
+  display: flex; justify-content: space-between;
+  align-items: flex-start; gap: 8px;
+}
+.spot-token-top strong { font-size: 16px; overflow-wrap: anywhere; }
+.spot-token small { color: var(--s-muted); font-size: 10px; }
+
+/* ── Conviction badges ───────────────────────────────────── */
+.spot-badge {
+  font-size: 8px; letter-spacing: .6px; border-radius: 4px;
+  padding: 4px 6px; white-space: normal;
+  transition: background 200ms ease;
+}
+.spot-badge.prime {
+  background: linear-gradient(135deg, #184936, #1a5c3e);
+  color: var(--s-verified);
+  animation: badgeGlow 2s ease-in-out infinite;
+  font-weight: 700;
+}
+.spot-badge.high-conviction {
+  background: linear-gradient(135deg, #0d3326, #185a3a);
+  color: #a0f0c3;
+  text-shadow: 0 0 8px rgba(20,241,149,.6);
+  font-weight: 800;
+  letter-spacing: .8px;
+}
+.spot-badge.developing { background: #293744; color: #bdcbd5; }
+.spot-badge.vetoed { background: #552532; color: #ffc0c8; }
+
+/* ── Token metrics grid ──────────────────────────────────── */
+.spot-token-metrics {
+  display: grid; grid-template-columns: 1.2fr 1fr .8fr;
+  gap: 8px; padding: 15px 0;
+}
+.spot-token-metrics span { font-size: 9px; color: var(--s-muted); }
+.spot-token-metrics b {
+  display: block; font-size: 11px; color: var(--s-text);
+  margin-top: 3px; overflow-wrap: anywhere;
+}
+
+/* ── Verification pills ──────────────────────────────────── */
+.spot-pills { display: flex; gap: 5px; flex-wrap: wrap; }
+.spot-pills span { font-size: 9px; padding: 3px 6px; border-radius: 4px; transition: background 200ms ease; }
+.spot-pills .verified {
+  color: var(--s-verified); background: #174431;
+  box-shadow: inset 0 0 8px rgba(20,241,149,.08);
+}
+.spot-pills .pending { color: var(--s-caution); background: #3d3324; }
+.spot-pills .danger { color: var(--s-danger); background: #3d1f24; }
+
+/* ── Gate status indicators ──────────────────────────────── */
+.spot-gates {
+  display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px;
+}
+.spot-gate {
+  font-size: 8px; padding: 2px 5px; border-radius: 3px;
+  letter-spacing: .4px; display: inline-flex; align-items: center; gap: 3px;
+}
+.spot-gate::before {
+  content: ''; width: 5px; height: 5px; border-radius: 50%;
+  display: inline-block;
+}
+.spot-gate.pass { color: var(--s-verified); background: rgba(20,241,149,.08); }
+.spot-gate.pass::before { background: var(--s-verified); box-shadow: 0 0 4px var(--s-verified); }
+.spot-gate.fail { color: var(--s-danger); background: rgba(255,59,105,.08); }
+.spot-gate.fail::before { background: var(--s-danger); box-shadow: 0 0 4px var(--s-danger); }
+.spot-gate.pending { color: var(--s-caution); background: rgba(245,188,102,.08); }
+.spot-gate.pending::before { background: var(--s-caution); }
+
+/* ── Refusal reason ──────────────────────────────────────── */
+.spot-reason { font-size: 10px; color: #efb5aa; margin: 10px 0 0; }
+
+/* ── Confidence bar ──────────────────────────────────────── */
+.spot-confidence-bar {
+  height: 3px; border-radius: 2px; background: rgba(255,255,255,.06);
+  margin-top: 8px; overflow: hidden;
+}
+.spot-confidence-fill {
+  height: 100%; border-radius: 2px;
+  transition: width 400ms ease;
+}
+.spot-confidence-fill.high { background: linear-gradient(90deg, var(--s-verified), var(--s-cyan)); }
+.spot-confidence-fill.med { background: var(--s-caution); }
+.spot-confidence-fill.low { background: var(--s-danger); }
+
+/* ── Tooltip ─────────────────────────────────────────────── */
+.spot-tooltip {
+  position: absolute; z-index: 20;
+  background: #1a2530; border: 1px solid var(--s-line);
+  border-radius: 6px; padding: 8px 10px;
+  font-size: 10px; color: var(--s-text);
+  pointer-events: none; opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 150ms ease, transform 150ms ease;
+  max-width: 220px; line-height: 1.5;
+  box-shadow: 0 8px 24px rgba(0,0,0,.4);
+}
+.spot-tooltip.visible { opacity: 1; transform: translateY(0); }
+.spot-tooltip dt { color: var(--s-muted); font-size: 9px; }
+.spot-tooltip dd { margin: 0 0 4px; font-weight: 600; }
+
+/* ── Analysis panel ──────────────────────────────────────── */
+.spot-mint { overflow-wrap: anywhere; font: 10px/1.5 monospace; color: var(--s-muted); }
+.spot-price { font-size: 30px; margin-top: 25px; }
+.spot-price small { display: block; font-size: 10px; color: var(--s-muted); }
+
+.spot-chart-empty {
+  min-height: 180px; border: 1px dashed #324451; border-radius: 8px;
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; text-align: center; padding: 22px; margin: 20px 0;
+  background: linear-gradient(145deg, #14232e, #111922);
+}
+.spot-chart-empty > span { font-size: 30px; color: #68879a; }
+.spot-chart-empty strong { font-size: 12px; }
+.spot-chart-empty p, .spot-note { font-size: 11px; }
+.spot-chart-empty p { color: var(--s-muted); }
+
+.spot-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.spot-stats dt { font-size: 10px; color: var(--s-muted); }
+.spot-stats dd { margin: 3px 0; font-size: 13px; }
+
+.spot-checks { padding-left: 16px; color: var(--s-caution); font-size: 11px; }
+.spot-checks li { margin: 9px 0; }
+
+.spot-action, .spot-lock {
+  width: 100%; min-height: 48px;
+  background: #223440; border: 1px solid #546b7b;
+  border-radius: 7px; color: white; margin-top: 12px;
+  transition: background 200ms ease, border-color 200ms ease, box-shadow 200ms ease;
+}
+.spot-action:hover:not(:disabled) {
+  background: #2a4050; border-color: var(--s-cyan);
+  box-shadow: 0 0 12px rgba(0,194,255,.12);
+}
+.spot-action:active:not(:disabled) { transform: translateY(1px); }
+
+.spot-link { display: block; margin-top: 16px; font-size: 11px; text-align: center; }
+
+/* ── Empty state ─────────────────────────────────────────── */
+.spot-empty {
+  text-align: center; padding: 30px 14px; color: var(--s-muted); font-size: 12px;
+}
+.spot-empty > span { font-size: 30px; }
+
+/* ── Order area ──────────────────────────────────────────── */
+.spot-order { border-top: 1px solid var(--s-line); padding-top: 16px; }
+.spot-order p { font-size: 11px; color: var(--s-muted); }
+.spot-order > button:first-of-type {
+  width: 100%; min-height: 48px;
+  border: 1px solid #5c5962; border-radius: 7px;
+  background: #333943; color: #d3dce3;
+  transition: background 200ms ease, border-color 200ms ease;
+}
+.spot-order > button:first-of-type:hover:not(:disabled) {
+  background: #3d4553; border-color: var(--s-purple);
+}
+.spot-lock {
+  color: #ffb3b8; border-color: #85505b; background: #34212a;
+}
+.spot-lock:hover:not(:disabled) {
+  background: #4a2e38; box-shadow: 0 0 12px rgba(255,59,105,.1);
+}
+
+.spot-slide { display: block; padding: 16px 0; color: #ffc4c9; font-size: 12px; }
+.spot-slide input { width: 100%; height: 44px; accent-color: #ee8a9a; }
+
+/* ── Alerts ──────────────────────────────────────────────── */
+.spot-alerts { grid-column: 1/-1; }
+.spot-alert {
+  border-left: 3px solid #dc8b67; background: #382923;
+  color: #f4c6ad; padding: 12px 16px; font-size: 12px;
+  border-radius: 0 6px 6px 0; margin-bottom: 6px;
+}
+
+/* ── Notice and footer ───────────────────────────────────── */
+.spot-notice { font-size: 12px; color: #e4c79e; }
+.spot-footer {
+  display: flex; justify-content: space-between;
+  color: #7f96a5; font-size: 9px; letter-spacing: 1px; margin-top: 24px;
+}
+
+/* ── Positions ───────────────────────────────────────────── */
+.spot-position { border-bottom: 1px solid var(--s-line); padding: 12px 0; }
+.spot-position dl { font-size: 11px; display: grid; grid-template-columns: 1fr 1fr; }
+.spot-position dd { margin: 0; text-align: right; }
+
+/* ── Mobile nav ──────────────────────────────────────────── */
+.spot-mobile-nav { display: none; }
+
+/* ── System Status ───────────────────────────────────────── */
+.spot-system-status { grid-column: 1/-1; margin-bottom: 4px; }
+
+/* ── Responsive: tablet ──────────────────────────────────── */
+@media (max-width: 1100px) {
+  .spot-layout { grid-template-columns: 1fr 1fr; }
+  .spot-ledger { grid-column: 1/-1; }
+  .spot-system-status { grid-column: 1/-1; }
+}
+
+/* ── Responsive: mobile (≤ 650px) ────────────────────────── */
+@media (max-width: 650px) {
+  .spotlight { padding: 0 12px 92px; }
+  .spot-head { padding: 14px 0; align-items: flex-start; }
+  .spot-brand { font-size: 22px; }
+  .spot-brand small { font-size: 7px; }
+  .spot-head nav { flex-direction: column; gap: 6px; font-size: 10px; }
+  .spot-safety { top: 0; font-size: 10px; gap: 7px 12px; padding: 10px; border-radius: 6px; }
+  .spot-title { padding: 22px 0 16px; }
+  .spot-title h1 { font-size: 22px; }
+  .spot-title p { font-size: 11px; }
+  .spot-count { display: none; }
+  .spot-layout { display: block; }
+  .spot-layout > .spot-panel { display: none; }
+  .spot-layout > .mobile-active { display: block; }
+  .spot-panel { padding: 13px; }
+  .spot-cards { max-height: none; }
+  .spot-token { padding: 14px; }
+  .spot-filters button { min-height: 48px; }
+  .spot-action, .spot-lock, .spot-order > button:first-of-type { min-height: 48px; }
+  .spot-mobile-nav {
+    display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: #13212b; border-top: 1px solid #395161;
+    padding: 8px 4px max(8px, env(safe-area-inset-bottom)); z-index: 20;
+    gap: 2px;
+  }
+  .spot-mobile-nav button {
+    min-height: 44px; color: #acbfcd; background: transparent;
+    border: 0; font-size: 9px; padding: 4px 2px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .spot-mobile-nav button[aria-current=page] {
+    color: #b5efda; background: #203d39; border-radius: 7px; font-weight: 700;
+  }
+  .spot-footer { font-size: 8px; gap: 12px; }
+  .spot-price { font-size: 26px; }
+  .spot-token-top strong { max-width: 45%; }
+}
+
+/* ── Ultra-small (≤ 320px) ───────────────────────────────── */
+@media (max-width: 320px) {
+  .spotlight { padding: 0 8px 92px; }
+  .spot-token { padding: 10px; }
+  .spot-token-metrics { grid-template-columns: 1fr 1fr; gap: 6px; }
+  .spot-badge { font-size: 7px; padding: 3px 4px; }
+  .spot-filters button { font-size: 9px; padding: 6px; }
+}
+
+/* ── Reduced motion ──────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .spotlight * { animation: none !important; transition: none !important; }
+}

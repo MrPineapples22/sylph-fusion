@@ -2,76 +2,76 @@ import { CapacityEngine } from './capacity-engine.js';
 export class TradeConsensusEngine {
     capacityEngine = new CapacityEngine();
     evaluateConsensus(input) {
-        const hardVetoes = [];
-        // 1. Security Dimension (Hard Veto if BLOCK)
-        const securityVeto = input.securityResult.verdict === 'BLOCK';
-        if (securityVeto)
-            hardVetoes.push(`security_block: ${input.securityResult.reason}`);
+        const entryBlockers = [];
+        // Consensus has no Token Safety Authority. A security gateway block can
+        // prohibit entry, but cannot create a protected VETO or proof.
+        const securityBlocked = input.securityResult.verdict === 'BLOCK';
+        if (securityBlocked)
+            entryBlockers.push(`security_block: ${input.securityResult.reason}`);
         const securityDim = {
             passed: input.securityResult.verdict === 'ALLOW' || input.securityResult.verdict === 'LIMIT',
             score: 100 - input.securityResult.riskScore,
-            hardVeto: securityVeto,
+            blocksEntry: securityBlocked,
             reason: input.securityResult.reason,
         };
-        // 2. Risk Dimension (Hard Veto if REJECT)
-        const riskVeto = input.riskAuth.disposition === 'REJECT';
-        if (riskVeto)
-            hardVetoes.push(`risk_reject: ${input.riskAuth.rejectionReason}`);
+        const riskBlocked = input.riskAuth.disposition === 'REJECT';
+        if (riskBlocked)
+            entryBlockers.push(`risk_reject: ${input.riskAuth.rejectionReason}`);
         const riskDim = {
             passed: input.riskAuth.disposition !== 'REJECT',
             score: input.riskAuth.disposition === 'APPROVE' ? 90 : input.riskAuth.disposition === 'REDUCE' ? 60 : 0,
-            hardVeto: riskVeto,
+            blocksEntry: riskBlocked,
             reason: input.riskAuth.rejectionReason ?? 'Approved by risk engine',
         };
         // 3. Alpha & Momentum Dimensions
         const alphaDim = {
             passed: input.alphaScore >= 50,
             score: input.alphaScore,
-            hardVeto: false,
+            blocksEntry: false,
             reason: input.alphaScore >= 50 ? 'Strong predictive signal' : 'Weak alpha score',
         };
         const momentumDim = {
             passed: input.momentumScore >= 45,
             score: input.momentumScore,
-            hardVeto: false,
+            blocksEntry: false,
             reason: input.momentumScore >= 45 ? 'Positive momentum velocity' : 'Negative/neutral momentum',
         };
         // 4. Wallet Integrity Dimension
         const walletDim = {
             passed: input.walletIntegrityScore >= 50,
             score: input.walletIntegrityScore,
-            hardVeto: input.walletIntegrityScore < 20, // Hard veto on cluster collusion
+            blocksEntry: input.walletIntegrityScore < 20,
             reason: input.walletIntegrityScore >= 50 ? 'Clean wallet graph' : 'Cluster/funder flags detected',
         };
-        if (walletDim.hardVeto)
-            hardVetoes.push('wallet_integrity_severe_failure');
+        if (walletDim.blocksEntry)
+            entryBlockers.push('wallet_integrity_severe_failure');
         // 5. Liquidity & Execution Dimensions
         const liqPassed = input.poolLiquidityLamports >= 1000000000n;
         const liquidityDim = {
             passed: liqPassed,
             score: liqPassed ? 85 : 30,
-            hardVeto: !liqPassed,
+            blocksEntry: !liqPassed,
             reason: liqPassed ? 'Liquidity depth adequate' : 'Insufficient pool liquidity',
         };
-        if (liquidityDim.hardVeto)
-            hardVetoes.push('shallow_liquidity_veto');
+        if (liquidityDim.blocksEntry)
+            entryBlockers.push('shallow_liquidity');
         const execDim = {
             passed: input.executionQualityScore >= 50,
             score: input.executionQualityScore,
-            hardVeto: false,
+            blocksEntry: false,
             reason: `Execution score: ${input.executionQualityScore}/100`,
         };
         // 6. Regime & Portfolio Fit Dimensions
         const regimeDim = {
             passed: input.regimeScore >= 40,
             score: input.regimeScore,
-            hardVeto: false,
+            blocksEntry: false,
             reason: `Regime score: ${input.regimeScore}/100`,
         };
         const portfolioDim = {
             passed: input.portfolioFitScore >= 50,
             score: input.portfolioFitScore,
-            hardVeto: false,
+            blocksEntry: false,
             reason: `Portfolio fit: ${input.portfolioFitScore}/100`,
         };
         // 7. Calculate Signal Disagreement (Variance between predictive signals)
@@ -89,14 +89,15 @@ export class TradeConsensusEngine {
         const maxCapacityLamports = this.capacityEngine.calculateMaxAuthorizedPosition(input.capacityConstraints, authorizedCap);
         const stressReport = this.capacityEngine.runAdversarialSimulation(maxCapacityLamports, input.poolLiquidityLamports);
         if (stressReport.catastrophicFailureDetected) {
-            hardVetoes.push('adversarial_simulation_catastrophic_failure');
+            entryBlockers.push('adversarial_simulation_catastrophic_failure');
         }
         const { edgeAfterCapacityBps, degradationBps, viable } = this.capacityEngine.calculateEdgeAfterCapacity(input.expectedEdgeBps, maxCapacityLamports, input.poolLiquidityLamports);
         if (!viable) {
-            hardVetoes.push(`negative_or_insufficient_edge_after_capacity_${edgeAfterCapacityBps}bps`);
+            entryBlockers.push(`negative_or_insufficient_edge_after_capacity_${edgeAfterCapacityBps}bps`);
         }
-        // FUNDAMENTAL INVARIANT: Hard vetoes CANNOT be overridden by high alpha
-        const overallAccepted = hardVetoes.length === 0 && disagreementScore < 50;
+        // Domain-local blocks cannot be overridden by alpha, but they remain
+        // domain-local operational decisions rather than token guilt.
+        const overallAccepted = entryBlockers.length === 0 && disagreementScore < 50;
         return {
             candidateId: input.candidateId,
             mint: input.mint,
@@ -113,7 +114,7 @@ export class TradeConsensusEngine {
                 portfolioFit: portfolioDim,
                 risk: riskDim,
             },
-            hardVetoes,
+            entryBlockers,
             maxCapacityLamports: overallAccepted ? maxCapacityLamports : 0n,
             expectedEdgeBps: input.expectedEdgeBps,
             expectedExecutionDegradationBps: degradationBps,

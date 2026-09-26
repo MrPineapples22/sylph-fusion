@@ -1,7 +1,11 @@
 export interface DimensionVerdict {
   passed: boolean;
   score: number; // 0 to 100
-  hardVeto: boolean;
+  /**
+   * This dimension prevents an entry in this consensus pass.  It is not a
+   * token-safety finding and must never be projected as a VETO.
+   */
+  blocksEntry: boolean;
   reason: string;
 }
 
@@ -21,7 +25,8 @@ export interface StructuredDecisionPacket {
     portfolioFit: DimensionVerdict;
     risk: DimensionVerdict;
   };
-  hardVetoes: string[];
+  /** Domain-local reasons that prevent this proposed entry. */
+  entryBlockers: string[];
   maxCapacityLamports: bigint;
   expectedEdgeBps: number;
   expectedExecutionDegradationBps: number;

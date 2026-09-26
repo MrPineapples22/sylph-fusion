@@ -101,3 +101,21 @@ test('Visual state regression: INFORMATIONAL_RISK in live mode prevents executab
   assert.match(riskAction.infoBadgeText, /INFORMATIONAL ONLY/);
   assert.match(riskAction.explanation, /No live emergency close endpoint exists/);
 });
+
+test('Visual state regression: unobserved / null feed does not fabricate STALE 0.0s alert', () => {
+  const alertsNull = extractSystemAlerts({
+    gatePassed: true,
+    feedFresh: false,
+    feedAgeMs: null,
+  });
+  const staleAlertNull = alertsNull.find(a => a.type === 'feed_stale');
+  assert.equal(staleAlertNull, undefined, 'Unobserved feed must not emit feed_stale with null age');
+
+  const alertsZero = extractSystemAlerts({
+    gatePassed: true,
+    feedFresh: false,
+    feedAgeMs: 0,
+  });
+  const staleAlertZero = alertsZero.find(a => a.type === 'feed_stale');
+  assert.equal(staleAlertZero, undefined, 'Unobserved feed must not emit feed_stale with 0.0s age');
+});

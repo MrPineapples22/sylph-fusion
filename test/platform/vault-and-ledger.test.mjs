@@ -133,6 +133,19 @@ test('EventLedger: rejects tampered event payload', () => {
   assert.throws(() => new EventLedger(events), /Hash mismatch/);
 });
 
+test('EventLedger: returned events cannot mutate the canonical hash chain', () => {
+  const ledger = new EventLedger();
+  const event = ledger.append({
+    timestamp: 1000, type: 'DEPOSIT', userId: 'usr-alice', vaultId: 'vlt-1', asset: 'SOL',
+    quantity: '100', solValueLamports: 100n, source: 'treasury', reason: 'Initial funding',
+  });
+  event.solValueLamports = 1n;
+  const read = ledger.getEvents();
+  read[0].solValueLamports = 2n;
+  assert.equal(ledger.getEvents()[0].solValueLamports, 100n);
+  assert.equal(ledger.verifyChain().valid, true);
+});
+
 test('DoubleEntryJournal: enforces debit-credit balance and conservation invariance', () => {
   const journal = new DoubleEntryJournal();
 
@@ -167,6 +180,25 @@ test('DoubleEntryJournal: enforces debit-credit balance and conservation invaria
       'Illegal imbalanced entry'
     );
   }, /Double-entry imbalance/);
+});
+
+test('DoubleEntryJournal: settlement replay is idempotent and conflicting reuse is rejected', () => {
+  const journal = new DoubleEntryJournal();
+  const first = journal.postSettlementPayout('settlement:sig-123', 250_000n, 'Confirmed chain settlement');
+  const balances = journal.getAllBalances();
+
+  const replay = journal.postSettlementPayout('settlement:sig-123', 250_000n, 'Confirmed chain settlement');
+  assert.equal(replay, first, 'an identical replay must return the original journal entry');
+  assert.deepEqual(journal.getAllBalances(), balances, 'an identical replay must not apply balances twice');
+
+  assert.throws(
+    () => journal.postSettlementPayout('settlement:sig-123', 250_001n, 'Confirmed chain settlement'),
+    /Conflicting replay/
+  );
+  assert.throws(
+    () => journal.postSettlementPayout('', 1n),
+    /eventId is required/
+  );
 });
 
 test('NavEngine: deposits do not count as profit and HWM governs performance fees', () => {

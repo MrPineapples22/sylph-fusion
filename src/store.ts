@@ -1,6 +1,7 @@
 import { Worker } from 'node:worker_threads';
 import type { State } from './core.js';
-export class Store {
+import type { DurableSigningJournal, PreparedSigningIntent } from './platform/signing/durable-live-signer.js';
+export class Store implements DurableSigningJournal {
   private worker: Worker;
   private seq = 0;
   private failure: Error | null = null;
@@ -29,6 +30,12 @@ export class Store {
   }
   async load(): Promise<State | null> { const text = await this.call('load'); return text ? JSON.parse(text) : null; }
   async save(state: State, event?: string) { await this.call('save', JSON.stringify(state), event); }
+  async prepareSigningIntent(intent: PreparedSigningIntent): Promise<void> {
+    await this.call('prepare-signing', JSON.stringify(intent));
+  }
+  async markSigningIntentSigned(economicIntentId: string, messageSha256: string, signatureBase64: string): Promise<void> {
+    await this.call('mark-signed', JSON.stringify({ economicIntentId, messageSha256, signatureBase64 }));
+  }
   async backup(destinationPath: string): Promise<void> { await this.call('backup', destinationPath); }
   async pruneAudit(maxAgeMs?: number): Promise<void> { await this.call('prune', maxAgeMs ? String(maxAgeMs) : undefined); }
   close(): Promise<void> {

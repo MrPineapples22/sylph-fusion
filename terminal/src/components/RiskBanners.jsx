@@ -26,7 +26,10 @@ export function RiskBanners({
   onPanicClose = null,
   onResume = null,
 }) {
-  const isFeedStale = !feedFresh || feedAgeMs > 5000;
+  const isAgeValid = typeof feedAgeMs === 'number' && Number.isFinite(feedAgeMs) && feedAgeMs > 0;
+  const isFeedNeverReceived = feedAgeMs === null || feedAgeMs === undefined || (!isAgeValid && !feedFresh);
+  const isFeedStale = isAgeValid && feedAgeMs > 5000;
+  const isFeedInitializing = !isFeedStale && (!feedFresh || !isAgeValid);
   const isRpcThrottled = rpcDropRate >= 5;
 
   const banners = [];
@@ -111,21 +114,30 @@ export function RiskBanners({
       icon: <TrendingUp size={18} />,
       title: 'CURVE COMPLETED / GRADUATED (complete: true)',
       reason: 'Bonding curve reports complete: true. AMM bonding curve trading is finalized; liquidity migrated to Raydium.',
-      action: 'AMM bonding curve entries blocked. Positions route through Jupiter / Raydium post-migration.',
+      action: 'Bonding-curve routing is retired. A verified post-migration AMM route continues through the normal safety checks.',
     });
   }
 
-  // 6. Stale Market Data
+  // 6. Market Data Freshness / Availability
   if (isFeedStale) {
     banners.push({
       id: 'feed-stale',
       level: 'warn',
       icon: <Radio size={18} />,
       title: 'STALE MARKET OBSERVATIONS',
-      reason: feedAgeMs > 5000
-        ? `Market feed has had no ticks for ${(feedAgeMs / 1000).toFixed(1)}s (threshold: 5s). Price marks may be delayed.`
-        : `Market feed observations initializing or pending fresh cluster ticks (${(feedAgeMs / 1000).toFixed(1)}s).`,
+      reason: `Market feed has had no ticks for ${(feedAgeMs / 1000).toFixed(1)}s (threshold: 5s). Price marks may be delayed.`,
       action: 'Checking cluster feed connection. Automated orders pause automatically until fresh ticks arrive.',
+    });
+  } else if (isFeedInitializing) {
+    banners.push({
+      id: 'feed-initializing',
+      level: 'info',
+      icon: <Radio size={18} />,
+      title: isFeedNeverReceived ? 'MARKET EVIDENCE NEVER RECEIVED' : 'MARKET FEED INITIALIZING',
+      reason: isFeedNeverReceived
+        ? 'No validated market observations have been received from authoritative cluster feeds yet.'
+        : `Awaiting fresh validated cluster ticks (feed age: ${(feedAgeMs / 1000).toFixed(1)}s).`,
+      action: 'Connecting to cluster feed and validating subscriptions. Pre-trade gates remain fail-closed.',
     });
   }
 

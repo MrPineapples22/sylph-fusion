@@ -114,10 +114,10 @@ test('evaluateTokenDecision fails safe to pending and avoids inferred values whe
   assert.equal(res.isTelemetryPending, true);
   assert.equal(res.decisionBadge, 'DECISION: PENDING TELEMETRY');
   assert.equal(res.decisionTone, 'decision-pending');
-  assert.match(res.blockedExplanation, /Awaiting real candidate curve and dual-snapshot drift telemetry/);
+  assert.match(res.blockedExplanation, /Awaiting verified mint\/freeze authority, candidate curve and dual-snapshot drift telemetry/);
 });
 
-test('evaluateTokenDecision prioritizes confirmed rejections over pending telemetry', () => {
+test('historical rejection logs cannot become current token authority', () => {
   const asset = { id: 'POOL_REJ', symbol: 'REJ' };
 
   const res = evaluateTokenDecision({
@@ -125,10 +125,10 @@ test('evaluateTokenDecision prioritizes confirmed rejections over pending teleme
     rejectionReason: 'all RPC endpoints failed',
   });
 
-  assert.equal(res.blocked, true);
-  assert.equal(res.isTelemetryPending, false);
-  assert.equal(res.decisionBadge, 'DECISION: BLOCKED');
-  assert.match(res.blockedExplanation, /all RPC endpoints failed/);
+  assert.equal(res.blocked, false);
+  assert.equal(res.isTelemetryPending, true);
+  assert.equal(res.decisionBadge, 'DECISION: PENDING TELEMETRY');
+  assert.doesNotMatch(res.blockedExplanation, /all RPC endpoints failed/);
 });
 
 test('evaluateTokenDecision identifies migrated AMM pools and surfaces pool reserves', () => {
@@ -153,8 +153,22 @@ test('evaluateTokenDecision identifies migrated AMM pools and surfaces pool rese
   assert.equal(res.realReserveSource, 'amm_pool_reserves');
   assert.equal(res.isCurveKnown, true);
   assert.equal(res.isCurveComplete, true);
-  assert.equal(res.blocked, true); // Curve completed rejects bonding-curve entry
-  assert.match(res.blockedExplanation, /CURVE_COMPLETED/);
+  // An observed Raydium pool is a post-graduation venue, not an automatic
+  // curve-complete rejection.  Missing authority/drift evidence still keeps
+  // it pending rather than eligible.
+  assert.equal(res.blocked, false);
+  assert.equal(res.isRaydiumActive, true);
+  assert.equal(res.isTelemetryPending, true);
+});
+
+test('PumpSwap is an observed AMM venue and never waits specifically for Raydium', () => {
+  const res = evaluateTokenDecision({ asset: {
+    id: 'POOL_PUMPSWAP', symbol: 'PUMP_PAIR', dex: 'pumpswap',
+    reserves: { sol: 20_000_000_000n, token: 400_000_000_000_000n },
+  }});
+  assert.equal(res.isCurveComplete, true);
+  assert.equal(res.isRaydiumActive, true);
+  assert.equal(res.isMigrationPending, false);
 });
 
 import { evaluateDualSnapshotDrift, assetToPoolState, syncAssetsToEngine } from '../src/pool-sync.js';
@@ -182,6 +196,8 @@ test('evaluateDualSnapshotDrift computes real price drift and liquidity drop bet
   // When supplied to evaluateTokenDecision on an active curve
   const asset = {
     id: 'POOL_ACTIVE',
+    mintAuthority: false,
+    freezeAuthority: false,
     symbol: 'ACT',
     price: 0.000015,
     reserves: s2.reserves,
@@ -236,4 +252,3 @@ test('syncAssetsToEngine pre-seeds consecutive snapshots from asset history', ()
   assert.equal(drift.passed, true);
   assert.ok(drift.priceDriftBps <= 200);
 });
-

@@ -50,6 +50,13 @@ export interface EvidenceCouncilVerdict {
   readonly meanConfidence: number;
   readonly contradictionDetected: boolean;
   readonly contradictionDetails?: string;
+  /**
+   * Strategy-level disqualifiers and agent skeptic blockers.
+   * NOTE: This is strictly strategy evaluation disqualification, NOT a protected token VETO.
+   * Protected token VETO requires a certified HardVetoProof from TokenSafetyAuthority.
+   */
+  readonly strategyDisqualifiers: readonly string[];
+  /** @deprecated Use strategyDisqualifiers. Skeptic opinion or missing confidence is not token guilt. */
   readonly hardVetoes: readonly string[];
   readonly authorizedToProceed: boolean;
   readonly evaluatedAtMs: number;

@@ -1,14 +1,14 @@
 import { existsSync } from 'node:fs';
-import { readFile, mkdir } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createServer, type Server } from 'node:net';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Keypair, PublicKey } from '@solana/web3.js';
 import { bondingCurvePda } from '@pump-fun/pump-sdk';
 import { config, type Config } from './config.js';
-import { exitDecision, log, mulBps, settle, recordFailure, recordEquity, pruneRiskState, recordResult, recentEvents, type State, type Position } from './core.js';
+import { exitDecision, log, mulBps, settle, recordFailure, recordEquity, pruneRiskState, recordResult, recentEvents, type State, type Position, type Pending } from './core.js';
 import { startDashboard } from './dashboard.js';
 import { RpcPool } from './rpc.js';
 import { Feed, type MarketEvent } from './feed.js';
@@ -32,7 +32,14 @@ import {
 
 type Candidate = {
   mint: string;
+  /** Economic developer identity from the create event, never the launch user. */
   creator: string;
+  launchUser: string | null;
+  creationSlot: number;
+  creationSignature: string;
+  candidateGenerationId: string;
+  chainCreatedAtMs: number | null;
+  firstObservedAtMs: number;
   born: number;
   slot: number;
   eventSignature?: string;
@@ -111,7 +118,7 @@ export class Engine {
   private startedAt = Date.now();
   private loopLag = monitorEventLoopDelay({ resolution: 20 });
   private entryBuildInFlight = false;
-  private rejectionCounts = new Map<string, number>();
+  rejectionCounts = new Map<string, number>();
   private blockedExits = new Map<string, { blockedAt: number; reason: string; triggerValue: bigint; stage: number }>();
   private lastCheckpoint = Date.now();
   readonly feed: Feed;
@@ -233,46 +240,51 @@ export class Engine {
     return snapshot;
   }
 
-  private recordRejection(mint: string, reason: string, meta?: Record<string, unknown>) {
+  /** A denied entry is not necessarily a token-safety conclusion. */
+  private recordRestriction(mint: string, scope: 'ACTOR'|'VENUE'|'MARKET'|'STRATEGY'|'PORTFOLIO'|'EXECUTION'|'MODEL'|'SYSTEM', effect: 'WAIT'|'QUARANTINE'|'BLOCK_NEW_ENTRY', reason: string, meta?: Record<string, unknown>) {
+    if (!this.rejectionCounts) this.rejectionCounts = new Map();
     this.rejectionCounts.set(reason, (this.rejectionCounts.get(reason) ?? 0) + 1);
-    const data = { mint, reason, ...meta };
-    log('entry_rejected', data);
-    this.sessionLogger?.writeEvent('entry_rejected', data);
-    const c = this.candidates.get(mint);
-    if (c) {
-      this.snapshotCandidate(c, 'rejected', reason, meta as any);
-    }
+    const data = { mint, scope, effect, reason, ...meta };
+    log('entry_restricted', data);
+    this.sessionLogger?.writeEvent('entry_restricted', data);
+    const c = this.candidates?.get(mint);
+    if (c) this.snapshotCandidate(c, 'notEvaluated', `${scope}:${reason}`, meta as any);
   }
-  private emitCheckpoint() {
-    const uptimeMs = Date.now() - this.startedAt;
+  recordRejection(mint: string, reason: string, meta?: Record<string, unknown>) {
+    this.recordRestriction(mint, 'PORTFOLIO', 'BLOCK_NEW_ENTRY', reason, meta);
+  }
+  emitCheckpoint() {
+    if (!this.rejectionCounts) this.rejectionCounts = new Map();
+    if (!this.blockedExits) this.blockedExits = new Map();
+    const uptimeMs = Date.now() - (this.startedAt || Date.now());
     const rejections = Object.fromEntries(this.rejectionCounts.entries());
-    const openPositions = Object.values(this.state.positions).map(p => ({
+    const openPositions = Object.values(this.state?.positions || {}).map(p => ({
       mint: p.mint,
       qty: p.qty,
       cost: p.cost,
       peak: p.peak,
       stage: p.stage,
       panic: p.panic,
-      mark: this.marks.get(p.mint)?.value ?? null,
+      mark: this.marks?.get(p.mint)?.value ?? null,
     }));
     const data = {
       uptimeMs,
       uptimeHours: +(uptimeMs / 3_600_000).toFixed(2),
-      feedHealthy: this.feed.healthy(),
-      feedLastSlot: this.feed.slot,
-      feedLastEventAgeMs: Date.now() - this.feed.last,
-      cash: this.state.cash,
-      dayPnl: this.state.dayPnl,
-      day: this.state.day,
-      halted: this.state.halted,
-      haltReason: this.state.risk?.haltReason ?? null,
+      feedHealthy: this.feed?.healthy?.() ?? false,
+      feedLastSlot: this.feed?.slot ?? 0,
+      feedLastEventAgeMs: this.feed ? Date.now() - this.feed.last : 0,
+      cash: this.state?.cash,
+      dayPnl: this.state?.dayPnl,
+      day: this.state?.day,
+      halted: this.state?.halted,
+      haltReason: this.state?.risk?.haltReason ?? null,
       openPositionsCount: openPositions.length,
       openPositions,
-      candidatesTracked: this.candidates.size,
+      candidatesTracked: this.candidates?.size ?? 0,
       rejectionTaxonomy: rejections,
       blockedExitsCount: this.blockedExits.size,
-      totalFills: this.state.performance?.count ?? 0,
-      realizedPnl: this.state.performance?.realized ?? '0',
+      totalFills: this.state?.performance?.count ?? 0,
+      realizedPnl: this.state?.performance?.realized ?? '0',
     };
     log('soak_checkpoint', data);
     this.sessionLogger?.writeEvent('soak_checkpoint', data);
@@ -358,19 +370,31 @@ export class Engine {
     const mint = d.mint?.toBase58?.();
     if (!mint) return;
     if (name === 'createevent' && !this.candidates.has(mint)) {
-      const creator = d.user?.toBase58?.();
-      if (!creator) return;
+      // Pump's launch user and creator are distinct roles.  Using `user` here
+      // turns a first buyer into the developer and fabricates later dump risk.
+      const creator = d.creator?.toBase58?.() ?? '';
+      const launchUser = d.user?.toBase58?.() ?? null;
       const chainTime = Number(d.timestamp?.toString()) * 1000;
       if (!Number.isFinite(chainTime) || chainTime > e.received + 10_000 || e.received - chainTime > this.cfg.MAX_AGE_MS) return;
       if (this.candidates.size >= this.cfg.MAX_TRACKED) this.candidates.delete(this.candidates.keys().next().value!);
-      this.candidates.set(mint, { mint, creator, born: e.received, slot: e.slot, eventSignature: e.signature, buyers: new Map(), buy: 0n, sell: 0n, buyCount: 0, sellCount: 0, devSold: false, next: 0 });
+      this.candidates.set(mint, {
+        mint, creator, launchUser,
+        creationSlot: e.slot, creationSignature: e.signature,
+        candidateGenerationId: deterministicCandidateId(mint, e.slot, e.signature),
+        chainCreatedAtMs: Number.isFinite(chainTime) ? chainTime : null,
+        firstObservedAtMs: e.received,
+        born: Number.isFinite(chainTime) ? chainTime : e.received,
+        slot: e.slot, eventSignature: e.signature, buyers: new Map(), buy: 0n, sell: 0n,
+        buyCount: 0, sellCount: 0, devSold: false, next: 0,
+      });
     }
     if (name === 'tradeevent') {
       const user = d.user?.toBase58?.(), p = this.state.positions[mint], c = this.candidates.get(mint);
       if (d.isBuy === false && user && p?.creator === user) { p.panic = true; log('creator_sell_detected', { mint }); }
-      if (c && e.slot >= c.slot) {
-        c.slot = e.slot;
-        c.eventSignature = e.signature;
+      if (c) {
+        // Do not discard an otherwise valid late event.  The feed journal, not
+        // arrival order, owns canonical ordering and replay.
+        if (e.slot >= c.slot) { c.slot = e.slot; c.eventSignature = e.signature; }
         if (!d.isBuy && user === c.creator) c.devSold = true;
         const amount = BigInt((d.solAmount ?? d.quoteAmount ?? 0).toString());
         if (amount < 0n) return;
@@ -486,7 +510,7 @@ export class Engine {
           const p = this.state.positions[order.mint];
           if (p) {
             const c = this.candidates.get(order.mint);
-            p.candidateId = c ? deterministicCandidateId(c.mint, c.slot, c.eventSignature || `eval-${c.mint}-${c.slot}`) : `order-${order.signature}`;
+            p.candidateId = c ? c.candidateGenerationId : `order-${order.signature}`;
             p.entrySlot = c?.slot || this.feed.slot;
           }
           if (this.candidates.get(order.mint)?.devSold) this.state.positions[order.mint].panic = true;
@@ -519,12 +543,30 @@ export class Engine {
           recordFailure(this.state, Date.now(), this.cfg.FAILURE_WINDOW_MS, this.cfg.FAILURE_HALT_COUNT);
           this.state.dayPnl = String(BigInt(this.state.dayPnl) - (result.fee ?? 0n)); this.state.cash = String(BigInt(this.state.cash) - (result.fee ?? 0n));
         }
+        if (result.status === 'expired' && this.cfg.MODE === 'live') {
+          // Block both entries and automated exits: block-height expiry proves only
+          // that this wire can no longer land, not that wallet/ledger state agrees.
+          this.state.halted = true;
+          this.state.risk ??= { failures: [], equity: [], highWater: this.state.cash };
+          this.state.risk.haltReason = 'LIVE_RECONCILIATION_UNRESOLVED';
+          this.state.reconciliationBlocked = {
+            signature: order.signature,
+            mint: order.mint,
+            side: order.side,
+            lastValidBlockHeight: order.lastValidBlockHeight,
+            detectedAt: Date.now(),
+            reason: 'LIVE_RECONCILIATION_UNRESOLVED',
+          };
+          const unresolved = { ...this.state.reconciliationBlocked };
+          log('live_reconciliation_unresolved', unresolved);
+          this.sessionLogger?.writeEvent('live_reconciliation_unresolved', unresolved);
+        }
         this.state.pending = null;
         await this.store.save(this.state, `${result.status}:${order.signature}`);
         const termData = { signature: order.signature, status: result.status, mint: order.mint };
         log('order_terminal', termData);
         this.sessionLogger?.writeEvent('order_terminal', termData);
-      } else await this.executor.broadcast(order);
+      } else await this.persistAndBroadcast(order);
       return;
     }
     const positions = Object.values(this.state.positions);
@@ -607,10 +649,10 @@ export class Engine {
     // Track candidates that reached min age but failed initial buyer or volume filters
     for (const c of this.candidates.values()) {
       if (Date.now() - c.born >= this.cfg.MIN_AGE_MS && !this.state.positions[c.mint] && !this.state.closed[c.mint]) {
-        if (c.buyers.size < this.cfg.MIN_BUYERS && c.lastSnapshotDisposition !== 'rejected') {
-          this.snapshotCandidate(c, 'rejected', 'insufficient_buyers');
-        } else if (c.buy <= c.sell * 2n && c.lastSnapshotDisposition !== 'rejected') {
-          this.snapshotCandidate(c, 'rejected', 'insufficient_buy_volume_ratio');
+        if (c.buyers.size < this.cfg.MIN_BUYERS && c.lastSnapshotDisposition !== 'notEvaluated') {
+          this.recordRestriction(c.mint, 'STRATEGY', 'WAIT', 'insufficient_buyers');
+        } else if (c.buy <= c.sell * 2n && c.lastSnapshotDisposition !== 'notEvaluated') {
+          this.recordRestriction(c.mint, 'STRATEGY', 'WAIT', 'insufficient_buy_volume_ratio');
         }
       }
     }
@@ -654,12 +696,14 @@ export class Engine {
       };
       if (!drift.passed) {
         candidate.next = Date.now() + 5_000;
-        this.recordRejection(candidate.mint, drift.reason ?? 'reserve_drift', candidateMeta);
+        this.recordRestriction(candidate.mint, 'MARKET', 'WAIT', drift.reason ?? 'reserve_drift', candidateMeta);
         return;
       }
       if (s.curve.complete || s.curve.isMayhemMode || candidate.devSold || !this.feed.healthy() || this.stopped) {
-        const reason = s.curve.complete ? 'curve_complete' : s.curve.isMayhemMode ? 'mayhem_mode' : candidate.devSold ? 'dev_sold' : !this.feed.healthy() ? 'feed_unhealthy' : 'engine_stopped';
-        this.recordRejection(candidate.mint, reason, candidateMeta);
+        const scope: 'ACTOR'|'VENUE'|'SYSTEM' = s.curve.complete || s.curve.isMayhemMode ? 'VENUE' : candidate.devSold ? 'ACTOR' : 'SYSTEM';
+        const effect: 'WAIT'|'QUARANTINE' = candidate.devSold ? 'QUARANTINE' : 'WAIT';
+        const reason = s.curve.complete ? 'curve_complete_transition' : s.curve.isMayhemMode ? 'mayhem_mode' : candidate.devSold ? 'developer_disposition_unverified' : !this.feed.healthy() ? 'feed_unhealthy' : 'engine_stopped';
+        this.recordRestriction(candidate.mint, scope, effect, reason, candidateMeta);
         return;
       }
       const walletPubkey = (this.executor as any)?.walletPublicKey || (this.executor as any)?.key?.publicKey;
@@ -667,7 +711,7 @@ export class Engine {
       const riskBudget = cash * BigInt(this.cfg.MAX_SPECULATIVE_RISK_BPS) / 10_000n;
       entryAmount = entryAmount < riskBudget ? entryAmount : riskBudget;
       if (entryAmount <= 0n || cash < entryAmount + BigInt(this.cfg.RESERVE_LAMPORTS)) {
-        this.recordRejection(candidate.mint, 'insufficient_cash_or_reserve', candidateMeta);
+        this.recordRestriction(candidate.mint, 'PORTFOLIO', 'BLOCK_NEW_ENTRY', 'insufficient_cash_or_reserve', candidateMeta);
         return;
       }
       const snapshot = this.snapshotCandidate(candidate, 'cleared', null, { ...candidateMeta, s });
@@ -694,7 +738,7 @@ export class Engine {
       await this.trade(s, 'buy', entryAmount, candidate.creator, 0, 'buyer-accumulation', false, candidate);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
-      this.recordRejection(candidate.mint, reason, {
+      this.recordRestriction(candidate.mint, 'SYSTEM', 'WAIT', `candidate_evaluation_error:${reason}`, {
         curve: candidate.curve,
         drift: candidate.drift,
         devSold: candidate.devSold,
@@ -704,6 +748,12 @@ export class Engine {
     }
   }
   private async trade(s: Snapshot, side: 'buy' | 'sell', amount: bigint, creator: string, stage: number, reason: string, panic: boolean, candidate?: Candidate) {
+    // An expiry leaves economic outcome unresolved until an operator performs
+    // finalized wallet SOL/token reconciliation. Never automate another mutation.
+    if (this.state.reconciliationBlocked) {
+      log('order_blocked_by_reconciliation', { mint: s.mint.toBase58(), side, reason: this.state.reconciliationBlocked.reason });
+      return;
+    }
     if (side === 'buy' && candidate && !this.canSubmitEntry(candidate, s, amount)) return;
     if (side === 'buy') this.entryBuildInFlight = true;
     let built;
@@ -795,16 +845,43 @@ export class Engine {
       }
     } else {
       // Durability must succeed before any signed bytes leave this process.
-      await this.store.save(this.state, `prepared:${built.pending.signature}`);
-      await this.executor.broadcast(built.pending);
+      await this.persistAndBroadcast(built.pending);
     }
   }
+
+  async persistAndBroadcast(order: Pending) {
+    if (this.state.pending !== order) throw new Error('Pending order changed before persistence');
+    // Reassert durability on retries too: an earlier save may have failed while
+    // leaving the signed order in memory. UNKNOWN retains the same signed bytes.
+    await this.store.save(this.state, `prepared:${order.signature}`);
+    if (this.state.pending !== order) throw new Error('Pending order changed during persistence');
+    const outcome = await this.executor.broadcast(order);
+    if (!outcome || !['ACCEPTED', 'UNKNOWN', 'NOT_SENT'].includes(outcome.status)) {
+      throw new Error('Execution authority returned an invalid delivery outcome');
+    }
+    const attempts = order.deliveryAttempts ??= [];
+    attempts.push({ status: outcome.status, attemptedAt: outcome.attemptedAt, bundleId: outcome.bundleId, reason: outcome.reason });
+    if (attempts.length > 32) attempts.splice(0, attempts.length - 32);
+    await this.store.save(this.state, `delivery:${outcome.status}:${order.signature}`);
+    return outcome;
+  }
 }
+/**
+ * This distribution has no reviewed live execution coordinator. Keep the
+ * startup boundary explicit so a future wiring change cannot turn a config
+ * value into execution authority.
+ */
+export function assertPaperRuntime(cfg: Pick<Config, 'MODE'>): void {
+  if (cfg.MODE !== 'paper') {
+    throw new Error('PAPER_ONLY_RUNTIME: live execution is unavailable in this build');
+  }
+}
+
 async function wallet(cfg: Config): Promise<Keypair> {
   if (cfg.MODE === 'paper') return Keypair.fromSeed(Buffer.alloc(32, 7));
-  const bytes = JSON.parse(await readFile(cfg.KEYPAIR_PATH, 'utf8'));
-  if (!Array.isArray(bytes) || bytes.length !== 64 || bytes.some(x => !Number.isInteger(x) || x < 0 || x > 255)) throw new Error('keypair file must contain 64 byte values');
-  return Keypair.fromSecretKey(Uint8Array.from(bytes));
+  // The legacy in-process keypair path is intentionally disabled. Live startup
+  // remains blocked until DurableLiveSigner is wired to an isolated KMS service.
+  throw new Error('LIVE_SIGNING_UNAVAILABLE: isolated durable signer is not configured');
 }
 async function acquire(wallet: PublicKey): Promise<Server> {
   const port = 20_000 + wallet.toBuffer().readUInt16LE(0) % 30_000;
@@ -824,7 +901,9 @@ export async function runEngine(options: {
   if (existsSync('.env')) {
     try { process.loadEnvFile('.env'); } catch { /* ignore */ }
   }
-  const cfg = config(), key = await wallet(cfg), lock = await acquire(key.publicKey);
+  const cfg = config();
+  assertPaperRuntime(cfg);
+  const key = await wallet(cfg), lock = await acquire(key.publicKey);
   let store: Store | undefined;
   let dashboard: Awaited<ReturnType<typeof startDashboard>> | undefined;
   let sessionLogger: SessionLogger | undefined;
@@ -894,6 +973,16 @@ async function main() {
   await runEngine({ durationSec });
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
+export function isDirectEngineInvocation(argvEntry: string | undefined, moduleUrl: string): boolean {
+  if (!argvEntry) return false;
+  if (pathToFileURL(resolve(argvEntry)).href === moduleUrl) return true;
+  // Windows launchers may preserve a relative argv entry while ESM normalizes
+  // the module URL to a drive-qualified file URL.
+  const normalized = argvEntry.replaceAll('\\', '/');
+  return normalized === 'dist/fusion.js' || normalized === 'src/fusion.ts' ||
+    normalized.endsWith('/dist/fusion.js') || normalized.endsWith('/src/fusion.ts');
+}
+
+if (isDirectEngineInvocation(process.argv[1], import.meta.url)) {
   main().catch(e => { log('fatal', { kind: e instanceof Error ? e.name : 'unknown', message: e instanceof Error && !e.message.includes('http') ? e.message.slice(0, 200) : 'startup or runtime failure; inspect configuration and endpoint access' }); process.exitCode = 1; });
 }
