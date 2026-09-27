@@ -184,6 +184,12 @@ export default function OperatorTerminal(){
     .filter(item => item.token.tier === 'PRIME' || ((item.token.highSignalIndex ?? 0) >= 70 && item.token.pod === 'UP') || Number(item.token.liquidity) >= 25000)
     .sort((a, b) => b.score - a.score);
 
+  const availableCash = projection?.capital?.available ?? 0;
+  const reservedCash = projection?.capital?.reserved ?? 0;
+  const emergencyReserve = projection?.capital?.emergencyReserve ?? (availableCash * 0.20);
+  const freeCash = Math.max(0, availableCash - reservedCash - emergencyReserve);
+  if (positions.length >= 2 || freeCash < 5.0) return;
+
   for (const { token: cand } of scored) {
    const lastAttempt = autoTradeCooldowns.current.get(cand.mint) || 0;
    if (Date.now() - lastAttempt < 30_000) continue;
@@ -196,7 +202,9 @@ export default function OperatorTerminal(){
      activePositionsCount: positions.length,
      maxPositions: 2,
    });
-   const tradeUsd = sizing.optimalUsd >= 5.0 ? sizing.optimalUsd : 25.0;
+   const rawTarget = sizing.optimalUsd > 0 ? sizing.optimalUsd : 15.0;
+   const tradeUsd = Math.round(Math.min(freeCash, Math.max(5.0, rawTarget)) * 100) / 100;
+   if (tradeUsd < 5.0) continue;
    setNotice(`⚡ Auto-trading breakout candidate ${label} ($${tradeUsd.toFixed(2)} dynamic Kelly size: ${sizing.rationale})…`);
 
    fetch('/api/command', {
@@ -246,24 +254,51 @@ export default function OperatorTerminal(){
    const pnlPct = pos.unrealizedPnlPct;
    const peakPnl = pos.peakPnlPct ?? pnlPct;
    const ageMs = now - (pos.openedAt || now);
+   const ageSec = ageMs / 1000;
 
-   // 1. Dynamic Micro-Trailing Take-Profit:
-   // If peaked >= +4.0% and dropped >= 1.8% from peak: lock in profit!
-   const isTrailingStop = peakPnl != null && peakPnl >= 4.0 && pnlPct != null && (peakPnl - pnlPct >= 1.8);
-   // 2. Hard Take-Profit Target (+15% or higher)
-   const isTakeProfit = pnlPct != null && pnlPct >= 15.0;
-   // 3. Stop Loss: -10% or protectionState EMERGENCY_UNWIND
-   const isStopLoss = pos.protectionState === 'EMERGENCY_UNWIND' || (pnlPct != null && pnlPct <= -10);
-   // 4. Stagnation Exit: If open > 2 min and flat (<2.5%), or open > 4 min and flat (<3.5%), rotate to free capacity
-   const isStagnant = (ageMs > 2 * 60 * 1000 && pnlPct != null && Math.abs(pnlPct) < 2.5) ||
-                      (ageMs > 4 * 60 * 1000 && pnlPct != null && Math.abs(pnlPct) < 3.5);
+   // 1. False-Breakout Fast Cut (Control 44):
+   // Cut immediately at -3.0% within 15s-45s if peak never exceeded +1.2% (avoids deep -12% to -30% drags)
+   const isFalseBreakout = ageSec >= 15 && ageSec <= 45 && (peakPnl == null || peakPnl <= 1.2) && pnlPct != null && pnlPct <= -3.0;
 
-   if (isTrailingStop || isTakeProfit || isStopLoss || isStagnant) {
+   // 2. Breakeven Lock (+1.0% floor once peak >= +8.0%):
+   // Protect accumulated gains from round-tripping to negative
+   const isBreakevenStop = peakPnl != null && peakPnl >= 8.0 && pnlPct != null && pnlPct <= 1.0;
+
+   // 3. Dynamic Staged Trailing Stops (AGENTS.md Moonshot Standard):
+   // Tier 1 (+15% to +35% peak): Trail by 5.0% from peak
+   // Tier 2 (+35% to +100% peak): Trail by 10.0% from peak (letting winners surge)
+   // Tier 3 (> +100% peak): Trail by 20.0% structural cushion (ride 1500% runners)
+   let isTrailingStop = false;
+   if (peakPnl != null && pnlPct != null) {
+     if (peakPnl >= 100.0) {
+       isTrailingStop = (peakPnl - pnlPct) >= 20.0;
+     } else if (peakPnl >= 35.0) {
+       isTrailingStop = (peakPnl - pnlPct) >= 10.0;
+     } else if (peakPnl >= 15.0) {
+       isTrailingStop = (peakPnl - pnlPct) >= 5.0;
+     }
+   }
+
+   // 4. Parabolic Climax Take-Profit: Lock profits at +150% or higher
+   const isParabolicTarget = pnlPct != null && pnlPct >= 150.0;
+
+   // 5. Hard Stop-Loss (-8.0% or protectionState EMERGENCY_UNWIND):
+   const isHardStop = pos.protectionState === 'EMERGENCY_UNWIND' || (pnlPct != null && pnlPct <= -8.0);
+
+   // 6. Stagnation Decay (rotate dead capital after 3m if flat):
+   const isStagnant = ageMs > 3 * 60 * 1000 && pnlPct != null && Math.abs(pnlPct) < 2.0;
+
+   if (isFalseBreakout || isBreakevenStop || isTrailingStop || isParabolicTarget || isHardStop || isStagnant) {
     const lastExit = autoExitCooldowns.current.get(pos.mint) || 0;
     if (Date.now() - lastExit < 15_000) continue;
     autoExitCooldowns.current.set(pos.mint, Date.now());
-    const triggerLabel = isTrailingStop ? `Trailing profit locked (+${pnlPct?.toFixed(1)}%)` : isTakeProfit ? `Take-profit (+${pnlPct?.toFixed(1)}%)` : isStagnant ? 'Stagnant position rotated' : 'Stop-loss';
-    setNotice(`🛡️ Auto-Exit: Liquidating ${pos.symbol || pos.mint.slice(0, 6)} (${triggerLabel})…`);
+    const triggerLabel = isParabolicTarget ? `Parabolic Climax (+${pnlPct?.toFixed(1)}%)`
+      : isTrailingStop ? `Trailing profit secured (+${pnlPct?.toFixed(1)}% / Peak +${peakPnl?.toFixed(1)}%)`
+      : isBreakevenStop ? `Breakeven profit lock (+${pnlPct?.toFixed(1)}%)`
+      : isFalseBreakout ? `False-breakout quick cut (${pnlPct?.toFixed(1)}%)`
+      : isStagnant ? 'Stagnant rotation (free capacity)'
+      : `Stop-loss (${pnlPct?.toFixed(1)}%)`;
+    setNotice(`🛡️ Auto-Exit: Liquidating ${pos.symbol || pos.mint.slice(0, 6)} (${triggerLabel}).`);
     closePaperPosition(pos, true);
     break;
    }
