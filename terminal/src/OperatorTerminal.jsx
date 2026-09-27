@@ -97,7 +97,7 @@ export default function OperatorTerminal(){
   catch{if(id===scanId.current&&!controller.signal.aborted)setNotice('Safety scan unavailable. Missing evidence remains unknown.');}
   finally{if(id===scanId.current)setScanning(false);}
  }
- async function closePaperPosition(position, skipConfirm = false){
+ async function closePaperPosition(position, skipConfirm = false, triggerOverride = null){
   if(!current||projection?.environment?.mode!=='SIMULATION'||projection?.capabilities?.close?.state!=='READY'){
    setNotice('Paper close is unavailable until the current authoritative projection permits it.');return;
   }
@@ -109,7 +109,7 @@ export default function OperatorTerminal(){
   setNotice(`Submitting paper close for ${label} to the local simulator…`);
   try{
    const markPrice = position.markPriceUsd ?? position.mark ?? position.price;
-   const exitTrigger = skipConfirm ? (position.protectionState === 'EMERGENCY_UNWIND' ? 'STOP_LOSS' : 'TRAILING_TARGET') : 'OPERATOR_CLOSE';
+   const exitTrigger = triggerOverride || (skipConfirm ? (position.protectionState === 'EMERGENCY_UNWIND' ? 'STOP_LOSS' : 'TRAILING_TARGET') : 'OPERATOR_CLOSE');
    const response=await fetch('/api/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({commandId:crypto.randomUUID(),type:'CLOSE_POSITION',timestamp:Date.now(),initiator:skipConfirm ? 'auto_exit_guardian' : 'operator-terminal',payload:{mint:position.mint,poolAddress:position.asset,priceUsd:markPrice||undefined,fallbackPriceSol:markPrice?markPrice/150:undefined,exitTrigger}})});
    const body=await response.json();
    if(!response.ok||!body.ok)throw new Error(body?.error||body?.result?.error||'Paper close was rejected.');
@@ -299,7 +299,13 @@ export default function OperatorTerminal(){
       : isStagnant ? 'Stagnant rotation (free capacity)'
       : `Stop-loss (${pnlPct?.toFixed(1)}%)`;
     setNotice(`🛡️ Auto-Exit: Liquidating ${pos.symbol || pos.mint.slice(0, 6)} (${triggerLabel}).`);
-    closePaperPosition(pos, true);
+    const triggerType = isParabolicTarget ? 'PARABOLIC_CLIMAX'
+      : isTrailingStop ? 'TRAILING_PROFIT_STAGED'
+      : isBreakevenStop ? 'BREAKEVEN_LOCK'
+      : isFalseBreakout ? 'FALSE_BREAKOUT_FAST_CUT'
+      : isStagnant ? 'STAGNANT_ROTATION'
+      : 'STOP_LOSS';
+    closePaperPosition(pos, true, triggerType);
     break;
    }
   }
