@@ -18,6 +18,7 @@ export class StreamIntegrityAuthority {
     contiguousThrough = 0;
     blockHeight = 0;
     activeGapsCount = 0;
+    unresolvedGaps = [];
     lastObservedAt = 0;
     isConnected = false;
     constructor(maxAllowedGapSlots = 32) {
@@ -30,8 +31,14 @@ export class StreamIntegrityAuthority {
         this.isConnected = false;
     }
     registerSlotNotification(notif) {
+        // Freshness is based on local receipt time, not a provider supplied timestamp.
+        // A stale or future timestamp must never make an old observation look current.
         const now = Date.now();
         this.lastObservedAt = now;
+        if (!Number.isSafeInteger(notif.slot) || notif.slot < 0 ||
+            (notif.parentSlot !== undefined && (!Number.isSafeInteger(notif.parentSlot) || notif.parentSlot < 0 || notif.parentSlot >= notif.slot))) {
+            return { hasGap: true };
+        }
         if (notif.rootSlot && notif.rootSlot > this.finalizedRoot) {
             this.finalizedRoot = notif.rootSlot;
         }
@@ -41,12 +48,23 @@ export class StreamIntegrityAuthority {
         let hasGap = false;
         let gapStart;
         let gapEnd;
-        if (this.observedHead > 0 && notif.slot > this.observedHead + 1) {
+        if (notif.slot <= this.observedHead) {
+            // Duplicates and delayed notifications are not new continuity evidence.
+            return { hasGap: this.activeGapsCount > 0 };
+        }
+        const expectedPreviousSlot = notif.parentSlot ?? this.observedHead;
+        if (this.observedHead > 0 && expectedPreviousSlot !== this.observedHead) {
+            hasGap = true;
+            gapStart = Math.min(expectedPreviousSlot, this.observedHead) + 1;
+            gapEnd = Math.max(expectedPreviousSlot, this.observedHead);
+            this.recordGap(gapStart, gapEnd);
+        }
+        else if (this.observedHead > 0 && notif.slot > this.observedHead + 1) {
             // Discontinuity detected
             hasGap = true;
             gapStart = this.observedHead + 1;
             gapEnd = notif.slot - 1;
-            this.activeGapsCount++;
+            this.recordGap(gapStart, gapEnd);
         }
         else {
             // Monotonic progression
@@ -60,10 +78,43 @@ export class StreamIntegrityAuthority {
         return { hasGap, gapStart, gapEnd };
     }
     markGapResolved(start, end) {
-        if (this.activeGapsCount > 0) {
-            this.activeGapsCount--;
+        if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start)
+            return;
+        const remaining = [];
+        for (const gap of this.unresolvedGaps) {
+            if (end < gap.start || start > gap.end) {
+                remaining.push(gap);
+                continue;
+            }
+            if (start > gap.start)
+                remaining.push({ start: gap.start, end: start - 1 });
+            if (end < gap.end)
+                remaining.push({ start: end + 1, end: gap.end });
         }
-        this.contiguousThrough = Math.max(this.contiguousThrough, end);
+        this.unresolvedGaps.splice(0, this.unresolvedGaps.length, ...remaining);
+        this.activeGapsCount = this.unresolvedGaps.length;
+        if (this.activeGapsCount === 0)
+            this.contiguousThrough = this.observedHead;
+    }
+    recordGap(start, end) {
+        if (end < start)
+            return;
+        const merged = [];
+        let next = { start, end };
+        for (const gap of this.unresolvedGaps) {
+            if (gap.end + 1 < next.start)
+                merged.push(gap);
+            else if (next.end + 1 < gap.start) {
+                merged.push(next);
+                next = gap;
+            }
+            else {
+                next = { start: Math.min(next.start, gap.start), end: Math.max(next.end, gap.end) };
+            }
+        }
+        merged.push(next);
+        this.unresolvedGaps.splice(0, this.unresolvedGaps.length, ...merged);
+        this.activeGapsCount = this.unresolvedGaps.length;
     }
     getWatermark() {
         const streamIntegrity = !this.isConnected

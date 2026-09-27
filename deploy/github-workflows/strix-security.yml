@@ -1,0 +1,52 @@
+name: Strix Security Review
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+# A scanner should never be able to change repository state, deploy code, or
+# obtain cloud credentials. It receives only the checked-out source and the
+# dedicated LLM secret needed to perform its analysis.
+permissions:
+  contents: read
+
+jobs:
+  source-security-review:
+    name: Source Security Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Fork PRs do not receive repository secrets. Contributors can still get
+    # deterministic checks; a maintainer can dispatch a reviewed scan later.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify scanner credentials are configured
+        env:
+          STRIX_LLM: ${{ secrets.STRIX_LLM }}
+          STRIX_LLM_API_KEY: ${{ secrets.STRIX_LLM_API_KEY }}
+        run: |
+          test -n "$STRIX_LLM"
+          test -n "$STRIX_LLM_API_KEY"
+
+      - name: Install Strix
+        run: curl --fail --silent --show-error --location https://strix.ai/install | bash
+
+      - name: Scan checked-out source
+        env:
+          STRIX_LLM: ${{ secrets.STRIX_LLM }}
+          LLM_API_KEY: ${{ secrets.STRIX_LLM_API_KEY }}
+        run: strix --non-interactive --target . --scan-mode quick
+
+      - name: Preserve scan findings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: strix-findings-${{ github.run_id }}
+          path: strix_runs/
+          if-no-files-found: warn
+          retention-days: 7

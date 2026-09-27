@@ -49,4 +49,43 @@ export class PoDEngine {
         };
     }
 }
+export class ContinuationQualityEngine {
+    /**
+     * Critical Update (AGENTS.md):
+     * Never neutralize or bypass the "< 5 unique buyers" penalty in the CQ formula.
+     * Bypassing this penalty completely blinds the bot to illiquid pump-fakes.
+     */
+    evaluateCQ(input) {
+        const { buyerAbsorptionRatio, sellerExhaustionRatio, uniqueBuyers, isDex } = input;
+        // Hard penalty for illiquid pump-fakes: < 5 unique buyers on bonding curves
+        if (!isDex && uniqueBuyers < 5) {
+            return {
+                score: Math.min(0.20, uniqueBuyers * 0.04),
+                tier: 'POOR',
+                isIlliquidBlocked: true,
+                reason: `Illiquid pump-fake risk: only ${uniqueBuyers} unique buyers (< 5 required)`,
+            };
+        }
+        // Balanced absorption & exhaustion: geometric mean to prevent overly punitive zeroing
+        const abs = Math.max(0.01, Math.min(1.0, buyerAbsorptionRatio));
+        const exh = Math.max(0.01, Math.min(1.0, sellerExhaustionRatio));
+        const rawScore = Math.sqrt(abs * exh);
+        // Apply scale multiplier based on buyer breadth
+        const breadthMultiplier = Math.min(1.2, 0.8 + (uniqueBuyers / 50) * 0.4);
+        const calibratedScore = Math.min(1.0, rawScore * breadthMultiplier);
+        let tier = 'POOR';
+        if (calibratedScore >= 0.75)
+            tier = 'EXCELLENT';
+        else if (calibratedScore >= 0.55)
+            tier = 'GOOD';
+        else if (calibratedScore >= 0.35)
+            tier = 'FAIR';
+        return {
+            score: Number(calibratedScore.toFixed(4)),
+            tier,
+            isIlliquidBlocked: false,
+            reason: `CQ ${tier} (${(calibratedScore * 100).toFixed(1)}%): absorption ${(abs * 100).toFixed(0)}%, exhaustion ${(exh * 100).toFixed(0)}% across ${uniqueBuyers} buyers`,
+        };
+    }
+}
 //# sourceMappingURL=pumpscore.js.map

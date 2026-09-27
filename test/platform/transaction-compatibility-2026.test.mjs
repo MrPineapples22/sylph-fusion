@@ -209,6 +209,25 @@ test('StreamIntegrityAuthority: tracks slot continuity and gap detection for 3D 
   assert.equal(stream.isDataCurrent(), true);
 });
 
+test('StreamIntegrityAuthority: delayed slots and unrelated repair claims cannot restore continuity', () => {
+  const stream = new StreamIntegrityAuthority();
+  stream.onStreamConnected();
+  stream.registerSlotNotification({ slot: 100, timestamp: Date.now() });
+  stream.registerSlotNotification({ slot: 110, timestamp: Date.now() });
+
+  // A delayed duplicate is not proof that all missing slots were recovered.
+  stream.registerSlotNotification({ slot: 105, timestamp: Date.now() });
+  stream.markGapResolved(1, 99);
+  assert.equal(stream.getWatermark().streamIntegrity, 'GAP_DETECTED');
+  assert.equal(stream.isDataCurrent(), false);
+
+  // Partial reconciliation retains the unresolved portion of the gap.
+  stream.markGapResolved(101, 105);
+  assert.equal(stream.getWatermark().streamIntegrity, 'GAP_DETECTED');
+  stream.markGapResolved(106, 109);
+  assert.equal(stream.getWatermark().streamIntegrity, 'CONTINUOUS');
+});
+
 test('ProgramPolicyRegistry: allows approved programs and blocks unknown or unsafe programs', () => {
   // System Program
   assert.equal(ProgramPolicyRegistry.evaluateProgram('11111111111111111111111111111111').allowed, true);

@@ -114,3 +114,36 @@ export async function scanToken(mint: string, rpcUrl: string, rugUrl: string, tr
   out.safe = dangerous ? false : out.providers.rpc === 'live' && out.providers.rugcheck === 'live' && out.authorities.status === 'revoked' && out.holders.top10Status === 'within-limit' && (['burned','locked'].includes(out.liquidity.state) || out.liquidity.state === 'bonding_curve') ? true : null;
   return out;
 }
+
+/**
+ * Hard Filtration & Anti-Sniper Baseline Guard (AGENTS.md)
+ * 1. Tokens at age < 10s must establish >= 3 unique buyers to avoid 0-second dev dumps (>80% probability).
+ * 2. DEX vs Bonding Curve Asymmetry: len(traders) < 3 check must be bypassed for mature DEX tokens (isDex || txs >= 10).
+ */
+export function checkAntiSniperAndDexAsymmetry(params: {
+  ageMs: number;
+  uniqueBuyers: number;
+  isDex?: boolean;
+  txs?: number;
+}): { allowed: boolean; reason?: string } {
+  const { ageMs, uniqueBuyers, isDex, txs } = params;
+  const isMatureDex = Boolean(isDex || (typeof txs === 'number' && txs >= 10));
+
+  // Anti-sniper baseline: Tokens < 10s must have at least 3 unique buyers
+  if (!isMatureDex && ageMs < 10_000 && uniqueBuyers < 3) {
+    return {
+      allowed: false,
+      reason: 'ANTI_SNIPER_BASELINE_NOT_MET: Token age < 10s requires >= 3 unique buyers before entry',
+    };
+  }
+
+  // Bonding curve illiquidity check: If not mature DEX, require >= 3 unique buyers
+  if (!isMatureDex && uniqueBuyers < 3) {
+    return {
+      allowed: false,
+      reason: 'INSUFFICIENT_BUYER_ACCUMULATION: Bonding curve requires >= 3 unique buyers',
+    };
+  }
+
+  return { allowed: true };
+}

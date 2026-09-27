@@ -72,3 +72,59 @@ export class PoDEngine {
     };
   }
 }
+
+export interface ContinuationQualityInput {
+  readonly buyerAbsorptionRatio: number;   // 0.0 to 1.0 (how well bids absorb sell market orders)
+  readonly sellerExhaustionRatio: number;  // 0.0 to 1.0 (decay in sell size and sell tick rate)
+  readonly uniqueBuyers: number;           // Absolute count of unique purchasing wallets
+  readonly isDex?: boolean;                // Whether token has graduated to DEX
+}
+
+export interface ContinuationQualityResult {
+  readonly score: number;                  // 0.0 to 1.0
+  readonly tier: 'EXCELLENT' | 'GOOD' | 'FAIR' | 'POOR';
+  readonly isIlliquidBlocked: boolean;     // True if blocked by < 5 unique buyers
+  readonly reason: string;
+}
+
+export class ContinuationQualityEngine {
+  /**
+   * Critical Update (AGENTS.md):
+   * Never neutralize or bypass the "< 5 unique buyers" penalty in the CQ formula.
+   * Bypassing this penalty completely blinds the bot to illiquid pump-fakes.
+   */
+  public evaluateCQ(input: ContinuationQualityInput): ContinuationQualityResult {
+    const { buyerAbsorptionRatio, sellerExhaustionRatio, uniqueBuyers, isDex } = input;
+
+    // Hard penalty for illiquid pump-fakes: < 5 unique buyers on bonding curves
+    if (!isDex && uniqueBuyers < 5) {
+      return {
+        score: Math.min(0.20, uniqueBuyers * 0.04),
+        tier: 'POOR',
+        isIlliquidBlocked: true,
+        reason: `Illiquid pump-fake risk: only ${uniqueBuyers} unique buyers (< 5 required)`,
+      };
+    }
+
+    // Balanced absorption & exhaustion: geometric mean to prevent overly punitive zeroing
+    const abs = Math.max(0.01, Math.min(1.0, buyerAbsorptionRatio));
+    const exh = Math.max(0.01, Math.min(1.0, sellerExhaustionRatio));
+    const rawScore = Math.sqrt(abs * exh);
+
+    // Apply scale multiplier based on buyer breadth
+    const breadthMultiplier = Math.min(1.2, 0.8 + (uniqueBuyers / 50) * 0.4);
+    const calibratedScore = Math.min(1.0, rawScore * breadthMultiplier);
+
+    let tier: ContinuationQualityResult['tier'] = 'POOR';
+    if (calibratedScore >= 0.75) tier = 'EXCELLENT';
+    else if (calibratedScore >= 0.55) tier = 'GOOD';
+    else if (calibratedScore >= 0.35) tier = 'FAIR';
+
+    return {
+      score: Number(calibratedScore.toFixed(4)),
+      tier,
+      isIlliquidBlocked: false,
+      reason: `CQ ${tier} (${(calibratedScore * 100).toFixed(1)}%): absorption ${(abs * 100).toFixed(0)}%, exhaustion ${(exh * 100).toFixed(0)}% across ${uniqueBuyers} buyers`,
+    };
+  }
+}

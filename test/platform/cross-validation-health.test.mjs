@@ -69,6 +69,41 @@ test('MultiSourceCrossValidator: Flags STALE data when observations exceed thres
   assert.ok(snapshot.disagreementFlags.some(f => f.includes('STALE_DATA_AGE')));
 });
 
+test('MultiSourceCrossValidator: rejects future-dated observations and derives freshness from its selected primary', () => {
+  const validator = new MultiSourceCrossValidator();
+  const now = 1_700_000_000_000;
+  const snapshot = validator.evaluateToken({
+    mint: 'Future11111111111111111111111111111111111111',
+    symbol: 'FTR',
+    priceObservations: [
+      { provider: 'DEXSCREENER_API', value: 100, timestampMs: now - 44_000, latencyMs: 30, confidence: 0.1 },
+      { provider: 'JUPITER_QUOTE', value: 101, timestampMs: now - 1_000, latencyMs: 30, confidence: 0.9 },
+      { provider: 'PUMPPORTAL_WS', value: 999, timestampMs: now + 1, latencyMs: 1, confidence: 1 },
+    ],
+    now,
+  });
+  assert.equal(snapshot.status, 'VERIFIED');
+  assert.equal(snapshot.priceUsd, 101);
+  assert.equal(snapshot.freshnessMs, 1_000);
+});
+
+test('MultiSourceCrossValidator: ignores stale or future non-price observations', () => {
+  const validator = new MultiSourceCrossValidator({ staleThresholdMs: 30_000 });
+  const now = 1_700_000_000_000;
+  const snapshot = validator.evaluateToken({
+    mint: 'Evidence111111111111111111111111111111111111',
+    symbol: 'EVD',
+    priceObservations: [{ provider: 'JUPITER_QUOTE', value: 1, timestampMs: now - 100, latencyMs: 10, confidence: 0.9 }],
+    liquidityObservations: [{ provider: 'DEXSCREENER_API', value: 2_000_000, timestampMs: now - 30_001, latencyMs: 10, confidence: 0.9 }],
+    marketCapObservations: [{ provider: 'PUMPPORTAL_WS', value: 3_000_000, timestampMs: now + 1, latencyMs: 10, confidence: 0.9 }],
+    now,
+  });
+  assert.equal(snapshot.liquidityUsd, null);
+  assert.equal(snapshot.marketCapUsd, null);
+  assert.ok(snapshot.disagreementFlags.includes('NO_CURRENT_LIQUIDITY_OBSERVATIONS'));
+  assert.ok(snapshot.disagreementFlags.includes('NO_CURRENT_MARKET_CAP_OBSERVATIONS'));
+});
+
 test('ProviderHealthTracker: Tracks latency, error rates, circuit breaker, and system state', () => {
   const tracker = new ProviderHealthTracker();
   const now = Date.now();

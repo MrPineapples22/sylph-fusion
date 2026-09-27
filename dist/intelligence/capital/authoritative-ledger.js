@@ -2,30 +2,48 @@
  * SOL-SYLPH Authoritative Capital Ledger & Execution Ambiguity State Machine
  * Parts XVII & XVIII — Multi-Dimensional Exposures, Shared-Gene Exposure & Non-Ambiguous Reconciling
  */
+import { NumeraireAuthority, asLamports } from '../../platform/ledger/numeraire.js';
 export class AuthoritativeCapitalLedger {
-    availableCashSol = 100.0; // Default paper portfolio
-    reservedSol = 0.0;
+    /** In-memory research projection only; never grants settlement/signing authority. */
+    evidenceClass = 'RESEARCH_ONLY';
+    openingCapitalLamports;
+    consumedIds = new Set();
+    availableCashLamports;
+    reservedLamports = 0n;
     positions = new Map(); // key = mint
     pendingTxs = new Map(); // key = tx_id
-    realizedPnlSol = 0.0;
-    totalFeesPaidSol = 0.0;
+    realizedPnlLamports = 0n;
+    totalFeesPaidLamports = 0n;
+    constructor(initialCapitalLamports = 100000000000n) {
+        if (typeof initialCapitalLamports !== 'bigint' || initialCapitalLamports < 0n)
+            throw new Error('INVALID_INITIAL_CAPITAL');
+        this.openingCapitalLamports = initialCapitalLamports;
+        this.availableCashLamports = initialCapitalLamports;
+    }
     /**
      * Reserve capital before transaction signing.
      */
-    reserveCapital(amount_sol) {
-        if (!Number.isFinite(amount_sol) || amount_sol <= 0)
+    reserveCapital(amountLamports) {
+        if (typeof amountLamports !== 'bigint')
             return false;
-        if (this.availableCashSol < amount_sol)
+        if (amountLamports <= 0n || amountLamports > this.availableCashLamports)
             return false;
-        this.availableCashSol -= amount_sol;
-        this.reservedSol += amount_sol;
+        this.availableCashLamports -= amountLamports;
+        this.reservedLamports += amountLamports;
         return true;
     }
     /**
      * Register pending execution in CREATED or SUBMITTED state.
      */
     registerPendingTransaction(tx) {
-        this.pendingTxs.set(tx.tx_id, tx);
+        if (!tx.tx_id || !tx.mint || typeof tx.amountLamports !== 'bigint' || tx.amountLamports <= 0n)
+            throw new Error('INVALID_EXACT_PENDING_AMOUNT');
+        if (this.pendingTxs.has(tx.tx_id) || this.consumedIds.has(tx.tx_id))
+            throw new Error('DUPLICATE_ECONOMIC_INTENT');
+        const assigned = [...this.pendingTxs.values()].reduce((sum, item) => sum + item.amountLamports, 0n);
+        if (assigned + tx.amountLamports > this.reservedLamports)
+            throw new Error('RESERVATION_REQUIRED');
+        this.pendingTxs.set(tx.tx_id, Object.freeze({ ...tx, gene_ids: Object.freeze([...tx.gene_ids]) }));
     }
     /**
      * Part XVIII: Handle execution ambiguity on timeout.
@@ -48,40 +66,42 @@ export class AuthoritativeCapitalLedger {
                 tx_state: 'UNKNOWN_RECONCILING',
             };
         }
-        // Blockhash expired: safe to conclude unlanded and rebuild with new quote/permit if desired.
+        // Expiry is not proof of non-execution. Capital remains reserved until a
+        // reconciler has recorded independent negative chain evidence.
         const expired = {
             ...tx,
             state: 'EXPIRED',
             last_checked_slot: current_slot,
         };
         this.pendingTxs.set(tx_id, expired);
-        this.reservedSol = Math.max(0, this.reservedSol - tx.amount_sol);
-        this.availableCashSol += tx.amount_sol; // release capital
         return {
-            action: 'REBUILD_NEW_TX',
+            action: 'WAIT_FOR_CONFIRMATION',
             tx_state: 'EXPIRED',
         };
     }
     /**
      * Confirm successful fill on chain. Convert reservation into position.
      */
-    confirmFill(tx_id, entry_price_sol) {
+    confirmFill(tx_id, executionPrice) {
         const tx = this.pendingTxs.get(tx_id);
         if (!tx)
             throw new Error(`Pending tx not found: ${tx_id}`);
-        this.reservedSol = Math.max(0, this.reservedSol - tx.amount_sol);
+        if (this.reservedLamports < tx.amountLamports)
+            throw new Error('RESERVATION_CONSERVATION_BREACH');
+        const existing = this.positions.get(tx.mint);
+        if (existing && (existing.strategy_id !== tx.strategy_id || JSON.stringify(existing.gene_ids) !== JSON.stringify(tx.gene_ids)))
+            throw new Error('POSITION_ATTRIBUTION_CONFLICT');
+        this.reservedLamports -= tx.amountLamports;
         const pos = {
             mint: tx.mint,
             strategy_id: tx.strategy_id,
             gene_ids: tx.gene_ids,
-            amount_sol: tx.amount_sol,
-            entry_price_sol,
-            current_price_sol: entry_price_sol,
-            unrealized_pnl_sol: 0.0,
+            amountLamports: tx.amountLamports + (existing?.amountLamports ?? 0n),
             entered_at_ms: Date.now(),
         };
-        this.positions.set(tx.mint, pos);
+        this.positions.set(tx.mint, Object.freeze(pos));
         this.pendingTxs.delete(tx_id);
+        this.consumedIds.add(tx_id);
         return pos;
     }
     /**
@@ -93,31 +113,53 @@ export class AuthoritativeCapitalLedger {
         const byStrategy = {};
         const byGene = {};
         const byCreator = {};
-        let totalExposure = 0;
+        let totalExposure = 0n;
         for (const pos of this.positions.values()) {
-            totalExposure += pos.amount_sol;
-            byToken[pos.mint] = (byToken[pos.mint] || 0) + pos.amount_sol;
-            byStrategy[pos.strategy_id] = (byStrategy[pos.strategy_id] || 0) + pos.amount_sol;
+            totalExposure += pos.amountLamports;
+            byToken[pos.mint] = (byToken[pos.mint] ?? 0n) + pos.amountLamports;
+            byStrategy[pos.strategy_id] = (byStrategy[pos.strategy_id] ?? 0n) + pos.amountLamports;
             if (pos.creator_address) {
-                byCreator[pos.creator_address] = (byCreator[pos.creator_address] || 0) + pos.amount_sol;
+                byCreator[pos.creator_address] = (byCreator[pos.creator_address] ?? 0n) + pos.amountLamports;
             }
             // Shared gene exposure detection
             for (const gid of pos.gene_ids) {
-                byGene[gid] = (byGene[gid] || 0) + pos.amount_sol;
+                byGene[gid] = (byGene[gid] ?? 0n) + pos.amountLamports;
             }
         }
         // Flag if any single gene controls >40% of total capital across multiple strategies
-        const maxGeneExposure = Math.max(0, ...Object.values(byGene));
-        const hiddenGeneRisk = totalExposure > 5.0 && maxGeneExposure / totalExposure > 0.4;
+        NumeraireAuthority.assertConservation({ openingCapital: asLamports(this.openingCapitalLamports), externalDeposits: asLamports(0n), externalWithdrawals: asLamports(0n), realizedEconomicResult: asLamports(this.realizedPnlLamports - this.totalFeesPaidLamports), availableBalance: asLamports(this.availableCashLamports), reservedCapital: asLamports(this.reservedLamports), deployedInPositions: asLamports(totalExposure), pendingSettlement: asLamports(0n) });
+        const maxGeneExposure = Object.values(byGene).reduce((max, amount) => amount > max ? amount : max, 0n);
+        const hiddenGeneRisk = totalExposure > 5000000000n && maxGeneExposure * 10n > totalExposure * 4n;
+        const exposureByGeneSol = {};
+        for (const [k, v] of Object.entries(byGene)) {
+            exposureByGeneSol[k] = Number(v) / 1e9;
+        }
+        const exposureByTokenSol = {};
+        for (const [k, v] of Object.entries(byToken)) {
+            exposureByTokenSol[k] = Number(v) / 1e9;
+        }
+        const exposureByStrategySol = {};
+        for (const [k, v] of Object.entries(byStrategy)) {
+            exposureByStrategySol[k] = Number(v) / 1e9;
+        }
+        const exposureByCreatorSol = {};
+        for (const [k, v] of Object.entries(byCreator)) {
+            exposureByCreatorSol[k] = Number(v) / 1e9;
+        }
         return {
-            total_portfolio_exposure_sol: Number(totalExposure.toFixed(3)),
-            available_cash_sol: Number(this.availableCashSol.toFixed(3)),
-            reserved_capital_sol: Number(this.reservedSol.toFixed(3)),
-            exposure_by_token: byToken,
-            exposure_by_strategy: byStrategy,
-            exposure_by_gene: byGene,
-            exposure_by_creator: byCreator,
+            totalPortfolioExposureLamports: totalExposure,
+            availableCashLamports: this.availableCashLamports,
+            reservedCapitalLamports: this.reservedLamports,
+            exposureByTokenLamports: byToken,
+            exposureByStrategyLamports: byStrategy,
+            exposureByGeneLamports: byGene,
+            exposureByCreatorLamports: byCreator,
             hidden_shared_gene_risk_detected: hiddenGeneRisk,
+            total_portfolio_exposure_sol: Number(totalExposure) / 1e9,
+            exposure_by_token: exposureByTokenSol,
+            exposure_by_strategy: exposureByStrategySol,
+            exposure_by_gene: exposureByGeneSol,
+            exposure_by_creator: exposureByCreatorSol,
         };
     }
 }

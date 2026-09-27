@@ -55,3 +55,16 @@ test('failed backfills and external mutation cannot erase unresolved evidence', 
   r.getUnresolvedGaps()[0].isResolved=true;
   assert.equal(r.hasUnresolvedGaps(),true);
 });
+
+test('replacing a backfill provider cannot let an old provider certify a gap', async () => {
+  const r=new IngestionGapReconciler(100);
+  let release;
+  r.setBackfillHandler(()=>new Promise(resolve=>{release=resolve;}));
+  r.registerSlot(1);r.registerSlot(3);
+  r.setBackfillHandler(async()=>false);
+  release(true);
+  await new Promise(resolve=>setImmediate(resolve));
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(r.hasUnresolvedGaps(),true);
+  assert.equal(r.getReport().gapsResolved,0);
+});

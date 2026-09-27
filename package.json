@@ -29,7 +29,9 @@
     "audit:replay": "node scripts/audit-populated-replay.mjs",
     "audit:god-tier": "node scripts/god-tier-25-audit.mjs",
     "bridge": "node scripts/live-market-bridge.mjs",
-    "test:offline": "npm run test:in-process && npm run test:edge-cases && npm run audit:synthetic"
+    "test:offline": "npm run test:in-process && npm run test:edge-cases && npm run audit:synthetic",
+    "start:cloud": "node scripts/cloud-trading-runner.mjs",
+    "server": "node terminal/server.mjs"
   },
   "dependencies": {
     "@pump-fun/pump-sdk": "2.0.0",

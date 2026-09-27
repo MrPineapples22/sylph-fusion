@@ -113,10 +113,13 @@ test('Capital authorities reject invalid reservation and settlement amounts with
 
   const ledger = new AuthoritativeCapitalLedger();
   const beforeLedger = ledger.auditExposures();
-  for (const amount of [-1, Number.NaN, Number.POSITIVE_INFINITY, 0]) {
+  for (const amount of [-1n, 0n, 100_000_000_001n]) {
     assert.equal(ledger.reserveCapital(amount), false);
     assert.deepEqual(ledger.auditExposures(), beforeLedger);
   }
+  assert.equal(ledger.reserveCapital(1_000_000_000n), true);
+  assert.equal(ledger.auditExposures().availableCashLamports, 99_000_000_000n);
+  assert.equal(ledger.auditExposures().reservedCapitalLamports, 1_000_000_000n);
 });
 
 test('Capital Kernel: Formal Invariants & Authority Lattice Enforcement', () => {

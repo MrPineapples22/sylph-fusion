@@ -15,6 +15,11 @@ data/app*.log
 data/paper.json
 data/*.sqlite*
 sessions/
+strix_runs/
 terminal/node_modules/
 .gemini/
 .agents/
+
+work/
+
+.github/

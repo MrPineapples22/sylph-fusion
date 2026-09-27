@@ -13,6 +13,12 @@ test('Auto-Simulate fills a breakout, takes one TP slice, and sweeps a trailing 
   s.config = { ...s.config, maxPositions: 1, size: .1, interval: 0 };
   s.assets = [{ id: 'POOL', mint: 'TOKEN', price: 1.02, liquidity: 300000, sigma: 0, observedAt: s.now, history: [{ time: s.now/1000-2, value: .98 }, { time: s.now/1000, value: 1.02 }], volume: 4 }];
   const tasks = [], fills = [];
+  // Keep test market evidence on a monotonic simulated clock.  Orders use the
+  // wall clock for their submission deadline, so a frame sampled immediately
+  // before the asynchronous command can otherwise be (correctly) rejected as
+  // predating the order.  This fixture must model a post-submission quote
+  // rather than relying on scheduler timing.
+  let simulatedNow = Date.now() + 10_000;
   const execution = {
     submitUsdOrder(input) {
       const task = submitPaperOrder(engine, action => { s = reducer(s, action); }, 150, {...input, allowLocalSimulationFallback: true}).then(r => { fills.push(r); return r; });
@@ -21,7 +27,8 @@ test('Auto-Simulate fills a breakout, takes one TP slice, and sweeps a trailing 
     panicCloseUsd(poolAddress, tokenMint, tokenQty) { return this.submitUsdOrder({ poolAddress, tokenMint, tokenQty, side: 'SELL', maxSlippageBps: 5000, emergency: true }); }
   };
   async function cycle() {
-    s.now = Date.now(); s.assets[0].observedAt = s.now;
+    simulatedNow += 10_000;
+    s.now = simulatedNow; s.assets[0].observedAt = simulatedNow;
     engine.pushState(assetToPoolState(s.assets[0],150,s.now), 'POOL');
     // An unrelated pool must never supply this order's reserve quote.
     engine.pushState({ ...assetToPoolState({...s.assets[0],price:1000},150,s.now), timestamp:s.now+1 }, 'OTHER');

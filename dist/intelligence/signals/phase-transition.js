@@ -80,5 +80,44 @@ export class PhaseTransitionDetector {
             evaluatedAtMs: timestampMs,
         };
     }
+    /**
+     * Tracks 1st derivative (velocity in SOL/s) and 2nd derivative (acceleration in SOL/s^2)
+     * of bonding curve reserve accumulation to detect surging breakouts vs fading momentum.
+     */
+    trackCurveReserves(mint, reserveSol, timestampMs = Date.now()) {
+        let snaps = this.history.get(mint);
+        if (!snaps) {
+            snaps = [];
+            this.history.set(mint, snaps);
+        }
+        snaps.push({ timestampMs, values: { reserveSol } });
+        if (snaps.length > 30)
+            snaps.shift();
+        if (snaps.length < 2) {
+            return { velocitySolPerSec: 0, accelerationSolPerSec2: 0, regime: 'HEALTHY_ACCUMULATION' };
+        }
+        const prev = snaps[snaps.length - 2];
+        const dt = Math.max(0.1, (timestampMs - prev.timestampMs) / 1000);
+        const velocity = (reserveSol - (prev.values.reserveSol || 0)) / dt;
+        let acceleration = 0;
+        if (snaps.length >= 3) {
+            const prev2 = snaps[snaps.length - 3];
+            const dtPrev = Math.max(0.1, (prev.timestampMs - prev2.timestampMs) / 1000);
+            const prevVelocity = ((prev.values.reserveSol || 0) - (prev2.values.reserveSol || 0)) / dtPrev;
+            acceleration = (velocity - prevVelocity) / dt;
+        }
+        let regime = 'HEALTHY_ACCUMULATION';
+        if (velocity < 0)
+            regime = 'OUTFLOW';
+        else if (acceleration > 0.5 && velocity > 1.0)
+            regime = 'SURGING_BREAKOUT';
+        else if (acceleration < -0.2 && velocity < 0.3)
+            regime = 'DECELERATING';
+        return {
+            velocitySolPerSec: Number(velocity.toFixed(4)),
+            accelerationSolPerSec2: Number(acceleration.toFixed(4)),
+            regime,
+        };
+    }
 }
 //# sourceMappingURL=phase-transition.js.map

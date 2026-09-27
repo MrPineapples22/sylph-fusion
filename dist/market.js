@@ -5,6 +5,28 @@ import BN from 'bn.js';
 import { httpJson } from './rpc.js';
 import { mulBps } from './core.js';
 import { PostGraduationAmmBridge } from './platform/execution/solaris/amm-bridge.js';
+export function assessFastBoundHolderConcentration(input) {
+    const { supply, observedRaw, knownTopTenRaw, maxTopTenBps } = input;
+    if (!Number.isInteger(maxTopTenBps) || maxTopTenBps < 0 || maxTopTenBps > 10_000 || supply <= 0n || observedRaw < 0n || knownTopTenRaw < 0n || observedRaw > supply || knownTopTenRaw > observedRaw) {
+        throw new Error('inconsistent holder snapshot');
+    }
+    if (knownTopTenRaw > mulBps(supply, maxTopTenBps)) {
+        return { level: 'FAST_BOUND', status: 'UNSAFE', observedRaw, knownTopTenRaw, unknownTailRaw: supply - observedRaw };
+    }
+    const unknownTailRaw = supply - observedRaw;
+    const worstCaseTopTenRaw = knownTopTenRaw + unknownTailRaw;
+    const maxAllowedRaw = mulBps(supply, maxTopTenBps);
+    // Mathematical proof: Even if 100% of the unobserved tail belonged to the top 10,
+    // the resulting concentration cannot exceed maxAllowedRaw.
+    const isProvablySafe = worstCaseTopTenRaw <= maxAllowedRaw;
+    return {
+        level: 'FAST_BOUND',
+        status: isProvablySafe ? 'SAFE' : 'AMBIGUOUS',
+        observedRaw,
+        knownTopTenRaw,
+        unknownTailRaw,
+    };
+}
 export class Market {
     rpc;
     cfg;
@@ -104,6 +126,7 @@ export class Market {
         const infos = await c.getMultipleAccountsInfo(accounts.map(a => a.address), 'confirmed');
         const buckets = new Map();
         let observed = 0n;
+        let certifiedProtocolInventory = 0n;
         const curveAta = getAssociatedTokenAddressSync(s.mint, bondingCurvePda(s.mint), true, s.tokenProgram);
         for (let i = 0; i < accounts.length; i++) {
             if (!infos[i])
@@ -112,18 +135,30 @@ export class Market {
             if (!a.mint.equals(s.mint))
                 throw new Error('holder mint mismatch');
             observed += a.amount;
-            if (accounts[i].address.equals(curveAta) && a.owner.equals(bondingCurvePda(s.mint)))
+            if (accounts[i].address.equals(curveAta) && a.owner.equals(bondingCurvePda(s.mint))) {
+                certifiedProtocolInventory += a.amount;
                 continue;
+            }
             const k = a.owner.toBase58();
             buckets.set(k, (buckets.get(k) ?? 0n) + a.amount);
         }
         const topTen = [...buckets.values()].sort((a, b) => a > b ? -1 : a < b ? 1 : 0).slice(0, 10).reduce((a, b) => a + b, 0n);
-        if (observed > s.supply)
-            throw new Error('inconsistent holder snapshot');
-        // Any unobserved balance could belong to a large owner. Count the entire tail
-        // against the cap, rather than assuming unlisted accounts are well distributed.
-        if (topTen + s.supply - observed > mulBps(s.supply, this.cfg.MAX_TOP_TEN_BPS))
-            throw new Error('top-holder concentration upper bound');
+        const circulatingSupply = s.supply - certifiedProtocolInventory;
+        const concentration = assessFastBoundHolderConcentration({
+            // The curve's certified inventory is neither an organic holder nor part
+            // of the organic circulating-supply denominator.
+            supply: circulatingSupply,
+            observedRaw: observed - certifiedProtocolInventory,
+            knownTopTenRaw: topTen,
+            maxTopTenBps: this.cfg.MAX_TOP_TEN_BPS,
+        });
+        if (concentration.status === 'UNSAFE')
+            throw new Error('top-holder concentration observed');
+        // AMBIGUOUS is not a malicious-token conclusion, but a bounded account
+        // query cannot authorize an OPEN/INCREASE. A later FULL_ACCOUNT_CENSUS or
+        // INDEXED_OWNER_CENSUS must provide the required holder certificate.
+        if (concentration.status === 'AMBIGUOUS')
+            throw new Error('holder concentration evidence incomplete');
     }
 }
 //# sourceMappingURL=market.js.map

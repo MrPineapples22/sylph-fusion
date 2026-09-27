@@ -123,7 +123,7 @@ export class OperatorReadModel {
     // operational.  A stale/unknown market feed leaves the system degraded
     // even when reduction and close remain deliberately available.
     const systemState: string = halted ? 'HALTED' : marketState !== 'CURRENT' ? (allBlocked ? 'BLOCKED' : 'DEGRADED') : anyReady ? 'OPERATIONAL' : 'BLOCKED';
-    const reasons = [...(paperSimulation ? [] : ['EXECUTION_REVIEW_UNAVAILABLE']), ...(gateway.entriesHalted ? ['PAPER_EMERGENCY_STOP'] : []), 'LIVE_RECONCILIATION_UNAVAILABLE', ...(marketState === 'CURRENT' ? [] : ['MARKET_EVIDENCE_' + marketState])];
+    const reasons = [...(paperSimulation ? [] : ['EXECUTION_REVIEW_UNAVAILABLE', 'LIVE_RECONCILIATION_UNAVAILABLE']), ...(gateway.entriesHalted ? ['PAPER_EMERGENCY_STOP'] : []), ...(marketState === 'CURRENT' ? [] : ['MARKET_EVIDENCE_' + marketState])];
     for (const incident of this.incidents.values()) if (!reasons.includes(incident.reasonCode)) incident.state = 'RESOLVED';
     for (const reason of reasons) {
       const prior = this.incidents.get(reason);

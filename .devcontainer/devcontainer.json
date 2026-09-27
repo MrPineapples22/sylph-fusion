@@ -1,0 +1,30 @@
+{
+  "name": "SYLPH Fusion Cloud Server",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+  "features": {
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.11"
+    }
+  },
+  "forwardPorts": [
+    8793
+  ],
+  "portsAttributes": {
+    "8793": {
+      "label": "SYLPH Fusion Terminal UI",
+      "onAutoForward": "openBrowser"
+    }
+  },
+  "postCreateCommand": "npm install && npm --prefix terminal install && npm run build",
+  "postStartCommand": "npm run start:cloud -- --duration 0",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      },
+      "extensions": [
+        "dbaeumer.vscode-eslint"
+      ]
+    }
+  }
+}

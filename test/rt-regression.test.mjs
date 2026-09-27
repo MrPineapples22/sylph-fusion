@@ -7,6 +7,19 @@ import { reducer, initialState } from '../terminal/src/engine.js';
 import { extractSystemAlerts } from '../terminal/src/alert-manager.js';
 import { createAutomationController } from '../terminal/src/automation-controller.js';
 
+// Emergency paper exits still require a quoteable market snapshot.  Give these
+// regression cases explicitly future-valid evidence instead of treating the
+// advisory fallback price as an executable fill.
+function pushExitQuote(engine, poolAddress) {
+  engine.pushState({
+    timestamp: Date.now() + 10_000,
+    slot: 1,
+    reserves: { sol: 100_000_000_000n, token: 1_000_000_000_000n },
+    price: 0.1,
+    volatility: 0,
+  }, poolAddress);
+}
+
 test('RT-001: Max-open-positions limit cannot block Close 100% or position reduction', async () => {
   const gateway = new CommandGateway();
   const contextAtCapacity = {
@@ -43,8 +56,9 @@ test('RT-001: Max-open-positions limit cannot block Close 100% or position reduc
   assert.equal(closeValidation.isValid, true);
   assert.equal(closeValidation.classification, 'EXPOSURE_REDUCING');
 
-  // 3. Execution Engine executes SELL cleanly even when states are missing/stale
+  // 3. Execution Engine executes an exposure-reducing order using fresh evidence.
   const engine = new SimulatedEngine(7, 100_000n, 10_000_000n);
+  pushExitQuote(engine, 'POOL_HELD');
   const result = await engine.execute({
     orderId: 'ord-close-1',
     tokenMint: 'TOKEN_HELD',
@@ -196,6 +210,7 @@ test('RT-005: 30-second UI freeze does not cause catch-up trade runaway or ledge
 
 test('RT-006: Heavy intelligence inference block does not delay settlement or position liquidation', async () => {
   const engine = new SimulatedEngine(11, 100_000n, 10_000_000n);
+  pushExitQuote(engine, 'POOL_URGENT');
 
   // Background slow intelligence simulation
   let intelComplete = false;

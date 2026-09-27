@@ -13,7 +13,9 @@ async function fetchRugcheck(mint) {
 
 export async function fetchMarketTick(mint) {
   const [dex, tokenReport] = await Promise.all([fetch(`https://api.dexscreener.com/latest/dex/tokens/${mint}`,{signal:AbortSignal.timeout(8000)}).then(r => r.ok ? r.json() : null).catch(() => null), fetchRugcheck(mint)]);
-  const pair = dex?.pairs?.filter(p => p.chainId === 'solana' && p.baseToken?.address === mint && p.quoteToken?.address === 'So11111111111111111111111111111111111111112').sort((a,b)=>(b.liquidity?.usd||0)-(a.liquidity?.usd||0))[0];
+  // Multi-Pair Liquidity Priority: filter all Solana pairs for mint, sort descending by real USD liquidity
+  const solPairs = dex?.pairs?.filter(p => p.chainId === 'solana' && p.baseToken?.address === mint && (Number(p.liquidity?.usd) > 0 || Number(p.volume?.h24) > 0)) || [];
+  const pair = solPairs.sort((a, b) => (Number(b.liquidity?.usd) || 0) - (Number(a.liquidity?.usd) || 0))[0] || dex?.pairs?.[0];
   const priceUsd = Number(pair?.priceUsd); const liquidityUsd = Number(pair?.liquidity?.usd);
   if (!pair || !Number.isFinite(priceUsd) || priceUsd <= 0 || !Number.isFinite(liquidityUsd) || liquidityUsd <= 0) return null;
   const solPriceUsd = Number(pair.priceNative) > 0 ? priceUsd / Number(pair.priceNative) : NaN;

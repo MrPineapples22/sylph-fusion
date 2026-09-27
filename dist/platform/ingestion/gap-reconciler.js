@@ -29,6 +29,9 @@ export class IngestionGapReconciler {
     }
     setBackfillHandler(handler) {
         this.backfillHandler = handler;
+        // A result from a replaced provider must not certify a gap after its
+        // authority has been superseded. The new handler drains remaining work.
+        this.generation++;
         void this.drainBackfills();
     }
     registerSlot(slot, signatureCount = 1, expectContiguous = true) {
@@ -98,8 +101,12 @@ export class IngestionGapReconciler {
                 const generation = this.generation;
                 try {
                     const success = await this.backfillHandler({ ...gap });
-                    if (generation !== this.generation)
+                    if (generation !== this.generation) {
+                        // Revalidate this interval with the replacement provider; the old
+                        // result is evidence from a superseded authority.
+                        this.pendingBackfills.unshift(gap);
                         continue;
+                    }
                     if (success)
                         this.markGapResolved(gap.startSlot, gap.endSlot);
                     else
@@ -113,6 +120,10 @@ export class IngestionGapReconciler {
         }
         finally {
             this.backfillRunning = false;
+            // A handler can change while an old request is in flight. Continue with
+            // the current generation instead of leaving queued gaps stranded.
+            if (this.pendingBackfills.length)
+                void this.drainBackfills();
         }
     }
     getUnresolvedGaps() {

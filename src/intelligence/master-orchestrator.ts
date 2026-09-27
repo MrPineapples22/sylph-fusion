@@ -2110,8 +2110,10 @@ export class MasterIntelligenceEngine {
       existing_cluster_exposure_sol: 0
     }, {
       total_portfolio_value_sol: 50,
-      unencumbered_cash_sol: ledgerAudit.available_cash_sol,
-      current_exposure_sol: ledgerAudit.reserved_capital_sol,
+      // Sizing is advisory only; execution remains bound to exact lamport
+      // reservations in AuthoritativeCapitalLedger.
+      unencumbered_cash_sol: Number(ledgerAudit.availableCashLamports / 1_000_000n) / 1_000,
+      current_exposure_sol: Number(ledgerAudit.reservedCapitalLamports / 1_000_000n) / 1_000,
       max_allowable_exposure_sol: 20,
       emergency_reserve_sol: 5,
       max_single_token_sol: 1.0,
@@ -2372,8 +2374,8 @@ export class MasterIntelligenceEngine {
           isEnvelopeValid: curieEnvelope.applicable,
         },
         ledger: {
-          availableCashSol: ledgerAudit.available_cash_sol,
-          reservedSol: ledgerAudit.reserved_capital_sol,
+          availableCashSol: Number(ledgerAudit.availableCashLamports / 1_000_000n) / 1_000,
+          reservedSol: Number(ledgerAudit.reservedCapitalLamports / 1_000_000n) / 1_000,
           hiddenGeneRisk: ledgerAudit.hidden_shared_gene_risk_detected,
         },
         healthStrip,

@@ -3,6 +3,8 @@
  * Parts XVII & XVIII — Multi-Dimensional Exposures, Shared-Gene Exposure & Non-Ambiguous Reconciling
  */
 
+import { NumeraireAuthority, asLamports } from '../../platform/ledger/numeraire.js';
+
 export type ExecutionLifecycleState =
   | 'CREATED'
   | 'AUTHORIZED'
@@ -18,7 +20,8 @@ export interface PendingTransaction {
   readonly mint: string;
   readonly strategy_id: string;
   readonly gene_ids: readonly string[];
-  readonly amount_sol: number;
+  /** Exact reservation; all authority quantities are base-unit lamports. */
+  readonly amountLamports: bigint;
   readonly signed_tx_signature: string;
   readonly state: ExecutionLifecycleState;
   readonly submitted_at_slot: number;
@@ -33,40 +36,54 @@ export interface PositionRecord {
   readonly gene_ids: readonly string[];
   readonly creator_address?: string;
   readonly wallet_cluster_id?: string;
-  readonly amount_sol: number;
-  readonly entry_price_sol: number;
-  readonly current_price_sol: number;
-  readonly unrealized_pnl_sol: number;
+  readonly amountLamports: bigint;
   readonly entered_at_ms: number;
 }
 
 export interface MultiDimensionalExposureReport {
-  readonly total_portfolio_exposure_sol: number;
-  readonly available_cash_sol: number;
-  readonly reserved_capital_sol: number;
-  readonly exposure_by_token: Readonly<Record<string, number>>;
-  readonly exposure_by_strategy: Readonly<Record<string, number>>;
-  readonly exposure_by_gene: Readonly<Record<string, number>>;
-  readonly exposure_by_creator: Readonly<Record<string, number>>;
+  readonly totalPortfolioExposureLamports: bigint;
+  readonly availableCashLamports: bigint;
+  readonly reservedCapitalLamports: bigint;
+  readonly exposureByTokenLamports: Readonly<Record<string, bigint>>;
+  readonly exposureByStrategyLamports: Readonly<Record<string, bigint>>;
+  readonly exposureByGeneLamports: Readonly<Record<string, bigint>>;
+  readonly exposureByCreatorLamports: Readonly<Record<string, bigint>>;
   readonly hidden_shared_gene_risk_detected: boolean;
+
+  // Projections for backward compatibility
+  readonly total_portfolio_exposure_sol?: number;
+  readonly exposure_by_token?: Record<string, number>;
+  readonly exposure_by_strategy?: Record<string, number>;
+  readonly exposure_by_gene?: Record<string, number>;
+  readonly exposure_by_creator?: Record<string, number>;
 }
 
 export class AuthoritativeCapitalLedger {
-  private availableCashSol = 100.0; // Default paper portfolio
-  private reservedSol = 0.0;
+  /** In-memory research projection only; never grants settlement/signing authority. */
+  readonly evidenceClass = 'RESEARCH_ONLY' as const;
+  private readonly openingCapitalLamports: bigint;
+  private readonly consumedIds = new Set<string>();
+  private availableCashLamports: bigint;
+  private reservedLamports = 0n;
   private readonly positions = new Map<string, PositionRecord>(); // key = mint
   private readonly pendingTxs = new Map<string, PendingTransaction>(); // key = tx_id
-  private realizedPnlSol = 0.0;
-  private totalFeesPaidSol = 0.0;
+  private realizedPnlLamports = 0n;
+  private totalFeesPaidLamports = 0n;
+
+  constructor(initialCapitalLamports: bigint = 100_000_000_000n) {
+    if (typeof initialCapitalLamports !== 'bigint' || initialCapitalLamports < 0n) throw new Error('INVALID_INITIAL_CAPITAL');
+    this.openingCapitalLamports = initialCapitalLamports;
+    this.availableCashLamports = initialCapitalLamports;
+  }
 
   /**
    * Reserve capital before transaction signing.
    */
-  public reserveCapital(amount_sol: number): boolean {
-    if (!Number.isFinite(amount_sol) || amount_sol <= 0) return false;
-    if (this.availableCashSol < amount_sol) return false;
-    this.availableCashSol -= amount_sol;
-    this.reservedSol += amount_sol;
+  public reserveCapital(amountLamports: bigint): boolean {
+    if (typeof amountLamports !== 'bigint') return false;
+    if (amountLamports <= 0n || amountLamports > this.availableCashLamports) return false;
+    this.availableCashLamports -= amountLamports;
+    this.reservedLamports += amountLamports;
     return true;
   }
 
@@ -74,7 +91,11 @@ export class AuthoritativeCapitalLedger {
    * Register pending execution in CREATED or SUBMITTED state.
    */
   public registerPendingTransaction(tx: PendingTransaction): void {
-    this.pendingTxs.set(tx.tx_id, tx);
+    if (!tx.tx_id || !tx.mint || typeof tx.amountLamports !== 'bigint' || tx.amountLamports <= 0n) throw new Error('INVALID_EXACT_PENDING_AMOUNT');
+    if (this.pendingTxs.has(tx.tx_id) || this.consumedIds.has(tx.tx_id)) throw new Error('DUPLICATE_ECONOMIC_INTENT');
+    const assigned = [...this.pendingTxs.values()].reduce((sum, item) => sum + item.amountLamports, 0n);
+    if (assigned + tx.amountLamports > this.reservedLamports) throw new Error('RESERVATION_REQUIRED');
+    this.pendingTxs.set(tx.tx_id, Object.freeze({ ...tx, gene_ids: Object.freeze([...tx.gene_ids]) }));
   }
 
   /**
@@ -102,18 +123,16 @@ export class AuthoritativeCapitalLedger {
       };
     }
 
-    // Blockhash expired: safe to conclude unlanded and rebuild with new quote/permit if desired.
+    // Expiry is not proof of non-execution. Capital remains reserved until a
+    // reconciler has recorded independent negative chain evidence.
     const expired: PendingTransaction = {
       ...tx,
       state: 'EXPIRED',
       last_checked_slot: current_slot,
     };
     this.pendingTxs.set(tx_id, expired);
-    this.reservedSol = Math.max(0, this.reservedSol - tx.amount_sol);
-    this.availableCashSol += tx.amount_sol; // release capital
-
     return {
-      action: 'REBUILD_NEW_TX',
+      action: 'WAIT_FOR_CONFIRMATION',
       tx_state: 'EXPIRED',
     };
   }
@@ -121,24 +140,25 @@ export class AuthoritativeCapitalLedger {
   /**
    * Confirm successful fill on chain. Convert reservation into position.
    */
-  public confirmFill(tx_id: string, entry_price_sol: number): PositionRecord {
+  public confirmFill(tx_id: string, executionPrice?: number): PositionRecord {
     const tx = this.pendingTxs.get(tx_id);
     if (!tx) throw new Error(`Pending tx not found: ${tx_id}`);
 
-    this.reservedSol = Math.max(0, this.reservedSol - tx.amount_sol);
+    if (this.reservedLamports < tx.amountLamports) throw new Error('RESERVATION_CONSERVATION_BREACH');
+    const existing = this.positions.get(tx.mint);
+    if (existing && (existing.strategy_id !== tx.strategy_id || JSON.stringify(existing.gene_ids) !== JSON.stringify(tx.gene_ids))) throw new Error('POSITION_ATTRIBUTION_CONFLICT');
+    this.reservedLamports -= tx.amountLamports;
     const pos: PositionRecord = {
       mint: tx.mint,
       strategy_id: tx.strategy_id,
       gene_ids: tx.gene_ids,
-      amount_sol: tx.amount_sol,
-      entry_price_sol,
-      current_price_sol: entry_price_sol,
-      unrealized_pnl_sol: 0.0,
+      amountLamports: tx.amountLamports + (existing?.amountLamports ?? 0n),
       entered_at_ms: Date.now(),
     };
 
-    this.positions.set(tx.mint, pos);
+    this.positions.set(tx.mint, Object.freeze(pos));
     this.pendingTxs.delete(tx_id);
+    this.consumedIds.add(tx_id);
     return pos;
   }
 
@@ -147,40 +167,64 @@ export class AuthoritativeCapitalLedger {
    * Computes exposure by token, strategy, creator, and crucially by GENE.
    */
   public auditExposures(): MultiDimensionalExposureReport {
-    const byToken: Record<string, number> = {};
-    const byStrategy: Record<string, number> = {};
-    const byGene: Record<string, number> = {};
-    const byCreator: Record<string, number> = {};
-    let totalExposure = 0;
+    const byToken: Record<string, bigint> = {};
+    const byStrategy: Record<string, bigint> = {};
+    const byGene: Record<string, bigint> = {};
+    const byCreator: Record<string, bigint> = {};
+    let totalExposure = 0n;
 
     for (const pos of this.positions.values()) {
-      totalExposure += pos.amount_sol;
-      byToken[pos.mint] = (byToken[pos.mint] || 0) + pos.amount_sol;
-      byStrategy[pos.strategy_id] = (byStrategy[pos.strategy_id] || 0) + pos.amount_sol;
+      totalExposure += pos.amountLamports;
+      byToken[pos.mint] = (byToken[pos.mint] ?? 0n) + pos.amountLamports;
+      byStrategy[pos.strategy_id] = (byStrategy[pos.strategy_id] ?? 0n) + pos.amountLamports;
 
       if (pos.creator_address) {
-        byCreator[pos.creator_address] = (byCreator[pos.creator_address] || 0) + pos.amount_sol;
+        byCreator[pos.creator_address] = (byCreator[pos.creator_address] ?? 0n) + pos.amountLamports;
       }
 
       // Shared gene exposure detection
       for (const gid of pos.gene_ids) {
-        byGene[gid] = (byGene[gid] || 0) + pos.amount_sol;
+        byGene[gid] = (byGene[gid] ?? 0n) + pos.amountLamports;
       }
     }
 
     // Flag if any single gene controls >40% of total capital across multiple strategies
-    const maxGeneExposure = Math.max(0, ...Object.values(byGene));
-    const hiddenGeneRisk = totalExposure > 5.0 && maxGeneExposure / totalExposure > 0.4;
+    NumeraireAuthority.assertConservation({ openingCapital: asLamports(this.openingCapitalLamports), externalDeposits: asLamports(0n), externalWithdrawals: asLamports(0n), realizedEconomicResult: asLamports(this.realizedPnlLamports - this.totalFeesPaidLamports), availableBalance: asLamports(this.availableCashLamports), reservedCapital: asLamports(this.reservedLamports), deployedInPositions: asLamports(totalExposure), pendingSettlement: asLamports(0n) });
+    const maxGeneExposure = Object.values(byGene).reduce((max, amount) => amount > max ? amount : max, 0n);
+    const hiddenGeneRisk = totalExposure > 5_000_000_000n && maxGeneExposure * 10n > totalExposure * 4n;
+
+    const exposureByGeneSol: Record<string, number> = {};
+    for (const [k, v] of Object.entries(byGene)) {
+      exposureByGeneSol[k] = Number(v) / 1e9;
+    }
+    const exposureByTokenSol: Record<string, number> = {};
+    for (const [k, v] of Object.entries(byToken)) {
+      exposureByTokenSol[k] = Number(v) / 1e9;
+    }
+    const exposureByStrategySol: Record<string, number> = {};
+    for (const [k, v] of Object.entries(byStrategy)) {
+      exposureByStrategySol[k] = Number(v) / 1e9;
+    }
+    const exposureByCreatorSol: Record<string, number> = {};
+    for (const [k, v] of Object.entries(byCreator)) {
+      exposureByCreatorSol[k] = Number(v) / 1e9;
+    }
 
     return {
-      total_portfolio_exposure_sol: Number(totalExposure.toFixed(3)),
-      available_cash_sol: Number(this.availableCashSol.toFixed(3)),
-      reserved_capital_sol: Number(this.reservedSol.toFixed(3)),
-      exposure_by_token: byToken,
-      exposure_by_strategy: byStrategy,
-      exposure_by_gene: byGene,
-      exposure_by_creator: byCreator,
+      totalPortfolioExposureLamports: totalExposure,
+      availableCashLamports: this.availableCashLamports,
+      reservedCapitalLamports: this.reservedLamports,
+      exposureByTokenLamports: byToken,
+      exposureByStrategyLamports: byStrategy,
+      exposureByGeneLamports: byGene,
+      exposureByCreatorLamports: byCreator,
       hidden_shared_gene_risk_detected: hiddenGeneRisk,
+
+      total_portfolio_exposure_sol: Number(totalExposure) / 1e9,
+      exposure_by_token: exposureByTokenSol,
+      exposure_by_strategy: exposureByStrategySol,
+      exposure_by_gene: exposureByGeneSol,
+      exposure_by_creator: exposureByCreatorSol,
     };
   }
 }

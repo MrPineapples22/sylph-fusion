@@ -66,7 +66,9 @@ export default function OperatorTerminal(){
   return()=>{stop();clearInterval(timer);scanController.current?.abort();};
  },[]);
  useEffect(()=>{const key=e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();setPalette(v=>!v);}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[]);
- const [autoTradePrime, setAutoTradePrime] = useState(() => typeof localStorage !== 'undefined' ? localStorage.getItem('sylph_auto_trade_prime') !== 'false' : true);
+ // Entry automation is opt-in. A persisted setting may enable it only after
+ // the current projection independently grants OPEN capability.
+ const [autoTradePrime, setAutoTradePrime] = useState(() => typeof localStorage !== 'undefined' ? localStorage.getItem('sylph_auto_trade_prime') === 'true' : false);
  const autoTradeCooldowns = useRef(new Map());
  const [autoExitGuardian, setAutoExitGuardian] = useState(() => typeof localStorage !== 'undefined' ? localStorage.getItem('sylph_auto_exit_guardian') !== 'false' : true);
  const autoExitCooldowns = useRef(new Map());
@@ -115,6 +117,9 @@ export default function OperatorTerminal(){
   }catch(error){setNotice(`Paper close unavailable: ${error instanceof Error?error.message:'local simulator request failed.'}`);}
  }
  async function openPaperPosition(token, usdAmount = null){
+  if(!current||projection?.environment?.mode!=='SIMULATION'||projection?.capabilities?.open?.state!=='READY'){
+   setNotice('Paper entry is unavailable until the current authoritative projection permits opening exposure.');return;
+  }
   if(!token?.mint){setNotice('Paper entry is unavailable: token lacks a mint address.');return;}
   const sizing = calculateOptimalBuyPositionValue(token, {
     capital: projection?.capital,
@@ -158,7 +163,7 @@ export default function OperatorTerminal(){
   }
  }
  useEffect(() => {
-  if (!autoTradePrime || !current || projection?.environment?.mode !== 'SIMULATION') return;
+  if (!autoTradePrime || !current || projection?.environment?.mode !== 'SIMULATION' || projection?.capabilities?.open?.state !== 'READY') return;
   const positions = projection?.positions || [];
   if (positions.length >= 3) return;
   if (projection?.feedStale) return;
@@ -265,7 +270,7 @@ export default function OperatorTerminal(){
   }
  }, [autoExitGuardian, current, projection]);
  const capability=name=>current?projection?.capabilities[name]?.state||'UNKNOWN':'UNKNOWN';
- const paperReady=current&&projection?.environment?.mode==='SIMULATION'&&['open','increase','reduce','close'].some(name=>projection?.capabilities[name]?.state==='READY');
+ const paperReady=current&&projection?.environment?.mode==='SIMULATION'&&projection?.capabilities?.open?.state==='READY';
  const showEnvelope=action=><section className="op-section"><h2>{action.toUpperCase()} operating envelope</h2><Status value={current?projection?.envelopes[action]?.state:'UNKNOWN'}/><p>{projection?.envelopes[action]?.dominantConstraint||'Waiting for authoritative constraints.'}</p><div className="op-table-scroll" role="region" aria-label={`${action} operating constraints`} tabIndex={0}><table><thead><tr>{['Constraint','Current','Boundary','Margin','State'].map(x=><th scope="col" key={x}>{x}</th>)}</tr></thead><tbody>{(Array.isArray(projection?.envelopes?.[action]?.constraints)?projection.envelopes[action].constraints:[]).filter(Boolean).map(c=><tr key={c.id}><td>{c.label}<small>{c.source}</small></td><td>{number(c.current)} {c.unit}</td><td>{number(c.boundary)} {c.unit}</td><td>{number(c.margin)} {c.unit}</td><td><Status value={current?c.state:'UNKNOWN'}/></td></tr>)}</tbody></table></div><p className="op-muted">{current && projection?.envelopes?.[action]?.state === 'SAFE' ? 'All paper operating constraints satisfied for simulation.' : 'Unknown review, risk or reserve evidence prevents a complete operating envelope.'}</p></section>;
  return <div ref={root} className="op-terminal sylph">
   <a className="op-skip" href="#op-workspace" onClick={event=>{event.preventDefault();document.getElementById('op-workspace')?.focus();}}>Skip to workspace</a>
@@ -304,8 +309,8 @@ export default function OperatorTerminal(){
   const chosenSizing = chosen ? calculateOptimalBuyPositionValue(chosen, { capital: projection?.capital, activePositionsCount: (projection?.positions || []).length }) : null;
   const bestUsd = chosenSizing ? chosenSizing.optimalUsd : 50;
   return (<>
-    <button type="button" className="op-primary" style={{marginLeft:'8px',background:'linear-gradient(135deg, #10B981, #059669)',borderColor:'#059669',color:'#FFFFFF',fontWeight:700}} onClick={()=>openPaperPosition(chosen, bestUsd)} title={chosenSizing?.rationale}>⚡ Buy Best Size (${bestUsd.toFixed(2)})</button>
-    <button type="button" className="op-button" style={{marginLeft:'8px',color:'#10B981',borderColor:'rgba(16,185,129,0.3)',background:'rgba(16,185,129,0.08)'}} onClick={()=>{const def = bestUsd.toFixed(2); const c=window.prompt(`Enter paper USD amount to buy ${chosen.symbol||chosen.mint} (Optimal: $${def}):`, def);if(c&&Number(c)>0)openPaperPosition(chosen,Number(c));}}>⚡ Custom Buy</button>
+    <button type="button" className="op-primary" disabled={!paperReady} style={{marginLeft:'8px',background:'linear-gradient(135deg, #10B981, #059669)',borderColor:'#059669',color:'#FFFFFF',fontWeight:700}} onClick={()=>openPaperPosition(chosen, bestUsd)} title={paperReady?chosenSizing?.rationale:'Opening exposure is blocked by the current projection.'}>⚡ Buy Best Size (${bestUsd.toFixed(2)})</button>
+    <button type="button" className="op-button" disabled={!paperReady} style={{marginLeft:'8px',color:'#10B981',borderColor:'rgba(16,185,129,0.3)',background:'rgba(16,185,129,0.08)'}} onClick={()=>{const def = bestUsd.toFixed(2); const c=window.prompt(`Enter paper USD amount to buy ${chosen.symbol||chosen.mint} (Optimal: $${def}):`, def);if(c&&Number(c)>0)openPaperPosition(chosen,Number(c));}}>⚡ Custom Buy</button>
     {chosenSizing && (
       <div style={{marginTop:'8px',padding:'6px 10px',background:'rgba(20,241,149,0.08)',border:'1px solid rgba(20,241,149,0.25)',borderRadius:'4px',display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap',fontSize:'12px'}}>
         <span style={{color:'#14F195',fontWeight:700}}>🎯 Best Position Value: ${chosenSizing.optimalUsd.toFixed(2)}</span>

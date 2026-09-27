@@ -11,6 +11,7 @@
 
 export type ExitActionType =
   | 'HOLD'
+  | 'REDUCE_50'
   | 'REDUCE_33'
   | 'REDUCE_66'
   | 'EXIT_100_PROFIT'
@@ -161,4 +162,70 @@ export class DynamicExitEngine {
       notes: `Position healthy (${(pos.unrealizedPnlPct * 100).toFixed(1)}% P&L). Protective stop at $${effectiveStopPriceUsd.toFixed(6)}.`,
     };
   }
+
+  /**
+   * Evaluates Dynamic Staged Trailing Stops for Multi-Baggers (AGENTS.md):
+   * Gain < 100%: 20% trail
+   * Gain > 100%: 30% structural trail (prevents choking multi-baggers during 25-30% pullbacks)
+   * Gain > 500%: 40% structural trail
+   * Enforces 50/50 Rule: 50% scale-out at +20% gain to secure risk-free execution for remainder.
+   */
+  public evaluateGodTierExits(position: PositionStateSnapshot): {
+    action: ExitActionType;
+    reason: string;
+    protectiveStopUsd: number;
+    fractionPct: number;
+  } {
+    const { entryPriceUsd, currentPriceUsd, highestPriceUsd, unrealizedPnlPct } = position;
+    const peakRatio = highestPriceUsd / entryPriceUsd;
+
+    // 1. Dynamic 50/50 Rule: Scale out 50% at >= +20% gain to de-risk
+    if (unrealizedPnlPct >= 0.20 && unrealizedPnlPct < 0.35 && position.realSolReserve > 0) {
+      return {
+        action: 'REDUCE_50',
+        reason: '50/50 RULE: Secure 50% profit at +20% gain milestone to make runner risk-free',
+        protectiveStopUsd: entryPriceUsd * 1.05, // Lock in breakeven + 5%
+        fractionPct: 0.50,
+      };
+    }
+
+    // 2. Dynamic Staged Trailing Stops
+    let trailPct = 0.15;
+    let floorMultiplier = 1.01;
+
+    if (peakRatio >= 6.0) {
+      // 500%+ Moonshot: 40% structural trail
+      trailPct = 0.40;
+      floorMultiplier = 4.0;
+    } else if (peakRatio >= 2.0) {
+      // 100%+ Double: 30% trail
+      trailPct = 0.30;
+      floorMultiplier = 1.50;
+    } else if (peakRatio >= 1.25) {
+      // 25%+ Gain: 20% trail
+      trailPct = 0.20;
+      floorMultiplier = 1.10;
+    }
+
+    const stagedFloorUsd = entryPriceUsd * floorMultiplier;
+    const trailingStopUsd = highestPriceUsd * (1 - trailPct);
+    const effectiveStopUsd = Math.max(stagedFloorUsd, trailingStopUsd);
+
+    if (currentPriceUsd <= effectiveStopUsd && peakRatio >= 1.04) {
+      return {
+        action: 'EXIT_100_PROFIT',
+        reason: `DYNAMIC_STAGED_TRAIL: Price breached staged trailing stop ($${effectiveStopUsd.toFixed(6)}) from peak $${highestPriceUsd.toFixed(6)}`,
+        protectiveStopUsd: effectiveStopUsd,
+        fractionPct: 1.0,
+      };
+    }
+
+    return {
+      action: 'HOLD',
+      reason: `Holding: trailing floor at $${effectiveStopUsd.toFixed(6)} (${(trailPct * 100).toFixed(0)}% trail)`,
+      protectiveStopUsd: effectiveStopUsd,
+      fractionPct: 0.0,
+    };
+  }
+
 }

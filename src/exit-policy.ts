@@ -1,4 +1,4 @@
-﻿/**
+/**
  * ============================================================================
  * SOL-SYLPH GOD-TIER 50 EXIT POLICY ENGINE (exit-policy.ts)
  * ============================================================================
@@ -71,17 +71,36 @@ export function protectiveStop(input: Pick<ExitPolicyInput, 'entry' | 'peak' | '
   const peakRatio = peak / entry;
   if (peakRatio < 1.04) return hardStop;
 
-  // Staged trailing stops & profit floors per God-Tier controls
-  const tier =
-    peakRatio >= 2.0
-      ? [1.70, 0.12]
-      : peakRatio >= 1.5
-        ? [1.35, 0.12]
-        : peakRatio >= 1.25
-          ? [1.15, 0.10]
-          : [1.01, 0.08];
+  // Dynamic Staged Trailing Stops for Moonshots (AGENTS.md & God-Tier Controls):
+  // Static tight trailing stops choke out 1500% runners that experience 30-40% structural pullbacks.
+  // Gain < 25%: 15% trail (breakeven floor)
+  // Gain 25% - 100%: 20% trail (floor entry * 1.10)
+  // Gain 100% - 500%: 30% trail (floor entry * 1.50)
+  // Gain > 500%: 40% structural trail (floor entry * 4.0)
+  let floorMultiplier = 1.01;
+  let trailPct = 0.15;
 
-  return Math.max(hardStop, entry * tier[0], peak * (1 - tier[1]));
+  if (peakRatio >= 6.0) {
+    // 500%+ Moonshot runner: Allow 40% structural breath room to capture 1500%+ expansions
+    floorMultiplier = 4.0;
+    trailPct = 0.40;
+  } else if (peakRatio >= 2.0) {
+    // 100%+ Double: Allow 30% pullback trail
+    floorMultiplier = 1.50;
+    trailPct = 0.30;
+  } else if (peakRatio >= 1.25) {
+    // 25%+ Gain: 20% trail
+    floorMultiplier = 1.10;
+    trailPct = 0.20;
+  } else {
+    // 4% - 25%: 15% trail with breakeven protection
+    floorMultiplier = 1.01;
+    trailPct = 0.15;
+  }
+
+  const stagedFloor = entry * floorMultiplier;
+  const trailingPrice = peak * (1 - trailPct);
+  return Math.max(hardStop, stagedFloor, trailingPrice);
 }
 
 /**

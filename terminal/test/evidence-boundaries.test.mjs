@@ -37,6 +37,12 @@ test('local requests reject hostile or null origins even with loopback Host', ()
   assert.equal(isLocalRequest({headers: {...req.headers, origin: 'http://127.0.0.1:8793'}}, 8793), true);
 });
 
+test('local request boundary never expands to tunnel or LAN hostnames', () => {
+  for (const host of ['192.168.1.8:8793', 'safe.trycloudflare.com', 'eviltrycloudflare.com', 'x.ngrok-free.app']) {
+    assert.equal(isLocalRequest({headers: {host}}, 8793), false);
+  }
+});
+
 function request(body, contentType = 'application/json') {
   const stream = Readable.from([Buffer.from(body)]);
   stream.headers = {'content-type': contentType};

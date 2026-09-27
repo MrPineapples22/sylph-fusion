@@ -1,3 +1,39 @@
+/** Token-bucket rate limiter per endpoint to smoothly pace requests and avoid provider HTTP 429s */
+class TokenBucket {
+    capacity;
+    refillRatePerSec;
+    tokens;
+    lastRefill;
+    constructor(capacity = 60, refillRatePerSec = 30) {
+        this.capacity = capacity;
+        this.refillRatePerSec = refillRatePerSec;
+        this.tokens = capacity;
+        this.lastRefill = performance.now();
+    }
+    tryConsume(cost = 1) {
+        this.refill();
+        if (this.tokens >= cost) {
+            this.tokens -= cost;
+            return true;
+        }
+        return false;
+    }
+    async acquire(cost = 1, maxWaitMs = 1000) {
+        const start = performance.now();
+        while (performance.now() - start < maxWaitMs) {
+            if (this.tryConsume(cost))
+                return true;
+            await new Promise(r => setTimeout(r, 20));
+        }
+        return false;
+    }
+    refill() {
+        const now = performance.now();
+        const elapsedSec = (now - this.lastRefill) / 1000;
+        this.tokens = Math.min(this.capacity, this.tokens + elapsedSec * this.refillRatePerSec);
+        this.lastRefill = now;
+    }
+}
 import { Connection } from '@solana/web3.js';
 import { log } from './core.js';
 export function sanitizeRpcUrl(rawUrl) {
@@ -61,6 +97,8 @@ export class RpcPool {
     lastSuccess;
     calls;
     latencyHistories;
+    quarantinedUntil;
+    rateLimiters;
     constructor(cfg) {
         this.cfg = cfg;
         this.failures = cfg.RPC_URLS.map(() => 0);
@@ -71,18 +109,32 @@ export class RpcPool {
         this.lastSuccess = cfg.RPC_URLS.map(() => null);
         this.calls = cfg.RPC_URLS.map(() => 0);
         this.latencyHistories = cfg.RPC_URLS.map(() => []);
+        this.quarantinedUntil = cfg.RPC_URLS.map(() => 0);
+        this.rateLimiters = cfg.RPC_URLS.map(() => new TokenBucket(60, 35));
         const boundedFetch = (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(cfg.RPC_TIMEOUT_MS) });
         this.endpoints = cfg.RPC_URLS.map(url => new Connection(url, { commitment: 'confirmed', disableRetryOnRateLimit: true, fetch: boundedFetch }));
         const pooledFetch = async (_url, init) => {
-            const start = this.active;
-            for (let k = 0; k < cfg.RPC_URLS.length; k++) {
-                const index = (start + k) % cfg.RPC_URLS.length;
+            const now = Date.now();
+            // Dynamic Endpoint Scoring: rank endpoints by latency + failure penalty + slot lag
+            const maxObservedSlot = Math.max(...this.slots, 0);
+            const rankedIndices = cfg.RPC_URLS.map((_, i) => {
+                const isQuarantined = now < this.quarantinedUntil[i];
+                const failPenalty = this.failures[i] * 150;
+                const slotLag = maxObservedSlot > 0 && this.slots[i] > 0 ? Math.max(0, maxObservedSlot - this.slots[i]) : 0;
+                const score = (isQuarantined ? 100_000 : 0) + (this.latencies[i] || 100) + failPenalty + (slotLag * 25);
+                return { index: i, score, isQuarantined };
+            }).sort((a, b) => a.score - b.score).map(x => x.index);
+            for (const index of rankedIndices) {
+                // Enforce rate limiter token pacing
+                await this.rateLimiters[index].acquire(1, 150);
                 this.calls[index]++;
                 const t0 = performance.now();
                 try {
                     const res = await boundedFetch(cfg.RPC_URLS[index], init);
                     if (res.status === 429) {
                         this.http429s[index]++;
+                        // Exponential backoff quarantine on 429
+                        this.quarantinedUntil[index] = Date.now() + Math.min(60_000, 5000 * 2 ** Math.min(this.failures[index], 4));
                         throw new Error('HTTP 429');
                     }
                     if (!res.ok) {
@@ -95,6 +147,7 @@ export class RpcPool {
                         throw new Error('RPC rejected request');
                     }
                     this.failures[index] = 0;
+                    this.quarantinedUntil[index] = 0;
                     const lat = Math.round(performance.now() - t0);
                     this.latencies[index] = lat;
                     this.latencyHistories[index].push(lat);
@@ -102,7 +155,7 @@ export class RpcPool {
                         this.latencyHistories[index].shift();
                     this.lastSuccess[index] = Date.now();
                     if (this.active !== index)
-                        log('rpc_failover', { endpointIndex: index });
+                        log('rpc_failover', { endpointIndex: index, url: sanitizeRpcUrl(cfg.RPC_URLS[index]), latencyMs: lat });
                     this.active = index;
                     return res;
                 }
@@ -114,6 +167,9 @@ export class RpcPool {
                     }
                     else {
                         this.errors[index]++;
+                    }
+                    if (this.failures[index] >= 3) {
+                        this.quarantinedUntil[index] = Date.now() + 15_000;
                     }
                 }
             }

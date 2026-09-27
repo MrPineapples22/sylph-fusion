@@ -60,7 +60,20 @@ export function normalizePairs(rows: any[], at = Date.now()): TokenRow[] {
       txs: txCount ?? undefined,
       txCount: txCount ?? undefined,
     };
-    if (!result.has(row.mint) || (row.liquidity ?? -1) > (result.get(row.mint)!.liquidity ?? -1)) result.set(row.mint, row);
+    // Multi-Pair Liquidity Priority: strictly choose pair with highest real USD liquidity (> 0)
+    // Prevents defunct bonding curve pairs (liquidity: null/0) from polluting active DEX pool prices
+    const existing = result.get(row.mint);
+    if (!existing) {
+      result.set(row.mint, row);
+    } else {
+      const existingLiq = existing.liquidity ?? -1;
+      const currentLiq = row.liquidity ?? -1;
+      if (currentLiq > existingLiq) {
+        result.set(row.mint, row);
+      } else if (currentLiq === existingLiq && row.complete && !existing.complete) {
+        result.set(row.mint, row);
+      }
+    }
   }
   return [...result.values()];
 }

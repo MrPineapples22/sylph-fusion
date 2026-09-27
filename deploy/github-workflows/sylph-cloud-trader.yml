@@ -1,0 +1,86 @@
+name: SYLPH Paper Simulation & Audit Daemon
+
+on:
+  workflow_dispatch:
+    inputs:
+      runtime_minutes:
+        description: 'Session duration in minutes (max 360 on GitHub standard runner)'
+        required: true
+        default: '360'
+      audit_interval:
+        description: 'God-Tier audit interval in seconds'
+        required: true
+        default: '600'
+  schedule:
+    # 24/7 Autonomous Cycle: Runs continuous 6-hour trading session every 6 hours
+    - cron: '0 */6 * * *'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  cloud-trading-daemon:
+    name: Paper Simulation Session
+    runs-on: ubuntu-latest
+    timeout-minutes: 380
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Root & Terminal Dependencies
+        run: |
+          npm install
+          npm --prefix terminal install
+
+      - name: Compile Engine & Build Terminal UI
+        run: |
+          npm run build:engine
+          npm run build:ui
+
+      - name: Verify Safety Gates & Certification Tests
+        run: |
+          npm run test:platform
+          npm run test:intelligence
+          npm run test:terminal
+
+      - name: Run SYLPH Paper Simulation Engine
+        env:
+          RUNTIME_MINUTES: ${{ github.event.inputs.runtime_minutes || '360' }}
+          MODE: 'paper'
+          AUDIT_INTERVAL_SECONDS: ${{ github.event.inputs.audit_interval || '600' }}
+          TERMINAL_PORT: '8793'
+          TERMINAL_HOST: '127.0.0.1'
+          PAVLOV_ATTRIBUTIONS_PATH: 'data/pavlov_attributions.csv'
+        run: |
+          node scripts/cloud-trading-runner.mjs \
+            --duration "${RUNTIME_MINUTES}" \
+            --mode "${MODE}" \
+            --audit-interval "${AUDIT_INTERVAL_SECONDS}" \
+            --port 8793 \
+            --host 127.0.0.1
+
+      - name: Archive Session Telemetry & Trade Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sylph-telemetry-${{ github.run_id }}
+          path: |
+            data/
+            terminal/dist/
+          retention-days: 30

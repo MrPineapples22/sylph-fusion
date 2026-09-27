@@ -1,3 +1,13 @@
+
+export interface ExtendedEntryTimingValidation {
+  readonly canEnter: boolean;
+  readonly recommendedMode: EntryTimingMode;
+  readonly confidence: number;
+  readonly isClimaxExhaustion: boolean;
+  readonly isStaleWindow: boolean;
+  readonly flowAccelerationPositive: boolean;
+  readonly reason: string;
+}
 /**
  * SOL-SYLPH Platform - Multi-Mode Entry Timing Engine
  * Specifications: Master Quantitative Upgrade (Phase 5).
@@ -126,4 +136,65 @@ export class EntryTimingEngine {
       notes: 'Awaiting clean pullback or volume acceleration trigger before issuing permit.',
     };
   }
+
+  /**
+   * Advanced Entry Timing & Feasibility Gate:
+   * 1. Anti-Top Climax Exhaustion: Rejects entries when token has surged >100% in <15s without consolidation.
+   * 2. Entry Window Expiry: Blocks orders if discovery age exceeds 4.0 seconds (momentum decay).
+   * 3. Volume Acceleration & Flow Derivatives: Verifies positive trade rate velocity.
+   */
+  public validateEntryFeasibility(telemetry: EntryTelemetry, opportunityAgeMs: number = 0): ExtendedEntryTimingValidation {
+    // 1. Entry Window Expiration (4.0s Half-Life)
+    if (opportunityAgeMs > 4_000) {
+      return {
+        canEnter: false,
+        recommendedMode: 'WAIT_FOR_SETUP',
+        confidence: 0,
+        isClimaxExhaustion: false,
+        isStaleWindow: true,
+        flowAccelerationPositive: false,
+        reason: `STALE_ENTRY_WINDOW: Signal age (${opportunityAgeMs}ms) exceeds 4000ms execution half-life`,
+      };
+    }
+
+    // 2. Anti-Top Climax Exhaustion (Blow-off Top)
+    // If token is very young (<30s) and price velocity is extreme (>4000 bps/s) with near-zero pullback
+    if (telemetry.tokenAgeSeconds < 45 && telemetry.priceVelocityBps > 4_000 && telemetry.retraceFromPeakPct < 0.03) {
+      return {
+        canEnter: false,
+        recommendedMode: 'PULLBACK_CONFIRMATION',
+        confidence: 0.35,
+        isClimaxExhaustion: true,
+        isStaleWindow: false,
+        flowAccelerationPositive: true,
+        reason: 'ANTI_TOP_CLIMAX_EXHAUSTION: Extreme velocity without consolidation; wait for pullback',
+      };
+    }
+
+    // 3. Flow Acceleration & Positive Trade Rate Velocity
+    const flowPositive = telemetry.volumeVelocitySolSec > 0.05 && telemetry.uniqueBuyerGrowthRate >= 1.0;
+    if (!flowPositive && telemetry.sellPressureRatio > 0.65) {
+      return {
+        canEnter: false,
+        recommendedMode: 'WAIT_FOR_SETUP',
+        confidence: 0.20,
+        isClimaxExhaustion: false,
+        isStaleWindow: false,
+        flowAccelerationPositive: false,
+        reason: 'NEGATIVE_FLOW_ACCELERATION: Sell pressure exceeds 65% with decaying buyer growth',
+      };
+    }
+
+    const standardEval = this.evaluateTiming(telemetry);
+    return {
+      canEnter: standardEval.isReady,
+      recommendedMode: standardEval.mode,
+      confidence: standardEval.confidence,
+      isClimaxExhaustion: false,
+      isStaleWindow: false,
+      flowAccelerationPositive: flowPositive,
+      reason: standardEval.notes || standardEval.invalidationReason || 'Standard timing evaluation',
+    };
+  }
+
 }

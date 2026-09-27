@@ -1,0 +1,23 @@
+services:
+  sylph-trader:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sylph-autonomous-server
+    restart: unless-stopped
+    # Bind only to the Docker host. Remote operator access needs a separately
+    # reviewed authenticated proxy; the terminal itself is intentionally local.
+    ports:
+      - "127.0.0.1:8793:8793"
+    environment:
+      - MODE=paper
+      - TERMINAL_PORT=8793
+      - TERMINAL_HOST=127.0.0.1
+      - RUNTIME_MINUTES=0
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8793/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

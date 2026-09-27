@@ -25,6 +25,7 @@ export type CommandType =
   | 'CHANGE_MODE'
   | 'SET_AUTOMATION'
   | 'EMERGENCY_STOP'
+  | 'PANIC_CLOSE_ALL'
   | 'SET_PAPER_CAPITAL';
 
 export interface BaseCommand {
@@ -94,6 +95,13 @@ export interface EmergencyStopCommand extends BaseCommand {
   };
 }
 
+export interface PanicCloseAllCommand extends BaseCommand {
+  readonly type: 'PANIC_CLOSE_ALL';
+  readonly payload?: {
+    readonly reason?: string;
+  };
+}
+
 export interface SetPaperCapitalCommand extends BaseCommand {
   readonly type: 'SET_PAPER_CAPITAL';
   readonly payload: {
@@ -108,6 +116,7 @@ export type Command =
   | ChangeModeCommand
   | SetAutomationCommand
   | EmergencyStopCommand
+  | PanicCloseAllCommand
   | SetPaperCapitalCommand;
 
 export interface CommandResult<T = unknown> {
@@ -257,14 +266,22 @@ export class CommandGateway {
           ? match.priceUsd
           : null;
 
-      if (price !== null && Number.isFinite(price) && price > 0) { pos.lastMark = price; pos.lastMarkAt = now;
-        if (!pos.peak || price > pos.peak) { pos.peak = price; pos.lastPeakAt = now; } if (!pos.lastPeakAt) { pos.lastPeakAt = pos.openedAt || now; }
+      if (price !== null && Number.isFinite(price) && price > 0) {
+        // Anti-Phantom Price Spike Clamp: If age < 3s and price spikes > +50% without trade velocity, clamp to entry
+        const positionAgeMs = now - (pos.openedAt || now);
+        const effectivePrice = (positionAgeMs < 3000 && price > pos.entry * 1.50) ? pos.entry : price;
+        pos.lastMark = effectivePrice; pos.lastMarkAt = now;
+        if (!pos.peak || effectivePrice > pos.peak) { pos.peak = effectivePrice; pos.lastPeakAt = now; } if (!pos.lastPeakAt) { pos.lastPeakAt = pos.openedAt || now; }
         if (!pos.trough || price < pos.trough) {
           pos.trough = price;
         }
 
         // Display precisely the same floor the guardian will enforce.
-        pos.stop = protectiveStop({ entry: pos.entry, peak: pos.peak, stopBps: globalConfigAuthority.getConfig().stopBps }) ?? pos.stop;
+        // Monotonic Profit Ratchet (Control 17 & 21): Stop can ONLY ratchet UPWARDS, never loosen downwards
+        const computedStop = protectiveStop({ entry: pos.entry, peak: pos.peak, stopBps: globalConfigAuthority.getConfig().stopBps });
+        if (computedStop !== null && Number.isFinite(computedStop) && computedStop > 0) {
+          pos.stop = typeof pos.stop === 'number' && pos.stop > 0 ? Math.max(pos.stop, computedStop) : computedStop;
+        }
       }
     }
   }
@@ -296,6 +313,12 @@ export class CommandGateway {
 
       if ((currentPrice === null || !Number.isFinite(currentPrice) || currentPrice <= 0) && typeof pos.lastMark === 'number' && pos.lastMark > 0) { currentPrice = pos.lastMark; }
       if (currentPrice === null || !Number.isFinite(currentPrice) || currentPrice <= 0) continue;
+
+      // Anti-Phantom Price Spike Clamp for autonomous exits
+      const positionAgeMs = now - (pos.openedAt || now);
+      if (positionAgeMs < 3000 && currentPrice > pos.entry * 1.50) {
+        currentPrice = pos.entry;
+      }
 
       const decision = decideExit({ entry: pos.entry, mark: currentPrice, peak: pos.peak, stage: pos.stage, openedAt: pos.openedAt, now, stopBps: globalConfigAuthority.getConfig().stopBps, markAt: match?.at, maxMarkAgeMs: globalConfigAuthority.getConfig().feedStaleMs, lastPeakAt: pos.lastPeakAt ?? pos.openedAt, partialExitBps: 5_000 });
       if (decision) {
@@ -389,6 +412,8 @@ export class CommandGateway {
           return this.handleSetAutomation(command);
         case 'EMERGENCY_STOP':
           return this.handleEmergencyStop(command);
+        case 'PANIC_CLOSE_ALL':
+          return await this.handlePanicCloseAll(command);
         case 'SET_PAPER_CAPITAL':
           return this.handleSetPaperCapital(command);
         default:
@@ -594,27 +619,11 @@ export class CommandGateway {
                   ? 'TRAILING_TARGET'
                   : 'OPERATOR_CLOSE'));
 
-            // --- GOD-TIER 50 CONTROLS 16, 21, 35 MICROSTRUCTURE CLAMPS ---
-            const peakGainPct = pos.entry > 0 ? ((pos.peak - pos.entry) / pos.entry) * 100 : 0;
-            const isStopOrEmergency = payload.emergency || exitTrigger === 'EMERGENCY_UNWIND' || exitTrigger === 'STOP_LOSS';
-            const isTrailingOrTarget = exitTrigger === 'TRAILING_TARGET' || (!isStopOrEmergency && (cmd.initiator === 'auto_exit_guardian' || cmd.initiator === 'autonomous_exit_guardian'));
-
-            // Control 21: Anti-Roundtrip Profit Floor & Cost-Aware Breakeven Ladder
-            if (isTrailingOrTarget || peakGainPct >= 1.0) {
-              let minFloorPct = 0.25; // Never close red once green
-              if (peakGainPct >= 20.0) minFloorPct = 8.0;
-              else if (peakGainPct >= 12.0) minFloorPct = 6.0;
-              else if (peakGainPct >= 7.0) minFloorPct = 3.5;
-              else if (peakGainPct >= 3.5) minFloorPct = 1.5;
-              realizedPnlPct = Math.max(minFloorPct, realizedPnlPct);
-            } else if (isStopOrEmergency) {
-              // Control 16 & 35: Structural Hard Stop Slippage Clamp (-12% stop + 2% max slippage = -14.0% absolute floor)
-              realizedPnlPct = Math.max(-14.0, realizedPnlPct);
-            }
-
-            // Reconcile actual proceeds and cash with verified God-Tier clamped PnL
-            realizedPnlUsd = (basisCostClosedUsd * realizedPnlPct) / 100;
-            proceedUsd = basisCostClosedUsd + realizedPnlUsd;
+            // A paper fill is still an accounting fact. Never rewrite its
+            // proceeds to force a profit floor or loss ceiling: that would
+            // contaminate cash, P&L, and learning data derived from it.
+            // Execution assumptions belong in the fill model before a report
+            // is produced, never in settlement accounting afterwards.
             const exitPriceUsd = candidatePriceUsd || (soldQty > 0 ? proceedUsd / soldQty : pos.entry);
 
             // Pavlov Attribution: record closed trade and update decision credit & adaptive hurdles
@@ -783,6 +792,65 @@ export class CommandGateway {
       data: {
         cashUsd: this.cashUsd,
         positionsCount: this.positions.size,
+      },
+      stateVersion: this.stateVersion,
+    };
+  }
+
+  /**
+   * PANIC_CLOSE_ALL: Global Emergency Liquidation Handler (Upgrade 75).
+   * Freezes all new buys, cancels open/in-flight orders, and submits parallel
+   * emergency sell orders for 100% of all held positions.
+   */
+  private async handlePanicCloseAll(cmd: PanicCloseAllCommand): Promise<CommandResult> {
+    this.entriesHalted = true;
+    this.automationEnabled = false;
+    this.pendingBuys.clear();
+    this.executionEngine.cancelAllBuys();
+    this.stateVersion++;
+
+    try {
+      if (globalLifecycle.getState() !== 'REDUCE_ONLY') {
+        globalLifecycle.transition('REDUCE_ONLY', 'Panic Close All: ' + (cmd.payload?.reason || 'Operator panic requested'));
+      }
+    } catch { /* Independently latched paper stop remains authoritative */ }
+
+    const closedResults: Array<{ mint: string; poolAddress: string; success: boolean; error?: string }> = [];
+    const openPositions = [...this.positions.values()];
+
+    for (const pos of openPositions) {
+      try {
+        const closeCmd: ClosePositionCommand = {
+          commandId: 'panic_' + pos.mint + '_' + Date.now(),
+          type: 'CLOSE_POSITION',
+          timestamp: Date.now(),
+          initiator: cmd.initiator || 'emergency_panic_handler',
+          payload: {
+            mint: pos.mint,
+            poolAddress: pos.asset,
+            tokenQty: pos.qty,
+            emergency: true,
+            fallbackPriceSol: (pos.lastMark || pos.entry) / this.solPriceUsd,
+            priceUsd: pos.lastMark || pos.entry,
+            exitTrigger: 'EMERGENCY_UNWIND',
+          },
+        };
+        const res = await this.handleClosePosition(closeCmd);
+        closedResults.push({ mint: pos.mint, poolAddress: pos.asset, success: res.success, error: res.error });
+      } catch (err: any) {
+        closedResults.push({ mint: pos.mint, poolAddress: pos.asset, success: false, error: err.message });
+      }
+    }
+
+    return {
+      success: true,
+      commandId: cmd.commandId,
+      timestamp: Date.now(),
+      data: {
+        totalPositionsTargeted: openPositions.length,
+        closedCount: closedResults.filter(r => r.success).length,
+        results: closedResults,
+        entriesHalted: true,
       },
       stateVersion: this.stateVersion,
     };

@@ -5,3 +5,4 @@ export * from './dynamic-exits.js';
 export * from './trade-certificate.js';
 export * from './exit-ev.js';
 export * from './exit-decision-service.js';
+export * from '../decision/unified-decision.js';

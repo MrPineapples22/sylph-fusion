@@ -95,4 +95,35 @@ export class ProbabilityCalibrator {
         };
     }
 }
+export class PlattSigmoidCalibrator {
+    /**
+     * Sigmoid Calibration (Platt Scaling):
+     * Calibrates raw model log-odds into true probabilities without arbitrary heuristic squashing.
+     * P(Y = 1 | f) = 1 / (1 + exp(A * f + B))
+     */
+    static calibrate(rawScore, paramA = -1.0, paramB = 0.0) {
+        const logit = Math.max(-20, Math.min(20, paramA * rawScore + paramB));
+        const calibrated = 1.0 / (1.0 + Math.exp(logit));
+        return Number(calibrated.toFixed(4));
+    }
+    /**
+     * Inverse Log-Transform for Crypto Multi-Bagger Peak Predictions (AGENTS.md):
+     * When models are trained on target np.log1p(y), reverse with Math.expm1(predLog).
+     * Prevents standard MSE from paralyzing model against massive outlier pumps and allows predicting beyond 2% safety floor.
+     */
+    static inverseLogPeak(predictedLog1p) {
+        if (!Number.isFinite(predictedLog1p) || predictedLog1p <= 0)
+            return 0;
+        const rawPeakMultiplier = Math.expm1(predictedLog1p);
+        return Number(rawPeakMultiplier.toFixed(4));
+    }
+    /**
+     * Forward Log-Transform for Target Pre-Processing
+     */
+    static forwardLogTarget(gainPct) {
+        if (!Number.isFinite(gainPct) || gainPct <= 0)
+            return 0;
+        return Number(Math.log1p(gainPct).toFixed(4));
+    }
+}
 //# sourceMappingURL=calibrator.js.map

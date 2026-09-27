@@ -144,24 +144,34 @@ export class SimulatedEngine implements ExecutionEngine {
    if(order.side==='SELL'||order.emergency){
     this.recordStage(order.orderId, 'QUOTING', 'Emergency or sell exit quote');
     this.overlays.delete(order.poolAddress);
-    const overlay=this.overlays.get(order.poolAddress);
-    const preTradeReserves=overlay?overlay.reserves:(state?state.reserves:{sol:100_000_000_000n,token:1_000_000_000_000_000n});
-    let realized=0,outSol=0n,postReserves={sol:preTradeReserves.sol,token:preTradeReserves.token},impact=0;
-    if(state&&preTradeReserves.sol>0n&&preTradeReserves.token>0n&&order.amountLamports>0n){
-     try{
-      const q=quote({...state,reserves:preTradeReserves},'SELL',order.amountLamports);
-      realized=q.realized;outSol=q.out;postReserves=q.post;const ratio=q.realized/q.spot;impact=Math.max(0,(1-ratio)*100);
-     }catch{}
+    const preTradeReserves = state ? state.reserves : { sol: 100_000_000_000n, token: 1_000_000_000_000_000n };
+    let realized = 0, outSol = 0n, postReserves = { sol: preTradeReserves.sol, token: preTradeReserves.token }, impact = 0;
+    const isStaleOrMigrated = !state || (Date.now() - state.timestamp > 15000) || (state.timestamp < order.triggerTimestamp) || state.migrated;
+    
+    if (state && !isStaleOrMigrated) {
+      try {
+        const q = quote({ ...state, reserves: preTradeReserves }, 'SELL', order.amountLamports);
+        realized = q.realized; outSol = q.out; postReserves = q.post; const ratio = q.realized / q.spot; impact = Math.max(0, (1 - ratio) * 100);
+      } catch {}
     }
-    if(outSol<=0n||realized<=0){
-     const fallbackPriceSol=(order.fallbackPriceSol&&order.fallbackPriceSol>0)?order.fallbackPriceSol:(state?.price||0.0000001);
-     const decimals=order.amountDecimals??9;
-     const tokenUnits=Number(order.amountLamports)/10**decimals;
-     outSol=BigInt(Math.max(1,Math.round(tokenUnits*fallbackPriceSol*1e9)));
-     realized=fallbackPriceSol;
-     impact=0;
+    
+    if (outSol <= 0n || realized <= 0) {
+      if (order.emergency || order.fallbackPriceSol) {
+        const fallbackPriceSol = (order.fallbackPriceSol && order.fallbackPriceSol > 0) ? order.fallbackPriceSol : (state?.price || 0.0000001);
+        const decimals = order.amountDecimals ?? 9;
+        const tokenUnits = Number(order.amountLamports) / 10 ** decimals;
+        outSol = BigInt(Math.max(1, Math.round(tokenUnits * fallbackPriceSol * 1e9)));
+        realized = fallbackPriceSol;
+        impact = 0;
+      } else if (!state) {
+        return this.reject(order, 'STALE_STATE', delay, 0n, 0n, 'No market state available for exit quote');
+      } else if (isStaleOrMigrated) {
+        return this.reject(order, 'STALE_STATE', Math.max(delay, Date.now() - state.timestamp), state.slot, 0n, 'Exit quote is stale or migrated');
+      } else {
+        return this.reject(order, 'PRE_TRADE_RISK_REJECTED', delay, state.slot, 0n, 'Exit quote has no positive proceeds');
+      }
     }
-    const lag=state?Math.max(delay,state.timestamp-order.triggerTimestamp):delay;
+    const lag = state ? Math.max(delay, state.timestamp - order.triggerTimestamp) : delay;
 
     // Stage 3 & 4: SIGNING -> SUBMITTING
     this.recordStage(order.orderId, 'SIGNING', 'Packing and signing exit transaction');
@@ -237,14 +247,34 @@ export class SimulatedEngine implements ExecutionEngine {
    return {report,telemetry:{engineMode:'PAPER' as const,simulatedSlotLagMs:lag,priceImpactPct:impact,preTradeReserves,postTradeReserves:q.post}};
   } catch {
    this.adverseSelection.registerDrift({poolAddress:order.poolAddress,reconciledAtSlot:0,deltaSolLamports:0n,deltaTokenUnits:0n,priceDriftPct:-4,adverseSelectionDetected:true});
-   if(order.side==='SELL'||order.emergency){
-    this.overlays.delete(order.poolAddress);
-    const fallbackPriceSol=order.fallbackPriceSol||0.0000001;
-    const decimals=order.amountDecimals??9;
-    const tokenUnits=Number(order.amountLamports)/10**decimals;
-    const outSol=BigInt(Math.max(1,Math.round(tokenUnits*fallbackPriceSol*1e9)));
-    const history = this.recordStage(order.orderId, 'SETTLED', 'Fallback sell executed');
-    return {report:{orderId:order.orderId,status:'FILLED',execPrice:fallbackPriceSol,inputAmount:order.amountLamports,outputAmount:outSol,priorityFeeLamports:50_000n,jitoTipLamports:0n,slotLatency:1,lifecycleHistory:history,currentStage:'SETTLED'},telemetry:{engineMode:'PAPER' as const,simulatedSlotLagMs:0,priceImpactPct:0,preTradeReserves:{sol:0n,token:0n},postTradeReserves:{sol:0n,token:0n}}};
+   if (order.side === 'SELL' || order.emergency) {
+     this.overlays.delete(order.poolAddress);
+     const fallbackPriceSol = order.fallbackPriceSol || 0.0000001;
+     const decimals = order.amountDecimals ?? 9;
+     const tokenUnits = Number(order.amountLamports) / 10 ** decimals;
+     const outSol = BigInt(Math.max(1, Math.round(tokenUnits * fallbackPriceSol * 1e9)));
+     const history = this.recordStage(order.orderId, 'SETTLED', 'Fallback sell executed');
+     return {
+       report: {
+         orderId: order.orderId,
+         status: 'FILLED',
+         execPrice: fallbackPriceSol,
+         inputAmount: order.amountLamports,
+         outputAmount: outSol,
+         priorityFeeLamports: 50_000n,
+         jitoTipLamports: 0n,
+         slotLatency: 1,
+         lifecycleHistory: history,
+         currentStage: 'SETTLED',
+       },
+       telemetry: {
+         engineMode: 'PAPER' as const,
+         simulatedSlotLagMs: 0,
+         priceImpactPct: 0,
+         preTradeReserves: { sol: 0n, token: 0n },
+         postTradeReserves: { sol: 0n, token: 0n },
+       },
+     };
    }
    this.recordStage(order.orderId, 'FAILED', 'Execution timeout or cancelled');
    return this.reject(order,'STALE_STATE',Date.now()-order.triggerTimestamp,0n,0n);
@@ -288,4 +318,3 @@ export class EngineFactory {
   throw new Error(`Unsupported engine mode: ${String(config.mode)}`);
  }
 }
-

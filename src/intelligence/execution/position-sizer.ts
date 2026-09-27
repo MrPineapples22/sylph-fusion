@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Dynamic Position Sizing Engine for Sylph-Fusion & SOL-SYLPH
  * 
  * Mathematically calculates optimal bought position value (USD) for each token at entry:
@@ -32,6 +32,8 @@ export interface CapitalSizingContext {
 }
 
 export interface PositionSizerOptions {
+  volatilityAtr?: number;
+  consecutiveLossCount?: number;
   capital?: CapitalSizingContext;
   cashUsd?: number;
   reservedCashUsd?: number;
@@ -142,8 +144,21 @@ export function calculateOptimalBuyPositionValue(
     riskPenalty *= 0.50;
   }
 
-  const rawConviction = (fHsi + tierModifier + podModifier) * riskPenalty;
-  const convictionMultiplier = clamp(rawConviction, 0.25, 1.50);
+  let rawConviction = (fHsi + tierModifier + podModifier) * riskPenalty;
+
+  // Volatility Sizing Deflator: scale down size during turbulent volatility
+  if (typeof options.volatilityAtr === 'number' && options.volatilityAtr > 0.05) {
+    const volDeflator = 1.0 / (1.0 + (options.volatilityAtr * 4) ** 2);
+    rawConviction *= Math.max(0.35, Math.min(1.0, volDeflator));
+  }
+
+  // Consecutive Loss Anti-Martingale Throttle: reduce risk after 2+ losing trades
+  if (typeof options.consecutiveLossCount === 'number' && options.consecutiveLossCount >= 2) {
+    const lossThrottle = options.consecutiveLossCount >= 3 ? 0.50 : 0.75;
+    rawConviction *= lossThrottle;
+  }
+
+  const convictionMultiplier = clamp(rawConviction, 0.20, 1.50);
 
   // 5. Compute Target Buy Position Value
   const rawTargetUsd = baseSlotUsd * convictionMultiplier;

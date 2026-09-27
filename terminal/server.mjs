@@ -125,7 +125,10 @@ const guardianInterval = setInterval(async () => {
       const snap = globalCommandGateway.getSnapshot();
       const emergencyReserveUsd = snap.cashUsd * 0.20;
       const unreservedCash = snap.cashUsd - snap.reservedCashUsd - emergencyReserveUsd;
-      if (!snap.entriesHalted && snap.mode === 'paper' && snap.positions.length < 2 && unreservedCash >= 10.0) {
+      // Automation is opt-in. A disabled toggle must be a real entry kill
+      // switch, not merely a UI preference. Protective exits remain reduce-only
+      // and continue independently for already-held paper positions.
+      if (snap.automationEnabled && !snap.entriesHalted && snap.mode === 'paper' && snap.positions.length < 2 && unreservedCash >= 10.0) {
         const heldMints = new Set(snap.positions.map(p => p.mint));
         const heldAssets = new Set(snap.positions.map(p => p.asset));
 
@@ -603,6 +606,31 @@ async function handleRequest(req,res){
   if (!isLocalRequest(req, port)) {res.writeHead(403);res.end('Local terminal only');return;}
   if(req.method!=='GET'&&req.method!=='HEAD'&&req.method!=='POST'){res.writeHead(405);res.end();return;}
   const reqUrl=new URL(req.url,`http://127.0.0.1:${port}`);
+    if (req.method === 'GET' && reqUrl.pathname === '/api/metrics') {
+    const snap = globalCommandGateway.getSnapshot();
+    const health = globalProviderHealthTracker.getReport();
+    const lifecycle = globalLifecycle.getState();
+    const learning = globalTradeLearningService.getSnapshot();
+
+    const metricsPayload = {
+      timestamp: Date.now(),
+      systemState: lifecycle,
+      cashUsd: snap.cashUsd,
+      openPositionsCount: snap.positions.length,
+      realizedPnlUsd: learning.realizedPnlUsd || 0,
+      winRatePct: learning.winRatePct || 0,
+      totalTradesClosed: learning.totalTradesClosed || 0,
+      activeIncidentsCount: health.activeIncidents?.length || 0,
+      isMarketFeedHealthy: !globalProviderHealthTracker.isMarketFeedStale(),
+      rpcLatencyMs: health.providers?.RPC?.p50LatencyMs || 0,
+      automationEnabled: snap.automationEnabled,
+      entriesHalted: snap.entriesHalted,
+    };
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(metricsPayload));
+    return;
+  }
+
   if (req.method === 'GET' && reqUrl.pathname === '/api/operator') {
     const projection = operatorReadModel.project({discovery: getDiscovery(), gateway: globalCommandGateway.getSnapshot(),
       health: globalProviderHealthTracker.getReport(), lifecycle: globalLifecycle.getState(), runtimeContext});
@@ -635,32 +663,10 @@ async function handleRequest(req,res){
     return;
   }
   if (req.method === 'POST' && reqUrl.pathname === '/api/intelligence/learning/simulate-test') {
-    // God-Tier 50 Exit Engine: 76% win rate, staged trailing stops, cost-aware breakevens (+2%)
-    const isWin = Math.random() > 0.24;
-    const pnlPct = isWin ? Number((6.5 + Math.random() * 28.5).toFixed(2)) : -Number((2.0 + Math.random() * 4.5).toFixed(2));
-    const costBasis = 50.0;
-    const realizedPnlUsd = Number(((costBasis * pnlPct) / 100).toFixed(2));
-    const entryPrice = 0.005;
-    const exitPrice = entryPrice * (1 + pnlPct / 100);
-    const mfePrice = isWin ? exitPrice * (1 + Math.random() * 0.04) : entryPrice * (1 + Math.random() * 0.01);
-    const maePrice = isWin ? entryPrice * (1 - Math.random() * 0.01) : exitPrice * (1 - Math.random() * 0.01);
-    const autopsy = globalTradeLearningService.recordClosedTrade({
-      tokenMint: 'GodTierSim' + Math.floor(Math.random() * 1000) + '1111111111111111111111',
-      symbol: (isWin ? 'ALPHA' : 'DEF') + Math.floor(Math.random() * 90 + 10),
-      entryPriceUsd: entryPrice,
-      exitPriceUsd: exitPrice,
-      mfePriceUsd: mfePrice,
-      maePriceUsd: maePrice,
-      costBasisUsd: costBasis,
-      proceedsUsd: costBasis + realizedPnlUsd,
-      realizedPnlUsd,
-      realizedPnlPct: pnlPct,
-      holdDurationMs: Math.floor(15000 + Math.random() * 60000),
-      exitTrigger: isWin ? 'TRAILING_TARGET' : 'EMERGENCY_UNWIND',
-      wasDecisionSound: true,
-    });
+    // Synthetic outcomes must never enter the shared learning journal.
+    res.statusCode = 410;
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ ok: true, autopsy, snapshot: globalTradeLearningService.getSnapshot() }));
+    res.end(JSON.stringify({ ok: false, code: 'SYNTHETIC_LEARNING_DISABLED', reason: 'Use isolated test fixtures. Generated trades are not performance evidence.' }));
     return;
   }
   if (req.method === 'POST' && (reqUrl.pathname === '/api/intelligence/learning/reset-positive' || reqUrl.pathname === '/api/intelligence/learning/clear')) {

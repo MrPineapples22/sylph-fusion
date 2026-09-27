@@ -1,3 +1,32 @@
+
+/**
+ * Zero-Trace Secret Scrubber (Upgrade 82 & Part LXXXVI):
+ * Redacts Base58 private keys, API keys, Bearer tokens, and sensitive headers from telemetry.
+ */
+export function scrubSecrets(input: unknown): unknown {
+  if (typeof input === 'string') {
+    return input
+      .replace(/([1-9A-HJ-NP-Za-km-z]{64,88})/g, '[REDACTED_KEY]')
+      .replace(/(?:api[-_]?key|token|bearer|secret)\s*[:=]\s*["']?([^"'\s&]+)["']?/gi, 'key=[REDACTED]')
+      .replace(/(?:https?:\/\/[^\s]+[?&](?:api[-_]?key|key)=)([^&\s]+)/gi, 'https://rpc-provider/[REDACTED_PARAM]');
+  }
+  if (Array.isArray(input)) {
+    return input.map(scrubSecrets);
+  }
+  if (input !== null && typeof input === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
+      const lowerK = k.toLowerCase();
+      if (lowerK.includes('secret') || lowerK.includes('privatekey') || lowerK.includes('seed') || lowerK.includes('apikey')) {
+        out[k] = '[REDACTED]';
+      } else {
+        out[k] = scrubSecrets(v);
+      }
+    }
+    return out;
+  }
+  return input;
+}
 import { createWriteStream, type WriteStream } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';

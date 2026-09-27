@@ -71,6 +71,20 @@ export class MultiSourceCrossValidator {
     this.config = { ...DEFAULT_CROSS_VALIDATION_CONFIG, ...config };
   }
 
+  /** Provider clocks are untrusted: an observation is usable only when its
+   * receipt timestamp is finite, non-negative, and not later than evaluation. */
+  private validObservation<T>(observation: ProviderObservation<T>, now: number, predicate: (value: T) => boolean): boolean {
+    return predicate(observation.value)
+      && Number.isSafeInteger(observation.timestampMs)
+      && observation.timestampMs >= 0
+      && observation.timestampMs <= now
+      && Number.isFinite(observation.latencyMs)
+      && observation.latencyMs >= 0
+      && Number.isFinite(observation.confidence)
+      && observation.confidence >= 0
+      && observation.confidence <= 1;
+  }
+
   /**
    * Reconciles multiple price observations from independent providers.
    */
@@ -83,11 +97,10 @@ export class MultiSourceCrossValidator {
     primarySource: ProviderSourceId;
     supportingSources: ProviderSourceId[];
     confidence: number;
+    primaryTimestampMs: number | null;
     disagreements: string[];
   } {
-    const valid = observations.filter(
-      o => Number.isFinite(o.value) && o.value > 0
-    );
+    const valid = observations.filter(o => this.validObservation(o, now, value => Number.isFinite(value) && value > 0));
 
     if (!valid.length) {
       return {
@@ -96,6 +109,7 @@ export class MultiSourceCrossValidator {
         primarySource: 'SOLANA_RPC',
         supportingSources: [],
         confidence: 0.0,
+        primaryTimestampMs: null,
         disagreements: ['NO_PRICE_OBSERVATIONS'],
       };
     }
@@ -110,6 +124,7 @@ export class MultiSourceCrossValidator {
         primarySource: best.provider,
         supportingSources: valid.filter(o => o.provider !== best.provider).map(o => o.provider),
         confidence: 0.25,
+        primaryTimestampMs: best.timestampMs,
         disagreements: [`STALE_DATA_AGE_${Math.round(freshest / 1000)}s`],
       };
     }
@@ -122,6 +137,7 @@ export class MultiSourceCrossValidator {
         primarySource: single.provider,
         supportingSources: [],
         confidence: Number((single.confidence * 0.70).toFixed(2)),
+        primaryTimestampMs: single.timestampMs,
         disagreements: [],
       };
     }
@@ -161,6 +177,7 @@ export class MultiSourceCrossValidator {
         primarySource: primary.provider,
         supportingSources: agreeingSources,
         confidence: 0.35,
+        primaryTimestampMs: primary.timestampMs,
         disagreements,
       };
     }
@@ -172,6 +189,7 @@ export class MultiSourceCrossValidator {
         primarySource: primary.provider,
         supportingSources: agreeingSources,
         confidence: Number(Math.min(0.99, primary.confidence + 0.15).toFixed(2)),
+        primaryTimestampMs: primary.timestampMs,
         disagreements,
       };
     }
@@ -182,6 +200,7 @@ export class MultiSourceCrossValidator {
       primarySource: primary.provider,
       supportingSources: secondaries.map(s => s.provider),
       confidence: Number((primary.confidence * 0.85).toFixed(2)),
+      primaryTimestampMs: primary.timestampMs,
       disagreements,
     };
   }
@@ -207,18 +226,30 @@ export class MultiSourceCrossValidator {
     const flags = [...priceResult.disagreements];
 
     if (params.liquidityObservations?.length) {
-      const validLiq = params.liquidityObservations.filter(o => Number.isFinite(o.value) && o.value >= 0);
+      const validLiq = params.liquidityObservations.filter(o =>
+        this.validObservation(o, now, value => Number.isFinite(value) && value >= 0)
+        && now - o.timestampMs <= this.config.staleThresholdMs
+      );
       if (validLiq.length) {
-        liquidityUsd = validLiq[0].value;
-        supporting.add(validLiq[0].provider);
+        const primaryLiquidity = validLiq.sort((a, b) => b.timestampMs - a.timestampMs)[0];
+        liquidityUsd = primaryLiquidity.value;
+        supporting.add(primaryLiquidity.provider);
+      } else {
+        flags.push('NO_CURRENT_LIQUIDITY_OBSERVATIONS');
       }
     }
 
     if (params.marketCapObservations?.length) {
-      const validCap = params.marketCapObservations.filter(o => Number.isFinite(o.value) && o.value >= 0);
+      const validCap = params.marketCapObservations.filter(o =>
+        this.validObservation(o, now, value => Number.isFinite(value) && value >= 0)
+        && now - o.timestampMs <= this.config.staleThresholdMs
+      );
       if (validCap.length) {
-        marketCapUsd = validCap[0].value;
-        supporting.add(validCap[0].provider);
+        const primaryMarketCap = validCap.sort((a, b) => b.timestampMs - a.timestampMs)[0];
+        marketCapUsd = primaryMarketCap.value;
+        supporting.add(primaryMarketCap.provider);
+      } else {
+        flags.push('NO_CURRENT_MARKET_CAP_OBSERVATIONS');
       }
     }
 
@@ -246,7 +277,7 @@ export class MultiSourceCrossValidator {
       primarySource: priceResult.primarySource,
       supportingSources: [...supporting].filter(s => s !== priceResult.primarySource),
       confidence: priceResult.confidence,
-      freshnessMs: priceResult.priceUsd !== null ? Math.max(0, now - (params.priceObservations[0]?.timestampMs ?? now)) : 999_999,
+      freshnessMs: priceResult.primaryTimestampMs !== null ? now - priceResult.primaryTimestampMs : 999_999,
       disagreementFlags: flags,
       provenanceDigest,
       evaluatedAtMs: now,
