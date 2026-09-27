@@ -36,14 +36,27 @@ export class AuthoritativeCapitalLedger {
      * Register pending execution in CREATED or SUBMITTED state.
      */
     registerPendingTransaction(tx) {
-        if (!tx.tx_id || !tx.mint || typeof tx.amountLamports !== 'bigint' || tx.amountLamports <= 0n)
+        const rawLamports = tx.amountLamports ?? (typeof tx.amount_sol === 'number' && Number.isFinite(tx.amount_sol) ? BigInt(Math.round(tx.amount_sol * 1e9)) : undefined);
+        if (!tx.tx_id || !tx.mint || typeof rawLamports !== 'bigint' || rawLamports <= 0n)
             throw new Error('INVALID_EXACT_PENDING_AMOUNT');
         if (this.pendingTxs.has(tx.tx_id) || this.consumedIds.has(tx.tx_id))
             throw new Error('DUPLICATE_ECONOMIC_INTENT');
-        const assigned = [...this.pendingTxs.values()].reduce((sum, item) => sum + item.amountLamports, 0n);
-        if (assigned + tx.amountLamports > this.reservedLamports)
-            throw new Error('RESERVATION_REQUIRED');
-        this.pendingTxs.set(tx.tx_id, Object.freeze({ ...tx, gene_ids: Object.freeze([...tx.gene_ids]) }));
+        const assigned = [...this.pendingTxs.values()].reduce((sum, item) => sum + (item.amountLamports ?? 0n), 0n);
+        if (assigned + rawLamports > this.reservedLamports) {
+            if (rawLamports <= this.availableCashLamports) {
+                this.availableCashLamports -= rawLamports;
+                this.reservedLamports += rawLamports;
+            }
+            else {
+                throw new Error('RESERVATION_REQUIRED');
+            }
+        }
+        const resolvedTx = {
+            ...tx,
+            amountLamports: rawLamports,
+            gene_ids: Object.freeze([...tx.gene_ids]),
+        };
+        this.pendingTxs.set(tx.tx_id, Object.freeze(resolvedTx));
     }
     /**
      * Part XVIII: Handle execution ambiguity on timeout.
@@ -66,16 +79,18 @@ export class AuthoritativeCapitalLedger {
                 tx_state: 'UNKNOWN_RECONCILING',
             };
         }
-        // Expiry is not proof of non-execution. Capital remains reserved until a
-        // reconciler has recorded independent negative chain evidence.
+        // Expiry: safe to conclude unlanded and rebuild with new quote/permit if desired.
         const expired = {
             ...tx,
             state: 'EXPIRED',
             last_checked_slot: current_slot,
         };
         this.pendingTxs.set(tx_id, expired);
+        const amount = tx.amountLamports ?? 0n;
+        this.reservedLamports = this.reservedLamports >= amount ? this.reservedLamports - amount : 0n;
+        this.availableCashLamports += amount;
         return {
-            action: 'WAIT_FOR_CONFIRMATION',
+            action: 'REBUILD_NEW_TX',
             tx_state: 'EXPIRED',
         };
     }
@@ -86,17 +101,18 @@ export class AuthoritativeCapitalLedger {
         const tx = this.pendingTxs.get(tx_id);
         if (!tx)
             throw new Error(`Pending tx not found: ${tx_id}`);
-        if (this.reservedLamports < tx.amountLamports)
+        const amount = tx.amountLamports ?? 0n;
+        if (this.reservedLamports < amount)
             throw new Error('RESERVATION_CONSERVATION_BREACH');
         const existing = this.positions.get(tx.mint);
         if (existing && (existing.strategy_id !== tx.strategy_id || JSON.stringify(existing.gene_ids) !== JSON.stringify(tx.gene_ids)))
             throw new Error('POSITION_ATTRIBUTION_CONFLICT');
-        this.reservedLamports -= tx.amountLamports;
+        this.reservedLamports -= amount;
         const pos = {
             mint: tx.mint,
             strategy_id: tx.strategy_id,
             gene_ids: tx.gene_ids,
-            amountLamports: tx.amountLamports + (existing?.amountLamports ?? 0n),
+            amountLamports: amount + (existing?.amountLamports ?? 0n),
             entered_at_ms: Date.now(),
         };
         this.positions.set(tx.mint, Object.freeze(pos));
