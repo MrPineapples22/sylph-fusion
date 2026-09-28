@@ -14,6 +14,20 @@ import { Keypair, PublicKey } from '@solana/web3.js';
 import { randomUUID } from 'node:crypto';
 import { Executor } from '../../execution.js';
 import { mulBps } from '../../core.js';
+export function simulationExecutionCosts(cfg, panic = false) {
+    const tip = Math.min(cfg.MAX_TIP_LAMPORTS, Math.max(cfg.MIN_TIP_LAMPORTS, 100_000 * (panic ? 2 : 1)));
+    return {
+        tipLamports: BigInt(tip),
+        priorityLamports: BigInt(cfg.MAX_PRIORITY_LAMPORTS),
+        baseFeeLamports: 5000n,
+        ataRentLamports: 3000000n,
+    };
+}
+export function simulationSellProceeds(cfg, grossQuoteLamports, panic = false) {
+    const slippageBps = panic ? cfg.PANIC_SLIPPAGE_BPS : cfg.SLIPPAGE_BPS;
+    const costs = simulationExecutionCosts(cfg, panic);
+    return mulBps(grossQuoteLamports, 10_000 - slippageBps) - costs.tipLamports - costs.priorityLamports - costs.baseFeeLamports;
+}
 /**
  * Deterministic paper execution authority.
  * Never connects to live private keys or writes on-chain transactions.
@@ -40,20 +54,19 @@ export class SimulationExecutionAuthority {
         const slippage = panic ? this.cfg.PANIC_SLIPPAGE_BPS : this.cfg.SLIPPAGE_BPS;
         let output;
         if (s.curve.complete) {
-            if (side === 'buy')
-                throw new Error('Graduated entries disabled in simulation');
-            output = mulBps(amount * 1000000n / 1000000000n, 10_000 - slippage);
-            if (output <= 0n)
-                output = 1000n;
+            // A completed bonding curve has no executable curve quote. Until the
+            // simulator has an authoritative graduated-venue quote, fail closed for
+            // both sides instead of manufacturing SOL proceeds from token quantity.
+            throw new Error('Graduated-curve execution quote unavailable in simulation');
         }
         else {
             output = side === 'buy' ? this.market.buyQuote(s, amount) : this.market.sellQuote(s, amount);
             if (output <= 0n)
                 throw new Error('Zero executable output');
         }
-        const tip = Math.min(this.cfg.MAX_TIP_LAMPORTS, Math.max(this.cfg.MIN_TIP_LAMPORTS, 100_000 * (panic ? 2 : 1)));
-        const baseFee = 5000n;
-        const fee = BigInt(tip + this.cfg.MAX_PRIORITY_LAMPORTS) + baseFee;
+        const costs = simulationExecutionCosts(this.cfg, panic);
+        const baseFee = costs.baseFeeLamports;
+        const fee = costs.tipLamports + costs.priorityLamports + baseFee;
         const executedSol = side === 'sell' ? mulBps(output, 10_000 - slippage) : 0n;
         const slippageLamports = side === 'sell' ? output - executedSol : 0n;
         const pendingId = randomUUID();
@@ -76,13 +89,13 @@ export class SimulationExecutionAuthority {
         return {
             pending,
             tokenDelta: side === 'buy' ? mulBps(output, 10_000 - slippage) : -amount,
-            solDelta: side === 'buy' ? -amount - fee - 3000000n : executedSol - fee,
+            solDelta: side === 'buy' ? -amount - fee - costs.ataRentLamports : simulationSellProceeds(this.cfg, output, panic),
             quotedOutput: output,
             quoteTimestamp: s.at,
             overhead: {
-                tipLamports: String(tip),
-                priorityLamports: String(this.cfg.MAX_PRIORITY_LAMPORTS),
-                rentLamports: side === 'buy' ? '3000000' : '0',
+                tipLamports: String(costs.tipLamports),
+                priorityLamports: String(costs.priorityLamports),
+                rentLamports: side === 'buy' ? String(costs.ataRentLamports) : '0',
                 slippageBps: slippage,
                 slippageLamports: String(slippageLamports),
                 baseFeeLamports: String(baseFee),

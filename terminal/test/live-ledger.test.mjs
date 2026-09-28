@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {initialState,reducer,metrics,restore,START_USD} from '../src/engine.js';
 const now=1700000000000;
 const pool=id=>({id,price:2,liquidity:1000000,history:[{time:now/1000,value:2}],volume:null});
-const sync=(s,assets)=>reducer(s,{type:'SYNC_ASSETS',assets,now:s.now,at:s.now});
+const sync=(s,assets)=>reducer({...s,astraGate:false},{type:'SYNC_ASSETS',assets,now:s.now,at:s.now});
 test('live ticks preserve observed prices and unknown volume; wallet cannot enter',()=>{
  let s=sync(initialState(now),[pool('A')]);
  s=reducer(s,{type:'START',now});

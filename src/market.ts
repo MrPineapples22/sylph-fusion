@@ -1,4 +1,4 @@
-import { PublicKey, type AccountInfo } from '@solana/web3.js';
+import { PublicKey, type AccountInfo, type Connection } from '@solana/web3.js';
 import { getAssociatedTokenAddressSync, unpackMint, unpackAccount, TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, getExtensionTypes, ExtensionType } from '@solana/spl-token';
 import { PUMP_SDK, PUMP_PROGRAM_ID, PUMP_FEE_PROGRAM_ID, GLOBAL_PDA, PUMP_FEE_CONFIG_PDA, bondingCurvePda, getBuyTokenAmountFromSolAmount, getSellSolAmountFromTokenAmount, computeFeesBps, type BondingCurve, type Global, type FeeConfig } from '@pump-fun/pump-sdk';
 import BN from 'bn.js';
@@ -8,6 +8,65 @@ import { mulBps } from './core.js';
 import { PostGraduationAmmBridge } from './platform/execution/solaris/amm-bridge.js';
 
 export type Snapshot = { mint: PublicKey; tokenProgram: PublicKey; supply: bigint; curve: BondingCurve; global: Global; fee: FeeConfig; info: AccountInfo<Buffer>; ata: AccountInfo<Buffer> | null; slot: number; at: number; creatorTokens?: string; entrySafe: boolean };
+
+const UNSAFE_REPORTED_EXTENSION = /permanent.?delegate|transfer.?hook|default(?:account)?.?state/i;
+
+export async function readLargestHolderSnapshot(connection: Pick<Connection, 'getTokenLargestAccounts' | 'getMultipleAccountsInfoAndContext'>, mint: PublicKey) {
+  let largest = await connection.getTokenLargestAccounts(mint, 'confirmed');
+  let accountRead = await connection.getMultipleAccountsInfoAndContext(
+    largest.value.map(account => account.address),
+    { commitment: 'confirmed', minContextSlot: largest.context.slot },
+  );
+  if (accountRead.value.some(account => account === null)) {
+    // Largest-account data and account reads are separate RPC calls. Refresh
+    // the list once if a listed account closed between those calls; if the
+    // second snapshot is still incomplete, the caller remains fail-closed.
+    largest = await connection.getTokenLargestAccounts(mint, 'confirmed');
+    accountRead = await connection.getMultipleAccountsInfoAndContext(
+      largest.value.map(account => account.address),
+      { commitment: 'confirmed', minContextSlot: largest.context.slot },
+    );
+  }
+  return { accounts: largest.value, infos: accountRead.value, contextSlot: accountRead.context.slot };
+}
+
+function hasConfiguredExtensionValue(value: unknown): boolean {
+  if (value === null || value === undefined || value === false || value === 0) return false;
+  if (typeof value === 'string') return !/^(?:\s*|null|false|0|none|disabled|inactive|uninitialized)$/i.test(value);
+  if (Array.isArray(value)) return value.some(hasConfiguredExtensionValue);
+  if (typeof value === 'object') return Object.values(value as Record<string, unknown>).some(hasConfiguredExtensionValue);
+  return true;
+}
+
+/** RugCheck serializes known extension fields as null even when those extensions are absent. */
+export function hasUnsafeReportedTokenExtension(tokenExtensions: unknown): boolean {
+  const entries: Array<[string, unknown]> = Array.isArray(tokenExtensions)
+    ? tokenExtensions.map((value: any) => {
+      if (typeof value === 'string') return [value, true];
+      if (value && typeof value === 'object') {
+        const name = String(value.name ?? value.type ?? value.extension ?? '');
+        const state = value.value ?? value.data ?? value.config ?? true;
+        return [name, state];
+      }
+      return ['', value];
+    })
+    : tokenExtensions && typeof tokenExtensions === 'object'
+      ? Object.entries(tokenExtensions as Record<string, unknown>)
+      : [];
+  return entries.some(([name, value]) => UNSAFE_REPORTED_EXTENSION.test(name) && hasConfiguredExtensionValue(value));
+}
+
+export function rugReportRejectionReason(report: { rugged?: unknown; score: number; risks: any[] }, maxScore: number): string | null {
+  const reasons: string[] = [];
+  if (report.rugged === true) reasons.push('rugged=true');
+  if (report.score > maxScore) reasons.push(`score=${report.score}>${maxScore}`);
+  const dangerous = report.risks
+    .filter((risk: any) => /danger|critical/i.test(String(risk?.level)))
+    .slice(0, 3)
+    .map((risk: any) => String(risk?.name ?? risk?.level ?? 'unnamed').replace(/[\r\n]/g, ' ').slice(0, 60));
+  if (dangerous.length) reasons.push(`risks=${dangerous.join('|')}`);
+  return reasons.length ? `rug report rejected (${reasons.join('; ')})` : null;
+}
 
 /**
  * `getTokenLargestAccounts` is a bounded observation, not an owner census.
@@ -85,7 +144,11 @@ export class Market {
       this.ammBridge.registerMigration(s.mint.toBase58(), s.slot);
       throw new Error('unsupported curve mode');
     }
-    if (s.curve.isMayhemMode || s.curve.isHolderReward) throw new Error('unsupported curve mode');
+    // Pump SDK v2 supports native-SOL holder-reward curves for both quote
+    // calculation and V2 instruction construction. Their rewards are not
+    // credited by the paper ledger, so simulated P&L remains conservative.
+    // Keep Mayhem curves excluded until their distinct economics are reviewed.
+    if (s.curve.isMayhemMode) throw new Error('unsupported Mayhem curve mode');
     if (BigInt(s.curve.realQuoteReserves.toString()) < BigInt(this.cfg.MIN_REAL_RESERVE_LAMPORTS)) throw new Error('insufficient real reserves');
     const fees = computeFeesBps({ global: s.global, feeConfig: s.fee, mintSupply: new BN(String(s.supply)), virtualQuoteReserves: s.curve.virtualQuoteReserves, virtualTokenReserves: s.curve.virtualTokenReserves, quoteMint: s.curve.quoteMint, creatorFeeBps: s.curve.creatorFeeBps });
     if (fees.protocolFeeBps.add(fees.creatorFeeBps).gtn(this.cfg.MAX_FEE_BPS)) throw new Error('fee cap exceeded');
@@ -97,10 +160,10 @@ export class Market {
     this.validateEntry(s);
     if (!this.cfg.RUGCHECK_URL) throw new Error('RUGCHECK_ADAPTER_CONFIGURATION_UNAVAILABLE');
     const owner = new PublicKey(creator), c = this.rpc.connection;
-    const [balance, held, largest, report] = await Promise.all([
+    const [balance, held, holders, report] = await Promise.all([
       c.getBalance(owner, 'confirmed'),
       c.getTokenAccountsByOwner(owner, { mint: s.mint }, 'confirmed'),
-      c.getTokenLargestAccounts(s.mint, 'confirmed'),
+      readLargestHolderSnapshot(c, s.mint),
       httpJson<any>(`${this.cfg.RUGCHECK_URL}/${s.mint}/report`, this.cfg.RPC_TIMEOUT_MS),
     ]);
     if (balance < this.cfg.MIN_CREATOR_LAMPORTS) throw new Error('creator SOL balance below minimum');
@@ -108,21 +171,15 @@ export class Market {
     s.creatorTokens = String(heldAmount);
     if (heldAmount > mulBps(s.supply, this.cfg.MAX_CREATOR_BPS)) throw new Error('creator concentration');
     if (!report || typeof report.score !== 'number' || !Number.isFinite(report.score) || !Array.isArray(report.risks)) throw new Error('unknown rug report');
-    if (report.rugged === true || report.score > this.cfg.RUGCHECK_MAX_SCORE || report.risks.some((r: any) => /danger|critical/i.test(String(r?.level)))) throw new Error('rug report rejected');
+    const rugRejection = rugReportRejectionReason(report, this.cfg.RUGCHECK_MAX_SCORE);
+    if (rugRejection) throw new Error(rugRejection);
     if (report.token?.mintAuthority || report.token?.freezeAuthority || report.mintAuthority || report.freezeAuthority) throw new Error('mint or freeze authority active');
     const tokenExtensions = report.token_extensions;
-    const extensionEntries = Array.isArray(tokenExtensions)
-      ? tokenExtensions.map((value: unknown) => ['', value] as const)
-      : tokenExtensions && typeof tokenExtensions === 'object'
-        ? Object.entries(tokenExtensions as Record<string, unknown>)
-        : [];
-    const hasUnsafeExtension = extensionEntries.some(([name, value]) =>
-      /permanent|transfer.?hook|default.?state/i.test(`${name} ${String(value)}`)
-    );
+    const hasUnsafeExtension = hasUnsafeReportedTokenExtension(tokenExtensions);
     if (report.transferFee?.pct > 0 || hasUnsafeExtension) throw new Error('unsafe token extension');
-    const accounts = largest.value;
+    const accounts = holders.accounts;
     if (!accounts.length) throw new Error('unknown holder distribution');
-    const infos = await c.getMultipleAccountsInfo(accounts.map(a => a.address), 'confirmed');
+    const infos = holders.infos;
     const buckets = new Map<string, bigint>();
     let observed = 0n;
     let certifiedProtocolInventory = 0n;

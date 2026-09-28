@@ -6,6 +6,7 @@ import { config } from '../../dist/config.js';
 import {
   SimulationExecutionAuthority,
   LiveExecutionAuthority,
+  simulationSellProceeds,
 } from '../../dist/platform/execution/authority.js';
 import {
   ProviderHealthTracker,
@@ -68,6 +69,46 @@ test('Fifth Pass: SimulationExecutionAuthority enforces paper isolation and reje
   await assert.rejects(
     simAuthority.broadcast({ ...built.pending, signature: '5J4Z7RealLiveOnChainSigFake11111111111111111111111111111111111111111111111111111111111' }),
     /SimulationAuthority cannot broadcast live signature/
+  );
+});
+
+test('paper sell fills and marks share normal and panic execution economics; graduated quotes fail closed', async () => {
+  const cfg = config({
+    MODE: 'paper',
+    SLIPPAGE_BPS: 300,
+    PANIC_SLIPPAGE_BPS: 1000,
+    MAX_TIP_LAMPORTS: 500_000,
+    MIN_TIP_LAMPORTS: 10_000,
+    MAX_PRIORITY_LAMPORTS: 200_000,
+    RPC_URLS: 'https://rpc.invalid',
+    WS_URLS: 'wss://ws.invalid',
+  });
+  const grossQuote = 10_000_000n;
+  const mockMarket = { buyQuote: () => 1_000_000n, sellQuote: () => grossQuote };
+  const authority = new SimulationExecutionAuthority(cfg, mockMarket);
+  const snapshot = {
+    mint: Keypair.generate().publicKey,
+    tokenProgram: Keypair.generate().publicKey,
+    at: Date.now(),
+    slot: 1000,
+    curve: {
+      complete: false,
+      realQuoteReserves: 30_000_000_000n,
+      virtualQuoteReserves: 30_000_000_000n,
+      virtualTokenReserves: 1_073_000_000_000_000n,
+    },
+  };
+  const creator = Keypair.generate().publicKey.toBase58();
+
+  for (const panic of [false, true]) {
+    const fill = await authority.build(snapshot, 'sell', 25_000n, creator, 0, panic ? 'panic' : 'take_profit', panic);
+    assert.equal(fill.solDelta, simulationSellProceeds(cfg, grossQuote, panic));
+    assert.equal(fill.overhead.slippageBps, panic ? cfg.PANIC_SLIPPAGE_BPS : cfg.SLIPPAGE_BPS);
+  }
+
+  await assert.rejects(
+    authority.build({ ...snapshot, curve: { ...snapshot.curve, complete: true } }, 'sell', 25_000n, creator, 0, 'graduated_exit', true),
+    /Graduated-curve execution quote unavailable in simulation/
   );
 });
 

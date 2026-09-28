@@ -80,6 +80,11 @@ test('SystemLifecycleManager: enforces valid paths and blocks illegal shortcuts'
 test('CommandGateway: enforces AXIOM verification, idempotency, and lifecycle rules', async () => {
   globalLifecycle.bootstrapToHealthy();
   const gateway = CommandGateway.resetInstance();
+  gateway.setPaperEntryEvidenceProvider(async (mint, poolAddress) => ({
+    mint, poolAddress, priceUsd: 1, liquidityUsd: 1_000_000,
+    observedAt: Date.now(), solPriceUsd: 150, solObservedAt: Date.now(),
+    verified: true, entryAllowed: true,
+  }));
   const initialSnap = gateway.getSnapshot();
   assert.equal(initialSnap.positions.length, 0);
   assert.equal(initialSnap.cashUsd, 10_000);
@@ -106,7 +111,7 @@ test('CommandGateway: enforces AXIOM verification, idempotency, and lifecycle ru
 
   const afterBuySnap = gateway.getSnapshot();
   assert.equal(afterBuySnap.positions.length, 1);
-  assert.equal(afterBuySnap.cashUsd, 9900.0);
+  assert.equal(afterBuySnap.cashUsd, 10_000.0 - afterBuySnap.positions[0].costBasisUsd);
   assert.equal(afterBuySnap.positions[0].asset, 'PoolAlpha111111111111111111111111111111111');
 
   // 2. Duplicate order rejection (Idempotency enforcement)

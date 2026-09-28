@@ -71,8 +71,8 @@ test('configuration keeps market history and audit identities stable',()=>{
 });
 import {riskBudget} from '../src/engine.js';
 import {rankObservedPairs} from '../astra-feed.mjs';
-test('Astra observed-data mode permits simulated entries and restores paused',()=>{
- let s=astraInitialState(now);s=run(s,'ORDER',{asset:'SOL',side:'buy'});assert.equal(s.pending.length,1);s=run(s,'START');assert.equal(s.running,true);const restored=restore(JSON.stringify({...s,astraGate:true}),now);assert.equal(restored.astraGate,false);
+test('Astra verified-data mode permits simulated entries and restores paused with entry gate closed',()=>{
+ let s=astraInitialState(now);s.astraGate=false;s=run(s,'ORDER',{asset:'SOL',side:'buy'});assert.equal(s.pending.length,1);s=run(s,'START');assert.equal(s.running,true);const restored=restore(JSON.stringify({...s,astraGate:false}),now);assert.equal(restored.astraGate,true);assert.equal(restored.running,false);assert.equal(restored.pending.length,0);
 });
 test('Astra 2 percent modeled loss includes slippage and fees',()=>{
  assert.equal(riskBudget(1000,200,7,3,1).allowed,false);assert.equal(riskBudget(1000,100,7,3,1).allowed,true);

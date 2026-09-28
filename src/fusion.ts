@@ -14,7 +14,7 @@ import { RpcPool } from './rpc.js';
 import { Feed, type MarketEvent } from './feed.js';
 import { Market, type Snapshot } from './market.js';
 import { Executor } from './execution.js';
-import { type ExecutionAuthority, SimulationExecutionAuthority, LiveExecutionAuthority } from './platform/execution/authority.js';
+import { type ExecutionAuthority, SimulationExecutionAuthority, LiveExecutionAuthority, simulationExecutionCosts, simulationSellProceeds } from './platform/execution/authority.js';
 import { Store } from './store.js';
 import { strategyStatuses } from './strategy.js';
 import { SessionLogger } from './session-logger.js';
@@ -55,6 +55,8 @@ type Candidate = {
     realQuoteReserves: string;
     virtualTokenReserves: string;
     virtualQuoteReserves: string;
+    isHolderReward: boolean;
+    isMayhemMode: boolean;
   };
   drift?: {
     passed: boolean;
@@ -76,6 +78,27 @@ export type ReserveDriftResult = {
   reason?: 'CURVE_COMPLETED' | 'ZERO_RESERVES' | 'EXCESSIVE_PRICE_DRIFT' | 'EXCESSIVE_LIQUIDITY_DROP';
 };
 const reserveBigInt = (value: unknown) => BigInt(typeof (value as any)?.toString === 'function' ? (value as any).toString() : String(value));
+function candidateEvaluationRetryDelayMs(reason: string, maxAgeMs: number): number {
+  const normalized = reason.toLowerCase();
+  if (/rug report rejected|unsafe token extension|creator concentration|creator sol balance below minimum|active authority|unsupported .*curve mode|only native sol curves|unsupported mint owner|invalid mint/.test(normalized)) {
+    // These properties do not become safe by immediately re-querying the same
+    // candidate. Let this launch generation expire before considering it again.
+    return maxAgeMs + 1;
+  }
+  if (/429|rate.?limit|all rpc endpoints failed|timeout|fetch failed|temporarily unavailable|connection reset|http 5\d\d/.test(normalized)) {
+    return Math.min(30_000, maxAgeMs);
+  }
+  if (/insufficient real reserves|fee cap exceeded|entry impact exceeds cap/.test(normalized)) {
+    return Math.min(30_000, maxAgeMs);
+  }
+  return Math.min(30_000, maxAgeMs);
+}
+function meetsBuySellFlow(buy: bigint, sell: bigint, minimumRatioBps: number): boolean {
+  return buy * 10_000n > sell * BigInt(minimumRatioBps);
+}
+function isRetryableSafetyObservationError(reason: string): boolean {
+  return /429|rate.?limit|all rpc endpoints failed|timeout|operation was aborted|fetch failed|temporarily unavailable|connection reset|http 5\d\d|rpc rejected request|missing holder account|unknown holder distribution/i.test(reason);
+}
 export function checkCandidateReserveDrift(
   s1: Snapshot,
   s2: Snapshot,
@@ -118,6 +141,15 @@ export class Engine {
   private startedAt = Date.now();
   private loopLag = monitorEventLoopDelay({ resolution: 20 });
   private entryBuildInFlight = false;
+  private nextSafetyScanAt = 0;
+  private nextCounterfactualScanAt = 0;
+  private counterfactualObservations = new Map<string, {
+    samples: number; attempts: number; nextAt: number;
+    shadowEntry?: { tokenQty: string; costLamports: string };
+    shadowGateStatus?: string; shadowGateReason?: string;
+    shadowSafetyStatus?: string; shadowSafetyReason?: string;
+    shadowDriftStatus?: string; shadowDriftReason?: string;
+  }>();
   rejectionCounts = new Map<string, number>();
   private blockedExits = new Map<string, { blockedAt: number; reason: string; triggerValue: bigint; stage: number }>();
   private lastCheckpoint = Date.now();
@@ -189,7 +221,7 @@ export class Engine {
     const vQuote = curveData?.virtualQuoteReserves ? BigInt(curveData.virtualQuoteReserves) : (extra.s ? BigInt(extra.s.curve.virtualQuoteReserves.toString()) : 0n);
     const vToken = curveData?.virtualTokenReserves ? BigInt(curveData.virtualTokenReserves) : (extra.s ? BigInt(extra.s.curve.virtualTokenReserves.toString()) : 0n);
     const spotPriceSol = (vQuote > 0n && vToken > 0n) ? Number(vQuote) / Number(vToken) : 0;
-    const spotPriceUsd = (extra as any).spotPriceUsd ?? ((extra as any).solPriceUsd ? spotPriceSol * (extra as any).solPriceUsd : (spotPriceSol > 0 ? spotPriceSol : 0));
+    const spotPriceUsd = (extra as any).spotPriceUsd ?? ((extra as any).solPriceUsd ? spotPriceSol * (extra as any).solPriceUsd : undefined);
 
     const snapshot = buildCandidateSnapshot({
       mint: candidate.mint,
@@ -241,17 +273,144 @@ export class Engine {
   }
 
   /** A denied entry is not necessarily a token-safety conclusion. */
-  private recordRestriction(mint: string, scope: 'ACTOR'|'VENUE'|'MARKET'|'STRATEGY'|'PORTFOLIO'|'EXECUTION'|'MODEL'|'SYSTEM', effect: 'WAIT'|'QUARANTINE'|'BLOCK_NEW_ENTRY', reason: string, meta?: Record<string, unknown>) {
+  private recordRestriction(mint: string, scope: 'ACTOR'|'VENUE'|'MARKET'|'STRATEGY'|'PORTFOLIO'|'EXECUTION'|'MODEL'|'SYSTEM', effect: 'WAIT'|'QUARANTINE'|'BLOCK_NEW_ENTRY', reason: string, meta?: Record<string, unknown>, observed?: Snapshot) {
     if (!this.rejectionCounts) this.rejectionCounts = new Map();
     this.rejectionCounts.set(reason, (this.rejectionCounts.get(reason) ?? 0) + 1);
     const data = { mint, scope, effect, reason, ...meta };
     log('entry_restricted', data);
     this.sessionLogger?.writeEvent('entry_restricted', data);
     const c = this.candidates?.get(mint);
-    if (c) this.snapshotCandidate(c, 'notEvaluated', `${scope}:${reason}`, meta as any);
+    if (c) this.snapshotCandidate(c, 'notEvaluated', `${scope}:${reason}`, { ...(meta as any), s: observed });
   }
   recordRejection(mint: string, reason: string, meta?: Record<string, unknown>) {
     this.recordRestriction(mint, 'PORTFOLIO', 'BLOCK_NEW_ENTRY', reason, meta);
+  }
+  private async sampleCounterfactualNearMiss(): Promise<void> {
+    const now = Date.now();
+    if (now < this.nextCounterfactualScanAt) return;
+    const candidate = [...this.candidates.values()].filter(c => {
+      const age = now - c.born;
+      const state = this.counterfactualObservations.get(c.mint);
+      const strategyMiss = c.buyers.size < this.cfg.MIN_BUYERS
+        || !meetsBuySellFlow(c.buy, c.sell, this.cfg.MIN_BUY_SELL_RATIO_BPS);
+      return age >= this.cfg.MIN_AGE_MS && age <= this.cfg.MAX_AGE_MS
+        && c.buyers.size >= 2 && strategyMiss && !c.devSold
+        && !this.state.positions[c.mint] && !this.state.closed[c.mint]
+        // Follow rejected candidates through most of their 3-minute lifetime
+        // so research can distinguish delayed continuation from rapid decay.
+        && (!state || (state.samples < 10 && state.attempts < 10 && state.nextAt <= now));
+    }).sort((a, b) => {
+      // Spend scarce shadow snapshots on the nearest-to-entry candidates first:
+      // buyer-qualified setups isolate the volume-ratio rule being evaluated.
+      const aBuyerQualified = a.buyers.size >= this.cfg.MIN_BUYERS;
+      const bBuyerQualified = b.buyers.size >= this.cfg.MIN_BUYERS;
+      if (aBuyerQualified !== bBuyerQualified) return aBuyerQualified ? -1 : 1;
+      if (a.buyers.size !== b.buyers.size) return b.buyers.size - a.buyers.size;
+      const aRatio = a.sell > 0n ? Number(a.buy * 1000n / a.sell) : Number.POSITIVE_INFINITY;
+      const bRatio = b.sell > 0n ? Number(b.buy * 1000n / b.sell) : Number.POSITIVE_INFINITY;
+      return bRatio - aRatio || a.born - b.born;
+    })[0];
+    if (!candidate) return;
+
+    const state = this.counterfactualObservations.get(candidate.mint) ?? { samples: 0, attempts: 0, nextAt: 0 };
+    state.attempts++;
+    state.nextAt = now + 15_000;
+    this.counterfactualObservations.set(candidate.mint, state);
+    this.nextCounterfactualScanAt = now + Math.max(10_000, this.cfg.RISK_SCAN_COOLDOWN_MS);
+    try {
+      // Research observation only: it does not call safety(), build an order,
+      // or alter the paper ledger. The sample supports later filter analysis.
+      const s = await this.market.snapshot(candidate.mint, candidate.slot);
+      state.samples++;
+      const strategyMisses = [
+        ...(candidate.buyers.size < this.cfg.MIN_BUYERS ? ['insufficient_buyers'] : []),
+        ...(!meetsBuySellFlow(candidate.buy, candidate.sell, this.cfg.MIN_BUY_SELL_RATIO_BPS) ? ['insufficient_buy_volume_ratio'] : []),
+      ];
+      const virtualQuote = BigInt(s.curve.virtualQuoteReserves.toString());
+      const virtualToken = BigInt(s.curve.virtualTokenReserves.toString());
+      if (!state.shadowGateStatus && candidate.buyers.size >= this.cfg.MIN_BUYERS && !s.curve.complete && !s.curve.isMayhemMode) {
+        try {
+          this.market.validateEntry(s);
+          const costs = simulationExecutionCosts(this.cfg);
+          const entryQuote = this.market.buyQuote(s, BigInt(this.cfg.BUY_LAMPORTS));
+          state.shadowEntry = {
+            tokenQty: String(mulBps(entryQuote, 10_000 - this.cfg.SLIPPAGE_BPS)),
+            costLamports: String(BigInt(this.cfg.BUY_LAMPORTS) + costs.tipLamports + costs.priorityLamports + costs.baseFeeLamports + costs.ataRentLamports),
+          };
+          state.shadowGateStatus = 'LOCAL_ENTRY_GATES_PASS_FULL_SAFETY_UNCHECKED';
+        } catch (error) {
+          state.shadowGateStatus = 'LOCAL_ENTRY_GATE_REJECTED';
+          state.shadowGateReason = (error instanceof Error ? error.message : String(error)).slice(0, 120);
+        }
+      }
+      if (state.shadowGateStatus === 'LOCAL_ENTRY_GATES_PASS_FULL_SAFETY_UNCHECKED'
+        && (!state.shadowSafetyStatus || state.shadowSafetyStatus === 'UNAVAILABLE')) {
+        try {
+          await this.market.safety(s, candidate.creator);
+          state.shadowSafetyStatus = 'PASSED';
+          try {
+            const confirmed = await this.market.snapshot(candidate.mint, candidate.slot);
+            confirmed.creatorTokens = s.creatorTokens;
+            const drift = checkCandidateReserveDrift(s, confirmed);
+            state.shadowDriftStatus = drift.passed ? 'PASSED' : 'REJECTED';
+            state.shadowDriftReason = drift.passed ? undefined : drift.reason;
+          } catch (error) {
+            state.shadowDriftStatus = 'UNAVAILABLE';
+            state.shadowDriftReason = (error instanceof Error ? error.message : String(error)).slice(0, 120);
+          }
+        } catch (error) {
+          const reason = (error instanceof Error ? error.message : String(error)).slice(0, 120);
+          state.shadowSafetyStatus = isRetryableSafetyObservationError(reason) ? 'UNAVAILABLE' : 'REJECTED';
+          state.shadowSafetyReason = reason;
+        }
+      }
+      let shadowNetPnlLamports: string | null = null;
+      let shadowEquityPnlIfAtaRentReclaimedLamports: string | null = null;
+      if (state.shadowEntry && virtualToken > 0n) {
+        try {
+          const costs = simulationExecutionCosts(this.cfg);
+          const grossExit = this.market.sellQuote(s, BigInt(state.shadowEntry.tokenQty));
+          const netExit = mulBps(grossExit, 10_000 - this.cfg.SLIPPAGE_BPS) - costs.tipLamports - costs.priorityLamports - costs.baseFeeLamports;
+          shadowNetPnlLamports = String(netExit - BigInt(state.shadowEntry.costLamports));
+          shadowEquityPnlIfAtaRentReclaimedLamports = String(BigInt(shadowNetPnlLamports) + costs.ataRentLamports);
+        } catch { /* leave unavailable if the observed curve cannot quote the shadow quantity */ }
+      }
+      this.sessionLogger?.writeEvent('paper_shadow_market_observation', {
+        candidateGenerationId: candidate.candidateGenerationId,
+        mint: candidate.mint,
+        sampleIndex: state.samples,
+        observedAtMs: s.at,
+        slot: s.slot,
+        strategyMisses,
+        buyerCount: candidate.buyers.size,
+        buyTransactionCount: candidate.buyCount ?? 0,
+        sellTransactionCount: candidate.sellCount ?? 0,
+        buyLamports: String(candidate.buy),
+        sellLamports: String(candidate.sell),
+        realSolReservesLamports: String(s.curve.realQuoteReserves),
+        virtualSolReservesLamports: String(virtualQuote),
+        virtualAssetReserves: String(virtualToken),
+        spotSolPerAssetUnit: virtualToken > 0n ? Number(virtualQuote) / Number(virtualToken) : null,
+        mintSafetyFlagsPass: s.entrySafe,
+        shadowGateStatus: state.shadowGateStatus ?? 'NOT_EVALUATED',
+        shadowGateReason: state.shadowGateReason ?? null,
+        creatorAndRugSafetyStatus: state.shadowSafetyStatus ?? 'NOT_CHECKED',
+        creatorAndRugSafetyReason: state.shadowSafetyReason ?? null,
+        reserveDriftStatus: state.shadowDriftStatus ?? 'NOT_CHECKED',
+        reserveDriftReason: state.shadowDriftReason ?? null,
+        shadowNetPnlLamports,
+        shadowEquityPnlIfAtaRentReclaimedLamports,
+        curveComplete: s.curve.complete,
+        isHolderReward: s.curve.isHolderReward,
+        isMayhemMode: s.curve.isMayhemMode,
+      });
+    } catch {
+      this.sessionLogger?.writeEvent('paper_shadow_market_observation_unavailable', {
+        candidateGenerationId: candidate.candidateGenerationId,
+        mint: candidate.mint,
+        attemptIndex: state.attempts,
+      });
+    }
   }
   emitCheckpoint() {
     if (!this.rejectionCounts) this.rejectionCounts = new Map();
@@ -305,8 +464,8 @@ export class Engine {
     const allCandidates = [...this.candidates.values()];
     const discovered = allCandidates.length;
     const aged = allCandidates.filter(c => now - c.born >= this.cfg.MIN_AGE_MS).length;
-    const buyerThreshold = allCandidates.filter(c => now - c.born >= this.cfg.MIN_AGE_MS && c.buyers.size >= this.cfg.MIN_BUYERS && c.buy > c.sell * 2n && !c.devSold).length;
-    const safetyPassed = allCandidates.filter(c => now - c.born >= this.cfg.MIN_AGE_MS && c.buyers.size >= this.cfg.MIN_BUYERS && c.buy > c.sell * 2n && !c.devSold && c.curve && !c.curve.complete).length;
+    const buyerThreshold = allCandidates.filter(c => now - c.born >= this.cfg.MIN_AGE_MS && c.buyers.size >= this.cfg.MIN_BUYERS && meetsBuySellFlow(c.buy, c.sell, this.cfg.MIN_BUY_SELL_RATIO_BPS) && !c.devSold).length;
+    const safetyPassed = allCandidates.filter(c => now - c.born >= this.cfg.MIN_AGE_MS && c.buyers.size >= this.cfg.MIN_BUYERS && meetsBuySellFlow(c.buy, c.sell, this.cfg.MIN_BUY_SELL_RATIO_BPS) && !c.devSold && c.curve && !c.curve.complete).length;
     const driftPassed = allCandidates.filter(c => c.drift && c.drift.passed).length;
     const eligible = allCandidates.filter(c => c.drift?.passed && c.curve && !c.curve.complete && !c.devSold && this.feed.healthy() && !this.stopped && !this.state.operatorPaused && !this.state.halted).length;
     const paperFilled = this.state.performance?.count ?? 0;
@@ -463,6 +622,7 @@ export class Engine {
       if (Date.now() - c.born > this.cfg.MAX_AGE_MS) {
         this.snapshotCandidate(c, 'notEvaluated', 'max_age_expired');
         this.candidates.delete(mint);
+        this.counterfactualObservations.delete(mint);
       }
     }
     for (const [mint, at] of Object.entries(this.state.closed)) if (Date.now() - at > 86_400_000) delete this.state.closed[mint];
@@ -586,17 +746,30 @@ export class Engine {
       }
       let value: bigint;
       if (s.curve.complete) {
-        p.panic = true;
-        value = 0n;
+        // Completion moves the token to another venue. The bonding-curve quote is
+        // no longer executable, and paper mode has no authoritative graduated
+        // venue quote, so keep the mark unavailable instead of inventing a zero.
+        log('position_mark_unavailable', { mint: p.mint, reason: 'curve_complete_without_executable_quote' });
+        this.marks.delete(p.mint);
+        continue;
       } else {
         const reserve = BigInt(s.curve.realQuoteReserves.toString());
         if (BigInt(p.reserve) > 0n && reserve < mulBps(BigInt(p.reserve), 10_000 - this.cfg.LIQUIDITY_DROP_BPS)) p.panic = true;
         p.reserve = String(reserve);
-        value = this.market.sellQuote(s, BigInt(p.qty)) - BigInt(this.cfg.MAX_TIP_LAMPORTS + this.cfg.MAX_PRIORITY_LAMPORTS + 5000);
+        const panicMark = p.panic;
+        const grossExit = this.market.sellQuote(s, BigInt(p.qty));
+        value = simulationSellProceeds(this.cfg, grossExit, panicMark);
         const normalized = value * BigInt(p.initialQty) / BigInt(p.qty);
         if (normalized > BigInt(p.peak)) p.peak = String(normalized);
       }
-      const exit = exitDecision(p, value, this.cfg.STOP_BPS);
+      let exit = exitDecision(p, value, this.cfg.STOP_BPS);
+      // A stop uses emergency execution economics. Re-mark with the panic
+      // slippage and panic tip before persisting the mark or recording P&L.
+      if (!p.panic && exit?.reason === 'stop' && !s.curve.complete) {
+        const grossExit = this.market.sellQuote(s, BigInt(p.qty));
+        value = simulationSellProceeds(this.cfg, grossExit, true);
+        exit = exitDecision(p, value, this.cfg.STOP_BPS) ?? exit;
+      }
       this.marks.set(p.mint, { value: String(value), at: Date.now() });
       const currentPct = BigInt(p.cost) > 0n ? Number(((value - BigInt(p.cost)) * 10000n) / BigInt(p.cost)) / 100 : 0;
       p.mfePct = Math.max(p.mfePct ?? currentPct, currentPct);
@@ -651,18 +824,24 @@ export class Engine {
       if (Date.now() - c.born >= this.cfg.MIN_AGE_MS && !this.state.positions[c.mint] && !this.state.closed[c.mint]) {
         if (c.buyers.size < this.cfg.MIN_BUYERS && c.lastSnapshotDisposition !== 'notEvaluated') {
           this.recordRestriction(c.mint, 'STRATEGY', 'WAIT', 'insufficient_buyers');
-        } else if (c.buy <= c.sell * 2n && c.lastSnapshotDisposition !== 'notEvaluated') {
+        } else if (!meetsBuySellFlow(c.buy, c.sell, this.cfg.MIN_BUY_SELL_RATIO_BPS) && c.lastSnapshotDisposition !== 'notEvaluated') {
           this.recordRestriction(c.mint, 'STRATEGY', 'WAIT', 'insufficient_buy_volume_ratio');
         }
       }
     }
 
     const available = [...this.candidates.values()].filter(c => Date.now() - c.born >= this.cfg.MIN_AGE_MS && c.next <= Date.now() && !c.devSold && !this.state.positions[c.mint] && !this.state.closed[c.mint]
-      && c.buyers.size >= this.cfg.MIN_BUYERS && c.buy > c.sell * 2n).slice(0, this.cfg.MAX_QUEUE);
+      && c.buyers.size >= this.cfg.MIN_BUYERS && meetsBuySellFlow(c.buy, c.sell, this.cfg.MIN_BUY_SELL_RATIO_BPS)).slice(0, this.cfg.MAX_QUEUE);
     const candidate = available[0];
-    if (!candidate) return;
-    candidate.next = Date.now() + 15_000;
-    let s: Snapshot, s1: Snapshot;
+    if (!candidate) { await this.sampleCounterfactualNearMiss(); return; }
+    const evaluationNow = Date.now();
+    if (evaluationNow < this.nextSafetyScanAt) {
+      candidate.next = this.nextSafetyScanAt;
+      return;
+    }
+    this.nextSafetyScanAt = evaluationNow + this.cfg.RISK_SCAN_COOLDOWN_MS;
+    candidate.next = evaluationNow + 15_000;
+    let s: Snapshot | undefined, s1: Snapshot | undefined;
     let entryAmount = BigInt(this.cfg.BUY_LAMPORTS);
     try {
       s1 = await this.market.snapshot(candidate.mint, candidate.slot);
@@ -678,6 +857,8 @@ export class Engine {
         realQuoteReserves: s.curve.realQuoteReserves.toString(),
         virtualTokenReserves: s.curve.virtualTokenReserves.toString(),
         virtualQuoteReserves: s.curve.virtualQuoteReserves.toString(),
+        isHolderReward: s.curve.isHolderReward,
+        isMayhemMode: s.curve.isMayhemMode,
       };
       candidate.drift = {
         passed: drift.passed,
@@ -696,14 +877,14 @@ export class Engine {
       };
       if (!drift.passed) {
         candidate.next = Date.now() + 5_000;
-        this.recordRestriction(candidate.mint, 'MARKET', 'WAIT', drift.reason ?? 'reserve_drift', candidateMeta);
+      this.recordRestriction(candidate.mint, 'MARKET', 'WAIT', drift.reason ?? 'reserve_drift', candidateMeta, s);
         return;
       }
       if (s.curve.complete || s.curve.isMayhemMode || candidate.devSold || !this.feed.healthy() || this.stopped) {
         const scope: 'ACTOR'|'VENUE'|'SYSTEM' = s.curve.complete || s.curve.isMayhemMode ? 'VENUE' : candidate.devSold ? 'ACTOR' : 'SYSTEM';
         const effect: 'WAIT'|'QUARANTINE' = candidate.devSold ? 'QUARANTINE' : 'WAIT';
         const reason = s.curve.complete ? 'curve_complete_transition' : s.curve.isMayhemMode ? 'mayhem_mode' : candidate.devSold ? 'developer_disposition_unverified' : !this.feed.healthy() ? 'feed_unhealthy' : 'engine_stopped';
-        this.recordRestriction(candidate.mint, scope, effect, reason, candidateMeta);
+        this.recordRestriction(candidate.mint, scope, effect, reason, candidateMeta, s);
         return;
       }
       const walletPubkey = (this.executor as any)?.walletPublicKey || (this.executor as any)?.key?.publicKey;
@@ -711,7 +892,7 @@ export class Engine {
       const riskBudget = cash * BigInt(this.cfg.MAX_SPECULATIVE_RISK_BPS) / 10_000n;
       entryAmount = entryAmount < riskBudget ? entryAmount : riskBudget;
       if (entryAmount <= 0n || cash < entryAmount + BigInt(this.cfg.RESERVE_LAMPORTS)) {
-        this.recordRestriction(candidate.mint, 'PORTFOLIO', 'BLOCK_NEW_ENTRY', 'insufficient_cash_or_reserve', candidateMeta);
+        this.recordRestriction(candidate.mint, 'PORTFOLIO', 'BLOCK_NEW_ENTRY', 'insufficient_cash_or_reserve', candidateMeta, s);
         return;
       }
       const snapshot = this.snapshotCandidate(candidate, 'cleared', null, { ...candidateMeta, s });
@@ -735,15 +916,28 @@ export class Engine {
           return;
         }
       }
+      this.sessionLogger?.writeEvent('entry_curve_mode', {
+        candidateId: deterministicCandidateId(candidate.mint, candidate.slot, candidate.eventSignature || `eval-${candidate.mint}-${candidate.slot}`),
+        mint: candidate.mint,
+        isHolderReward: s.curve.isHolderReward,
+        isMayhemMode: s.curve.isMayhemMode,
+        realSolReservesLamports: s.curve.realQuoteReserves.toString(),
+        slot: s.slot,
+      });
+      // The retry cooldown above serializes safety rechecks. Once every entry
+      // gate has passed, it must not veto the submission it was protecting.
+      candidate.next = Date.now();
       await this.trade(s, 'buy', entryAmount, candidate.creator, 0, 'buyer-accumulation', false, candidate);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
+      candidate.next = Date.now() + candidateEvaluationRetryDelayMs(reason, this.cfg.MAX_AGE_MS);
+      const observed = typeof s !== 'undefined' ? s : typeof s1 !== 'undefined' ? s1 : undefined;
       this.recordRestriction(candidate.mint, 'SYSTEM', 'WAIT', `candidate_evaluation_error:${reason}`, {
         curve: candidate.curve,
         drift: candidate.drift,
         devSold: candidate.devSold,
         buyers: candidate.buyers.size,
-      });
+      }, observed);
       return;
     }
   }
@@ -877,14 +1071,28 @@ export function assertPaperRuntime(cfg: Pick<Config, 'MODE'>): void {
   }
 }
 
-async function wallet(cfg: Config): Promise<Keypair> {
-  if (cfg.MODE === 'paper') return Keypair.fromSeed(Buffer.alloc(32, 7));
+export function derivePaperExecutionWallet(cfg: Pick<Config, 'MODE'>, paperWalletSeed?: Uint8Array): Keypair {
+  // Keep this guard at the key derivation boundary as well as runEngine's
+  // startup boundary so an alternate seed can never be interpreted in live mode.
+  assertPaperRuntime(cfg);
+  if (paperWalletSeed !== undefined && (!(paperWalletSeed instanceof Uint8Array) || paperWalletSeed.byteLength !== 32)) {
+    throw new Error('PAPER_WALLET_SEED_INVALID: seed must contain exactly 32 bytes');
+  }
+  return Keypair.fromSeed(paperWalletSeed === undefined ? Buffer.alloc(32, 7) : Buffer.from(paperWalletSeed));
+}
+
+export function engineLockPort(walletPublicKey: PublicKey): number {
+  return 20_000 + walletPublicKey.toBuffer().readUInt16LE(0) % 30_000;
+}
+
+async function wallet(cfg: Config, paperWalletSeed?: Uint8Array): Promise<Keypair> {
+  if (cfg.MODE === 'paper') return derivePaperExecutionWallet(cfg, paperWalletSeed);
   // The legacy in-process keypair path is intentionally disabled. Live startup
   // remains blocked until DurableLiveSigner is wired to an isolated KMS service.
   throw new Error('LIVE_SIGNING_UNAVAILABLE: isolated durable signer is not configured');
 }
 async function acquire(wallet: PublicKey): Promise<Server> {
-  const port = 20_000 + wallet.toBuffer().readUInt16LE(0) % 30_000;
+  const port = engineLockPort(wallet);
   const server = createServer(socket => socket.destroy());
   await new Promise<void>((done, reject) => { server.once('error', reject); server.listen({ host: '127.0.0.1', port, exclusive: true }, done); });
   return server;
@@ -894,6 +1102,8 @@ export async function runEngine(options: {
   sessionDir?: string;
   dbPath?: string;
   uiPort?: number;
+  /** Explicit paper-only deterministic seed. Never sourced from the environment. */
+  paperWalletSeed?: Uint8Array;
 } = {}) {
   if (options.sessionDir) process.env.SESSION_DIR = options.sessionDir;
   if (options.dbPath) process.env.DB_PATH = options.dbPath;
@@ -903,7 +1113,7 @@ export async function runEngine(options: {
   }
   const cfg = config();
   assertPaperRuntime(cfg);
-  const key = await wallet(cfg), lock = await acquire(key.publicKey);
+  const key = await wallet(cfg, options.paperWalletSeed), lock = await acquire(key.publicKey);
   let store: Store | undefined;
   let dashboard: Awaited<ReturnType<typeof startDashboard>> | undefined;
   let sessionLogger: SessionLogger | undefined;

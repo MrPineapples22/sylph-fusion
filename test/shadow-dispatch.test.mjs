@@ -33,10 +33,10 @@ for (const mode of ['shadow','ml_gated']) for (const [name,evaluator,incomplete]
     assert.equal(trades.length,mode==='shadow'?1:0);
     assert.equal(rejections.length,mode==='shadow'?0:1);
     if(mode==='shadow') {
-      assert.equal(events.length,1);
-      assert.equal(events[0].type,'model_shadow_evaluation');
-      assert.equal(events[0].data.candidateId,'candidate-1');
-      assert.ok(events[0].data.modelDecision);
+      const shadowEvents=events.filter(event=>event.type==='model_shadow_evaluation');
+      assert.equal(shadowEvents.length,1);
+      assert.equal(shadowEvents[0].data.candidateId,'candidate-1');
+      assert.ok(shadowEvents[0].data.modelDecision);
     }
   });
 }

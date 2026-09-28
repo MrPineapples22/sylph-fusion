@@ -70,7 +70,8 @@ if (Number.isFinite(configuredCapital) && configuredCapital > 0) {
 function loadPavlovAttributions() {
   const csvPath = 'D:/pump/SOL-SYLPH/pavlov_attributions.csv';
   const result = globalTradeLearningService.loadFromCsv(csvPath);
-  console.log(`[Pavlov Ingestion] Ingested ${result.loadedCount} authoritative trade autopsies from ${result.source} (Win Rate: ${result.winRatePct}%, Total PnL: $${result.totalRealizedPnlUsd})`);
+  const research = globalTradeLearningService.getSnapshot();
+  console.log(`[Pavlov Research] Loaded ${result.loadedCount} validated research rows from ${result.source}; rejected ${research.dataQuality.rejectedRows}/${research.dataQuality.csvRowsRead} rows. This is not current-account execution evidence. (Win rate: ${result.winRatePct}%, net research P&L: $${result.totalRealizedPnlUsd})`);
 }
 loadPavlovAttributions();
 // Configuration is parsed once into a secret-free immutable snapshot. The
@@ -114,23 +115,36 @@ const operatorReadModel = new OperatorReadModel();
 const serverTradeCooldowns = new Map();
 const guardianInterval = setInterval(async () => {
   try {
+    let basket = null;
+    try {
+      basket = await astraFeed();
+      const sol = basket?.pairs?.find(candidate => candidate.mint === 'So11111111111111111111111111111111111111112');
+      if (sol && Number.isFinite(sol.price) && Number.isSafeInteger(sol.at) && sol.at <= Date.now() && Date.now() - sol.at <= 5_000) {
+        globalCommandGateway.updateSolPriceUsd(sol.price);
+      }
+    } catch { /* Stale or unavailable SOL quotes cannot refresh the paper conversion rate. */ }
     const snapTokens = hub.snapshot().tokens || [];
-    if (snapTokens.length > 0) {
-      globalCommandGateway.updatePositionMarks(snapTokens);
+      if (snapTokens.length > 0) {
+        globalCommandGateway.updatePositionMarks(snapTokens);
       if (globalCommandGateway.getSnapshot().positions.length > 0) {
         await globalCommandGateway.tickAutonomousExits(snapTokens);
       }
 
       // Autonomous Entry Evaluation with Dynamic Best Position Sizing:
       const snap = globalCommandGateway.getSnapshot();
-      const emergencyReserveUsd = snap.cashUsd * 0.20;
-      const unreservedCash = snap.cashUsd - snap.reservedCashUsd - emergencyReserveUsd;
       // Automation is opt-in. A disabled toggle must be a real entry kill
       // switch, not merely a UI preference. Protective exits remain reduce-only
       // and continue independently for already-held paper positions.
-      if (snap.automationEnabled && !snap.entriesHalted && snap.mode === 'paper' && snap.positions.length < 2 && unreservedCash >= 10.0) {
-        const heldMints = new Set(snap.positions.map(p => p.mint));
-        const heldAssets = new Set(snap.positions.map(p => p.asset));
+      let basketEntryAllowed = false;
+      if (snap.automationEnabled && !snap.entriesHalted && snap.mode === 'paper') {
+        basketEntryAllowed = basket?.verified === true && basket?.entryAllowed === true;
+      }
+      const currentSnap = globalCommandGateway.getSnapshot();
+      const currentEmergencyReserveUsd = currentSnap.cashUsd * 0.20;
+      const currentUnreservedCash = currentSnap.cashUsd - currentSnap.reservedCashUsd - currentEmergencyReserveUsd;
+      if (basketEntryAllowed && currentSnap.automationEnabled && !currentSnap.entriesHalted && currentSnap.mode === 'paper' && currentSnap.positions.length < 2 && currentUnreservedCash >= 10.0) {
+        const heldMints = new Set(currentSnap.positions.map(p => p.mint));
+        const heldAssets = new Set(currentSnap.positions.map(p => p.asset));
 
         const unheldTokens = snapTokens.filter(t =>
           t && t.mint && !heldMints.has(t.mint) && !heldAssets.has(t.pair || t.mint)
@@ -141,7 +155,10 @@ const guardianInterval = setInterval(async () => {
           const sym = (t.symbol || '').toUpperCase().trim(); const pNum = Number(t.price || t.priceUsd || 0); if (pNum > 1.0 || t.mint.startsWith('So111111') || sym === 'SOL' || sym === 'WSOL' || sym === 'USDC' || sym === 'USDT' || sym === 'USDH' || t.mint.startsWith('EPjFW') || t.mint.startsWith('Es9v')) continue;
           const sig = discoverySignals.get(t.mint);
           const risk = discoveryRisks.get(t.mint);
-          if (risk && risk.score >= 55) continue;
+          const riskNow = Date.now();
+          if (!risk || risk.mint !== t.mint || !Number.isFinite(risk.at) || risk.at > riskNow || riskNow - risk.at > 45_000 ||
+              risk.safe !== true || risk.rugged !== false || !Number.isFinite(risk.score) || risk.score >= 55 ||
+              risk.providers?.rugcheck !== 'live' || risk.providers?.rpc !== 'live') continue;
 
           const hsi = sig?.highSignalIndex ?? 0;
           const pod = sig?.pod ?? 'FLAT';
@@ -168,10 +185,10 @@ const guardianInterval = setInterval(async () => {
                 riskScore: risk?.score,
               },
               {
-                cashUsd: snap.cashUsd,
-                reservedCashUsd: snap.reservedCashUsd,
-                emergencyReserveUsd,
-                activePositionsCount: snap.positions.length,
+              cashUsd: currentSnap.cashUsd,
+              reservedCashUsd: currentSnap.reservedCashUsd,
+              emergencyReserveUsd: currentEmergencyReserveUsd,
+              activePositionsCount: currentSnap.positions.length,
                 maxPositions: 2,
                 solPriceUsd: 150,
               }
@@ -606,20 +623,63 @@ async function handleRequest(req,res){
   if (!isLocalRequest(req, port)) {res.writeHead(403);res.end('Local terminal only');return;}
   if(req.method!=='GET'&&req.method!=='HEAD'&&req.method!=='POST'){res.writeHead(405);res.end();return;}
   const reqUrl=new URL(req.url,`http://127.0.0.1:${port}`);
-    if (req.method === 'GET' && reqUrl.pathname === '/api/metrics') {
+  if (req.method === 'GET' && reqUrl.pathname === '/api/metrics') {
     const snap = globalCommandGateway.getSnapshot();
     const health = globalProviderHealthTracker.getReport();
     const lifecycle = globalLifecycle.getState();
     const learning = globalTradeLearningService.getSnapshot();
+    const now = Date.now();
+    const observedTokens = hub.snapshot().tokens || [];
+    const marketByIdentity = new Map();
+    for (const token of observedTokens) {
+      if (!token || typeof token !== 'object' || !Number.isFinite(token.price) || token.price <= 0 ||
+          !Number.isFinite(token.at) || token.at <= 0 || token.at > now || now - token.at > 5_000) continue;
+      marketByIdentity.set(token.mint, token);
+      if (token.pair) marketByIdentity.set(token.pair, token);
+    }
+    const freshMarks = snap.positions.map(position => {
+      const token = marketByIdentity.get(position.mint) || marketByIdentity.get(position.asset);
+      return token ? { valueUsd: position.qty * token.price, unrealizedPnlUsd: position.qty * token.price - position.costBasisUsd } : null;
+    });
+    const completeMarks = freshMarks.every(mark => mark && Number.isFinite(mark.valueUsd) && Number.isFinite(mark.unrealizedPnlUsd));
+    const markedPositionValueUsd = completeMarks ? freshMarks.reduce((sum, mark) => sum + mark.valueUsd, 0) : null;
+    const unrealizedPnlUsd = completeMarks ? freshMarks.reduce((sum, mark) => sum + mark.unrealizedPnlUsd, 0) : null;
+    const closedFillCount = snap.paperPerformance.closedFillCount;
+    const winRatePct = closedFillCount > 0 ? Number((snap.paperPerformance.winningFillCount / closedFillCount * 100).toFixed(1)) : null;
 
     const metricsPayload = {
       timestamp: Date.now(),
       systemState: lifecycle,
+      accountMode: snap.mode,
       cashUsd: snap.cashUsd,
+      initialPaperCapitalUsd: snap.initialPaperCapitalUsd,
+      cashReturnUsd: snap.cashUsd - snap.initialPaperCapitalUsd,
+      cashReturnPct: snap.initialPaperCapitalUsd > 0
+        ? Number(((snap.cashUsd / snap.initialPaperCapitalUsd - 1) * 100).toFixed(4))
+        : null,
       openPositionsCount: snap.positions.length,
-      realizedPnlUsd: learning.realizedPnlUsd || 0,
-      winRatePct: learning.winRatePct || 0,
-      totalTradesClosed: learning.totalTradesClosed || 0,
+      markedPositionValueUsd,
+      markedEquityUsd: markedPositionValueUsd === null ? null : snap.cashUsd + markedPositionValueUsd,
+      unrealizedPnlUsd,
+      markedReturnUsd: markedPositionValueUsd === null
+        ? null
+        : snap.cashUsd + markedPositionValueUsd - snap.initialPaperCapitalUsd,
+      markedReturnPct: markedPositionValueUsd === null || !(snap.initialPaperCapitalUsd > 0)
+        ? null
+          : Number((((snap.cashUsd + markedPositionValueUsd) / snap.initialPaperCapitalUsd - 1) * 100).toFixed(4)),
+      realizedPnlUsd: snap.paperPerformance.realizedPnlUsd,
+      winRatePct,
+      totalTradesClosed: closedFillCount,
+      performanceEvidence: 'CURRENT_IN_MEMORY_PAPER_ACCOUNT; CASH_RETURN_IS_AUTHORITATIVE; EQUITY_RETURN_REQUIRES_FRESH_MARKS',
+      markedPositionCount: completeMarks ? freshMarks.length : freshMarks.filter(Boolean).length,
+      historicalResearch: {
+        evidenceStatus: learning.evidenceStatus,
+        tradesEvaluated: learning.totalTradesEvaluated,
+        winRatePct: learning.winRatePct,
+        totalRealizedPnlUsd: learning.totalRealizedPnlUsd,
+        dataQuality: learning.dataQuality,
+        source: learning.dataSource,
+      },
       activeIncidentsCount: health.activeIncidents?.length || 0,
       isMarketFeedHealthy: !globalProviderHealthTracker.isMarketFeedStale(),
       rpcLatencyMs: health.providers?.RPC?.p50LatencyMs || 0,
@@ -747,7 +807,26 @@ async function handleRequest(req,res){
   if(req.method==='POST'&&reqUrl.pathname==='/api/command'){
     try {
       const parsed = await readCommand(req);
+      if (parsed.type === 'SET_AUTOMATION' && parsed.payload.enabled) {
+        const basket = await astraFeed();
+        if (basket?.verified !== true || basket?.entryAllowed !== true) {
+          res.writeHead(409, {'Content-Type': 'application/json'});
+          res.end(JSON.stringify({ok:false,error:'AUTOMATION_BLOCKED: Verified market basket and required signals are unavailable.'}));
+          return;
+        }
+      }
       if ((parsed.type === 'SUBMIT_ORDER' || parsed.type === 'CLOSE_POSITION') && parsed.payload) {
+        // The public discovery feed explicitly reports entryAllowed=false until
+        // coverage and required signals are verified. Enforce that at the
+        // command boundary so stale clients cannot bypass the UI/reducer gate.
+        if (parsed.type === 'SUBMIT_ORDER' && parsed.payload.side === 'BUY') {
+          const basket = await astraFeed();
+          if (basket?.verified !== true || basket?.entryAllowed !== true) {
+            res.writeHead(409, {'Content-Type': 'application/json'});
+            res.end(JSON.stringify({ok:false,error:'ENTRY_BLOCKED: Verified market basket and required signals are unavailable.'}));
+            return;
+          }
+        }
         const snapTokens = hub.snapshot().tokens || [];
         const token = snapTokens.find(t => t.mint === parsed.payload.mint || t.pair === parsed.payload.poolAddress);
         if (!parsed.payload.priceUsd && token && typeof token.price === 'number' && Number.isFinite(token.price) && token.price > 0) {
@@ -927,6 +1006,23 @@ async function handleRequest(req,res){
   await serveStaticRequest({req, res, root, project});
 }
 const astraFeed=createAstraFeed(readLive);
+globalCommandGateway.setPaperEntryEvidenceProvider(async (mint, poolAddress) => {
+  const basket = await astraFeed();
+  const pair = basket?.pairs?.find(candidate => candidate.mint === mint && candidate.pair === poolAddress);
+  const sol = basket?.pairs?.find(candidate => candidate.mint === 'So11111111111111111111111111111111111111112' && Number.isFinite(candidate.price));
+  if (!pair || !sol) return null;
+  return {
+    mint: pair.mint,
+    poolAddress: pair.pair,
+    priceUsd: pair.price,
+    liquidityUsd: pair.liquidity,
+    observedAt: pair.at,
+    solPriceUsd: sol.price,
+    solObservedAt: sol.at,
+    verified: basket.verified === true,
+    entryAllowed: basket.entryAllowed === true,
+  };
+});
 server.requestTimeout = 15_000;
 server.headersTimeout = 10_000;
 // The terminal exposes operator commands. Keep it private to this machine until

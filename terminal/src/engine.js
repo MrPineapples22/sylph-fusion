@@ -24,7 +24,7 @@ export function indicators(history) {
  return {rsi:gains+losses===0?50:100*gains/(gains+losses),fast:n?fast/Math.min(5,n):0,slow:n?slow/Math.min(20,n):0,velocity:n>4?(history[n-1].value/history[n-5].value-1)*100:0};
 }
 export function initialState(now=Date.now(),seed=7919) {
- const s={astraGate:false,version:1,executionMode:'legacy',seed,now,sequence:0,cash:START_USD,realized:0,fees:0,initial:START_USD,config:{...DEFAULT_CONFIG},assets:[],positions:[],pending:[],logs:[],running:false,lastEval:0,cooldowns:{},trades:0,notice:'Live Dashboard data connected. Auto-Simulate is ready for paper execution.'};
+ const s={astraGate:true,version:1,executionMode:'legacy',seed,now,sequence:0,cash:START_USD,realized:0,fees:0,initial:START_USD,config:{...DEFAULT_CONFIG},assets:[],positions:[],pending:[],logs:[],running:false,lastEval:0,cooldowns:{},trades:0,notice:'ASTRA: Entry blocked until the basket and required signals are verified.'};
  s.assets=ASSETS.map(a=>{let value=a.price;const history=[];for(let i=180;i>0;i--){value*=Math.exp(normal(s)*a.sigma*.12);history.push({time:Math.floor(now/1000)-i,value});}return {...a,price:value,start:value,history,volume:1,spike:0,...indicators(history)};});
  if(s.assets[0]?.id==='SOL'){s.assets[0].price=START_USD;s.assets[0].start=START_USD;if(s.assets[0].history?.length)s.assets[0].history[s.assets[0].history.length-1]={time:Math.floor(now/1000),value:START_USD};}
  log(s,{reason:`Session initialized · 1 SOL equivalent / ${START_USD} USDC`,source:'System'});return s;
@@ -251,7 +251,7 @@ export function restore(raw,now=Date.now()) {
   if(new Set(s.assets.map(a=>a.id)).size!==s.assets.length)throw Error();
   for(const p of s.positions)if(!s.assets.some(a=>a.id===p.asset)||![p.qty,p.initialQty,p.entry,p.cost,p.opened,p.high,p.stop].every(Number.isFinite)||p.qty<=0||p.cost<0||!Array.isArray(p.tiers))throw Error();
   if(new Set(s.positions.map(p=>p.asset)).size!==s.positions.length)throw Error();
-   let clean={...s,astraGate:false,now,config:{...DEFAULT_CONFIG},assets:s.assets.map(a=>({...a})),eligibleIds:[],basketAt:0,running:false,pending:[],cooldowns:{},logs:s.logs.filter(x=>x&&typeof x.reason==='string'),lastEval:now};
+   let clean={...s,astraGate:true,now,config:{...DEFAULT_CONFIG},assets:s.assets.map(a=>({...a})),eligibleIds:[],basketAt:0,running:false,pending:[],cooldowns:{},logs:s.logs.filter(x=>x&&typeof x.reason==='string'),lastEval:now};
    for(const [key,value] of Object.entries(s.config||{}))clean=reducer(clean,{type:'CONFIG',key,value});
    clean.notice='Session restored. Pending orders cancelled; automation is paused.';log(clean,{source:'System',reason:clean.notice});return clean;
  }catch{return initialState(now);}

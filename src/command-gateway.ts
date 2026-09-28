@@ -152,6 +152,7 @@ export interface GatewayStateSnapshot {
   readonly mode: 'live' | 'paper' | 'shadow';
   readonly automationEnabled: boolean;
   readonly cashUsd: number;
+  readonly initialPaperCapitalUsd: number;
   readonly reservedCashUsd: number;
   readonly solPriceUsd: number;
   readonly positions: readonly BackendPosition[];
@@ -159,6 +160,31 @@ export interface GatewayStateSnapshot {
   readonly stateVersion: number;
   readonly operationalMode: string;
   readonly lastReconciledAt: number;
+  readonly paperPerformance: Readonly<{
+    realizedPnlUsd: number;
+    closedFillCount: number;
+    winningFillCount: number;
+    losingFillCount: number;
+  }>;
+}
+
+export interface PaperEntryEvidence {
+  readonly mint: string;
+  readonly poolAddress: string;
+  readonly priceUsd: number;
+  readonly liquidityUsd: number;
+  readonly observedAt: number;
+  readonly solPriceUsd: number;
+  readonly solObservedAt: number;
+  readonly verified: boolean;
+  readonly entryAllowed: boolean;
+}
+
+type PaperEntryEvidenceProvider = (mint: string, poolAddress: string) => Promise<PaperEntryEvidence | null>;
+
+function simulatedNetworkFeeUsd(report: Pick<FillReport, 'priorityFeeLamports' | 'jitoTipLamports'>, solPriceUsd: number): number {
+  const feeLamports = report.priorityFeeLamports + report.jitoTipLamports;
+  return Number(feeLamports) / 1e9 * solPriceUsd;
 }
 
 export class CommandGateway {
@@ -168,14 +194,23 @@ export class CommandGateway {
   private automationEnabled: boolean = false;
   private entriesHalted: boolean = false;
   private cashUsd: number = Number(process.env.SIMULATED_CAPITAL_USD) > 0 ? Number(process.env.SIMULATED_CAPITAL_USD) : 10_000.0;
+  private initialPaperCapitalUsd: number = this.cashUsd;
   private solPriceUsd: number = 150.0;
   private stateVersion: number = 1;
+  private paperRealizedPnlUsd = 0;
+  private paperClosedFillCount = 0;
+  private paperWinningFillCount = 0;
+  private paperLosingFillCount = 0;
+  private paperEntryEvidenceProvider: PaperEntryEvidenceProvider | null = null;
   // This gateway owns paper state only. It never claims chain reconciliation.
   private lastReconciledAt: number = 0;
 
   public setCashUsd(amount: number): void {
     if (Number.isFinite(amount) && amount >= 0) {
       this.cashUsd = amount;
+      if (this.positions.size === 0 && this.pendingBuys.size === 0 && this.paperClosedFillCount === 0) {
+        this.initialPaperCapitalUsd = amount;
+      }
       this.stateVersion++;
     }
   }
@@ -191,6 +226,29 @@ export class CommandGateway {
     if (Number.isFinite(price) && price > 0) {
       this.solPriceUsd = price;
     }
+  }
+
+  public setPaperEntryEvidenceProvider(provider: PaperEntryEvidenceProvider | null): void {
+    this.paperEntryEvidenceProvider = provider;
+  }
+
+  private async requireFreshEntryEvidence(mint: string, poolAddress: string): Promise<PaperEntryEvidence> {
+    if (!this.paperEntryEvidenceProvider) {
+      throw new Error('ENTRY_BLOCKED: No authoritative paper-entry evidence provider is connected.');
+    }
+    const evidence = await this.paperEntryEvidenceProvider(mint, poolAddress);
+    const now = Date.now();
+    if (!evidence || evidence.verified !== true || evidence.entryAllowed !== true ||
+        evidence.mint !== mint || evidence.poolAddress !== poolAddress ||
+        !Number.isFinite(evidence.priceUsd) || evidence.priceUsd <= 0 ||
+        !Number.isFinite(evidence.liquidityUsd) || evidence.liquidityUsd <= 0 ||
+        !Number.isFinite(evidence.solPriceUsd) || evidence.solPriceUsd <= 0 ||
+        !Number.isSafeInteger(evidence.observedAt) || evidence.observedAt > now || now - evidence.observedAt > 5_000 ||
+        !Number.isSafeInteger(evidence.solObservedAt) || evidence.solObservedAt > now || now - evidence.solObservedAt > 5_000) {
+      throw new Error('ENTRY_BLOCKED: Fresh verified price, liquidity, and basket authorization are required.');
+    }
+    this.updateSolPriceUsd(evidence.solPriceUsd);
+    return evidence;
   }
 
   private readonly positions = new Map<string, BackendPosition>();
@@ -235,6 +293,7 @@ export class CommandGateway {
       mode: this.mode,
       automationEnabled: this.automationEnabled,
       cashUsd: this.cashUsd,
+      initialPaperCapitalUsd: this.initialPaperCapitalUsd,
       reservedCashUsd: [...this.pendingBuys.values()].reduce((sum, value) => sum + value, 0),
       solPriceUsd: this.solPriceUsd,
       positions: Array.from(this.positions.values(), position => ({...position})),
@@ -242,6 +301,12 @@ export class CommandGateway {
       stateVersion: this.stateVersion,
       operationalMode: globalLifecycle.getState(),
       lastReconciledAt: this.lastReconciledAt,
+      paperPerformance: Object.freeze({
+        realizedPnlUsd: Number(this.paperRealizedPnlUsd.toFixed(6)),
+        closedFillCount: this.paperClosedFillCount,
+        winningFillCount: this.paperWinningFillCount,
+        losingFillCount: this.paperLosingFillCount,
+      }),
     };
   }
 
@@ -455,6 +520,7 @@ export class CommandGateway {
     if (isBuy && this.entriesHalted) {
       throw new Error('ENTRY_BLOCKED: Paper emergency stop is latched.');
     }
+    const entryEvidence = isBuy ? await this.requireFreshEntryEvidence(payload.mint, payload.poolAddress) : null;
 
     // 1. Idempotency check (Section 27)
     if (this.executedIntentIds.has(orderId)) {
@@ -484,30 +550,26 @@ export class CommandGateway {
       if (this.positions.size + this.pendingBuys.size >= config.maxPositions) {
         throw new Error(`MAX_POSITIONS_REACHED: Cannot open more than ${config.maxPositions} positions.`);
       }
-      if (!effectiveUsdAmount || effectiveUsdAmount <= 0) {
-        const sizing = calculateOptimalBuyPositionValue(
-          {
-            mint: payload.mint,
-            symbol: payload.symbol,
-            priceUsd: payload.priceUsd,
-            priceSol: payload.fallbackPriceSol,
-            liquidity: payload.liquidity,
-            highSignalIndex: payload.highSignalIndex,
-            tier: payload.tier,
-            pod: payload.pod,
-          },
-          {
-            cashUsd: this.cashUsd,
-            reservedCashUsd: [...this.pendingBuys.values()].reduce((sum, value) => sum + value, 0),
-            activePositionsCount: this.positions.size,
-            maxPositions: config.maxPositions,
-            solPriceUsd: this.solPriceUsd,
-          }
-        );
-        effectiveUsdAmount = sizing.optimalUsd > 0 ? sizing.optimalUsd : 50.0;
-      }
-      const requiredUsd = effectiveUsdAmount;
       const reservedUsd = [...this.pendingBuys.values()].reduce((sum, value) => sum + value, 0);
+      const markedHoldingsUsd = [...this.positions.values()].reduce((sum, position) => {
+        const markIsFresh = Number.isFinite(position.lastMarkAt) && Date.now() - (position.lastMarkAt || 0) <= 45_000;
+        const conservativeMark = markIsFresh && Number.isFinite(position.lastMark) && (position.lastMark || 0) > 0
+          ? Math.min(position.costBasisUsd, (position.lastMark || 0) * position.qty)
+          : Math.min(position.costBasisUsd, position.stop * position.qty);
+        return sum + Math.max(0, conservativeMark);
+      }, 0);
+      const equityUsd = this.cashUsd + markedHoldingsUsd;
+      const maxSpeculativeRiskUsd = equityUsd * config.maxSpeculativeRiskBps / 10_000;
+      const stopRate = config.stopBps / 10_000;
+      const reservedStopRiskUsd = [...this.positions.values()].reduce((sum, position) =>
+        sum + Math.max(0, position.costBasisUsd - position.stop * position.qty), 0);
+      const incrementalRiskUsd = Math.max(0, maxSpeculativeRiskUsd - reservedStopRiskUsd);
+      const riskSizedCapUsd = stopRate > 0 ? incrementalRiskUsd / stopRate : 0;
+      const maxAuthorizedUsd = Math.min(riskSizedCapUsd, this.cashUsd - reservedUsd);
+      if (!(maxAuthorizedUsd > 0)) throw new Error('ENTRY_BLOCKED: Risk sizing returned no authorized position size.');
+      effectiveUsdAmount = effectiveUsdAmount === undefined ? maxAuthorizedUsd : Math.min(effectiveUsdAmount, maxAuthorizedUsd);
+      if (!(effectiveUsdAmount > 0)) throw new Error('ENTRY_BLOCKED: Requested size is outside the authorized risk budget.');
+      const requiredUsd = effectiveUsdAmount;
       if (this.cashUsd - reservedUsd < requiredUsd) {
         throw new Error(`INSUFFICIENT_CASH: Available ${this.cashUsd.toFixed(2)} USD < required ${requiredUsd.toFixed(2)} USD.`);
       }
@@ -525,12 +587,18 @@ export class CommandGateway {
         : BigInt(Math.round((payload.tokenQty ?? existingPosition!.qty) * 10 ** tokenDecimals));
 
       // Ensure fresh pool state exists in executionEngine calibrated to actual token market price
-      const candidatePriceUsd = payload.priceUsd ?? (payload.fallbackPriceSol ? payload.fallbackPriceSol * this.solPriceUsd : undefined);
+      const candidatePriceUsd = entryEvidence?.priceUsd ?? payload.priceUsd ?? (payload.fallbackPriceSol ? payload.fallbackPriceSol * this.solPriceUsd : undefined);
       if (candidatePriceUsd && candidatePriceUsd > 0) {
         const tokenPriceSol = candidatePriceUsd / this.solPriceUsd;
-        // Calibrate pool reserves around a standard 30 SOL pool depth
-        const poolSolLamports = 30_000_000_000n; // 30 SOL
-        const totalTokens = 30 / tokenPriceSol;
+        // Use the verified provider-reported pool liquidity to seed the paper
+        // AMM. Liquidity is total USD TVL, so a balanced pool has half on SOL.
+        // This remains a paper depth estimate, not an executable quote.
+        const poolSol = entryEvidence
+          ? (entryEvidence.liquidityUsd / 2) / this.solPriceUsd
+          : 30;
+        const poolSolLamports = BigInt(Math.floor(poolSol * 1e9));
+        if (poolSolLamports <= 0n) throw new Error('ENTRY_BLOCKED: Verified pool depth is not positive.');
+        const totalTokens = poolSol / tokenPriceSol;
         const poolTokenUnits = BigInt(Math.max(1, Math.round(totalTokens * (10 ** tokenDecimals))));
         this.executionEngine.pushState({
           timestamp: Date.now() + 1000,
@@ -540,7 +608,8 @@ export class CommandGateway {
           volatility: 0.05,
         }, payload.poolAddress);
       } else {
-        // Fallback default pool for test suites without explicit token price
+        if (isBuy) throw new Error('ENTRY_BLOCKED: Verified market price is unavailable.');
+        // Legacy exit-only fallback; buys never use fabricated market state.
         this.executionEngine.pushState({
           timestamp: Date.now() + 1000,
           slot: 250000,
@@ -566,11 +635,23 @@ export class CommandGateway {
       // 6. Execute through the isolated simulator. No network delivery exists here.
       const result = await this.executionEngine.execute(request);
       const { report, telemetry } = result;
+      let committed = false;
+      try {
 
       // Cancellation can race a simulator completion. No paper entry may be
       // committed after the operator's stop, even if the adapter reports a fill.
       if (isBuy && this.entriesHalted) {
         throw new Error('ENTRY_BLOCKED: Paper emergency stop occurred during execution.');
+      }
+      if (isBuy) {
+        const fillEvidence = await this.requireFreshEntryEvidence(payload.mint, payload.poolAddress);
+        if (this.entriesHalted) {
+          throw new Error('ENTRY_BLOCKED: Paper emergency stop occurred during fill authorization.');
+        }
+        const driftBps = Math.abs(fillEvidence.priceUsd / entryEvidence!.priceUsd - 1) * 10_000;
+        if (driftBps > (payload.maxSlippageBps ?? config.slippageBps)) {
+          throw new Error('ENTRY_BLOCKED: Verified market price moved beyond the authorized slippage bound.');
+        }
       }
 
       // 7. Authoritative paper-state mutation (ONLY within backend gateway)
@@ -578,6 +659,7 @@ export class CommandGateway {
         if (isBuy) {
           const filledQty = Number(report.outputAmount) / 10 ** tokenDecimals;
           const costUsd = effectiveUsdAmount!;
+          const networkFeeUsd = simulatedNetworkFeeUsd(report, this.solPriceUsd);
           const execPriceUsd = candidatePriceUsd && filledQty > 0
             ? (costUsd / filledQty)
             : (report.execPrice || 0.00001) * this.solPriceUsd;
@@ -592,17 +674,21 @@ export class CommandGateway {
             peak: execPriceUsd,
             trough: execPriceUsd,
             openedAt: Date.now(),
-            costBasisUsd: costUsd,
+            // Network costs are paid in addition to the swap input and must
+            // be recovered before this lot can be profitable.
+            costBasisUsd: costUsd + networkFeeUsd,
             stage: 0,
             reconciliationState: 'SIMULATED',
             tokenDecimals,
           });
-          this.cashUsd -= costUsd;
+          this.cashUsd -= costUsd + networkFeeUsd;
         } else {
           // SELL / Exit
           const pos = this.positions.get(payload.poolAddress);
           const proceedSol = Number(report.outputAmount) / 1e9;
-          let proceedUsd = proceedSol * this.solPriceUsd;
+          const grossProceedUsd = proceedSol * this.solPriceUsd;
+          const networkFeeUsd = simulatedNetworkFeeUsd(report, this.solPriceUsd);
+          const proceedUsd = grossProceedUsd - networkFeeUsd;
 
           if (pos) {
             const soldQty = Number(report.inputAmount) / 10 ** tokenDecimals;
@@ -611,6 +697,10 @@ export class CommandGateway {
             const basisCostClosedUsd = pos.costBasisUsd * closedFraction;
             let realizedPnlUsd = proceedUsd - basisCostClosedUsd;
             let realizedPnlPct = basisCostClosedUsd > 0 ? (realizedPnlUsd / basisCostClosedUsd) * 100 : 0;
+            this.paperRealizedPnlUsd += realizedPnlUsd;
+            this.paperClosedFillCount++;
+            if (realizedPnlUsd > 0) this.paperWinningFillCount++;
+            else this.paperLosingFillCount++;
             const holdDurationMs = Math.max(0, Date.now() - (pos.openedAt || Date.now()));
             const exitTrigger = payload.exitTrigger
               || (payload.emergency
@@ -624,7 +714,7 @@ export class CommandGateway {
             // contaminate cash, P&L, and learning data derived from it.
             // Execution assumptions belong in the fill model before a report
             // is produced, never in settlement accounting afterwards.
-            const exitPriceUsd = candidatePriceUsd || (soldQty > 0 ? proceedUsd / soldQty : pos.entry);
+            const exitPriceUsd = soldQty > 0 ? grossProceedUsd / soldQty : pos.entry;
 
             // Pavlov Attribution: record closed trade and update decision credit & adaptive hurdles
             try {
@@ -658,6 +748,7 @@ export class CommandGateway {
         this.stateVersion++;
       }
 
+      committed = true;
       return {
         success: report.status === 'FILLED',
         commandId: cmd.commandId,
@@ -671,6 +762,11 @@ export class CommandGateway {
         error: report.status !== 'FILLED' ? report.failureReason || 'Order rejected by execution engine' : undefined,
         stateVersion: this.stateVersion,
       };
+      } finally {
+        // A fill can be rejected by the final authorization check. Roll back
+        // the simulator's speculative reserve overlay before releasing the pool.
+        if (isBuy && !committed) this.executionEngine.clearOverlay(payload.poolAddress);
+      }
     } finally {
       this.inFlight.delete(payload.poolAddress);
       this.pendingBuys.delete(payload.poolAddress);
@@ -782,6 +878,11 @@ export class CommandGateway {
       this.positions.clear();
       this.pendingBuys.clear();
       this.inFlight.clear();
+      this.paperRealizedPnlUsd = 0;
+      this.paperClosedFillCount = 0;
+      this.paperWinningFillCount = 0;
+      this.paperLosingFillCount = 0;
+      this.initialPaperCapitalUsd = capitalUsd;
     }
     this.stateVersion++;
 

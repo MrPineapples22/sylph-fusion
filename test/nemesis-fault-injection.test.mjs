@@ -36,6 +36,11 @@ test('Nemesis 2: Duplicate economic intent fails closed and cannot execute twice
   const { globalLifecycle } = await import('../dist/lifecycle/system-lifecycle.js');
   globalLifecycle.bootstrapToHealthy();
   const gateway = CommandGateway.resetInstance();
+  gateway.setPaperEntryEvidenceProvider(async (mint, poolAddress) => ({
+    mint, poolAddress, priceUsd: 1, liquidityUsd: 1_000_000,
+    observedAt: Date.now(), solPriceUsd: 150, solObservedAt: Date.now(),
+    verified: true, entryAllowed: true,
+  }));
   const cmd = {
     commandId: 'cmd_nemesis_dup',
     type: 'SUBMIT_ORDER',

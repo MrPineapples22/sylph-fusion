@@ -15,6 +15,11 @@ const buy = {
 test('terminal command gateway produces paper effects without chain identity or reconciliation claims', async () => {
   globalLifecycle.bootstrapToHealthy();
   const gateway = CommandGateway.resetInstance();
+  gateway.setPaperEntryEvidenceProvider(async (mint, poolAddress) => ({
+    mint, poolAddress, priceUsd: 1, liquidityUsd: 1_000_000,
+    observedAt: Date.now(), solPriceUsd: 150, solObservedAt: Date.now(),
+    verified: true, entryAllowed: true,
+  }));
   const result = await gateway.executeCommand(buy);
 
   assert.equal(result.success, true);

@@ -9,6 +9,7 @@ import BN from 'bn.js';
 import { SessionLogger } from '../dist/session-logger.js';
 import { Executor } from '../dist/execution.js';
 import { Engine } from '../dist/fusion.js';
+import { SimulationExecutionAuthority } from '../dist/platform/execution/authority.js';
 import { config } from '../dist/config.js';
 import { Store } from '../dist/store.js';
 import { executeModelGate } from '../dist/candidate-snapshot.js';
@@ -87,7 +88,7 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
     const cfg = config({
       MODE: 'paper',
       BUY_LAMPORTS: 10_000_000,
-      MAX_EXPOSURE_LAMPORTS: 100_000_000,
+      MAX_EXPOSURE_LAMPORTS: 200_000_000,
       MAX_DAILY_LOSS_LAMPORTS: 50_000_000,
       SLIPPAGE_BPS: 300,
       STOP_BPS: 1200,
@@ -136,11 +137,12 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
 
     let quoteBuyOut = 1_000_000_000n; // 1,000,000,000 tokens
     let quoteSellOut = 8_000_000n;   // 8,000,000 lamports for 50%
+    let marketSafetyCalls = 0;
     const mockMarket = {
       buyQuote: () => quoteBuyOut,
       sellQuote: () => quoteSellOut,
       snapshot: async () => makeSnapshot(),
-      safety: async () => {},
+      safety: async () => { marketSafetyCalls++; },
       validateEntry: () => {},
     };
 
@@ -238,13 +240,39 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
     assert.equal(candSnapshot.microstructure.sellTransactionCount, 0);
     assert.equal(candSnapshot.transport.leadingRpcLatencyMs, 26, 'Uses genuine leading RPC latency');
     assert.ok(candSnapshot.curveState.curveCompletionPct >= 0, 'Computed real curve completion percentage');
+    assert.equal(candSnapshot.curveState.spotPriceUsd, 0, 'SOL-denominated spot price is not mislabeled as USD');
+    assert.ok(candSnapshot.missingFeatureKeys.includes('spotPriceUsd'), 'USD price remains explicitly missing without an FX quote');
+
+    // Counterfactual market sampling records near-miss prices without touching
+    // paper cash, positions, or the performance ledger.
+    const candidateBuyers = new Map(candidate.buyers);
+    const candidateBuy = candidate.buy;
+    candidate.buyers = new Map([...candidateBuyers].slice(0, 5));
+    candidate.buy = 0n;
+    const fillsBeforeShadow = engine.state.performance?.count ?? 0;
+    await engine['sampleCounterfactualNearMiss']();
+    await engine['sampleCounterfactualNearMiss'](); // scan cooldown prevents duplicate samples
+    const shadowState = engine['counterfactualObservations'].get(candidateMint);
+    assert.equal(shadowState.samples, 1, 'scan cooldown limits repeated market reads');
+    for (let i = 0; i < 9; i++) {
+      engine['nextCounterfactualScanAt'] = 0;
+      shadowState.nextAt = 0;
+      await engine['sampleCounterfactualNearMiss']();
+    }
+    assert.equal(shadowState.samples, 10, 'near-miss follow-up spans the candidate lifetime');
+    assert.equal(marketSafetyCalls, 1, 'near-miss full safety is checked once without executing an order');
+    assert.equal(engine.state.performance?.count ?? 0, fillsBeforeShadow);
+    assert.equal(Object.keys(engine.state.positions).length, 0);
+    candidate.buyers = candidateBuyers;
+    candidate.buy = candidateBuy;
 
     // 5. Execute BUY Trade
-    const buyTargetLamports = 10_000_000n;
-    await engine['trade'](snap, 'buy', buyTargetLamports, cCreator, 0, 'buyer-accumulation', false, candidate);
+    // Exercise the full safety-to-paper-entry path. The safety cooldown is
+    // scheduled before external checks and must be cleared when they pass.
+    await engine['tick']();
 
     const pos = engine.state.positions[candidateMint];
-    assert.ok(pos, 'Position should exist after buy');
+    assert.ok(pos, 'Position should exist after all entry checks pass');
     assert.equal(pos.qty, '970000000');
     assert.equal(pos.initialQty, '970000000');
     const initialCost = BigInt(pos.cost);
@@ -282,6 +310,21 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
 
     // Close logger to ensure all file streams flush to disk
     await logger.close();
+
+    const rawSessionEvents = (await readFile(join(sessionDir, 'session.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+    const shadowObservations = rawSessionEvents.filter(event => event.event === 'paper_shadow_market_observation');
+    assert.equal(shadowObservations.length, 10, 'near-miss follow-up is bounded and rate-limited');
+    assert.equal(shadowObservations[0].buyerCount, 5);
+    assert.equal(shadowObservations[0].mintSafetyFlagsPass, true);
+    assert.equal(shadowObservations[0].shadowGateStatus, 'LOCAL_ENTRY_GATES_PASS_FULL_SAFETY_UNCHECKED');
+    assert.equal(shadowObservations[0].creatorAndRugSafetyStatus, 'PASSED');
+    assert.equal(shadowObservations[0].reserveDriftStatus, 'PASSED');
+    assert.equal(shadowObservations[0].shadowNetPnlLamports, '-5850000');
+    assert.equal(shadowObservations[0].shadowEquityPnlIfAtaRentReclaimedLamports, '-2850000');
+    assert.equal(shadowObservations[0].realSolReservesLamports, '2500000000');
+    assert.equal(shadowObservations[0].virtualAssetReserves, '1073000000000000');
+    assert.ok(shadowObservations[0].spotSolPerAssetUnit > 0);
+    assert.equal(shadowObservations[9].sampleIndex, 10);
 
     // 9. Ingest artifacts via UI soak-reader
     const sessionData = await readLatestSoakSession(sessionsDir, sessionName);
@@ -354,6 +397,82 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
     const closed = await Promise.allSettled([logger?.close(), store?.close()]);
     const failure = closed.find(result => result.status === 'rejected');
     if (failure) throw failure.reason;
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('Engine paper marks match executable simulation sell proceeds and disappear on curve graduation', async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), 'fusion-mark-regression-'));
+  let store;
+  try {
+    const cfg = config({
+      MODE: 'paper', BUY_LAMPORTS: 10_000_000, PAPER_CASH_LAMPORTS: 2_000_000_000,
+      MAX_EXPOSURE_LAMPORTS: 2_000_000_000, MAX_DAILY_LOSS_LAMPORTS: 500_000_000,
+      SLIPPAGE_BPS: 300, PANIC_SLIPPAGE_BPS: 1_000,
+      MAX_TIP_LAMPORTS: 500_000, MIN_TIP_LAMPORTS: 10_000,
+      MAX_PRIORITY_LAMPORTS: 200_000, DB_PATH: join(rootDir, 'fusion.sqlite'),
+      RPC_URLS: 'https://rpc.example.invalid', WS_URLS: 'wss://rpc.example.invalid',
+    });
+    const mint = mintPub.toBase58();
+    const qty = 1_000_000n;
+    const proceeds = 1_000_000_000n;
+    const liveSnapshot = makeSnapshot({ realQuoteReserves: '2500000000' });
+    const market = {
+      sellQuote: () => proceeds,
+      snapshot: async () => liveSnapshot,
+    };
+    const rpc = {};
+    const authority = new SimulationExecutionAuthority(cfg, market, key.publicKey);
+    store = { save: async () => {} };
+
+    const makeEngine = (position, initialCash = 1_000_000_000n) => {
+      const state = {
+        version: 1, wallet: key.publicKey.toBase58(), mode: 'paper',
+        positions: { [mint]: position }, pending: null,
+        cash: String(initialCash), day: new Date().toISOString().slice(0, 10),
+        dayPnl: '0', closed: {}, halted: false,
+      };
+      const engine = new Engine(cfg, rpc, market, authority, store, state);
+      engine.feed.last = Date.now();
+      engine.feed.readySince = Date.now() - 20_000;
+      engine.feed.slot = 100;
+      return engine;
+    };
+    const position = (panic = false) => ({
+      mint, creator: creatorPub.toBase58(), tokenProgram: TOKEN_PROGRAM_ID.toBase58(),
+      qty: String(qty), initialQty: String(qty), cost: '900000000', originalCost: '900000000',
+      peak: '900000000', stage: 5, opened: Date.now() - 1_000,
+      reserve: '2500000000', panic, creatorTokens: '0',
+    });
+
+    const normalEngine = makeEngine(position(false));
+    const normalFill = await authority.build(liveSnapshot, 'sell', qty, creatorPub.toBase58(), 5, 'mark-parity', false);
+    await normalEngine['tick']();
+    assert.equal(normalEngine['marks'].get(mint)?.value, String(normalFill.solDelta),
+      'normal mark must equal the SimulationExecutionAuthority sell fill proceeds');
+
+    const panicEngine = makeEngine(position(true));
+    const panicFill = await authority.build(liveSnapshot, 'sell', qty, creatorPub.toBase58(), 5, 'mark-parity', true);
+    await panicEngine['tick']();
+    assert.equal(panicEngine['marks'].get(mint)?.value, String(panicFill.solDelta),
+      'panic mark must include the same panic slippage and fees as the simulation sell fill');
+
+    const graduatedSnapshot = makeSnapshot({ complete: true });
+    const graduatedMarket = { ...market, snapshot: async () => graduatedSnapshot };
+    const graduatedAuthority = new SimulationExecutionAuthority(cfg, graduatedMarket, key.publicKey);
+    const graduatedEngine = makeEngine(position(false));
+    graduatedEngine.market = graduatedMarket;
+    graduatedEngine.executor = graduatedAuthority;
+    graduatedEngine['marks'].set(mint, { value: '123456789', at: Date.now() - 1_000 });
+    const fillsBefore = graduatedEngine.state.performance?.count ?? 0;
+    await graduatedEngine['tick']();
+    assert.equal(graduatedEngine['marks'].has(mint), false,
+      'graduated curve must remove any stale mark when no executable venue quote is available');
+    assert.ok(graduatedEngine.state.positions[mint], 'position remains open while graduated venue value is unknown');
+    assert.equal(graduatedEngine.state.performance?.count ?? 0, fillsBefore,
+      'no fabricated sell fill is recorded for an unavailable graduated-venue quote');
+  } finally {
+    if (typeof store?.close === 'function') store.close();
     await rm(rootDir, { recursive: true, force: true });
   }
 });

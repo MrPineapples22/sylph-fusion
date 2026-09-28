@@ -14,6 +14,7 @@ const toSnapshot = (parsed, now, runtimeGeneration) => {
         maxPositions: parsed.MAX_POSITIONS,
         feedStaleMs: parsed.FEED_STALE_MS,
         quoteMaxAgeMs: parsed.QUOTE_MAX_AGE_MS,
+        riskScanCooldownMs: parsed.RISK_SCAN_COOLDOWN_MS,
         rpcTimeoutMs: parsed.RPC_TIMEOUT_MS,
         pollMs: parsed.POLL_MS,
         maxExposureLamports: parsed.MAX_EXPOSURE_LAMPORTS,

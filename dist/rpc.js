@@ -146,6 +146,24 @@ export class RpcPool {
                         this.errors[index]++;
                         throw new Error('RPC rejected request');
                     }
+                    // Keep the endpoint slot watermark current from authoritative RPC
+                    // responses. verifyCluster() only samples once at startup; without
+                    // this, status and endpoint ranking silently use that old slot for
+                    // the lifetime of the process.
+                    const request = typeof init?.body === 'string'
+                        ? JSON.parse(init.body)
+                        : undefined;
+                    const result = data.result;
+                    const contextualSlot = result && typeof result === 'object'
+                        ? result.context?.slot
+                        : undefined;
+                    const observedSlot = Number.isSafeInteger(contextualSlot)
+                        ? contextualSlot
+                        : request?.method === 'getSlot' && Number.isSafeInteger(result)
+                            ? result
+                            : 0;
+                    if (observedSlot > 0)
+                        this.updateSlot(index, observedSlot);
                     this.failures[index] = 0;
                     this.quarantinedUntil[index] = 0;
                     const lat = Math.round(performance.now() - t0);
@@ -185,7 +203,10 @@ export class RpcPool {
             const isError = this.failures[i] > 3;
             const isStale = maxSlot > 0 && this.slots[i] > 0 && (maxSlot - this.slots[i] > 32);
             let status = 'standby';
-            if (i === this.active && !isRateLimited && !isError) {
+            if (isStale) {
+                status = 'stale';
+            }
+            else if (i === this.active && !isRateLimited && !isError) {
                 status = 'active';
             }
             else if (isRateLimited) {

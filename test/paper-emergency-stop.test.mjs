@@ -23,6 +23,18 @@ const stop = (commandId = 'emergency-stop') => command(commandId, 'EMERGENCY_STO
   reason: 'adversarial test halt',
 });
 
+const authorizeTestEntry = gateway => gateway.setPaperEntryEvidenceProvider(async (mint, poolAddress) => ({
+  mint,
+  poolAddress,
+  priceUsd: 1,
+  liquidityUsd: 1_000_000,
+  observedAt: Date.now(),
+  solPriceUsd: 150,
+  solObservedAt: Date.now(),
+  verified: true,
+  entryAllowed: true,
+}));
+
 const assertEntryHalted = async (gateway, commandId, poolAddress) => {
   const result = await gateway.executeCommand(buy(commandId, poolAddress));
   assert.equal(result.success, false);
@@ -69,6 +81,7 @@ test('changing paper mode cannot clear an emergency halt', async () => {
 
 test('a buy fill racing an emergency stop cannot commit paper exposure', async () => {
   const gateway = CommandGateway.resetInstance();
+  authorizeTestEntry(gateway);
   let releaseFill;
   let executionStarted;
   const started = new Promise(resolve => { executionStarted = resolve; });
