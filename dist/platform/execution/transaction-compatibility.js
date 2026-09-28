@@ -21,6 +21,9 @@ export class TransactionCompatibilityAuthority {
         return false;
     }
     static normalizeVersion(version) {
+        if (!TransactionCompatibilityAuthority.isSupportedVersion(version)) {
+            throw new Error(`UNSUPPORTED_CHAIN_TRANSACTION_VERSION: version ${String(version)} is not supported`);
+        }
         if (version === undefined || version === 'legacy')
             return 'LEGACY';
         if (version === 0)
@@ -33,6 +36,23 @@ export class TransactionCompatibilityAuthority {
      * Version-aware resource policy validator
      */
     static validateResourcePolicy(version, limits) {
+        if (!TransactionCompatibilityAuthority.SUPPORTED_VERSIONS.has(version)) {
+            throw new Error(`UNSUPPORTED_CHAIN_TRANSACTION_VERSION: ${String(version)}`);
+        }
+        if (typeof limits.computeLimit !== 'number' || !Number.isSafeInteger(limits.computeLimit)) {
+            throw new Error(`computeLimit must be a safe integer (got ${String(limits.computeLimit)})`);
+        }
+        if (typeof limits.priorityFeeMicroLamports !== 'bigint' || limits.priorityFeeMicroLamports < 0n) {
+            throw new Error('priorityFeeMicroLamports must be a non-negative bigint');
+        }
+        if (limits.loadedAccountsDataSizeLimit !== undefined &&
+            (!Number.isSafeInteger(limits.loadedAccountsDataSizeLimit) || limits.loadedAccountsDataSizeLimit <= 0)) {
+            throw new Error('loadedAccountsDataSizeLimit must be a positive safe integer');
+        }
+        if (limits.heapLimitBytes !== undefined &&
+            (!Number.isSafeInteger(limits.heapLimitBytes) || limits.heapLimitBytes <= 0)) {
+            throw new Error('heapLimitBytes must be a positive safe integer');
+        }
         const policyVersion = `resource-policy-2026-${version.toLowerCase()}`;
         if (version === 'LEGACY') {
             if (limits.computeLimit <= 0 || limits.computeLimit > 1_400_000) {

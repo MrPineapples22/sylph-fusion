@@ -59,14 +59,17 @@ export class TransactionCompatibilityAuthority {
    * Returns whether a transaction version reported by RPC getTransaction is supported.
    * In Solana RPC, version is either undefined/0 (legacy/v0) or 1 (v1).
    */
-  public static isSupportedVersion(version: number | 'legacy' | undefined): boolean {
+  public static isSupportedVersion(version: unknown): version is number | 'legacy' | undefined {
     if (version === undefined || version === 'legacy' || version === 0 || version === 1) {
       return true;
     }
     return false;
   }
 
-  public static normalizeVersion(version: number | 'legacy' | undefined): SupportedTransactionVersion {
+  public static normalizeVersion(version: unknown): SupportedTransactionVersion {
+    if (!TransactionCompatibilityAuthority.isSupportedVersion(version)) {
+      throw new Error(`UNSUPPORTED_CHAIN_TRANSACTION_VERSION: version ${String(version)} is not supported`);
+    }
     if (version === undefined || version === 'legacy') return 'LEGACY';
     if (version === 0) return 'V0';
     if (version === 1) return 'V1';
@@ -80,6 +83,23 @@ export class TransactionCompatibilityAuthority {
     version: SupportedTransactionVersion,
     limits: VersionResourceLimits
   ): DecodedResourceLimits {
+    if (!TransactionCompatibilityAuthority.SUPPORTED_VERSIONS.has(version)) {
+      throw new Error(`UNSUPPORTED_CHAIN_TRANSACTION_VERSION: ${String(version)}`);
+    }
+    if (typeof limits.computeLimit !== 'number' || !Number.isSafeInteger(limits.computeLimit)) {
+      throw new Error(`computeLimit must be a safe integer (got ${String(limits.computeLimit)})`);
+    }
+    if (typeof limits.priorityFeeMicroLamports !== 'bigint' || limits.priorityFeeMicroLamports < 0n) {
+      throw new Error('priorityFeeMicroLamports must be a non-negative bigint');
+    }
+    if (limits.loadedAccountsDataSizeLimit !== undefined &&
+        (!Number.isSafeInteger(limits.loadedAccountsDataSizeLimit) || limits.loadedAccountsDataSizeLimit <= 0)) {
+      throw new Error('loadedAccountsDataSizeLimit must be a positive safe integer');
+    }
+    if (limits.heapLimitBytes !== undefined &&
+        (!Number.isSafeInteger(limits.heapLimitBytes) || limits.heapLimitBytes <= 0)) {
+      throw new Error('heapLimitBytes must be a positive safe integer');
+    }
     const policyVersion = `resource-policy-2026-${version.toLowerCase()}`;
 
     if (version === 'LEGACY') {

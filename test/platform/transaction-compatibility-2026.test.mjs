@@ -22,11 +22,14 @@ test('TransactionCompatibilityAuthority: identifies supported versions and rejec
   assert.equal(TransactionCompatibilityAuthority.isSupportedVersion(0), true);
   assert.equal(TransactionCompatibilityAuthority.isSupportedVersion(1), true);
   assert.equal(TransactionCompatibilityAuthority.isSupportedVersion(2), false);
+  assert.equal(TransactionCompatibilityAuthority.isSupportedVersion('1'), false);
+  assert.equal(TransactionCompatibilityAuthority.isSupportedVersion(null), false);
 
   assert.equal(TransactionCompatibilityAuthority.normalizeVersion(undefined), 'LEGACY');
   assert.equal(TransactionCompatibilityAuthority.normalizeVersion(0), 'V0');
   assert.equal(TransactionCompatibilityAuthority.normalizeVersion(1), 'V1');
   assert.throws(() => TransactionCompatibilityAuthority.normalizeVersion(2), /UNSUPPORTED_CHAIN_TRANSACTION_VERSION/);
+  assert.throws(() => TransactionCompatibilityAuthority.normalizeVersion(null), /UNSUPPORTED_CHAIN_TRANSACTION_VERSION/);
 });
 
 test('TransactionCompatibilityAuthority: enforces version-aware resource limits and generates fingerprint', () => {
@@ -36,6 +39,24 @@ test('TransactionCompatibilityAuthority: enforces version-aware resource limits 
   });
   assert.equal(legacyLimits.version, 'LEGACY');
   assert.equal(legacyLimits.computeLimit, 200_000);
+  assert.throws(() => TransactionCompatibilityAuthority.validateResourcePolicy('LEGACY', {
+    computeLimit: 200_000.5,
+    priorityFeeMicroLamports: 1n,
+  }), /computeLimit must be a safe integer/);
+  assert.throws(() => TransactionCompatibilityAuthority.validateResourcePolicy('LEGACY', {
+    computeLimit: 200_000,
+    priorityFeeMicroLamports: -1n,
+  }), /priorityFeeMicroLamports must be a non-negative bigint/);
+  assert.throws(() => TransactionCompatibilityAuthority.validateResourcePolicy('V0', {
+    computeLimit: 200_000,
+    loadedAccountsDataSizeLimit: 1024.5,
+    priorityFeeMicroLamports: 1n,
+  }), /loadedAccountsDataSizeLimit must be a positive safe integer/);
+  assert.throws(() => TransactionCompatibilityAuthority.validateResourcePolicy('V0', {
+    computeLimit: 200_000,
+    heapLimitBytes: 1024.5,
+    priorityFeeMicroLamports: 1n,
+  }), /heapLimitBytes must be a positive safe integer/);
 
   // V1 requires explicit loadedAccountsLimit
   assert.throws(() => TransactionCompatibilityAuthority.validateResourcePolicy('V1', {
