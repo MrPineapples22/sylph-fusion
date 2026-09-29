@@ -35,6 +35,34 @@ test('decoded transaction event count is bounded before any consumer mutation', 
   assert.equal(consumed,0);assert.equal(f.last,0);
 });
 
+test('accepted provider observations carry immutable provenance and a payload hash', () => {
+  const events=[];const f=feed(e=>events.push(e));
+  f.parser={*parseLogs(){yield {name:'tradeEvent',data:{}};}};
+  f.accept('signature-provenance',101,['Program log: valid'],{sourceId:'geyser-a',providerId:'https://provider.invalid',transport:'yellowstone.transaction.logs',commitment:'confirmed'});
+  const observation=events[0].observation;
+  assert.equal(observation.signature,'signature-provenance');
+  assert.equal(observation.slot,101);
+  assert.equal(observation.commitment,'confirmed');
+  assert.equal(observation.providerId,'https://provider.invalid');
+  assert.match(observation.rawPayloadHash,/^[a-f0-9]{64}$/);
+  assert.equal(Object.isFrozen(observation),true);
+  assert.equal(observation.transactionVersion,'unknown');
+});
+
+test('observation identity binds provider and transport, and unsafe source metadata is rejected', () => {
+  const a=[];const b=[];const first=feed(e=>a.push(e));const second=feed(e=>b.push(e));
+  first.parser=second.parser={*parseLogs(){yield {name:'tradeEvent',data:{}};}};
+  const logs=['Program log: valid'];
+  first.accept('same-signature',103,logs,{sourceId:'ws-1',providerId:'https://one.invalid',transport:'websocket.logsSubscribe',commitment:'confirmed'});
+  second.accept('same-signature',103,logs,{sourceId:'ws-1',providerId:'https://two.invalid',transport:'websocket.logsSubscribe',commitment:'confirmed'});
+  assert.notEqual(a[0].observation.observationId,b[0].observation.observationId);
+  const rejected=feed();rejected.parser={*parseLogs(){yield {name:'tradeEvent',data:{}};}};
+  rejected.accept('bad-source',104,logs,{sourceId:'ws-1',providerId:'https://user:secret@rpc.invalid/path?token=secret',transport:'websocket.logsSubscribe',commitment:'confirmed'});
+  rejected.accept('bad-commitment',104,logs,{sourceId:'ws-1',providerId:'rpc-1',transport:'websocket.logsSubscribe',commitment:'optimistic'});
+  rejected.accept('missing-source',104,logs,{});
+  assert.equal(rejected.last,0);
+});
+
 test('stopping a feed interrupts reconnect backoff immediately', async () => {
   const f=feed();
   const waiting=f.reconnectDelay(10000);

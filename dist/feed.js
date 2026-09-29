@@ -1,10 +1,29 @@
 import { EventParser } from '@coral-xyz/anchor';
+import { createHash } from 'node:crypto';
 import { getPumpProgram, PUMP_PROGRAM_ID } from '@pump-fun/pump-sdk';
 import WebSocket from 'ws';
 import bs58 from 'bs58';
 import { setTimeout as delay } from 'node:timers/promises';
 import { BoundedSet, log } from './core.js';
 import { IngestionGapReconciler } from './platform/ingestion/gap-reconciler.js';
+function providerLabel(endpoint) {
+    try {
+        return new URL(endpoint).origin;
+    }
+    catch {
+        return 'unparseable-provider';
+    }
+}
+function validateSource(source) {
+    const safeLabel = /^[A-Za-z0-9_.:-]{1,128}$/;
+    const safeOrigin = /^(https?|wss?):\/\/[^/?#@]+$/;
+    if (typeof source.sourceId !== 'string' || typeof source.providerId !== 'string' || typeof source.transport !== 'string' || !safeLabel.test(source.sourceId) || !(safeLabel.test(source.providerId) || safeOrigin.test(source.providerId)) || !safeLabel.test(source.transport))
+        throw new Error('RAW_OBSERVATION_INVALID_SOURCE');
+    if (source.commitment !== undefined && !['processed', 'confirmed', 'finalized', 'unknown'].includes(source.commitment))
+        throw new Error('RAW_OBSERVATION_INVALID_COMMITMENT');
+    if (source.observedAt !== undefined && (!Number.isFinite(source.observedAt) || source.observedAt < 0))
+        throw new Error('RAW_OBSERVATION_INVALID_TIME');
+}
 export class Feed {
     cfg;
     consume;
@@ -24,20 +43,43 @@ export class Feed {
         this.parser = new EventParser(PUMP_PROGRAM_ID, getPumpProgram(connection).coder);
     }
     healthy() { const age = Date.now() - this.last; return !this.stopped && this.last > 0 && age >= 0 && age < this.cfg.FEED_STALE_MS && Date.now() - this.readySince >= this.cfg.MIN_AGE_MS; }
-    accept(signature, slot, logs) {
+    accept(signature, slot, logs, source = { sourceId: 'unknown', providerId: 'unknown', transport: 'unknown', commitment: 'unknown' }) {
         const now = Date.now();
         if (this.stopped || !Number.isSafeInteger(slot) || slot < 0 || (this.slot > 0 && slot < this.slot) || typeof signature !== 'string' || !signature || !Array.isArray(logs) || logs.length === 0 || logs.some(line => typeof line !== 'string'))
             return;
+        try {
+            validateSource(source);
+        }
+        catch {
+            log('feed_source_rejected');
+            return;
+        }
         // Execution freshness and historical validity are separate.  A late
         // canonical transaction must still be available to repair materialized
         // history even though it cannot renew the execution-freshness clock.
+        const rawPayloadHash = createHash('sha256').update(JSON.stringify(logs)).digest('hex');
+        const identity = JSON.stringify({ sourceId: source.sourceId, providerId: source.providerId, transport: source.transport, commitment: source.commitment ?? 'unknown', signature, slot, rawPayloadHash, schemaVersion: 'solana-program-logs/v1' });
+        const envelope = Object.freeze({
+            observationId: createHash('sha256').update(identity).digest('hex'),
+            sourceId: source.sourceId,
+            providerId: source.providerId,
+            transport: source.transport,
+            receivedAt: now,
+            observedAt: source.observedAt,
+            slot,
+            commitment: source.commitment ?? 'unknown',
+            signature,
+            transactionVersion: 'unknown',
+            rawPayloadHash,
+            schemaVersion: 'solana-program-logs/v1',
+        });
         const decoded = [];
         try {
             // Anchor's invocation-stack parser rejects events emitted by unrelated CPI programs.
             for (const event of this.parser.parseLogs(logs, false)) {
                 if (decoded.length >= 256)
                     throw new Error('Too many events in one transaction');
-                decoded.push({ name: event.name, data: event.data, signature, slot, received: now });
+                decoded.push({ name: event.name, data: event.data, signature, slot, received: now, observation: envelope });
             }
         }
         catch {
@@ -112,7 +154,7 @@ export class Feed {
                         }
                         if (m.method === 'logsNotification' && m.params?.result?.value?.err === null) {
                             const r = m.params.result;
-                            this.accept(r.value.signature, r.context.slot, r.value.logs);
+                            this.accept(r.value.signature, r.context.slot, r.value.logs, { sourceId: `solana-ws-${index}`, providerId: providerLabel(url), transport: 'websocket.logsSubscribe', commitment: 'confirmed' });
                         }
                     }
                     catch {
@@ -161,7 +203,7 @@ export class Feed {
                         stream.write({ ...request, ping: { id: 1 } });
                     const tx = update.transaction?.transaction;
                     if (tx?.meta && !tx.meta.err)
-                        this.accept(bs58.encode(tx.signature), Number(update.transaction.slot), tx.meta.logMessages);
+                        this.accept(bs58.encode(tx.signature), Number(update.transaction.slot), tx.meta.logMessages, { sourceId: 'yellowstone-grpc', providerId: providerLabel(this.cfg.YELLOWSTONE_URL), transport: 'yellowstone.transaction.logs', commitment: 'confirmed' });
                 }
             }
             catch {
