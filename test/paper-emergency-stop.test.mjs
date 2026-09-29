@@ -86,6 +86,17 @@ test('panic close records its trigger and reason before attempting position redu
   });
 });
 
+test('restoring a durable stop retains the latch and forces reduce-only mode', () => {
+  const gateway = CommandGateway.resetInstance();
+  const record = Object.freeze({commandId:'restore-stop',initiator:'operator',triggeredAt:Date.now(),
+    triggerType:'LEGACY_UNKNOWN',reason:'Cause not recorded by the prior runtime.'});
+  gateway.restoreEmergencyStop(record);
+  assert.equal(gateway.getSnapshot().entriesHalted, true);
+  assert.equal(gateway.getSnapshot().automationEnabled, false);
+  assert.deepEqual(gateway.getSnapshot().emergencyStop, record);
+  assert.equal(globalLifecycle.getState(), 'REDUCE_ONLY');
+});
+
 test('changing paper mode cannot clear an emergency halt', async () => {
   const gateway = CommandGateway.resetInstance();
   assert.equal((await gateway.executeCommand(stop('stop-before-mode-change'))).success, true);
@@ -197,4 +208,54 @@ test('automation cannot be enabled after an emergency halt', async () => {
   assert.equal(result.success, false);
   assert.match(result.error, /ENTRY_BLOCKED:.*clear emergency stop/i);
   assert.equal(gateway.getSnapshot().automationEnabled, false);
+});
+
+test('clearing emergency stop requires confirmation and restores entry capability', async () => {
+  const gateway = CommandGateway.resetInstance();
+  authorizeTestEntry(gateway);
+
+  // Trigger stop
+  assert.equal((await gateway.executeCommand(stop('stop-before-clear'))).success, true);
+  assert.equal(gateway.getSnapshot().entriesHalted, true);
+
+  // Attempt clear without confirmation -> fails
+  const unconfirmed = await gateway.executeCommand(command('clear-unconfirmed', 'CLEAR_EMERGENCY_STOP', {
+    reason: 'Test unconfirmed clear',
+    confirmClear: false,
+  }));
+  assert.equal(unconfirmed.success, false);
+  assert.match(unconfirmed.error, /CONFIRMATION_REQUIRED/);
+  assert.equal(gateway.getSnapshot().entriesHalted, true);
+
+  // Clear with confirmation -> succeeds
+  const cleared = await gateway.executeCommand(command('clear-confirmed', 'CLEAR_EMERGENCY_STOP', {
+    reason: 'Test confirmed clear',
+    confirmClear: true,
+  }));
+  assert.equal(cleared.success, true);
+  assert.equal(gateway.getSnapshot().entriesHalted, false);
+  assert.equal(gateway.getSnapshot().emergencyStop, null);
+  assert.equal(globalLifecycle.getState(), 'HEALTHY');
+
+  // Verify buys can now proceed through the gateway
+  gateway.executionEngine.execute = async request => ({
+    report: {
+      orderId: request.orderId,
+      status: 'FILLED',
+      execPrice: 1,
+      inputAmount: 25_000_000n,
+      outputAmount: 25_000_000n,
+      priorityFeeLamports: 0n,
+      jitoTipLamports: 0n,
+      slotLatency: 1,
+    },
+    telemetry: {
+      engineMode: 'PAPER', simulatedSlotLagMs: 1, priceImpactPct: 0,
+      preTradeReserves: {sol: 100n, token: 100n}, postTradeReserves: {sol: 100n, token: 100n},
+    },
+  });
+
+  const buyResult = await gateway.executeCommand(buy('buy-after-clear', 'pool-after-clear'));
+  assert.equal(buyResult.success, true);
+  assert.equal(gateway.getSnapshot().positions.length, 1);
 });

@@ -15,6 +15,7 @@ import {globalCommandGateway} from '../dist/command-gateway.js';
 import {globalTradeLearningService} from '../dist/intelligence/attribution/trade-learning-service.js';
 import {globalProjectionService} from '../dist/projection-service.js';
 import {globalLifecycle} from '../dist/lifecycle/system-lifecycle.js';
+import {EmergencyStopStore} from '../dist/platform/recovery/emergency-stop-store.js';
 import {CapitalYieldRegimeEngine} from '../dist/intelligence/research/capital-regime.js';
 import {globalReleaseCertificationAuthority} from '../dist/platform/certification/release-certification.js';
 import {globalGoalLoopMonitor} from './goal-loop-health.mjs';
@@ -53,6 +54,7 @@ const root=fileURLToPath(new URL('./dist/',import.meta.url));
 const liveOrigin='http://127.0.0.1:8788';
 const livePaths=new Set(['/api/market','/api/search','/api/risk','/api/intelligence','/api/intelligence/learning','/api/system/trust','/api/research/audit','/api/system/health','/api/capital/authority','/api/system/omega','/api/system/strip','/api/positions','/api/opportunity/best','/api/gateway/snapshot','/api/command','/api/solaris']);
 const project=fileURLToPath(new URL('../',import.meta.url));
+const emergencyStopStore = EmergencyStopStore.atProjectDataDirectory(project);
 try {
   if (typeof process.loadEnvFile === 'function') {
     process.loadEnvFile(resolve(project, '.env'));
@@ -61,6 +63,11 @@ try {
   // If .env is missing, unreadable, or already loaded, proceed with process.env
 }
 const port=Number(process.env.TERMINAL_PORT||8793);
+const restoredEmergencyStop = await emergencyStopStore.load();
+if (restoredEmergencyStop) {
+  globalCommandGateway.restoreEmergencyStop(restoredEmergencyStop);
+  console.warn(`[Safety] Restored latched paper emergency stop (${restoredEmergencyStop.triggerType}) from durable local record.`);
+}
 const configuredCapital = Number(process.env.SIMULATED_CAPITAL_USD || 250);
 if (Number.isFinite(configuredCapital) && configuredCapital > 0) {
   globalCommandGateway.setCashUsd(configuredCapital);
@@ -861,8 +868,29 @@ async function handleRequest(req,res){
         }
       }
       const result = await globalCommandGateway.executeCommand(parsed);
+      let stopPersistence = null;
+      if (result.success && parsed.type === 'CLEAR_EMERGENCY_STOP') {
+        try {
+          await emergencyStopStore.clear();
+          stopPersistence = 'CLEARED';
+        } catch (error) {
+          console.error('[Safety] Cleared emergency stop in memory but could not delete store file:', error?.message || error);
+          stopPersistence = 'CLEAR_FAILED';
+        }
+      } else if (result.success && (parsed.type === 'EMERGENCY_STOP' || parsed.type === 'PANIC_CLOSE_ALL')) {
+        const stop = globalCommandGateway.getSnapshot().emergencyStop;
+        if (stop) {
+          try {
+            await emergencyStopStore.save(stop);
+            stopPersistence = 'PERSISTED';
+          } catch (error) {
+            console.error('[Safety] Paper emergency stop is latched in memory but could not be durably recorded:', error?.message || error);
+            stopPersistence = 'PERSISTENCE_FAILED';
+          }
+        }
+      }
       res.writeHead(result.success ? 200 : 409, {'Content-Type': 'application/json'});
-      res.end(JSON.stringify({ok: result.success, result}, (_, v) => typeof v === 'bigint' ? v.toString() : v));
+      res.end(JSON.stringify({ok: result.success, result, ...(stopPersistence ? {emergencyStopPersistence: stopPersistence} : {})}, (_, v) => typeof v === 'bigint' ? v.toString() : v));
     } catch (e) {
       res.writeHead(e.status || 400, {'Content-Type': 'application/json'});
       res.end(JSON.stringify({ok: false, error: e.status ? e.message : 'Command could not be processed'}));

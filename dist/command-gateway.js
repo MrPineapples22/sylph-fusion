@@ -133,6 +133,24 @@ export class CommandGateway {
             }),
         };
     }
+    /** Restore a durable stop before the terminal accepts operator commands. Stops cannot be cleared here. */
+    restoreEmergencyStop(record) {
+        if (this.entriesHalted)
+            return;
+        this.emergencyStop = Object.freeze({ ...record });
+        this.entriesHalted = true;
+        this.automationEnabled = false;
+        this.executionEngine.cancelAllBuys();
+        this.stateVersion++;
+        try {
+            if (globalLifecycle.getState() !== 'REDUCE_ONLY') {
+                globalLifecycle.transition('REDUCE_ONLY', `Restored emergency stop: ${record.reason}`, record.initiator);
+            }
+        }
+        catch {
+            // The independent paper-entry latch remains authoritative if lifecycle recovery is already in progress.
+        }
+    }
     planRoute(req) {
         return this.bimodalRouter.planRoute(req);
     }
@@ -304,6 +322,8 @@ export class CommandGateway {
                     return this.handleSetAutomation(command);
                 case 'EMERGENCY_STOP':
                     return this.handleEmergencyStop(command);
+                case 'CLEAR_EMERGENCY_STOP':
+                    return this.handleClearEmergencyStop(command);
                 case 'PANIC_CLOSE_ALL':
                     return await this.handlePanicCloseAll(command);
                 case 'SET_PAPER_CAPITAL':
@@ -676,6 +696,34 @@ export class CommandGateway {
             }
         }
         catch { /* The independently latched paper stop remains authoritative. */ }
+        return {
+            success: true,
+            commandId: cmd.commandId,
+            timestamp: Date.now(),
+            data: {
+                entriesHalted: this.entriesHalted,
+                lifecycleState: globalLifecycle.getState(),
+                automationEnabled: this.automationEnabled,
+                reason: cmd.payload.reason,
+            },
+            stateVersion: this.stateVersion,
+        };
+    }
+    handleClearEmergencyStop(cmd) {
+        if (!cmd.payload?.confirmClear) {
+            throw new Error('CONFIRMATION_REQUIRED: confirmClear must be true to clear emergency stop.');
+        }
+        this.entriesHalted = false;
+        this.emergencyStop = null;
+        this.stateVersion++;
+        try {
+            if (globalLifecycle.getState() === 'REDUCE_ONLY') {
+                globalLifecycle.transition('HEALTHY', `Emergency Stop Cleared: ${cmd.payload.reason || 'Operator cleared stop'}`);
+            }
+        }
+        catch {
+            // The independent paper-entry latch remains authoritative if lifecycle cannot transition.
+        }
         return {
             success: true,
             commandId: cmd.commandId,

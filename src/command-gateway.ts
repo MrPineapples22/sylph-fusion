@@ -25,6 +25,7 @@ export type CommandType =
   | 'CHANGE_MODE'
   | 'SET_AUTOMATION'
   | 'EMERGENCY_STOP'
+  | 'CLEAR_EMERGENCY_STOP'
   | 'PANIC_CLOSE_ALL'
   | 'SET_PAPER_CAPITAL';
 
@@ -95,6 +96,14 @@ export interface EmergencyStopCommand extends BaseCommand {
   };
 }
 
+export interface ClearEmergencyStopCommand extends BaseCommand {
+  readonly type: 'CLEAR_EMERGENCY_STOP';
+  readonly payload: {
+    readonly reason: string;
+    readonly confirmClear: boolean;
+  };
+}
+
 export interface PanicCloseAllCommand extends BaseCommand {
   readonly type: 'PANIC_CLOSE_ALL';
   readonly payload?: {
@@ -116,6 +125,7 @@ export type Command =
   | ChangeModeCommand
   | SetAutomationCommand
   | EmergencyStopCommand
+  | ClearEmergencyStopCommand
   | PanicCloseAllCommand
   | SetPaperCapitalCommand;
 
@@ -173,7 +183,7 @@ export interface EmergencyStopRecord {
   readonly commandId: string;
   readonly initiator: string;
   readonly triggeredAt: number;
-  readonly triggerType: 'OPERATOR_STOP' | 'PANIC_CLOSE_ALL';
+  readonly triggerType: 'OPERATOR_STOP' | 'PANIC_CLOSE_ALL' | 'LEGACY_UNKNOWN';
   readonly reason: string;
 }
 
@@ -323,6 +333,23 @@ export class CommandGateway {
         losingFillCount: this.paperLosingFillCount,
       }),
     };
+  }
+
+  /** Restore a durable stop before the terminal accepts operator commands. Stops cannot be cleared here. */
+  public restoreEmergencyStop(record: EmergencyStopRecord): void {
+    if (this.entriesHalted) return;
+    this.emergencyStop = Object.freeze({ ...record });
+    this.entriesHalted = true;
+    this.automationEnabled = false;
+    this.executionEngine.cancelAllBuys();
+    this.stateVersion++;
+    try {
+      if (globalLifecycle.getState() !== 'REDUCE_ONLY') {
+        globalLifecycle.transition('REDUCE_ONLY', `Restored emergency stop: ${record.reason}`, record.initiator);
+      }
+    } catch {
+      // The independent paper-entry latch remains authoritative if lifecycle recovery is already in progress.
+    }
   }
 
   public planRoute(req: RouteRequest): BimodalRoutePlan {
@@ -496,6 +523,8 @@ export class CommandGateway {
           return this.handleSetAutomation(command);
         case 'EMERGENCY_STOP':
           return this.handleEmergencyStop(command);
+        case 'CLEAR_EMERGENCY_STOP':
+          return this.handleClearEmergencyStop(command);
         case 'PANIC_CLOSE_ALL':
           return await this.handlePanicCloseAll(command);
         case 'SET_PAPER_CAPITAL':
@@ -889,6 +918,36 @@ export class CommandGateway {
       stateVersion: this.stateVersion,
     };
   }
+
+  private handleClearEmergencyStop(cmd: ClearEmergencyStopCommand): CommandResult {
+    if (!cmd.payload?.confirmClear) {
+      throw new Error('CONFIRMATION_REQUIRED: confirmClear must be true to clear emergency stop.');
+    }
+    this.entriesHalted = false;
+    this.emergencyStop = null;
+    this.stateVersion++;
+    try {
+      if (globalLifecycle.getState() === 'REDUCE_ONLY') {
+        globalLifecycle.transition('HEALTHY', `Emergency Stop Cleared: ${cmd.payload.reason || 'Operator cleared stop'}`);
+      }
+    } catch {
+      // The independent paper-entry latch remains authoritative if lifecycle cannot transition.
+    }
+
+    return {
+      success: true,
+      commandId: cmd.commandId,
+      timestamp: Date.now(),
+      data: {
+        entriesHalted: this.entriesHalted,
+        lifecycleState: globalLifecycle.getState(),
+        automationEnabled: this.automationEnabled,
+        reason: cmd.payload.reason,
+      },
+      stateVersion: this.stateVersion,
+    };
+  }
+
 
   private handleSetPaperCapital(cmd: SetPaperCapitalCommand): CommandResult {
     const { capitalUsd, resetPositions } = cmd.payload;

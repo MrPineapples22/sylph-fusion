@@ -93,7 +93,7 @@ export class OperatorReadModel {
         for (const reason of reasons) {
             const prior = this.incidents.get(reason);
             const stop = reason === 'PAPER_EMERGENCY_STOP' ? gateway.emergencyStop ?? null : null;
-            const recorded = stop !== null;
+            const recorded = stop !== null && stop.triggerType !== 'LEGACY_UNKNOWN';
             const fallbackAt = Number.isSafeInteger(stop?.triggeredAt) && stop.triggeredAt <= now ? stop.triggeredAt : now;
             this.incidents.set(reason, {
                 incidentId: reason,

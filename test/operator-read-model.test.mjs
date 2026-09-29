@@ -74,6 +74,7 @@ test('emergency stop incident exposes the recorded stop cause and command proven
 
 test('legacy emergency stop without cause remains active and explicitly reports unavailable cause',()=>{
  const i=input();i.lifecycle='REDUCE_ONLY';i.gateway.entriesHalted=true;
+ i.gateway.emergencyStop={commandId:'legacy-stop',initiator:'unknown',triggeredAt:9000,triggerType:'LEGACY_UNKNOWN',reason:'Cause not recorded by the prior runtime.'};
  const p=new OperatorReadModel().project(i);
  const incident=p.incidents.find(x=>x.reasonCode==='PAPER_EMERGENCY_STOP');
  assert.equal(incident.causeStatus,'UNAVAILABLE');assert.equal(incident.cause,'CAUSE_NOT_RECORDED');
