@@ -366,7 +366,8 @@ export class CommandGateway {
     for (const pos of this.positions.values()) {
       const match = tokens.find(t => t.mint === pos.mint || t.pair === pos.asset || t.mint === pos.asset);
       const now = Date.now();
-      if (!match || !Number.isSafeInteger(match.at) || match.at! > now || now - match.at! > globalConfigAuthority.getConfig().feedStaleMs) continue;
+      if (!match || !Number.isSafeInteger(match.at) || match.at! < 0 || match.at! > now || now - match.at! > globalConfigAuthority.getConfig().feedStaleMs) continue;
+      if (Number.isSafeInteger(pos.lastMarkAt) && match.at! < pos.lastMarkAt!) continue;
       const price = typeof match?.price === 'number' && match.price > 0
         ? match.price
         : typeof match?.priceUsd === 'number' && match.priceUsd > 0
@@ -377,8 +378,8 @@ export class CommandGateway {
         // Anti-Phantom Price Spike Clamp: If age < 3s and price spikes > +50% without trade velocity, clamp to entry
         const positionAgeMs = now - (pos.openedAt || now);
         const effectivePrice = (positionAgeMs < 3000 && price > pos.entry * 1.50) ? pos.entry : price;
-        pos.lastMark = effectivePrice; pos.lastMarkAt = now;
-        if (!pos.peak || effectivePrice > pos.peak) { pos.peak = effectivePrice; pos.lastPeakAt = now; } if (!pos.lastPeakAt) { pos.lastPeakAt = pos.openedAt || now; }
+        pos.lastMark = effectivePrice; pos.lastMarkAt = match.at;
+        if (!pos.peak || effectivePrice > pos.peak) { pos.peak = effectivePrice; pos.lastPeakAt = match.at; } if (!pos.lastPeakAt) { pos.lastPeakAt = pos.openedAt || now; }
         if (!pos.trough || price < pos.trough) {
           pos.trough = price;
         }
@@ -411,17 +412,11 @@ export class CommandGateway {
     for (const [poolAddress, pos] of this.positions.entries()) {
       if (this.inFlight.has(poolAddress)) continue;
 
-      const match = tokens.find(t => t.mint === pos.mint || t.pair === pos.asset || t.mint === pos.asset);
-      const matchAt = match?.at;
-      const isMatchFresh = typeof matchAt === 'number' && Number.isSafeInteger(matchAt) && matchAt <= now && now - matchAt <= globalConfigAuthority.getConfig().feedStaleMs;
-      let currentPrice = isMatchFresh && typeof match?.price === 'number' && match.price > 0
-        ? match.price
-        : isMatchFresh && typeof match?.priceUsd === 'number' && match.priceUsd > 0
-          ? match.priceUsd
-          : null;
-
-      if ((currentPrice === null || !Number.isFinite(currentPrice) || currentPrice <= 0) && typeof pos.lastMark === 'number' && pos.lastMark > 0 && Number.isSafeInteger(pos.lastMarkAt) && pos.lastMarkAt! <= now && now - pos.lastMarkAt! <= globalConfigAuthority.getConfig().feedStaleMs) { currentPrice = pos.lastMark; }
-      if (currentPrice === null || !Number.isFinite(currentPrice) || currentPrice <= 0) continue;
+      // Mark updates retain the provider timestamp and reject older evidence.
+      // Read the cached price and timestamp together, including on fallback.
+      let currentPrice = pos.lastMark;
+      const markAt = pos.lastMarkAt;
+      if (typeof currentPrice !== 'number' || !Number.isFinite(currentPrice) || currentPrice <= 0) continue;
 
       // Anti-Phantom Price Spike Clamp for autonomous exits
       const positionAgeMs = now - (pos.openedAt || now);
@@ -429,7 +424,6 @@ export class CommandGateway {
         currentPrice = pos.entry;
       }
 
-      const markAt = isMatchFresh ? matchAt : pos.lastMarkAt;
       if (!Number.isSafeInteger(markAt) || markAt! > now || now - markAt! > globalConfigAuthority.getConfig().feedStaleMs) continue;
       const decision = decideExit({ entry: pos.entry, mark: currentPrice, peak: pos.peak, stage: pos.stage, openedAt: pos.openedAt, now, stopBps: globalConfigAuthority.getConfig().stopBps, markAt: markAt!, maxMarkAgeMs: globalConfigAuthority.getConfig().feedStaleMs, lastPeakAt: pos.lastPeakAt ?? pos.openedAt, partialExitBps: 5_000 });
       if (decision) {

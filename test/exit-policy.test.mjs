@@ -4,10 +4,19 @@ import { decideExit } from '../dist/exit-policy.js';
 
 const base = { entry: 100, mark: 100, peak: 100, stage: 0, openedAt: 1_000, now: 61_000, stopBps: 1200, markAt: 61_000 };
 test('exit policy is fail-closed for stale, malformed, and future marks', () => {
-  assert.equal(decideExit(({ markAt: undefined, ...base })), null);
-  assert.equal(decideExit({ ...base, mark: 80, markAt: 1 }), null);
-  assert.equal(decideExit({ ...base, mark: 80, markAt: 70_000 }), null);
+  for (const markAt of [undefined, null, NaN, Infinity, -1, 60_999.5, 1, 70_000]) {
+    assert.equal(decideExit({ ...base, mark: 80, markAt }), null, `reject markAt ${markAt}`);
+  }
   assert.equal(decideExit({ ...base, mark: NaN }), null);
+});
+
+test('exit policy rejects invalid freshness limits and expires evidence at its original timestamp', () => {
+  for (const maxMarkAgeMs of [null, NaN, Infinity, -1, 0, 1.5, '10000']) {
+    assert.equal(decideExit({ ...base, mark: 80, maxMarkAgeMs }), null, `reject maxMarkAgeMs ${maxMarkAgeMs}`);
+  }
+  const input = { ...base, mark: 80, markAt: base.now - 10_000 };
+  assert.equal(decideExit(input).reason, 'STOP_LOSS');
+  assert.equal(decideExit({ ...input, now: input.now + 1 }), null);
 });
 test('exit policy prioritizes loss containment and gap-safe profit protection', () => {
   assert.equal(decideExit({ ...base, mark: 88 }).reason, 'STOP_LOSS');

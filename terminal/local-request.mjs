@@ -32,7 +32,7 @@ export async function readCommand(req, limit = 16_384) {
   let command;
   try { command = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
   catch { throw Object.assign(new Error('Invalid JSON command'), {status: 400}); }
-  const types = ['SUBMIT_ORDER', 'CLOSE_POSITION', 'CHANGE_MODE', 'SET_AUTOMATION', 'EMERGENCY_STOP', 'PANIC_CLOSE_ALL', 'SET_PAPER_CAPITAL'];
+  const types = ['SUBMIT_ORDER', 'CLOSE_POSITION', 'CHANGE_MODE', 'SET_AUTOMATION', 'EMERGENCY_STOP', 'CLEAR_EMERGENCY_STOP', 'PANIC_CLOSE_ALL', 'SET_PAPER_CAPITAL'];
   if (!command || typeof command !== 'object' || !types.includes(command.type) ||
       typeof command.commandId !== 'string' || !command.commandId || command.commandId.length > 128 ||
       typeof command.initiator !== 'string' || !command.initiator || command.initiator.length > 128 ||

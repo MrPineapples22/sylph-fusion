@@ -131,10 +131,10 @@ export function decideExit(input: ExitPolicyInput): ExitPolicyDecision | null {
     return null;
   }
 
-  // Control 6 & 7: Fresh Mark Fence (<maxMarkAgeMs) & Anti-Clock Skew
+  // Control 6 & 7: Fresh Mark Fence (<=maxMarkAgeMs) & Anti-Clock Skew
   if (
-    markAt !== undefined &&
-    (!Number.isSafeInteger(markAt) || markAt > now || now - markAt > maxMarkAgeMs)
+    !Number.isSafeInteger(maxMarkAgeMs) || maxMarkAgeMs <= 0 ||
+    !Number.isSafeInteger(markAt) || markAt < 0 || markAt > now || now - markAt > maxMarkAgeMs
   ) {
     return null;
   }
