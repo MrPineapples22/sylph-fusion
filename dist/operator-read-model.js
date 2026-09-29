@@ -92,9 +92,27 @@ export class OperatorReadModel {
                 incident.state = 'RESOLVED';
         for (const reason of reasons) {
             const prior = this.incidents.get(reason);
-            this.incidents.set(reason, { incidentId: reason, detectedAt: prior?.state === 'ACTIVE' ? prior.detectedAt : now,
-                updatedAt: now, reasonCode: reason, state: 'ACTIVE', priority: 'A3',
-                operatorAction: reason === 'PAPER_EMERGENCY_STOP' ? 'Paper entries and automation are stopped. Inspect the stop cause; existing paper positions may still be reduced or closed.' : reason.startsWith('MARKET_') ? 'Inspect provider evidence; wait for validated observations.' : 'Required adapter must be connected and verified before this capability is available.' });
+            const stop = reason === 'PAPER_EMERGENCY_STOP' ? gateway.emergencyStop ?? null : null;
+            const recorded = stop !== null;
+            const fallbackAt = Number.isSafeInteger(stop?.triggeredAt) && stop.triggeredAt <= now ? stop.triggeredAt : now;
+            this.incidents.set(reason, {
+                incidentId: reason,
+                detectedAt: prior?.state === 'ACTIVE' ? prior.detectedAt : fallbackAt,
+                updatedAt: now,
+                reasonCode: reason,
+                state: 'ACTIVE',
+                priority: 'A3',
+                operatorAction: reason === 'PAPER_EMERGENCY_STOP'
+                    ? recorded
+                        ? `${stop.triggerType === 'PANIC_CLOSE_ALL' ? 'Panic close all' : 'Emergency stop'} set by ${stop.initiator} at ${new Date(stop.triggeredAt).toISOString()}: ${stop.reason} Existing paper positions may still be reduced or closed.`
+                        : 'The stop cause was not recorded by this runtime and cannot be recovered. The stop remains active; existing paper positions may still be reduced or closed.'
+                    : reason.startsWith('MARKET_') ? 'Inspect provider evidence; wait for validated observations.' : 'Required adapter must be connected and verified before this capability is available.',
+                ...(reason === 'PAPER_EMERGENCY_STOP' ? {
+                    causeStatus: recorded ? 'RECORDED' : 'UNAVAILABLE',
+                    cause: recorded ? stop.reason : 'CAUSE_NOT_RECORDED',
+                    ...(recorded ? { triggerType: stop.triggerType, initiator: stop.initiator, commandId: stop.commandId } : {}),
+                } : {}),
+            });
         }
         const positions = discovery.positions.map(raw => ({ ...raw, ledgerScope: 'PAPER', closeCapability: capabilities.close }));
         const marketConstraint = { id: 'market-freshness', label: 'Market freshness', current: feed?.ageMs ?? null, boundary: DISCOVERY_FRESH_MS,

@@ -24,6 +24,7 @@ export class CommandGateway {
     mode = 'paper';
     automationEnabled = false;
     entriesHalted = false;
+    emergencyStop = null;
     cashUsd = Number(process.env.SIMULATED_CAPITAL_USD) > 0 ? Number(process.env.SIMULATED_CAPITAL_USD) : 10_000.0;
     initialPaperCapitalUsd = this.cashUsd;
     solPriceUsd = 150.0;
@@ -112,6 +113,7 @@ export class CommandGateway {
     getSnapshot() {
         return {
             entriesHalted: this.entriesHalted,
+            emergencyStop: this.emergencyStop,
             mode: this.mode,
             automationEnabled: this.automationEnabled,
             cashUsd: this.cashUsd,
@@ -653,6 +655,17 @@ export class CommandGateway {
     handleEmergencyStop(cmd) {
         // The local stop must succeed even when the shared lifecycle is already
         // stopped or cannot transition (for example during shutdown).
+        if (!this.entriesHalted) {
+            this.emergencyStop = Object.freeze({
+                commandId: cmd.commandId,
+                initiator: cmd.initiator || 'unknown',
+                triggeredAt: Date.now(),
+                triggerType: 'OPERATOR_STOP',
+                reason: typeof cmd.payload?.reason === 'string' && cmd.payload.reason.trim()
+                    ? cmd.payload.reason.trim().slice(0, 500)
+                    : 'No stop reason was supplied.',
+            });
+        }
         this.entriesHalted = true;
         this.automationEnabled = false;
         this.executionEngine.cancelAllBuys();
@@ -710,6 +723,17 @@ export class CommandGateway {
      * emergency sell orders for 100% of all held positions.
      */
     async handlePanicCloseAll(cmd) {
+        if (!this.entriesHalted) {
+            this.emergencyStop = Object.freeze({
+                commandId: cmd.commandId,
+                initiator: cmd.initiator || 'unknown',
+                triggeredAt: Date.now(),
+                triggerType: 'PANIC_CLOSE_ALL',
+                reason: typeof cmd.payload?.reason === 'string' && cmd.payload.reason.trim()
+                    ? cmd.payload.reason.trim().slice(0, 500)
+                    : 'Operator requested panic close all.',
+            });
+        }
         this.entriesHalted = true;
         this.automationEnabled = false;
         this.pendingBuys.clear();

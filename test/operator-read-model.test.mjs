@@ -62,6 +62,24 @@ test('paper emergency stop remains visible even if the shared lifecycle returns 
  assert.ok(p.incidents.some(x=>x.reasonCode==='PAPER_EMERGENCY_STOP' && x.state==='ACTIVE'));
 });
 
+test('emergency stop incident exposes the recorded stop cause and command provenance',()=>{
+ const i=input();i.lifecycle='REDUCE_ONLY';i.gateway.entriesHalted=true;
+ i.gateway.emergencyStop={commandId:'stop-7',initiator:'operator-ui',triggeredAt:9000,triggerType:'OPERATOR_STOP',reason:'Manual safety intervention'};
+ const p=new OperatorReadModel().project(i);
+ const incident=p.incidents.find(x=>x.reasonCode==='PAPER_EMERGENCY_STOP');
+ assert.equal(incident.causeStatus,'RECORDED');assert.equal(incident.cause,'Manual safety intervention');
+ assert.equal(incident.initiator,'operator-ui');assert.equal(incident.commandId,'stop-7');
+ assert.match(incident.operatorAction,/Manual safety intervention/);
+});
+
+test('legacy emergency stop without cause remains active and explicitly reports unavailable cause',()=>{
+ const i=input();i.lifecycle='REDUCE_ONLY';i.gateway.entriesHalted=true;
+ const p=new OperatorReadModel().project(i);
+ const incident=p.incidents.find(x=>x.reasonCode==='PAPER_EMERGENCY_STOP');
+ assert.equal(incident.causeStatus,'UNAVAILABLE');assert.equal(incident.cause,'CAUSE_NOT_RECORDED');
+ assert.match(incident.operatorAction,/cannot be recovered/);
+});
+
 test('system.state is OPERATIONAL when paper capabilities are ready, not hardcoded BLOCKED',()=>{
  const i=input();i.lifecycle='HEALTHY';
  i.health={providers:{PUMPPORTAL_WS:{providerId:'PUMPPORTAL_WS',state:'CONNECTED',role:'DISCOVERY_STREAM',configured:true,isAuthoritative:true,freshness:'FRESH',lastValidatedObservation:9999,lastSuccess:9999,avgLatencyMs:1,circuitState:'HEALTHY',failureReason:null,capabilityAvailable:true}}};

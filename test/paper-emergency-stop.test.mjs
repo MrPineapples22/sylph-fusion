@@ -50,10 +50,15 @@ test('repeated emergency stop is idempotent and keeps paper entries halted', asy
   const gateway = CommandGateway.resetInstance();
 
   const first = await gateway.executeCommand(stop('stop-once'));
+  const firstRecord = gateway.getSnapshot().emergencyStop;
   const second = await gateway.executeCommand(stop('stop-twice'));
 
   assert.equal(first.success, true);
   assert.equal(second.success, true);
+  assert.equal(firstRecord.commandId, 'stop-once');
+  assert.equal(firstRecord.reason, 'adversarial test halt');
+  assert.equal(firstRecord.triggerType, 'OPERATOR_STOP');
+  assert.deepEqual(gateway.getSnapshot().emergencyStop, firstRecord, 'repeated stop cannot overwrite the original cause');
   assert.equal(gateway.getSnapshot().automationEnabled, false);
   await assertEntryHalted(gateway, 'buy-after-two-stops', 'pool-after-two-stops');
 });
@@ -66,6 +71,19 @@ test('an invalid lifecycle transition cannot prevent the local emergency latch',
 
   assert.equal(globalLifecycle.getState(), 'SHUTTING_DOWN');
   await assertEntryHalted(gateway, 'buy-during-shutdown', 'pool-during-shutdown');
+});
+
+test('panic close records its trigger and reason before attempting position reductions', async () => {
+  const gateway = CommandGateway.resetInstance();
+  const result = await gateway.executeCommand(command('panic-with-cause', 'PANIC_CLOSE_ALL', {reason: 'Operator requested account safety'}));
+  assert.equal(result.success, true);
+  assert.deepEqual(gateway.getSnapshot().emergencyStop, {
+    commandId: 'panic-with-cause',
+    initiator: 'paper-emergency-test',
+    triggeredAt: gateway.getSnapshot().emergencyStop.triggeredAt,
+    triggerType: 'PANIC_CLOSE_ALL',
+    reason: 'Operator requested account safety',
+  });
 });
 
 test('changing paper mode cannot clear an emergency halt', async () => {

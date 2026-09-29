@@ -149,6 +149,7 @@ export interface BackendPosition {
 
 export interface GatewayStateSnapshot {
   readonly entriesHalted: boolean;
+  readonly emergencyStop: EmergencyStopRecord | null;
   readonly mode: 'live' | 'paper' | 'shadow';
   readonly automationEnabled: boolean;
   readonly cashUsd: number;
@@ -166,6 +167,14 @@ export interface GatewayStateSnapshot {
     winningFillCount: number;
     losingFillCount: number;
   }>;
+}
+
+export interface EmergencyStopRecord {
+  readonly commandId: string;
+  readonly initiator: string;
+  readonly triggeredAt: number;
+  readonly triggerType: 'OPERATOR_STOP' | 'PANIC_CLOSE_ALL';
+  readonly reason: string;
 }
 
 export interface PaperEntryEvidence {
@@ -193,6 +202,7 @@ export class CommandGateway {
   private mode: 'live' | 'paper' | 'shadow' = 'paper';
   private automationEnabled: boolean = false;
   private entriesHalted: boolean = false;
+  private emergencyStop: EmergencyStopRecord | null = null;
   private cashUsd: number = Number(process.env.SIMULATED_CAPITAL_USD) > 0 ? Number(process.env.SIMULATED_CAPITAL_USD) : 10_000.0;
   private initialPaperCapitalUsd: number = this.cashUsd;
   private solPriceUsd: number = 150.0;
@@ -294,6 +304,7 @@ export class CommandGateway {
   public getSnapshot(): GatewayStateSnapshot {
     return {
       entriesHalted: this.entriesHalted,
+      emergencyStop: this.emergencyStop,
       mode: this.mode,
       automationEnabled: this.automationEnabled,
       cashUsd: this.cashUsd,
@@ -844,6 +855,17 @@ export class CommandGateway {
   private handleEmergencyStop(cmd: EmergencyStopCommand): CommandResult {
     // The local stop must succeed even when the shared lifecycle is already
     // stopped or cannot transition (for example during shutdown).
+    if (!this.entriesHalted) {
+      this.emergencyStop = Object.freeze({
+        commandId: cmd.commandId,
+        initiator: cmd.initiator || 'unknown',
+        triggeredAt: Date.now(),
+        triggerType: 'OPERATOR_STOP',
+        reason: typeof cmd.payload?.reason === 'string' && cmd.payload.reason.trim()
+          ? cmd.payload.reason.trim().slice(0, 500)
+          : 'No stop reason was supplied.',
+      });
+    }
     this.entriesHalted = true;
     this.automationEnabled = false;
     this.executionEngine.cancelAllBuys();
@@ -904,6 +926,17 @@ export class CommandGateway {
    * emergency sell orders for 100% of all held positions.
    */
   private async handlePanicCloseAll(cmd: PanicCloseAllCommand): Promise<CommandResult> {
+    if (!this.entriesHalted) {
+      this.emergencyStop = Object.freeze({
+        commandId: cmd.commandId,
+        initiator: cmd.initiator || 'unknown',
+        triggeredAt: Date.now(),
+        triggerType: 'PANIC_CLOSE_ALL',
+        reason: typeof cmd.payload?.reason === 'string' && cmd.payload.reason.trim()
+          ? cmd.payload.reason.trim().slice(0, 500)
+          : 'Operator requested panic close all.',
+      });
+    }
     this.entriesHalted = true;
     this.automationEnabled = false;
     this.pendingBuys.clear();

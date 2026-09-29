@@ -26,6 +26,7 @@ export function IncidentCommandView({ incidents = [], changes = [], current = fa
           return <article key={key} className="op-incident-card">
             <div className="op-card-header"><h4>{incident.reasonCode || 'Incident details unknown'}</h4><Status value={current ? incident.state || 'UNKNOWN' : 'UNKNOWN'} label={current ? incident.state || 'State unknown' : 'Historical / unverified'} /></div>
             <p className="op-muted">Priority: {incident.priority || 'Unknown'} · {timestamp(incident.detectedAt)}</p>
+            {incident.reasonCode === 'PAPER_EMERGENCY_STOP' && <p><strong>Stop cause ({incident.causeStatus || 'UNAVAILABLE'}):</strong> {incident.cause || 'No cause was recorded by this runtime.'}{incident.initiator ? ` · Set by ${incident.initiator}` : ''}{incident.triggerType ? ` · ${incident.triggerType}` : ''}</p>}
             <p>{incident.operatorAction || 'No operator action was supplied with this record.'}</p>
             <div className="op-card-footer"><span className="op-muted">{isSeen ? 'Seen locally · this view only' : 'Not marked seen locally'}</span><button type="button" className="op-button" disabled={isSeen} onClick={() => { setSeen(previous => new Set(previous).add(key)); setAnnouncement(`${incident.reasonCode || 'Incident'} marked seen locally. Backend state is unchanged.`); }}>{isSeen ? 'Seen locally' : 'Mark seen locally'}</button></div>
           </article>;
