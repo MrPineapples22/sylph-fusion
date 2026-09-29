@@ -742,6 +742,87 @@ async function handleRequest(req,res){
     res.end(JSON.stringify({ ok: true, snapshot: globalTradeLearningService.getSnapshot() }));
     return;
   }
+
+  const pythonOrigin = process.env.PYTHON_ORIGIN || 'http://127.0.0.1:5000';
+  async function fetchFromPython(endpoint, timeoutMs = 2500) {
+    try {
+      const res = await fetch(`${pythonOrigin}${endpoint}`, { signal: AbortSignal.timeout(timeoutMs) });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  }
+
+  if (req.method === 'GET' && reqUrl.pathname === '/api/python/status') {
+    const pnl = await fetchFromPython('/api/pnl', 1500);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      connected: pnl !== null,
+      origin: pythonOrigin,
+      timestamp: Date.now(),
+      status: pnl ? 'ONLINE' : 'UNREACHABLE',
+    }));
+    return;
+  }
+
+  if (req.method === 'GET' && reqUrl.pathname === '/api/python/pnl') {
+    const pnl = await fetchFromPython('/api/pnl', 2500);
+    if (pnl) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, source: 'python-dashboard-server', data: pnl }));
+      return;
+    }
+    const learning = globalTradeLearningService.getSnapshot();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, source: 'fallback-trade-learning-service', data: learning }));
+    return;
+  }
+
+  if (req.method === 'GET' && reqUrl.pathname === '/api/python/aether_flux') {
+    const flux = await fetchFromPython('/api/aether_flux', 2500);
+    res.writeHead(flux ? 200 : 503, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(flux || { status: 'unavailable', error: 'Python Aether Flux server not responding on port 5000' }));
+    return;
+  }
+
+  if (req.method === 'GET' && reqUrl.pathname === '/api/python/strategy_analytics') {
+    const stats = await fetchFromPython('/api/strategy_analytics', 2500);
+    res.writeHead(stats ? 200 : 503, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(stats || { status: 'unavailable', error: 'Python strategy analytics not responding on port 5000' }));
+    return;
+  }
+
+  if (req.method === 'GET' && reqUrl.pathname === '/api/nexus_mx') {
+    const tokens = hub.snapshot().tokens || [];
+    const evaluationResults = tokens.map(t => {
+      const price = Number(t.price || 0.00001);
+      const liq = Number(t.liquidity || 1000);
+      const hsi = Number(t.highSignalIndex || 50);
+      const p2x = Number(Math.min(0.95, Math.max(0.05, hsi / 100)).toFixed(2));
+      const p5x = Number(Math.max(0.02, p2x * 0.45).toFixed(2));
+      const p10x = Number(Math.max(0.01, p5x * 0.40).toFixed(2));
+      const p50x = Number(Math.max(0.005, p10x * 0.25).toFixed(3));
+      const p100x = Number(Math.max(0.001, p50x * 0.20).toFixed(3));
+      const capturabilityScore = Number(Math.min(0.95, Math.max(0.1, liq / 50000)).toFixed(2));
+      return {
+        mint: t.mint,
+        symbol: t.symbol,
+        priceUsd: price,
+        liquidityUsd: liq,
+        hsi,
+        pod: t.pod || 'UNKNOWN',
+        barrierProbabilities: { p2x, p5x, p10x, p50x, p100x },
+        capturabilityScore,
+        certificateStatus: p2x >= 0.70 && capturabilityScore >= 0.30 ? 'ENTER_ELIGIBLE' : 'VETO_STATISTICAL',
+        timestamp: Date.now(),
+      };
+    });
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, source: 'nexus-mx-gen2-engine', totalEvaluated: evaluationResults.length, candidates: evaluationResults }));
+    return;
+  }
+
   if (req.method === 'GET' && reqUrl.pathname === '/api/discovery') {
     res.setHeader('Content-Type','application/json'); res.end(JSON.stringify(getDiscovery())); return;
   }

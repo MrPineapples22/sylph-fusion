@@ -76,7 +76,7 @@ test('CHAOS-003: Dynamic Staged Trailing Stops protect 1500% moonshot runners fr
   assert.ok(stopAt2x !== null);
   // Mark pulls back 20% to 160: with stage: 3 (prior TPs taken), mark (160) > stop (150), so it HOLDS
   assert.equal(stopAt2x <= 150, true);
-  assert.equal(decideExit({ entry, peak: 200, mark: 160, stage: 3, openedAt: 1000, now: 30000, stopBps: 1200 }), null);
+  assert.equal(decideExit({ entry, peak: 200, mark: 160, stage: 3, openedAt: 1000, now: 30000, markAt: 30000, stopBps: 1200 }), null);
 
   // 2. For a 500%+ moonshot (peak = 700, peakRatio = 7.0): 40% structural trail allows 35% pullback
   const stopAt7x = protectiveStop({ entry, peak: 700, stopBps: 1200 });
@@ -84,7 +84,7 @@ test('CHAOS-003: Dynamic Staged Trailing Stops protect 1500% moonshot runners fr
   // Stop is Math.max(400, 700 * 0.60) = 420. Mark at 450 (down 35% from peak) should HOLD
     // With stage: 4 (all 4 TP tranches taken), only moonbag structural trailing stop applies.
   // Stop is Math.max(400, 700 * 0.60) = 420. Mark at 450 (down 35% from peak) should HOLD
-  assert.equal(decideExit({ entry, peak: 700, mark: 450, stage: 4, openedAt: 1000, now: 60000, stopBps: 1200 }), null);
+  assert.equal(decideExit({ entry, peak: 700, mark: 450, stage: 4, openedAt: 1000, now: 60000, markAt: 60000, stopBps: 1200 }), null);
   // Mark breached below 420 triggers TRAILING_PROFIT
   assert.equal(decideExit({ entry, peak: 700, mark: 410, stage: 4, openedAt: 1000, now: 60000, markAt: 60000, stopBps: 1200 })?.reason, 'TRAILING_PROFIT');
 });

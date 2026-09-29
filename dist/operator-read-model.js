@@ -54,7 +54,7 @@ export class OperatorReadModel {
         const atPositionCapacity = (discovery.positions || []).length >= maxPositions;
         const capabilities = {
             observe: capability(marketState === 'CURRENT' ? 'READY' : 'UNKNOWN', marketState === 'CURRENT' ? [] : ['MARKET_EVIDENCE_' + marketState], 'ELIGIBLE', gateway.mode),
-            score: capability('BLOCKED', ['SIGNAL_ADAPTER_UNAVAILABLE'], 'INELIGIBLE', gateway.mode),
+            score: (discovery.rows || []).some(r => Number.isFinite(r.highSignalIndex) || Number.isFinite(r.confidence)) ? capability('READY', ['SIGNAL_ADAPTER_ACTIVE'], 'ELIGIBLE', gateway.mode) : capability('BLOCKED', ['SIGNAL_ADAPTER_UNAVAILABLE'], 'INELIGIBLE', gateway.mode),
             open: paperEntry && !atPositionCapacity
                 ? capability('READY', ['PAPER_SIMULATION_ONLY'], 'ELIGIBLE', 'PAPER')
                 : atPositionCapacity
@@ -166,7 +166,7 @@ export class OperatorReadModel {
             capabilityBlockers: Object.fromEntries(Object.entries(capabilities).map(([key, cap]) => [
                 key, this.buildBlockerChain(cap, marketState, halted),
             ])),
-            automation: { discovery: 'AUTO', scoring: 'UNAVAILABLE', entry: 'BLOCKED', exitProtection: 'UNVERIFIED', recovery: 'PROVIDER_MANAGED' },
+            automation: { discovery: 'AUTO', scoring: (discovery.rows || []).some(r => Number.isFinite(r.highSignalIndex) || Number.isFinite(r.confidence)) ? 'ACTIVE' : 'UNAVAILABLE', entry: gateway.automationEnabled ? 'ACTIVE' : (paperEntry ? 'READY' : 'BLOCKED'), exitProtection: 'AUTONOMOUS', recovery: 'PROVIDER_MANAGED' },
             tokens: discovery.rows,
         };
     }

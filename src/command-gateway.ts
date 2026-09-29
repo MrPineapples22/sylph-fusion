@@ -16,7 +16,7 @@ import { PostGraduationAmmBridge } from './platform/execution/solaris/amm-bridge
 import { type BimodalRoutePlan, type SolarisTelemetrySnapshot } from './platform/execution/solaris/types.js';
 import { SpieEngine, KellyAllocator } from './intelligence/spie/index.js';
 import { globalTradeLearningService, type AdaptiveLearningSnapshot } from './intelligence/attribution/trade-learning-service.js';
-import { decideExit, protectiveStop } from './exit-policy.js';
+import { decideExit, protectiveStop, type ExitPolicyDecision } from './exit-policy.js';
 import { calculateOptimalBuyPositionValue } from './intelligence/execution/position-sizer.js';
 
 export type CommandType =
@@ -200,6 +200,7 @@ export interface PaperEntryEvidence {
 }
 
 type PaperEntryEvidenceProvider = (mint: string, poolAddress: string) => Promise<PaperEntryEvidence | null>;
+type AutonomousExitExpectation = Pick<ExitPolicyDecision, 'reason' | 'fractionBps' | 'emergency' | 'nextStage'>;
 
 function simulatedNetworkFeeUsd(report: Pick<FillReport, 'priorityFeeLamports' | 'jitoTipLamports'>, solPriceUsd: number): number {
   const feeLamports = report.priorityFeeLamports + report.jitoTipLamports;
@@ -256,7 +257,7 @@ export class CommandGateway {
     return this.requireFreshMarketEvidence(mint, poolAddress, true);
   }
 
-  private async requireFreshMarketEvidence(mint: string, poolAddress: string, requireEntryAuthorization: boolean): Promise<PaperEntryEvidence> {
+  private async requireFreshMarketEvidence(mint: string, poolAddress: string, requireEntryAuthorization: boolean, updateSolPrice = true): Promise<PaperEntryEvidence> {
     if (!this.paperEntryEvidenceProvider) {
       throw new Error('ENTRY_BLOCKED: No authoritative paper-entry evidence provider is connected.');
     }
@@ -271,7 +272,7 @@ export class CommandGateway {
         !Number.isSafeInteger(evidence.solObservedAt) || evidence.solObservedAt > now || now - evidence.solObservedAt > 5_000) {
       throw new Error(`${requireEntryAuthorization ? 'ENTRY_BLOCKED' : 'EXIT_BLOCKED'}: Fresh verified price, liquidity, and SOL/USD evidence are required${requireEntryAuthorization ? ' with basket authorization' : ''}.`);
     }
-    this.updateSolPriceUsd(evidence.solPriceUsd);
+    if (updateSolPrice) this.updateSolPriceUsd(evidence.solPriceUsd);
     return evidence;
   }
 
@@ -407,7 +408,6 @@ export class CommandGateway {
     if (this.positions.size === 0) return exited;
 
     this.updatePositionMarks(tokens);
-    const now = Date.now();
 
     for (const [poolAddress, pos] of this.positions.entries()) {
       if (this.inFlight.has(poolAddress)) continue;
@@ -418,13 +418,16 @@ export class CommandGateway {
       const markAt = pos.lastMarkAt;
       if (typeof currentPrice !== 'number' || !Number.isFinite(currentPrice) || currentPrice <= 0) continue;
 
+      // A previous position's awaited close may have consumed this mark's remaining lifetime.
+      const now = Date.now();
+      if (!Number.isSafeInteger(markAt) || markAt! > now || now - markAt! > globalConfigAuthority.getConfig().feedStaleMs) continue;
+
       // Anti-Phantom Price Spike Clamp for autonomous exits
       const positionAgeMs = now - (pos.openedAt || now);
       if (positionAgeMs < 3000 && currentPrice > pos.entry * 1.50) {
         currentPrice = pos.entry;
       }
 
-      if (!Number.isSafeInteger(markAt) || markAt! > now || now - markAt! > globalConfigAuthority.getConfig().feedStaleMs) continue;
       const decision = decideExit({ entry: pos.entry, mark: currentPrice, peak: pos.peak, stage: pos.stage, openedAt: pos.openedAt, now, stopBps: globalConfigAuthority.getConfig().stopBps, markAt: markAt!, maxMarkAgeMs: globalConfigAuthority.getConfig().feedStaleMs, lastPeakAt: pos.lastPeakAt ?? pos.openedAt, partialExitBps: 5_000 });
       if (decision) {
         try {
@@ -442,7 +445,7 @@ export class CommandGateway {
               fallbackPriceSol: currentPrice / this.solPriceUsd,
               exitTrigger: decision.emergency ? 'EMERGENCY_UNWIND' : decision.reason === 'STAGNATION' ? 'OPERATOR_CLOSE' : 'TRAILING_TARGET',
             }
-          });
+          }, { reason: decision.reason, fractionBps: decision.fractionBps, emergency: decision.emergency, nextStage: decision.nextStage });
           if (res.success) {
             const active = this.positions.get(poolAddress);
             if (active) active.stage = Math.max(active.stage, decision.nextStage);
@@ -543,7 +546,7 @@ export class CommandGateway {
     }
   }
 
-  private async handleSubmitOrder(cmd: SubmitOrderCommand): Promise<CommandResult> {
+  private async handleSubmitOrder(cmd: SubmitOrderCommand, autonomousExit?: AutonomousExitExpectation): Promise<CommandResult> {
     const { payload } = cmd;
     if (this.mode !== 'paper' && this.mode !== 'shadow') {
       throw new Error('LIVE_UNAVAILABLE: Terminal command gateway is paper-only.');
@@ -563,7 +566,7 @@ export class CommandGateway {
       throw new Error('ENTRY_BLOCKED: Paper emergency stop is latched.');
     }
     const entryEvidence = isBuy ? await this.requireFreshEntryEvidence(payload.mint, payload.poolAddress) : null;
-    const exitEvidence = (!isBuy && this.paperEntryEvidenceProvider) ? await this.requireFreshMarketEvidence(payload.mint, payload.poolAddress, false) : null;
+    const exitEvidence = (!isBuy && this.paperEntryEvidenceProvider) ? await this.requireFreshMarketEvidence(payload.mint, payload.poolAddress, false, !autonomousExit) : null;
 
     // 1. Idempotency check (Section 27)
     if (this.executedIntentIds.has(orderId)) {
@@ -588,6 +591,30 @@ export class CommandGateway {
 
     // 4. Capacity & Cash validation
     const config = globalConfigAuthority.getConfig();
+    if (autonomousExit) {
+      const position = existingPosition!;
+      const refreshedDecision = exitEvidence && decideExit({
+        entry: position.entry, mark: exitEvidence.priceUsd, peak: position.peak,
+        stage: position.stage, openedAt: position.openedAt, now: Date.now(),
+        stopBps: config.stopBps, markAt: exitEvidence.observedAt, maxMarkAgeMs: config.feedStaleMs,
+        lastPeakAt: position.lastPeakAt ?? position.openedAt, partialExitBps: 5_000,
+      });
+      if (!refreshedDecision || refreshedDecision.reason !== autonomousExit.reason ||
+          refreshedDecision.fractionBps !== autonomousExit.fractionBps ||
+          refreshedDecision.emergency !== autonomousExit.emergency ||
+          refreshedDecision.nextStage !== autonomousExit.nextStage ||
+          payload.emergency !== refreshedDecision.emergency ||
+          payload.tokenQty !== position.qty * refreshedDecision.fractionBps / 10_000) {
+        // The guardian evaluates each position once per tick, so this emits at most one skip per position/tick.
+        console.warn('[CommandGateway] Autonomous exit skipped', {
+          reasonCode: 'AUTONOMOUS_EXIT_DECISION_CHANGED',
+          mint: position.mint, poolAddress: position.asset,
+          requestedReason: autonomousExit.reason, refreshedReason: refreshedDecision?.reason ?? null,
+        });
+        throw new Error('EXIT_BLOCKED: Fresh verified evidence changed the autonomous exit decision.');
+      }
+      this.updateSolPriceUsd(exitEvidence!.solPriceUsd);
+    }
     let effectiveUsdAmount = payload.usdAmount;
     if (isBuy) {
       if (this.positions.size + this.pendingBuys.size >= config.maxPositions) {
@@ -807,7 +834,7 @@ export class CommandGateway {
     }
   }
 
-  private async handleClosePosition(cmd: ClosePositionCommand): Promise<CommandResult> {
+  private async handleClosePosition(cmd: ClosePositionCommand, autonomousExit?: AutonomousExitExpectation): Promise<CommandResult> {
     const { payload } = cmd;
     const pos = this.positions.get(payload.poolAddress);
     if (!pos) {
@@ -832,7 +859,7 @@ export class CommandGateway {
         fallbackPriceSol: payload.fallbackPriceSol || (payload.priceUsd ? payload.priceUsd / this.solPriceUsd : pos.entry / this.solPriceUsd),
         exitTrigger: payload.exitTrigger,
       },
-    });
+    }, autonomousExit);
   }
 
   private handleChangeMode(cmd: ChangeModeCommand): CommandResult {
