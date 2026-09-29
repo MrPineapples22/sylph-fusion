@@ -86,7 +86,7 @@ test('CHAOS-003: Dynamic Staged Trailing Stops protect 1500% moonshot runners fr
   // Stop is Math.max(400, 700 * 0.60) = 420. Mark at 450 (down 35% from peak) should HOLD
   assert.equal(decideExit({ entry, peak: 700, mark: 450, stage: 4, openedAt: 1000, now: 60000, stopBps: 1200 }), null);
   // Mark breached below 420 triggers TRAILING_PROFIT
-  assert.equal(decideExit({ entry, peak: 700, mark: 410, stage: 4, openedAt: 1000, now: 60000, stopBps: 1200 })?.reason, 'TRAILING_PROFIT');
+  assert.equal(decideExit({ entry, peak: 700, mark: 410, stage: 4, openedAt: 1000, now: 60000, markAt: 60000, stopBps: 1200 })?.reason, 'TRAILING_PROFIT');
 });
 
 test('CHAOS-004: Sybil Bundle & Circular Wash Trading Detection flags shared funder clusters', () => {

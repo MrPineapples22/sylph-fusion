@@ -469,7 +469,10 @@ var SimulatedEngine = class {
       if (order.side === "SELL" || order.emergency) {
         this.recordStage(order.orderId, "QUOTING", "Emergency or sell exit quote");
         this.overlays.delete(order.poolAddress);
-        const preTradeReserves2 = state ? state.reserves : { sol: 100000000000n, token: 1000000000000000n };
+        if (!state) {
+          return this.reject(order, "STALE_STATE", delay, 0n, 0n, "No market state available for exit quote");
+        }
+        const preTradeReserves2 = state.reserves;
         let realized = 0, outSol = 0n, postReserves = { sol: preTradeReserves2.sol, token: preTradeReserves2.token }, impact2 = 0;
         const isStaleOrMigrated = !state || Date.now() - state.timestamp > 15e3 || state.timestamp < order.triggerTimestamp || state.migrated;
         if (state && !isStaleOrMigrated) {
@@ -484,16 +487,7 @@ var SimulatedEngine = class {
           }
         }
         if (outSol <= 0n || realized <= 0) {
-          if (order.emergency || order.fallbackPriceSol) {
-            const fallbackPriceSol = order.fallbackPriceSol && order.fallbackPriceSol > 0 ? order.fallbackPriceSol : state?.price || 1e-7;
-            const decimals = order.amountDecimals ?? 9;
-            const tokenUnits = Number(order.amountLamports) / 10 ** decimals;
-            outSol = BigInt(Math.max(1, Math.round(tokenUnits * fallbackPriceSol * 1e9)));
-            realized = fallbackPriceSol;
-            impact2 = 0;
-          } else if (!state) {
-            return this.reject(order, "STALE_STATE", delay, 0n, 0n, "No market state available for exit quote");
-          } else if (isStaleOrMigrated) {
+          if (isStaleOrMigrated) {
             return this.reject(order, "STALE_STATE", Math.max(delay, Date.now() - state.timestamp), state.slot, 0n, "Exit quote is stale or migrated");
           } else {
             return this.reject(order, "PRE_TRADE_RISK_REJECTED", delay, state.slot, 0n, "Exit quote has no positive proceeds");
@@ -558,36 +552,7 @@ var SimulatedEngine = class {
       };
       return { report, telemetry: { engineMode: "PAPER", simulatedSlotLagMs: lag, priceImpactPct: impact, preTradeReserves, postTradeReserves: q.post } };
     } catch {
-      this.adverseSelection.registerDrift({ poolAddress: order.poolAddress, reconciledAtSlot: 0, deltaSolLamports: 0n, deltaTokenUnits: 0n, priceDriftPct: -4, adverseSelectionDetected: true });
-      if (order.side === "SELL" || order.emergency) {
-        this.overlays.delete(order.poolAddress);
-        const fallbackPriceSol = order.fallbackPriceSol || 1e-7;
-        const decimals = order.amountDecimals ?? 9;
-        const tokenUnits = Number(order.amountLamports) / 10 ** decimals;
-        const outSol = BigInt(Math.max(1, Math.round(tokenUnits * fallbackPriceSol * 1e9)));
-        const history = this.recordStage(order.orderId, "SETTLED", "Fallback sell executed");
-        return {
-          report: {
-            orderId: order.orderId,
-            status: "FILLED",
-            execPrice: fallbackPriceSol,
-            inputAmount: order.amountLamports,
-            outputAmount: outSol,
-            priorityFeeLamports: 50000n,
-            jitoTipLamports: 0n,
-            slotLatency: 1,
-            lifecycleHistory: history,
-            currentStage: "SETTLED"
-          },
-          telemetry: {
-            engineMode: "PAPER",
-            simulatedSlotLagMs: 0,
-            priceImpactPct: 0,
-            preTradeReserves: { sol: 0n, token: 0n },
-            postTradeReserves: { sol: 0n, token: 0n }
-          }
-        };
-      }
+      if (order.side === "SELL" || order.emergency) this.overlays.delete(order.poolAddress);
       this.recordStage(order.orderId, "FAILED", "Execution timeout or cancelled");
       return this.reject(order, "STALE_STATE", Date.now() - order.triggerTimestamp, 0n, 0n);
     } finally {

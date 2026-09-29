@@ -127,6 +127,9 @@ test('a buy fill racing an emergency stop cannot commit paper exposure', async (
 
 test('emergency halt preserves position-reducing exits', async () => {
   const gateway = CommandGateway.resetInstance();
+  gateway.setPaperEntryEvidenceProvider(async (mint, poolAddress) => ({mint, poolAddress,
+    priceUsd: 1, liquidityUsd: 100_000, observedAt: Date.now(), solPriceUsd: 150,
+    solObservedAt: Date.now(), verified: true, entryAllowed: false}));
   gateway.positions.set('exit-pool', {
     asset: 'exit-pool',
     mint: 'exit-mint',

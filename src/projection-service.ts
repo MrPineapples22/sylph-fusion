@@ -105,6 +105,8 @@ export interface PositionRowViewModel {
   readonly qty: number;
   readonly entryPriceUsd: number;
   readonly markPriceUsd: number | null;
+  readonly markObservedAt: number | null;
+  readonly markState: 'FRESH' | 'STALE' | 'UNKNOWN';
   readonly executableLiquidationUsd: number | null;
   readonly unrealizedPnlUsd: number | null;
   readonly unrealizedPnlPct: number | null;
@@ -120,7 +122,7 @@ export interface PositionRowViewModel {
 
 export class ProjectionService {
   private static instance: ProjectionService | null = null;
-  private readonly lastKnownMarks = new Map<string, number>();
+  private readonly lastKnownMarks = new Map<string, { value: number; at: number }>();
   private constructor() {}
 
   public static getInstance(): ProjectionService {
@@ -173,8 +175,9 @@ export class ProjectionService {
   }
 
   public getPositions(observedTokens?: unknown[]): PositionRowViewModel[] {
-    const tokenMap = new Map<string, number>();
+    const tokenMap = new Map<string, { value: number; at: number }>();
     const isObserved = Array.isArray(observedTokens);
+    const now = Date.now();
     if (isObserved) {
       for (const t of observedTokens) {
         if (t && typeof t === 'object') {
@@ -186,14 +189,16 @@ export class ProjectionService {
             : typeof rec.priceUsd === 'number' && Number.isFinite(rec.priceUsd) && rec.priceUsd > 0
               ? rec.priceUsd
               : null;
-          if (price !== null) {
+          const at = rec.at ?? rec.observedAt;
+          if (price !== null && typeof at === 'number' && Number.isSafeInteger(at) && at <= now && now - at <= 5_000) {
+            const mark = { value: price, at };
             if (mint) {
-              tokenMap.set(mint, price);
-              this.lastKnownMarks.set(mint, price);
+              tokenMap.set(mint, mark);
+              this.lastKnownMarks.set(mint, mark);
             }
             if (pair) {
-              tokenMap.set(pair, price);
-              this.lastKnownMarks.set(pair, price);
+              tokenMap.set(pair, mark);
+              this.lastKnownMarks.set(pair, mark);
             }
           }
         }
@@ -201,9 +206,10 @@ export class ProjectionService {
     }
 
     return globalCommandGateway.getSnapshot().positions.map(pos => {
-      const markPriceUsd = isObserved
-        ? (tokenMap.get(pos.mint) ?? tokenMap.get(pos.asset) ?? this.lastKnownMarks.get(pos.mint) ?? this.lastKnownMarks.get(pos.asset) ?? (pos.entry > 0 ? pos.entry : null))
-        : null;
+      const observed = isObserved ? (tokenMap.get(pos.mint) ?? tokenMap.get(pos.asset)) : undefined;
+      const cached = this.lastKnownMarks.get(pos.mint) ?? this.lastKnownMarks.get(pos.asset);
+      const mark = observed ?? (cached && now - cached.at <= 5_000 ? cached : undefined);
+      const markPriceUsd = mark?.value ?? null;
       const executableLiquidationUsd = markPriceUsd !== null ? Number((pos.qty * markPriceUsd).toFixed(4)) : null;
       const unrealizedPnlUsd = markPriceUsd !== null ? Number(((markPriceUsd - pos.entry) * pos.qty).toFixed(4)) : null;
       const unrealizedPnlPct = markPriceUsd !== null && pos.entry > 0
@@ -234,6 +240,8 @@ export class ProjectionService {
         qty: pos.qty,
         entryPriceUsd: pos.entry,
         markPriceUsd,
+        markObservedAt: mark?.at ?? null,
+        markState: mark ? 'FRESH' : cached ? 'STALE' : 'UNKNOWN',
         executableLiquidationUsd,
         unrealizedPnlUsd,
         unrealizedPnlPct,

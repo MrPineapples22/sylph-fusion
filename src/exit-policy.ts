@@ -24,7 +24,7 @@ export type ExitPolicyInput = Readonly<{
   openedAt: number;
   now: number;
   stopBps: number;
-  markAt?: number;
+  markAt: number;
   maxMarkAgeMs?: number;
   lastPeakAt?: number;
   devDumped?: boolean;
@@ -134,7 +134,7 @@ export function decideExit(input: ExitPolicyInput): ExitPolicyDecision | null {
   // Control 6 & 7: Fresh Mark Fence (<maxMarkAgeMs) & Anti-Clock Skew
   if (
     markAt !== undefined &&
-    (!Number.isSafeInteger(markAt) || markAt > now + 1_000 || now - markAt > maxMarkAgeMs)
+    (!Number.isSafeInteger(markAt) || markAt > now || now - markAt > maxMarkAgeMs)
   ) {
     return null;
   }

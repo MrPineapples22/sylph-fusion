@@ -22,6 +22,31 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
+function canonicalJson(value: unknown): string {
+  const visit = (input: unknown): unknown => {
+    if (input === null || typeof input === 'string' || typeof input === 'boolean') return input;
+    if (typeof input === 'number') {
+      if (!Number.isFinite(input)) throw new Error('non-finite JSON number');
+      return input;
+    }
+    if (Array.isArray(input)) return input.map(visit);
+    if (typeof input === 'object') {
+      const record = input as Record<string, unknown>;
+      const output: Record<string, unknown> = {};
+      for (const key of Object.keys(record).sort()) output[key] = visit(record[key]);
+      return output;
+    }
+    throw new Error('unsupported JSON value');
+  };
+  const result = JSON.stringify(visit(value));
+  if (result === undefined) throw new Error('unsupported JSON value');
+  return result;
+}
+
+function eventIdentity(slot: number, bankHash: string, txHash: string, eventIndex: number): string {
+  return `${slot}:${bankHash}:${txHash}:${eventIndex}`;
+}
+
 export type EventStage = 'RAW' | 'OBSERVED' | 'CANONICAL' | 'SEALED' | 'REVOKED';
 
 export interface EventLifecycleRecord {
@@ -71,6 +96,7 @@ export class CensusRJournalAuthority {
   private journal: CanonicalJournalEvent[] = [];
   private eventsById = new Map<string, CanonicalJournalEvent>();
   private batchesById = new Map<string, TransactionEventBatch>();
+  private batchContentHashById = new Map<string, string>();
   private lifecycleByEventId = new Map<string, EventLifecycleRecord[]>();
   private transitionSequence = 0;
   private watermark: CausalWatermark = {
@@ -128,7 +154,7 @@ export class CensusRJournalAuthority {
   }): TransactionEventBatch {
     const { slot, bankHash, txHash, providerId, providerTimestampMs, events } = params;
 
-    if (!Number.isSafeInteger(slot) || slot < 0 || !bankHash || !txHash || !providerId || !Number.isSafeInteger(providerTimestampMs) || providerTimestampMs < 0) {
+    if (!Number.isSafeInteger(slot) || slot < 0 || !bankHash || bankHash.length > 256 || bankHash.includes(':') || !txHash || txHash.length > 256 || txHash.includes(':') || !providerId || !Number.isSafeInteger(providerTimestampMs) || providerTimestampMs < 0) {
       throw new Error('BATCH_COMMIT_FAILED: Invalid transaction provenance');
     }
 
@@ -136,7 +162,15 @@ export class CensusRJournalAuthority {
       throw new Error('BATCH_COMMIT_FAILED: Event batch cannot be empty');
     }
 
-    const batchId = `BATCH-${slot}-${bankHash}-${txHash}`;
+    const batchId = `BATCH-${createHash('sha256').update(JSON.stringify([slot, bankHash, txHash])).digest('hex')}`;
+    let serializedBatchContent: string;
+    try {
+      serializedBatchContent = canonicalJson(events.map(event => [event.eventType, event.payload]));
+    } catch {
+      throw new Error('BATCH_COMMIT_FAILED: Event batch payload is not serializable');
+    }
+    if (serializedBatchContent === undefined) throw new Error('BATCH_COMMIT_FAILED: Event batch payload is not serializable');
+    const batchContentHash = createHash('sha256').update(serializedBatchContent).digest('hex');
     if (this.journal.some(event => event.slot === slot && event.bankHash === bankHash && event.txHash === txHash && this.currentStage(event.eventId) === 'REVOKED')) {
       throw new Error('BATCH_COMMIT_FAILED: A revoked transaction cannot be reingested as canonical');
     }
@@ -145,6 +179,7 @@ export class CensusRJournalAuthority {
       if (previousBatch.events.some(event => this.currentStage(event.eventId) === 'REVOKED')) {
         throw new Error('BATCH_COMMIT_FAILED: A revoked transaction cannot be reingested as canonical');
       }
+      if (this.batchContentHashById.get(batchId) !== batchContentHash) throw new Error('BATCH_COMMIT_FAILED: Duplicate transaction identity has conflicting event content');
       return previousBatch;
     }
     const preparedEvents: CanonicalJournalEvent[] = [];
@@ -152,16 +187,18 @@ export class CensusRJournalAuthority {
     // Construct events with deterministic canonical IDs: <slot>:<bank_hash>:<tx_hash>:<event_idx>
     for (let idx = 0; idx < events.length; idx++) {
       const item = events[idx]!;
-      const eventId = `${slot}:${bankHash}:${txHash}:${idx}`;
+      const eventId = eventIdentity(slot, bankHash, txHash, idx);
 
-      // Idempotency: Ignore duplicate event IDs if already canonical
-      if (this.eventsById.has(eventId)) {
-        continue;
-      }
-
-      const serialized = JSON.stringify(item.payload);
+      const serialized = canonicalJson(item.payload);
       if (serialized === undefined) throw new Error('BATCH_COMMIT_FAILED: Event payload is not serializable');
       const canonicalPayload = deepFreeze(JSON.parse(serialized) as Record<string, unknown>);
+      const existingEvent = this.eventsById.get(eventId);
+      if (existingEvent) {
+        if (existingEvent.eventType !== item.eventType || canonicalJson(existingEvent.payload) !== serialized) {
+          throw new Error('BATCH_COMMIT_FAILED: Existing event identity has conflicting content');
+        }
+        continue;
+      }
       const sha256 = createHash('sha256')
         .update(`${eventId}:${item.eventType}:${serialized}:${providerTimestampMs}`)
         .digest('hex');
@@ -194,8 +231,6 @@ export class CensusRJournalAuthority {
       this.recordStage(ev.eventId, 'CANONICAL');
     }
 
-    if (preparedEvents.length === 0) throw new Error('BATCH_COMMIT_FAILED: No new canonical events were added');
-
     // Update watermarks
     if (slot > this.watermark.highestObservedSlot) {
       this.watermark.highestObservedSlot = slot;
@@ -211,12 +246,13 @@ export class CensusRJournalAuthority {
       bankHash,
       txHash,
       providerId,
-      events: Object.freeze(preparedEvents.map(event => this.projectEvent(event))),
+      events: Object.freeze(events.map((_, index) => this.projectEvent(this.eventsById.get(eventIdentity(slot, bankHash, txHash, index))!))),
       isCommitted: true,
       committedAtMs: Date.now(),
     });
 
     this.batchesById.set(batchId, batch);
+    this.batchContentHashById.set(batchId, batchContentHash);
     return batch;
   }
 
@@ -237,7 +273,7 @@ export class CensusRJournalAuthority {
   }): CanonicalJournalEvent {
     const { slot, bankHash, txHash, eventIndex, providerId, providerTimestampMs, eventType, payload } = params;
     if (!Number.isSafeInteger(slot) || slot < 0 || !bankHash || !txHash || !providerId || !Number.isSafeInteger(eventIndex) || eventIndex < 0 || !Number.isSafeInteger(providerTimestampMs) || providerTimestampMs < 0) throw new Error('LATE_EVENT_INVALID_PROVENANCE');
-    const eventId = `${slot}:${bankHash}:${txHash}:${eventIndex}`;
+    const eventId = eventIdentity(slot, bankHash, txHash, eventIndex);
     if (this.journal.some(event => event.slot === slot && event.bankHash === bankHash && event.txHash === txHash && this.currentStage(event.eventId) === 'REVOKED')) {
       throw new Error('LATE_EVENT_INVALID: A revoked transaction cannot be extended implicitly');
     }
@@ -248,7 +284,7 @@ export class CensusRJournalAuthority {
       return this.projectEvent(existing); // Idempotent projection
     }
 
-    const serialized = JSON.stringify(payload);
+    const serialized = canonicalJson(payload);
     if (serialized === undefined) throw new Error('LATE_EVENT_INVALID_PAYLOAD');
     const canonicalPayload = deepFreeze(JSON.parse(serialized) as Record<string, unknown>);
     const sha256 = createHash('sha256')

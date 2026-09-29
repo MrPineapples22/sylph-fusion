@@ -78,7 +78,7 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
   const enrichedRecords = records.map((position) => {
     const liveToken = (tokens || []).find(t => t.mint === position.mint || t.pair === position.asset || t.mint === position.asset);
     const entry = position.entryPriceUsd ?? position.entry;
-    const mark = position.markPriceUsd ?? position.mark ?? position.price ?? liveToken?.price ?? entry;
+    const mark = position.markPriceUsd ?? position.mark ?? position.price ?? null;
     const pnlUsd = position.unrealizedPnlUsd ?? (mark != null && entry != null && position.qty ? (mark - entry) * position.qty : null);
     const pnlPct = position.unrealizedPnlPct ?? (mark != null && entry != null && entry > 0 ? ((mark - entry) / entry) * 100 : null);
     const positionValue = mark != null && position.qty ? mark * position.qty : 0;

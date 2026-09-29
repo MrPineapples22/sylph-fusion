@@ -139,3 +139,27 @@ test('CENSUS-R: late-event history cannot be implicitly restored by duplicate or
   assert.deepEqual(census.getWatermark(),before);
   assert.equal(census.getJournalLength(),1);
 });
+
+test('CENSUS-R: batch identities are unambiguous and duplicate identities require identical content', () => {
+  const census = new CensusRJournalAuthority();
+  const commit = (bankHash, txHash, payload) => census.commitTransactionBatch({slot:77,bankHash,txHash,providerId:'rpc',providerTimestampMs:1000,events:[{eventType:'TRADE',payload}]});
+  const first = commit('a-b','c',{value:1});
+  const second = commit('a','b-c',{value:2});
+  assert.notEqual(first.batchId,second.batchId);
+  assert.equal(census.getJournalLength(),2);
+  assert.throws(()=>commit('a-b','c',{value:9}),/conflicting event content/);
+  assert.equal(census.getEvent(first.events[0].eventId).payload.value,1);
+});
+
+test('CENSUS-R: canonical content ignores object key order and rejects batch conflicts with late records', () => {
+  const census = new CensusRJournalAuthority();
+  census.commitTransactionBatch({slot:80,bankHash:'bank',txHash:'tx',providerId:'rpc',providerTimestampMs:1000,events:[{eventType:'TRADE',payload:{a:1,b:2}}]});
+  const duplicate = census.commitTransactionBatch({slot:80,bankHash:'bank',txHash:'tx',providerId:'rpc',providerTimestampMs:1000,events:[{eventType:'TRADE',payload:{b:2,a:1}}]});
+  assert.equal(duplicate.events.length,1);
+  const late = new CensusRJournalAuthority();
+  late.ingestLateEvent({slot:81,bankHash:'bank',txHash:'tx',eventIndex:0,providerId:'rpc',providerTimestampMs:1000,eventType:'TRADE',payload:{value:1}});
+  const before=late.getWatermark();
+  assert.throws(()=>late.commitTransactionBatch({slot:81,bankHash:'bank',txHash:'tx',providerId:'rpc',providerTimestampMs:1000,events:[{eventType:'TRADE',payload:{value:9}},{eventType:'TRADE',payload:{value:2}}]}),/conflicting content/);
+  assert.deepEqual(late.getWatermark(),before);
+  assert.equal(late.getJournalLength(),1);
+});

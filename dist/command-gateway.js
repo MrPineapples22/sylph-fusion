@@ -59,19 +59,22 @@ export class CommandGateway {
         this.paperEntryEvidenceProvider = provider;
     }
     async requireFreshEntryEvidence(mint, poolAddress) {
+        return this.requireFreshMarketEvidence(mint, poolAddress, true);
+    }
+    async requireFreshMarketEvidence(mint, poolAddress, requireEntryAuthorization) {
         if (!this.paperEntryEvidenceProvider) {
             throw new Error('ENTRY_BLOCKED: No authoritative paper-entry evidence provider is connected.');
         }
         const evidence = await this.paperEntryEvidenceProvider(mint, poolAddress);
         const now = Date.now();
-        if (!evidence || evidence.verified !== true || evidence.entryAllowed !== true ||
+        if (!evidence || evidence.verified !== true || (requireEntryAuthorization && evidence.entryAllowed !== true) ||
             evidence.mint !== mint || evidence.poolAddress !== poolAddress ||
             !Number.isFinite(evidence.priceUsd) || evidence.priceUsd <= 0 ||
             !Number.isFinite(evidence.liquidityUsd) || evidence.liquidityUsd <= 0 ||
             !Number.isFinite(evidence.solPriceUsd) || evidence.solPriceUsd <= 0 ||
             !Number.isSafeInteger(evidence.observedAt) || evidence.observedAt > now || now - evidence.observedAt > 5_000 ||
             !Number.isSafeInteger(evidence.solObservedAt) || evidence.solObservedAt > now || now - evidence.solObservedAt > 5_000) {
-            throw new Error('ENTRY_BLOCKED: Fresh verified price, liquidity, and basket authorization are required.');
+            throw new Error(`${requireEntryAuthorization ? 'ENTRY_BLOCKED' : 'EXIT_BLOCKED'}: Fresh verified price, liquidity, and SOL/USD evidence are required${requireEntryAuthorization ? ' with basket authorization' : ''}.`);
         }
         this.updateSolPriceUsd(evidence.solPriceUsd);
         return evidence;
@@ -141,7 +144,7 @@ export class CommandGateway {
         for (const pos of this.positions.values()) {
             const match = tokens.find(t => t.mint === pos.mint || t.pair === pos.asset || t.mint === pos.asset);
             const now = Date.now();
-            if (match?.at !== undefined && (!Number.isSafeInteger(match.at) || match.at > now || now - match.at > globalConfigAuthority.getConfig().feedStaleMs))
+            if (!match || !Number.isSafeInteger(match.at) || match.at > now || now - match.at > globalConfigAuthority.getConfig().feedStaleMs)
                 continue;
             const price = typeof match?.price === 'number' && match.price > 0
                 ? match.price
@@ -191,12 +194,14 @@ export class CommandGateway {
             if (this.inFlight.has(poolAddress))
                 continue;
             const match = tokens.find(t => t.mint === pos.mint || t.pair === pos.asset || t.mint === pos.asset);
-            let currentPrice = typeof match?.price === 'number' && match.price > 0
+            const matchAt = match?.at;
+            const isMatchFresh = typeof matchAt === 'number' && Number.isSafeInteger(matchAt) && matchAt <= now && now - matchAt <= globalConfigAuthority.getConfig().feedStaleMs;
+            let currentPrice = isMatchFresh && typeof match?.price === 'number' && match.price > 0
                 ? match.price
-                : typeof match?.priceUsd === 'number' && match.priceUsd > 0
+                : isMatchFresh && typeof match?.priceUsd === 'number' && match.priceUsd > 0
                     ? match.priceUsd
                     : null;
-            if ((currentPrice === null || !Number.isFinite(currentPrice) || currentPrice <= 0) && typeof pos.lastMark === 'number' && pos.lastMark > 0) {
+            if ((currentPrice === null || !Number.isFinite(currentPrice) || currentPrice <= 0) && typeof pos.lastMark === 'number' && pos.lastMark > 0 && Number.isSafeInteger(pos.lastMarkAt) && pos.lastMarkAt <= now && now - pos.lastMarkAt <= globalConfigAuthority.getConfig().feedStaleMs) {
                 currentPrice = pos.lastMark;
             }
             if (currentPrice === null || !Number.isFinite(currentPrice) || currentPrice <= 0)
@@ -206,7 +211,10 @@ export class CommandGateway {
             if (positionAgeMs < 3000 && currentPrice > pos.entry * 1.50) {
                 currentPrice = pos.entry;
             }
-            const decision = decideExit({ entry: pos.entry, mark: currentPrice, peak: pos.peak, stage: pos.stage, openedAt: pos.openedAt, now, stopBps: globalConfigAuthority.getConfig().stopBps, markAt: match?.at, maxMarkAgeMs: globalConfigAuthority.getConfig().feedStaleMs, lastPeakAt: pos.lastPeakAt ?? pos.openedAt, partialExitBps: 5_000 });
+            const markAt = isMatchFresh ? matchAt : pos.lastMarkAt;
+            if (!Number.isSafeInteger(markAt) || markAt > now || now - markAt > globalConfigAuthority.getConfig().feedStaleMs)
+                continue;
+            const decision = decideExit({ entry: pos.entry, mark: currentPrice, peak: pos.peak, stage: pos.stage, openedAt: pos.openedAt, now, stopBps: globalConfigAuthority.getConfig().stopBps, markAt: markAt, maxMarkAgeMs: globalConfigAuthority.getConfig().feedStaleMs, lastPeakAt: pos.lastPeakAt ?? pos.openedAt, partialExitBps: 5_000 });
             if (decision) {
                 try {
                     const res = await this.handleClosePosition({
@@ -338,6 +346,7 @@ export class CommandGateway {
             throw new Error('ENTRY_BLOCKED: Paper emergency stop is latched.');
         }
         const entryEvidence = isBuy ? await this.requireFreshEntryEvidence(payload.mint, payload.poolAddress) : null;
+        const exitEvidence = (!isBuy && this.paperEntryEvidenceProvider) ? await this.requireFreshMarketEvidence(payload.mint, payload.poolAddress, false) : null;
         // 1. Idempotency check (Section 27)
         if (this.executedIntentIds.has(orderId)) {
             throw new Error(`DUPLICATE_INTENT: Order ${orderId} has already been executed or is in flight.`);
@@ -402,15 +411,13 @@ export class CommandGateway {
                 ? BigInt(Math.round(((effectiveUsdAmount) / this.solPriceUsd) * 1e9))
                 : BigInt(Math.round((payload.tokenQty ?? existingPosition.qty) * 10 ** tokenDecimals));
             // Ensure fresh pool state exists in executionEngine calibrated to actual token market price
-            const candidatePriceUsd = entryEvidence?.priceUsd ?? payload.priceUsd ?? (payload.fallbackPriceSol ? payload.fallbackPriceSol * this.solPriceUsd : undefined);
+            const candidatePriceUsd = entryEvidence?.priceUsd ?? exitEvidence?.priceUsd;
             if (candidatePriceUsd && candidatePriceUsd > 0) {
                 const tokenPriceSol = candidatePriceUsd / this.solPriceUsd;
                 // Use the verified provider-reported pool liquidity to seed the paper
                 // AMM. Liquidity is total USD TVL, so a balanced pool has half on SOL.
                 // This remains a paper depth estimate, not an executable quote.
-                const poolSol = entryEvidence
-                    ? (entryEvidence.liquidityUsd / 2) / this.solPriceUsd
-                    : 30;
+                const poolSol = ((entryEvidence ?? exitEvidence).liquidityUsd / 2) / this.solPriceUsd;
                 const poolSolLamports = BigInt(Math.floor(poolSol * 1e9));
                 if (poolSolLamports <= 0n)
                     throw new Error('ENTRY_BLOCKED: Verified pool depth is not positive.');
@@ -427,14 +434,7 @@ export class CommandGateway {
             else {
                 if (isBuy)
                     throw new Error('ENTRY_BLOCKED: Verified market price is unavailable.');
-                // Legacy exit-only fallback; buys never use fabricated market state.
-                this.executionEngine.pushState({
-                    timestamp: Date.now() + 1000,
-                    slot: 250000,
-                    reserves: { sol: 100000000000n, token: 1000000000000000n },
-                    price: 0.00005,
-                    volatility: 0.05,
-                }, payload.poolAddress);
+                throw new Error('EXIT_BLOCKED: Verified market price is unavailable.');
             }
             const request = {
                 orderId,

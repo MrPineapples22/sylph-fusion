@@ -43,6 +43,26 @@ test('projection cannot fabricate gains or liquidation proceeds from entry price
   }
 });
 
+test('position marks require a fresh observed timestamp and expire from the UI projection', t => {
+  const mint = 'timestamped-mint';
+  t.mock.method(globalCommandGateway, 'getSnapshot', () => ({positions: [{asset: mint, mint,
+    qty: 10, entry: 2, costBasisUsd: 20, reconciliationState: 'SIMULATED', openedAt: 123}]}));
+  const now = Date.now();
+  const [fresh] = projection.getPositions([{mint, price: 3, at: now}]);
+  assert.equal(fresh.markPriceUsd, 3);
+  assert.equal(fresh.markObservedAt, now);
+  assert.equal(fresh.markState, 'FRESH');
+
+  t.mock.method(Date, 'now', () => now + 6_000);
+  const [stale] = projection.getPositions([{mint, price: 99, at: now - 10_000}]);
+  assert.equal(stale.markPriceUsd, null);
+  assert.equal(stale.unrealizedPnlUsd, null);
+  assert.equal(stale.markState, 'STALE');
+
+  const [future] = projection.getPositions([{mint, price: 99, at: now + 7_000}]);
+  assert.equal(future.markPriceUsd, null);
+});
+
 test('malformed rows cannot crash or contaminate a projection batch', () => {
   assert.equal(projection.projectEnrichedTokens([null, [], false, {at: 1e30}, {mint: 'valid'}]).length, 1);
 });
