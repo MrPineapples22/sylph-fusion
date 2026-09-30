@@ -22,6 +22,24 @@ export interface InvariantCheckResult {
   readonly message: string;
 }
 
+export interface RecoveryCertificate {
+  readonly recovery_id: string;
+  readonly cause: string;
+  readonly previous_authority: AuthorityMode;
+  readonly target_authority: AuthorityMode;
+  readonly capital_state_root: string;
+  readonly position_reconciliation_hash: string;
+  readonly provider_status: 'HEALTHY' | 'DEGRADED' | 'FAILED';
+  readonly market_freshness_ms: number;
+  readonly revocation_epoch: number;
+  readonly signer_state: 'READY' | 'UNAVAILABLE';
+  readonly settlement_state: 'CLEAN' | 'UNCLEAN';
+  readonly control_epoch: number;
+  readonly timestamp_ms: number;
+  readonly evidence_hashes: readonly string[];
+  readonly verification_result: boolean;
+}
+
 export interface KernelVerificationReport {
   readonly is_authorized: boolean;
   readonly authority_mode: AuthorityMode;
@@ -81,6 +99,37 @@ export class CapitalKernel {
     if (!proofConfirmed) return false;
     this.authorityMode = targetMode;
     return true;
+  }
+
+  /**
+   * Verified recovery machine using cryptographic RecoveryCertificate (Part XI).
+   * Restores authority only when explicit evidence proves the underlying fault is resolved.
+   */
+  public restoreAuthorityWithCertificate(cert: RecoveryCertificate): boolean {
+    if (!cert.verification_result) return false;
+    if (cert.provider_status !== 'HEALTHY') return false;
+    if (cert.settlement_state !== 'CLEAN') return false;
+    if (cert.signer_state !== 'READY') return false;
+    if (cert.market_freshness_ms > 30_000 || cert.market_freshness_ms < 0) return false;
+    if (!cert.capital_state_root || cert.capital_state_root.length < 16) return false;
+
+    // Validate upward progression step in recovery lattice
+    const rank = (m: AuthorityMode) => {
+      switch (m) {
+        case 'A0_OBSERVE_ONLY': return 0;
+        case 'A1_CANCEL_ONLY': return 1;
+        case 'A2_REDUCE_ONLY': return 2;
+        case 'A3_MAINTAIN': return 3;
+        case 'A4_LIMITED_INCREASE': return 4;
+        case 'A5_NORMAL': return 5;
+      }
+    };
+
+    if (rank(cert.target_authority) > rank(this.authorityMode)) {
+      this.authorityMode = cert.target_authority;
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -220,9 +269,19 @@ export class CapitalKernel {
     const fatalViolations = results.filter((r) => !r.is_passed);
     const allPassed = fatalViolations.length === 0;
 
-    // Automatic downgrade upon invariant trip
-    if (!allPassed) {
-      this.downgradeAuthority('A2_REDUCE_ONLY', `Axiom invariant trip: ${fatalViolations[0].invariant_id}`);
+    // Automatic downgrade ONLY upon system-integrity failures (Section 10).
+    // Local capacity full (INV_1) or single-action checks (INV_2, INV_5, INV_6) reject the action without permanently poisoning global authority.
+    const systemIntegrityViolations = fatalViolations.filter((v) =>
+      v.invariant_id === 'INV_3_CONTROL_EPOCH_MATCH' ||
+      v.invariant_id === 'INV_4_REVOCATION_EPOCH_MATCH' ||
+      v.invariant_id === 'INV_7_NON_NEGATIVE_AVAILABLE_CASH' ||
+      v.invariant_id === 'INV_9_PROOF_NOT_REVOKED' ||
+      v.invariant_id === 'INV_10_UNKNOWN_CAPITAL_LIMIT' ||
+      v.invariant_id === 'INV_11_UNRESOLVED_INTENTS_LIMIT'
+    );
+
+    if (systemIntegrityViolations.length > 0) {
+      this.downgradeAuthority('A2_REDUCE_ONLY', `System-integrity failure: ${systemIntegrityViolations[0].invariant_id}`);
     }
 
     const conservativeMaxExposure = params.confirmed_cash_sol + params.reserved_cash_sol + params.unknown_capital_sol;

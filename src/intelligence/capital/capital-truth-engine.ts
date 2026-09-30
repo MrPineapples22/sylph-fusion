@@ -78,6 +78,7 @@ export interface DoubleEntryReport {
   readonly principal_sol: number;
   readonly token_inventory_value_sol: number;
   readonly realized_proceeds_sol: number;
+  readonly realized_losses_sol?: number;
   readonly unrealized_exposure_sol: number;
   readonly base_fees_sol: number;
   readonly priority_fees_sol: number;
@@ -123,6 +124,7 @@ export class CapitalTruthEngine {
 
   // Double-entry accounting buckets
   private realizedProceedsSol = 0.0;
+  private realizedLossesSol = 0.0;
   private baseFeesSol = 0.0;
   private priorityFeesSol = 0.0;
   private jitoTipsSol = 0.0;
@@ -142,6 +144,9 @@ export class CapitalTruthEngine {
     status: CapitalStatus;
     slot: number;
   }>();
+
+  // Idempotency tracking to prevent double settlement
+  private readonly settledIntents = new Set<string>();
 
   // Commit certificates log (Write-Ahead Log)
   private readonly commitLog = new Map<string, CommitCertificate>();
@@ -376,6 +381,10 @@ export class CapitalTruthEngine {
     jito_tip_sol: number;
     slot: number;
   }): void {
+    if (this.settledIntents.has(params.intent_id)) {
+      throw new Error(`DUPLICATE_SETTLEMENT_ATTEMPT: intent ${params.intent_id} has already been settled`);
+    }
+
     const amounts = [params.actual_sol_spent, params.base_fee_sol, params.priority_fee_sol, params.jito_tip_sol];
     if (!params.intent_id.trim() || !params.reservation_id.trim() || !params.mint.trim() ||
         !amounts.every(value => Number.isFinite(value) && value >= 0) ||
@@ -388,6 +397,8 @@ export class CapitalTruthEngine {
     const reservedAmount = reservation.amount_sol;
     const totalSpent = params.actual_sol_spent + params.base_fee_sol + params.priority_fee_sol + params.jito_tip_sol;
     if (totalSpent > reservedAmount) throw new Error('SETTLEMENT_EXCEEDS_RESERVATION');
+
+    this.settledIntents.add(params.intent_id);
 
     // Release reservation
     this.reservedCashSol = Math.max(0, this.reservedCashSol - reservedAmount);
@@ -416,6 +427,123 @@ export class CapitalTruthEngine {
       slot: params.slot,
       payload: { spent: totalSpent, mint: params.mint },
     });
+  }
+
+  /**
+   * Finalizes on-chain settlement for position exit/reduction (Parts IV, VIII, IX).
+   * Updates confirmed positions, exposure, cash, realized PnL, fees, and event ledger.
+   */
+  public settleExit(params: {
+    intent_id: string;
+    mint: string;
+    tokens_sold?: number;
+    sol_received: number;
+    fee_sol: number;
+    is_full_close: boolean;
+    slot: number;
+    exit_route?: string;
+  }): { success: boolean; realized_pnl_sol: number; remaining_position_sol: number } {
+    if (!params.intent_id.trim() || !params.mint.trim() ||
+        !Number.isFinite(params.sol_received) || params.sol_received < 0 ||
+        !Number.isFinite(params.fee_sol) || params.fee_sol < 0 ||
+        !Number.isSafeInteger(params.slot) || params.slot < 0) {
+      throw new Error('INVALID_EXIT_SETTLEMENT_INPUT');
+    }
+
+    if (this.settledIntents.has(params.intent_id)) {
+      throw new Error(`DUPLICATE_SETTLEMENT_ATTEMPT: exit intent ${params.intent_id} already settled`);
+    }
+
+    const pos = this.positions.get(params.mint);
+    if (!pos) {
+      throw new Error(`POSITION_NOT_FOUND: no confirmed position exists for mint ${params.mint}`);
+    }
+
+    this.settledIntents.add(params.intent_id);
+
+    const prevCostBasis = pos.amount_sol;
+    let costBasisRelieved = prevCostBasis;
+    let remainingPositionSol = 0;
+
+    if (params.is_full_close) {
+      this.positions.delete(params.mint);
+      costBasisRelieved = prevCostBasis;
+      remainingPositionSol = 0;
+    } else {
+      // Proportional reduction
+      const grossReceived = params.sol_received;
+      const fraction = Math.min(1.0, Math.max(0.01, grossReceived / Math.max(0.001, prevCostBasis)));
+      costBasisRelieved = Number((prevCostBasis * fraction).toFixed(6));
+      remainingPositionSol = Math.max(0, Number((prevCostBasis - costBasisRelieved).toFixed(6)));
+      pos.amount_sol = remainingPositionSol;
+    }
+
+    const netSolDelta = params.sol_received - params.fee_sol;
+    this.confirmedCashSol += netSolDelta;
+    this.baseFeesSol += params.fee_sol;
+
+    const realizedPnlSol = params.sol_received - costBasisRelieved;
+    if (realizedPnlSol >= 0) {
+      this.realizedProceedsSol += realizedPnlSol;
+    } else {
+      const loss = Math.abs(realizedPnlSol);
+      this.realizedLossesSol += loss;
+      this.dailyRealizedLossSol += loss;
+    }
+
+    this.recordEvent({
+      event_type: params.is_full_close ? 'POSITION_CLOSED' : 'POSITION_REDUCED',
+      entity_id: params.mint,
+      delta_sol: netSolDelta,
+      slot: params.slot,
+      payload: {
+        intent_id: params.intent_id,
+        mint: params.mint,
+        sol_received: params.sol_received,
+        fee_sol: params.fee_sol,
+        cost_basis_relieved: costBasisRelieved,
+        realized_pnl_sol: realizedPnlSol,
+        is_full_close: params.is_full_close,
+        remaining_position_sol: remainingPositionSol,
+        exit_route: params.exit_route ?? 'DIRECT',
+      },
+    });
+
+    return {
+      success: true,
+      realized_pnl_sol: realizedPnlSol,
+      remaining_position_sol: remainingPositionSol,
+    };
+  }
+
+  /**
+   * Convenience helper to close an active position completely.
+   */
+  public closePosition(mint: string, netProceedsSol: number, feeSol: number, slot: number): boolean {
+    const pos = this.positions.get(mint);
+    if (!pos) return false;
+    const intentId = `exit_${mint.slice(0, 8)}_${slot}_${Date.now()}`;
+    this.settleExit({
+      intent_id: intentId,
+      mint,
+      sol_received: netProceedsSol,
+      fee_sol: feeSol,
+      is_full_close: true,
+      slot,
+    });
+    return true;
+  }
+
+  public getPosition(mint: string): { mint: string; amount_sol: number; entry_slot: number } | undefined {
+    return this.positions.get(mint);
+  }
+
+  public hasPosition(mint: string): boolean {
+    return this.positions.has(mint);
+  }
+
+  public getOpenPositionsCount(): number {
+    return this.positions.size;
   }
 
   /**
@@ -528,7 +656,8 @@ export class CapitalTruthEngine {
       this.rentCostsSol +
       this.transferFeesSol +
       this.slippageLossSol +
-      this.failedTxCostsSol -
+      this.failedTxCostsSol +
+      this.realizedLossesSol -
       this.realizedProceedsSol;
 
     const discrepancy = Math.abs(totalAccounted - this.initialPrincipalSol);
@@ -538,6 +667,7 @@ export class CapitalTruthEngine {
       principal_sol: this.initialPrincipalSol,
       token_inventory_value_sol: positionSolValue,
       realized_proceeds_sol: this.realizedProceedsSol,
+      realized_losses_sol: this.realizedLossesSol,
       unrealized_exposure_sol: positionSolValue,
       base_fees_sol: this.baseFeesSol,
       priority_fees_sol: this.priorityFeesSol,
