@@ -1,3 +1,4 @@
+import { JitoLifecycleCoordinator } from './platform/execution/jito-lifecycle-coordinator.js';
 import { PublicKey, SystemProgram, ComputeBudgetProgram, TransactionMessage, VersionedTransaction, TransactionInstruction } from '@solana/web3.js';
 import { PUMP_SDK } from '@pump-fun/pump-sdk';
 import { ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID, NATIVE_MINT, getAssociatedTokenAddressSync } from '@solana/spl-token';
@@ -16,11 +17,13 @@ export class Executor {
     tipAt = 0;
     floor = 0;
     lastSubmit = 0;
+    jitoCoordinator;
     constructor(cfg, rpc, market, key) {
         this.cfg = cfg;
         this.rpc = rpc;
         this.market = market;
         this.key = key;
+        this.jitoCoordinator = new JitoLifecycleCoordinator(this.cfg.JITO_URL, this.cfg.JITO_AUTH, this.cfg.RPC_TIMEOUT_MS);
     }
     async jito(method, params) {
         const response = await httpJson(this.cfg.JITO_URL, this.cfg.RPC_TIMEOUT_MS, {
@@ -204,7 +207,14 @@ export class Executor {
             return outcome;
         }
     }
-    async reconcile(order) {
+    async reconcile(order, bundleId) {
+        if (bundleId) {
+            const report = await this.jitoCoordinator.checkInflightStatus(bundleId, order.signature);
+            if (report.status === 'AUCTION_LOST' || report.status === 'SIMULATION_FAILED') {
+                log('jito_bundle_terminal_drop', { bundleId, reason: report.failureReason });
+                return { status: 'failed' };
+            }
+        }
         const results = await Promise.allSettled(this.rpc.endpoints.map(async (c) => {
             // Support legacy, v0 and v1 transactions; opt into version 1 on RPC
             const tx = await c.getTransaction(order.signature, { commitment: 'finalized', maxSupportedTransactionVersion: 1 });
