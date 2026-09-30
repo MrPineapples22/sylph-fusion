@@ -636,6 +636,8 @@ export class MasterIntelligenceEngine {
      * Process a canonical market event through the institutional intelligence pipeline.
      */
     async processEvent(event, context) {
+        const requestRevocationEpoch = this.revocationEngine.getCurrentEpoch();
+        const targetRoute = context.tokenAgeSec > 300 && context.liquiditySol > 25 ? 'Raydium_Main_Pool' : 'Pump_Bonding_Curve';
         const trace = new DecisionTrace({
             eventId: event.eventId,
             rootTimestampMs: event.receivedTimestampMs,
@@ -1259,17 +1261,8 @@ export class MasterIntelligenceEngine {
             token_mint: event.mint,
             intent_id: intentId,
             strategy_id: 'breakout_momentum_v1',
-            route_name: 'Orca_Whirlpool_Route',
-            request_revocation_epoch: this.revocationEngine.getCurrentEpoch(),
-        });
-        // Register active position in portfolio evacuation solver (Part XXXI)
-        this.portfolioEvac.registerPosition({
-            mint: event.mint,
-            size_sol: 0.5,
-            route: 'Orca_Whirlpool_Route',
-            pool_liquidity_sol: context.liquiditySol,
-            current_evacuated_pct: 0,
-            last_evacuated_slot: event.slot,
+            route_name: targetRoute,
+            request_revocation_epoch: requestRevocationEpoch,
         });
         const portfolioEvacMetrics = this.portfolioEvac.evaluatePortfolioEvacuation();
         // Touch Capital Authority connection fabric (Part XC & XCI)
@@ -1305,113 +1298,130 @@ export class MasterIntelligenceEngine {
             whyExecutionBlocked = 'BLOCKED — OBSERVING MARKET MICROSTRUCTURE';
         }
         else if (councilVerdict.state === 'STRONG_CONSENSUS' && councilVerdict.authorizedToProceed && policyDecision.action === 'ENTER' && proofReport.isExecutionReady && survivalCert.is_valid && revalReport.is_cleared_to_sign) {
-            // Evaluate Capital Kernel formal invariants (Part LXXIII)
             const capSnapshot = this.capitalTruth.getSnapshot();
             const proposedSizeSol = 0.5 * regime.riskMultiplier * policyDecision.targetAllocationMultiplier * oodAssessment.allowedCapitalMultiplier;
-            const kernelVerification = this.capitalKernel.verifyCapitalAction({
-                action_type: 'INCREASE_EXPOSURE',
-                proposed_delta_sol: proposedSizeSol,
-                confirmed_cash_sol: capSnapshot.confirmed_cash_sol,
-                reserved_cash_sol: capSnapshot.reserved_cash_sol,
-                emergency_reserve_sol: capSnapshot.emergency_reserve_sol,
-                current_open_positions_count: capSnapshot.confirmed_positions_count,
-                unresolved_intents_count: capSnapshot.unresolved_intents_count,
-                unknown_capital_sol: 0.0,
-                has_active_reservation: true,
-                has_commit_certificate: true,
-                has_valid_survival_certificate: survivalCert.is_valid,
-                request_control_epoch: capSnapshot.control_epoch,
-                active_control_epoch: capSnapshot.control_epoch,
-                request_revocation_epoch: this.revocationEngine.getCurrentEpoch(),
-                active_revocation_epoch: this.revocationEngine.getCurrentEpoch(),
-                is_proof_revoked: !revalReport.is_cleared_to_sign,
-                is_lease_valid: true,
+            // 1. Reserve capital first to produce genuine reservation evidence (Section 14)
+            const reservationId = `res_${event.mint.slice(0, 6)}_${event.slot}`;
+            const reserveResult = this.capitalTruth.reserveCapital({
+                reservation_id: reservationId,
+                owner_id: intentId,
+                amount_sol: proposedSizeSol,
+                max_fee_sol: 0.005,
+                max_tip_sol: 0.001,
+                expected_state_version: capSnapshot.state_version,
+                slot: event.slot,
             });
-            if (!kernelVerification.is_authorized) {
+            if (!reserveResult.success) {
                 decision = 'SAFETY_LOCKED';
-                whyExecutionBlocked = `BLOCKED — ${kernelVerification.violated_invariants[0]?.invariant_id || 'CAPITAL KERNEL INVARIANT TRIP'}`;
-                this.flightRecorder.recordViolation({
-                    invariant_id: kernelVerification.violated_invariants[0]?.invariant_id || 'UNKNOWN_INVARIANT',
-                    severity: 'FATAL',
-                    details: kernelVerification.violated_invariants[0]?.message || 'Invariant trip',
-                    slot: event.slot,
-                    context: { mint: event.mint, proposedSizeSol },
-                });
+                whyExecutionBlocked = `BLOCKED — ${reserveResult.reason || 'CAPITAL RESERVATION FAILED'}`;
             }
             else {
-                decision = 'AUTHORIZED_BUY';
-                allocatedSol = proposedSizeSol;
-                // Reserve capital serializably (Part VIII & IX)
-                const reservationId = `res_${event.mint.slice(0, 6)}_${event.slot}`;
-                this.capitalTruth.reserveCapital({
-                    reservation_id: reservationId,
-                    owner_id: intentId,
-                    amount_sol: allocatedSol,
-                    max_fee_sol: 0.005,
-                    max_tip_sol: 0.001,
-                    expected_state_version: capSnapshot.state_version,
-                    slot: event.slot,
-                });
-                // Reserve exit capacity (Part XXV)
-                this.survivalCore.reserveExitCapacity('Orca_Whirlpool_Route', allocatedSol, survivalCert.executable_exit_capacity_sol);
-                // Write Commit Certificate (Part XII)
+                // 2. Reserve exit capacity on actual route (Section 15)
+                this.survivalCore.reserveExitCapacity(targetRoute, proposedSizeSol, survivalCert.executable_exit_capacity_sol);
+                // 3. Write Commit Certificate (Section 14)
                 const commitCert = this.capitalTruth.writeCommitCertificate({
                     intent_id: intentId,
                     reservation_id: reservationId,
                     survival_proof_root: survivalCert.survival_state_root,
                     production_root: 'sylph_production_root_sha256_v1',
-                    max_sol_debit: allocatedSol,
+                    max_sol_debit: proposedSizeSol,
                     max_fee_sol: 0.005,
                     max_tip_sol: 0.001,
                     expiration_slot: event.slot + 150,
                     commit_generation: 1,
                     slot: event.slot,
                 });
-                // Atomic Signature Gate via VAULT (Part XVI & XVIII)
-                const effectSpec = VeritasTransactionDecoder.buildSwapEffectSpec({
-                    mint: event.mint,
-                    max_sol_debit: allocatedSol,
-                    min_token_credit: 1000n,
-                    max_fee_sol: 0.005,
-                    max_tip_sol: 0.001,
-                    recipient_wallet: this.vaultSigner.getPublicKey(),
-                });
-                const manifest = VeritasTransactionDecoder.decodeMockManifest({
-                    mint: event.mint,
-                    solDebit: allocatedSol,
-                    recipient: this.vaultSigner.getPublicKey(),
-                });
-                const sigResponse = this.vaultSigner.processSignatureRequest({
-                    request_id: `req_${event.eventId}`,
-                    intent_id: intentId,
-                    capability: 'SIGN_ENTRY',
-                    effect_spec: effectSpec,
-                    manifest,
-                    commit_certificate: commitCert,
-                    active_control_epoch: capSnapshot.control_epoch,
+                // 4. Evaluate Capital Kernel formal invariants with genuine artifacts (Section 14)
+                const updatedCapSnapshot = this.capitalTruth.getSnapshot();
+                const kernelVerification = this.capitalKernel.verifyCapitalAction({
+                    action_type: 'INCREASE_EXPOSURE',
+                    proposed_delta_sol: proposedSizeSol,
+                    confirmed_cash_sol: updatedCapSnapshot.confirmed_cash_sol,
+                    reserved_cash_sol: updatedCapSnapshot.reserved_cash_sol,
+                    emergency_reserve_sol: updatedCapSnapshot.emergency_reserve_sol,
+                    current_open_positions_count: updatedCapSnapshot.confirmed_positions_count,
+                    unresolved_intents_count: updatedCapSnapshot.unresolved_intents_count,
+                    unknown_capital_sol: 0.0,
+                    has_active_reservation: true,
+                    has_commit_certificate: !!commitCert.is_durable_committed,
+                    has_valid_survival_certificate: survivalCert.is_valid,
+                    request_control_epoch: updatedCapSnapshot.control_epoch,
+                    active_control_epoch: updatedCapSnapshot.control_epoch,
+                    request_revocation_epoch: requestRevocationEpoch,
                     active_revocation_epoch: this.revocationEngine.getCurrentEpoch(),
-                    production_root: 'sylph_production_root_sha256_v1',
-                    proof_lease_valid: true,
-                    serialized_tx_bytes: new Uint8Array([1, 2, 3, 4]),
+                    is_proof_revoked: !revalReport.is_cleared_to_sign,
+                    is_lease_valid: commitCert.expiration_slot > event.slot,
                 });
-                if (sigResponse.success && sigResponse.signature_base58) {
-                    this.janusReconciler.registerTransaction({
-                        intent_id: intentId,
-                        signature: sigResponse.signature_base58,
-                        mint: event.mint,
-                        amount_sol: allocatedSol,
+                if (!kernelVerification.is_authorized) {
+                    decision = 'SAFETY_LOCKED';
+                    whyExecutionBlocked = `BLOCKED — ${kernelVerification.violated_invariants[0]?.invariant_id || 'CAPITAL KERNEL INVARIANT TRIP'}`;
+                    this.capitalTruth.releaseReservation(reservationId, 'Kernel verification rejected', event.slot);
+                    this.flightRecorder.recordViolation({
+                        invariant_id: kernelVerification.violated_invariants[0]?.invariant_id || 'UNKNOWN_INVARIANT',
+                        severity: 'FATAL',
+                        details: kernelVerification.violated_invariants[0]?.message || 'Invariant trip',
                         slot: event.slot,
+                        context: { mint: event.mint, proposedSizeSol },
                     });
-                    this.capitalTruth.settleExecution({
-                        reservation_id: reservationId,
-                        intent_id: intentId,
-                        actual_sol_spent: allocatedSol,
-                        base_fee_sol: 0.000005,
-                        priority_fee_sol: 0.0001,
-                        jito_tip_sol: 0.0001,
+                }
+                else {
+                    decision = 'AUTHORIZED_BUY';
+                    allocatedSol = proposedSizeSol;
+                    // Atomic Signature Gate via VAULT (Part XVI & XVIII)
+                    const effectSpec = VeritasTransactionDecoder.buildSwapEffectSpec({
                         mint: event.mint,
-                        slot: event.slot,
+                        max_sol_debit: allocatedSol,
+                        min_token_credit: 1000n,
+                        max_fee_sol: 0.005,
+                        max_tip_sol: 0.001,
+                        recipient_wallet: this.vaultSigner.getPublicKey(),
                     });
+                    const manifest = VeritasTransactionDecoder.decodeMockManifest({
+                        mint: event.mint,
+                        solDebit: allocatedSol,
+                        recipient: this.vaultSigner.getPublicKey(),
+                    });
+                    const sigResponse = this.vaultSigner.processSignatureRequest({
+                        request_id: `req_${event.eventId}`,
+                        intent_id: intentId,
+                        capability: 'SIGN_ENTRY',
+                        effect_spec: effectSpec,
+                        manifest,
+                        commit_certificate: commitCert,
+                        active_control_epoch: updatedCapSnapshot.control_epoch,
+                        active_revocation_epoch: this.revocationEngine.getCurrentEpoch(),
+                        production_root: 'sylph_production_root_sha256_v1',
+                        proof_lease_valid: true,
+                        serialized_tx_bytes: new Uint8Array([1, 2, 3, 4]),
+                    });
+                    if (sigResponse.success && sigResponse.signature_base58) {
+                        this.janusReconciler.registerTransaction({
+                            intent_id: intentId,
+                            signature: sigResponse.signature_base58,
+                            mint: event.mint,
+                            amount_sol: allocatedSol,
+                            slot: event.slot,
+                        });
+                        this.capitalTruth.settleExecution({
+                            reservation_id: reservationId,
+                            intent_id: intentId,
+                            actual_sol_spent: allocatedSol,
+                            base_fee_sol: 0.000005,
+                            priority_fee_sol: 0.0001,
+                            jito_tip_sol: 0.0001,
+                            mint: event.mint,
+                            slot: event.slot,
+                        });
+                        // Register position in portfolio evacuation solver ONLY after execution settlement (Section 9)
+                        this.portfolioEvac.registerPosition({
+                            mint: event.mint,
+                            size_sol: allocatedSol,
+                            route: targetRoute,
+                            pool_liquidity_sol: context.liquiditySol,
+                            current_evacuated_pct: 0,
+                            last_evacuated_slot: event.slot,
+                        });
+                    }
                 }
             }
         }
