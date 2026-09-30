@@ -219,3 +219,35 @@ export class SettlementFirewall {
     return this.settlementStore.get(settlementId);
   }
 }
+
+export interface DurableSettlementStore {
+  saveSettlementRecord(record: SettlementRecord): Promise<void>;
+  getSettlementRecord(settlementId: string): Promise<SettlementRecord | undefined>;
+  getSettlementByCycle(vaultId: string, cycleId: string): Promise<string | undefined>;
+  saveConfirmedDestination(vaultId: string, address: string): Promise<void>;
+  getConfirmedDestination(vaultId: string): Promise<string | undefined>;
+}
+
+export class InMemorySettlementStore implements DurableSettlementStore {
+  private readonly records = new Map<string, SettlementRecord>();
+  private readonly byCycle = new Map<string, string>();
+  private readonly destinations = new Map<string, string>();
+
+  async saveSettlementRecord(record: SettlementRecord): Promise<void> {
+    this.records.set(record.settlementId, { ...record });
+    this.byCycle.set(JSON.stringify([record.vaultId, record.cycleId]), record.settlementId);
+  }
+  async getSettlementRecord(settlementId: string): Promise<SettlementRecord | undefined> {
+    const r = this.records.get(settlementId);
+    return r ? { ...r } : undefined;
+  }
+  async getSettlementByCycle(vaultId: string, cycleId: string): Promise<string | undefined> {
+    return this.byCycle.get(JSON.stringify([vaultId, cycleId]));
+  }
+  async saveConfirmedDestination(vaultId: string, address: string): Promise<void> {
+    this.destinations.set(vaultId, address);
+  }
+  async getConfirmedDestination(vaultId: string): Promise<string | undefined> {
+    return this.destinations.get(vaultId);
+  }
+}
