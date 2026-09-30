@@ -46,7 +46,9 @@ export function evaluateExitEv(input: ExitEvInput): ExitEvEvaluation | null {
   const evCloseBps = -Math.round(input.exitCostBps);
   // Selling a fraction realizes known execution friction; the remainder retains
   // its conditional value. This makes partial exits testable rather than magic.
-  const evReduceBps = Math.round((1 - input.reduceFraction) * evHoldBps - input.reduceFraction * input.exitCostBps);
+  const evReduceBps = (input.reduceFraction > 0 && input.reduceFraction < 1)
+    ? Math.round((1 - input.reduceFraction) * evHoldBps - input.reduceFraction * input.exitCostBps)
+    : -Infinity;
   const choices: Array<[ExitEvAction, number]> = [['HOLD', evHoldBps], ['REDUCE', evReduceBps], ['CLOSE', evCloseBps]];
   const [selectedAction] = choices.reduce((best, candidate) => candidate[1] > best[1] ? candidate : best);
   return { evHoldBps, evReduceBps, evCloseBps, selectedAction,

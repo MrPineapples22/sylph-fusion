@@ -18,3 +18,23 @@ test('expired quotes cannot generate an executable exit', () => {
   const d = new ExitDecisionService().decide({ ...input, quotes: [{ ...quote, validUntilMs: now - 1 }] });
   assert.equal(d.chosenAction, 'HOLD'); assert.match(d.reasons[0], /NO_FRESH/);
 });
+test('multiple quotes select maximum EV quote, not the lowest', () => {
+  // Bearish scenario where CLOSE dominates HOLD (evHoldBps will be negative)
+  const bearInput = {
+    ...input,
+    probabilityUpside: 0.05,
+    upsideBps: 100,
+    probabilityReversal: 0.6,
+    reversalBps: 3000,
+    probabilityRug: 0.1,
+    rugLossBps: 9000,
+    quotes: [
+      { ...quote, routeId: 'worse-route-high-cost', expectedSlippageBps: 500, priceImpactBps: 200, priorityFeeBps: 100, jitoTipBps: 100 },
+      { ...quote, routeId: 'best-route-low-cost', expectedSlippageBps: 30, priceImpactBps: 20, priorityFeeBps: 10, jitoTipBps: 10 }
+    ]
+  };
+  const d = new ExitDecisionService().decide(bearInput);
+  assert.equal(d.chosenAction, 'CLOSE');
+  assert.equal(d.selectedRouteId, 'best-route-low-cost', 'Should select route with highest EV, not worst');
+});
+

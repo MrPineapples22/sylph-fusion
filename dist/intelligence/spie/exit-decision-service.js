@@ -28,8 +28,9 @@ export class ExitDecisionService {
         const hold = evaluateExitEv({ ...base, exitCostBps: 0 });
         if (!hold)
             return null;
+        const score = (e) => e.selectedAction === 'HOLD' ? e.evHoldBps : e.selectedAction === 'REDUCE' ? e.evReduceBps : e.evCloseBps;
         const best = fresh.map(q => ({ quote: q, ev: evaluateExitEv({ ...base, reduceFraction: q.fractionBps / 10_000, exitCostBps: quoteCost(q) }) }))
-            .sort((a, b) => ({ HOLD: a.ev.evHoldBps, REDUCE: a.ev.evReduceBps, CLOSE: a.ev.evCloseBps }[a.ev.selectedAction]) - ({ HOLD: b.ev.evHoldBps, REDUCE: b.ev.evReduceBps, CLOSE: b.ev.evCloseBps }[b.ev.selectedAction]))[0];
+            .sort((a, b) => score(b.ev) - score(a.ev))[0];
         const emergency = snapshot.hardSurvivalReason;
         const selected = emergency ? fresh.filter(q => q.fractionBps === 10_000).sort((a, b) => quoteCost(a) - quoteCost(b))[0] : best?.quote;
         const selectedEv = selected ? evaluateExitEv({ ...base, reduceFraction: selected.fractionBps / 10_000, exitCostBps: quoteCost(selected) }) : undefined;
