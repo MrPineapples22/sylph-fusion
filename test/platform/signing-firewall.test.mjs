@@ -1,4 +1,4 @@
-import test from 'node:test'; import assert from 'node:assert/strict'; import { createHash } from 'node:crypto'; import { SigningFirewall } from '../../dist/platform/signing/signing-firewall.js';
+import test from 'node:test'; import assert from 'node:assert/strict'; import { createHash } from 'node:crypto'; import { SigningFirewall, InMemoryDurableReplayStore } from '../../dist/platform/signing/signing-firewall.js';
 const bytes=Uint8Array.from([1,2,3]),hash=createHash('sha256').update(bytes).digest('hex'),now=1800000000000;
 const request={requestId:'r',environment:'devnet',messageBytes:bytes,messageHash:hash,expectedSigner:'signer',feePayer:'payer',policyVersion:'v1',policyHash:'p1',intentId:'intent',simulationId:'sim',expiresAt:now+100};
 const policy={version:'v1',hash:'p1',allowedPrograms:['program'],allowedFeePayers:['payer'],maxAmountLamports:10n,maxSlippageBps:100,maxPriorityFeeLamports:2n,expectedMint:'mint',expectedDestination:'dest',mainnetEnabled:false};
@@ -6,3 +6,16 @@ const gates={journalHealthy:true,killSwitchClear:true,providerGateHealthy:true,s
 const decoded={complete:true,messageHash:hash,signer:'signer',feePayer:'payer',programIds:['program'],writableAccounts:[],amountLamports:10n,mint:'mint',destination:'dest',maxSlippageBps:100,priorityFeeLamports:2n,simulationId:'sim',frozen:true};
 test('firewall approves only a complete frozen decoded message bound to policy and simulation',()=>{const f=new SigningFirewall();assert.equal(f.evaluate(request,decoded,policy,gates,now).approved,true);assert.equal(f.evaluate(request,decoded,policy,gates,now).approved,false);});
 test('firewall denies mutation, unknown programs, unhealthy journal and disabled mainnet',()=>{const f=new SigningFirewall();const altered=f.evaluate({...request,messageHash:'bad'},decoded,policy,gates,now);assert.ok(altered.reasonCodes.includes('MESSAGE_HASH_MISMATCH'));const unknown=f.evaluate({...request,requestId:'u'}, {...decoded,programIds:['unknown']},policy,gates,now);assert.ok(unknown.reasonCodes.includes('UNKNOWN_PROGRAM_DENIED'));const mainnet=f.evaluate({...request,requestId:'m',environment:'mainnet-beta'},decoded,policy,{...gates,journalHealthy:false},now);assert.ok(mainnet.reasonCodes.includes('MAINNET_INTERLOCK_CLOSED'));assert.ok(mainnet.reasonCodes.includes('JOURNAL_UNHEALTHY'));});
+test('durable replay store blocks duplicate requests across firewall restart', () => {
+  const sharedStore = new InMemoryDurableReplayStore();
+  const f1 = new SigningFirewall(sharedStore);
+  const res1 = f1.evaluate(request, decoded, policy, gates, now);
+  assert.equal(res1.approved, true);
+
+  // Simulate process restart with new SigningFirewall instance loading sharedStore
+  const f2 = new SigningFirewall(sharedStore);
+  const res2 = f2.evaluate(request, decoded, policy, gates, now);
+  assert.equal(res2.approved, false);
+  assert.ok(res2.reasonCodes.includes('REPLAY_DETECTED'), 'Durable store must prevent replay after restart');
+});
+

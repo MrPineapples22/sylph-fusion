@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { ZeroTrustSignerService } from '../../dist/platform/signing/signer-service.js';
-import { SettlementFirewall } from '../../dist/platform/signing/settlement-firewall.js';
+import { SettlementFirewall, InMemorySettlementStore } from '../../dist/platform/signing/settlement-firewall.js';
 import { MarketTruthEngine } from '../../dist/platform/execution/market-truth.js';
 import { PreSigningRevalidator } from '../../dist/platform/execution/revalidator.js';
 import { ContinuousReconciler } from '../../dist/platform/reconciliation/reconciler.js';
@@ -164,6 +164,47 @@ test('SettlementFirewall: blocks unauthorized destinations, unclean reconciliati
   assert.match(failedRetry.rejectionReason, /Duplicate settlement request/);
 
   assert.throws(() => firewall.registerConfirmedDestination(vaultId, 'ReplacedOfficialSolanaAddress1111111111111'), /immutable/);
+});
+
+test('SettlementFirewall: hydrates from durable store across process restart', async () => {
+  const sharedDurableStore = new InMemorySettlementStore();
+  const fw1 = new SettlementFirewall(sharedDurableStore);
+  const vaultId = 'vault-beta';
+  const userDest = 'UserOfficialSolanaAddress22222222222222222';
+  fw1.registerConfirmedDestination(vaultId, userDest);
+
+  const req = {
+    settlementId: 'settle-cycle-restart-1',
+    vaultId,
+    userId: 'user-beta',
+    cycleId: 'cycle-restart-1',
+    userDestinationAddress: userDest,
+    netPayableLamports: 5_000_000_000n,
+    platformFeeLamports: 100_000_000n,
+    verifiedLiquidBalanceLamports: 5_500_000_000n,
+    isReconciliationClean: true,
+    cycleState: 'SETTLEMENT_READY',
+  };
+
+  const res1 = fw1.authorizeSettlement(req);
+  assert.equal(res1.approved, true);
+
+  // Simulate process restart with fw2 pointing to the same durable store
+  const fw2 = new SettlementFirewall(sharedDurableStore);
+  await fw2.init();
+
+  // Destination should be preserved
+  assert.equal(fw2.getConfirmedDestination(vaultId), userDest);
+
+  // Duplicate settlement request should be rejected on fw2
+  const res2 = fw2.authorizeSettlement(req);
+  assert.equal(res2.approved, false);
+  assert.match(res2.rejectionReason, /Duplicate settlement request/);
+
+  // Duplicate cycle should also be rejected
+  const res3 = fw2.authorizeSettlement({ ...req, settlementId: 'different-id' });
+  assert.equal(res3.approved, false);
+  assert.match(res3.rejectionReason, /Duplicate settlement cycle/);
 });
 
 test('MarketTruthEngine & PreSigningRevalidator: quarantines divergent feeds and aborts stale trades', () => {

@@ -70,4 +70,18 @@ export class JsonDurableSettlementStore implements DurableSettlementStore {
     const state = await this.loadState();
     return state.destinations[vaultId];
   }
+
+  async getAllRecords(): Promise<SettlementRecord[]> {
+    const state = await this.loadState();
+    return Object.values(state.records).map((raw: any) => ({
+      ...raw,
+      netPayableLamports: BigInt(raw.netPayableLamports),
+      platformFeeLamports: BigInt(raw.platformFeeLamports),
+    }));
+  }
+
+  async getAllConfirmedDestinations(): Promise<Record<string, string>> {
+    const state = await this.loadState();
+    return { ...state.destinations };
+  }
 }

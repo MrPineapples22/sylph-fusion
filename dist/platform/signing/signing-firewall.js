@@ -1,7 +1,22 @@
 import { createHash } from 'node:crypto';
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
+export class InMemoryDurableReplayStore {
+    items = new Set();
+    has(key) { return this.items.has(key); }
+    add(key) { this.items.add(key); }
+    getAll() { return Array.from(this.items); }
+}
 export class SigningFirewall {
     consumed = new Set();
+    replayStore;
+    constructor(replayStore) {
+        this.replayStore = replayStore;
+        if (replayStore && typeof replayStore.getAll === 'function') {
+            const existing = replayStore.getAll();
+            for (const k of existing)
+                this.consumed.add(k);
+        }
+    }
     evaluate(request, decoded, policy, gates, now = Date.now()) {
         const reasons = [];
         if (!request.requestId || !request.intentId || !request.simulationId || !request.messageBytes.byteLength)
@@ -11,7 +26,7 @@ export class SigningFirewall {
             reasons.push('MESSAGE_HASH_MISMATCH');
         if (request.expiresAt <= now)
             reasons.push('AUTHORIZATION_EXPIRED');
-        if (this.consumed.has(request.requestId) || this.consumed.has(request.messageHash))
+        if (this.consumed.has(request.requestId) || this.consumed.has(request.messageHash) || (this.replayStore && (this.replayStore.has(request.requestId) || this.replayStore.has(request.messageHash))))
             reasons.push('REPLAY_DETECTED');
         if (request.policyVersion !== policy.version || request.policyHash !== policy.hash)
             reasons.push('POLICY_VERSION_MISMATCH');
@@ -53,6 +68,10 @@ export class SigningFirewall {
             return Object.freeze({ approved: false, reasonCodes: Object.freeze(reasons) });
         this.consumed.add(request.requestId);
         this.consumed.add(request.messageHash);
+        if (this.replayStore) {
+            this.replayStore.add(request.requestId);
+            this.replayStore.add(request.messageHash);
+        }
         return Object.freeze({ approved: true, messageHash: actualHash });
     }
 }

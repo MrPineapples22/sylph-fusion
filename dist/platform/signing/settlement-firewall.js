@@ -18,6 +18,26 @@ export class SettlementFirewall {
     constructor(durableStore) {
         this.durableStore = durableStore;
     }
+    /**
+     * Hydrates in-memory cache from durable storage to prevent duplicate settlements across process restarts.
+     */
+    async init() {
+        if (!this.durableStore)
+            return;
+        if (typeof this.durableStore.getAllRecords === 'function') {
+            const records = await this.durableStore.getAllRecords();
+            for (const rec of records) {
+                this.settlementStore.set(rec.settlementId, rec);
+                this.settlementByCycle.set(this.cycleKey(rec.vaultId, rec.cycleId), rec.settlementId);
+            }
+        }
+        if (typeof this.durableStore.getAllConfirmedDestinations === 'function') {
+            const dests = await this.durableStore.getAllConfirmedDestinations();
+            for (const [vaultId, dest] of Object.entries(dests)) {
+                this.confirmedDestinationsByVault.set(vaultId, dest);
+            }
+        }
+    }
     cycleKey(vaultId, cycleId) {
         return JSON.stringify([vaultId, cycleId]);
     }
@@ -213,6 +233,12 @@ export class InMemorySettlementStore {
     }
     async getConfirmedDestination(vaultId) {
         return this.destinations.get(vaultId);
+    }
+    async getAllRecords() {
+        return Array.from(this.records.values()).map(r => ({ ...r }));
+    }
+    async getAllConfirmedDestinations() {
+        return Object.fromEntries(this.destinations.entries());
     }
 }
 //# sourceMappingURL=settlement-firewall.js.map

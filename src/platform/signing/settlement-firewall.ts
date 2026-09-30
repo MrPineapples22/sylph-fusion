@@ -44,6 +44,26 @@ export class SettlementFirewall {
     this.durableStore = durableStore;
   }
 
+  /**
+   * Hydrates in-memory cache from durable storage to prevent duplicate settlements across process restarts.
+   */
+  public async init(): Promise<void> {
+    if (!this.durableStore) return;
+    if (typeof this.durableStore.getAllRecords === 'function') {
+      const records = await this.durableStore.getAllRecords();
+      for (const rec of records) {
+        this.settlementStore.set(rec.settlementId, rec);
+        this.settlementByCycle.set(this.cycleKey(rec.vaultId, rec.cycleId), rec.settlementId);
+      }
+    }
+    if (typeof this.durableStore.getAllConfirmedDestinations === 'function') {
+      const dests = await this.durableStore.getAllConfirmedDestinations();
+      for (const [vaultId, dest] of Object.entries(dests)) {
+        this.confirmedDestinationsByVault.set(vaultId, dest);
+      }
+    }
+  }
+
   private cycleKey(vaultId: string, cycleId: string): string {
     return JSON.stringify([vaultId, cycleId]);
   }
@@ -243,6 +263,8 @@ export interface DurableSettlementStore {
   getSettlementByCycle(vaultId: string, cycleId: string): Promise<string | undefined>;
   saveConfirmedDestination(vaultId: string, address: string): Promise<void>;
   getConfirmedDestination(vaultId: string): Promise<string | undefined>;
+  getAllRecords?(): Promise<SettlementRecord[]>;
+  getAllConfirmedDestinations?(): Promise<Record<string, string>>;
 }
 
 export class InMemorySettlementStore implements DurableSettlementStore {
@@ -266,5 +288,11 @@ export class InMemorySettlementStore implements DurableSettlementStore {
   }
   async getConfirmedDestination(vaultId: string): Promise<string | undefined> {
     return this.destinations.get(vaultId);
+  }
+  async getAllRecords(): Promise<SettlementRecord[]> {
+    return Array.from(this.records.values()).map(r => ({ ...r }));
+  }
+  async getAllConfirmedDestinations(): Promise<Record<string, string>> {
+    return Object.fromEntries(this.destinations.entries());
   }
 }

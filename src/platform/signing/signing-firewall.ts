@@ -24,14 +24,37 @@ export interface SigningFirewallPolicy {
 export interface FirewallGates { readonly journalHealthy: boolean; readonly killSwitchClear: boolean; readonly providerGateHealthy: boolean; readonly simulationPassed: boolean; }
 export type FirewallDecision = { readonly approved: true; readonly messageHash: string } | { readonly approved: false; readonly reasonCodes: readonly string[] };
 const sha256=(bytes:Uint8Array)=>createHash('sha256').update(bytes).digest('hex');
+export interface DurableReplayStore {
+  has(key: string): boolean;
+  add(key: string): void;
+  getAll?(): readonly string[];
+}
+
+export class InMemoryDurableReplayStore implements DurableReplayStore {
+  private readonly items = new Set<string>();
+  has(key: string): boolean { return this.items.has(key); }
+  add(key: string): void { this.items.add(key); }
+  getAll(): readonly string[] { return Array.from(this.items); }
+}
+
 export class SigningFirewall {
   private readonly consumed = new Set<string>();
+  private readonly replayStore?: DurableReplayStore;
+
+  constructor(replayStore?: DurableReplayStore) {
+    this.replayStore = replayStore;
+    if (replayStore && typeof replayStore.getAll === 'function') {
+      const existing = replayStore.getAll();
+      for (const k of existing) this.consumed.add(k);
+    }
+  }
+
   evaluate(request: FrozenSigningRequest, decoded: DecodedTransactionView | null, policy: SigningFirewallPolicy, gates: FirewallGates, now=Date.now()): FirewallDecision {
     const reasons:string[]=[];
     if (!request.requestId || !request.intentId || !request.simulationId || !request.messageBytes.byteLength) reasons.push('REQUEST_INVALID');
     const actualHash=sha256(request.messageBytes); if (actualHash!==request.messageHash) reasons.push('MESSAGE_HASH_MISMATCH');
     if (request.expiresAt<=now) reasons.push('AUTHORIZATION_EXPIRED');
-    if (this.consumed.has(request.requestId)||this.consumed.has(request.messageHash)) reasons.push('REPLAY_DETECTED');
+    if (this.consumed.has(request.requestId)||this.consumed.has(request.messageHash)||(this.replayStore&&(this.replayStore.has(request.requestId)||this.replayStore.has(request.messageHash)))) reasons.push('REPLAY_DETECTED');
     if (request.policyVersion!==policy.version||request.policyHash!==policy.hash) reasons.push('POLICY_VERSION_MISMATCH');
     if (request.environment==='mainnet-beta'&&!policy.mainnetEnabled) reasons.push('MAINNET_INTERLOCK_CLOSED');
     if (!gates.journalHealthy) reasons.push('JOURNAL_UNHEALTHY'); if (!gates.killSwitchClear) reasons.push('KILL_SWITCH_ACTIVE'); if (!gates.providerGateHealthy) reasons.push('PROVIDER_GATE_UNHEALTHY'); if (!gates.simulationPassed) reasons.push('SIMULATION_UNAVAILABLE');
@@ -47,6 +70,12 @@ export class SigningFirewall {
       if(decoded.simulationId!==request.simulationId) reasons.push('SIMULATION_BINDING_MISMATCH');
     }
     if(reasons.length)return Object.freeze({approved:false,reasonCodes:Object.freeze(reasons)});
-    this.consumed.add(request.requestId);this.consumed.add(request.messageHash);return Object.freeze({approved:true,messageHash:actualHash});
+    this.consumed.add(request.requestId);
+    this.consumed.add(request.messageHash);
+    if (this.replayStore) {
+      this.replayStore.add(request.requestId);
+      this.replayStore.add(request.messageHash);
+    }
+    return Object.freeze({approved:true,messageHash:actualHash});
   }
 }

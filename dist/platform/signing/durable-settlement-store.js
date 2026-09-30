@@ -60,5 +60,17 @@ export class JsonDurableSettlementStore {
         const state = await this.loadState();
         return state.destinations[vaultId];
     }
+    async getAllRecords() {
+        const state = await this.loadState();
+        return Object.values(state.records).map((raw) => ({
+            ...raw,
+            netPayableLamports: BigInt(raw.netPayableLamports),
+            platformFeeLamports: BigInt(raw.platformFeeLamports),
+        }));
+    }
+    async getAllConfirmedDestinations() {
+        const state = await this.loadState();
+        return { ...state.destinations };
+    }
 }
 //# sourceMappingURL=durable-settlement-store.js.map
