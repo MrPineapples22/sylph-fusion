@@ -8,6 +8,7 @@
  */
 import { Keypair } from '@solana/web3.js';
 import { createHash } from 'node:crypto';
+import { VeritasTransactionDecoder } from './effect-spec.js';
 export class VaultSigner {
     keypair;
     maxSolPerTx;
@@ -131,6 +132,28 @@ export class VaultSigner {
                 sign_operation_id: opId,
                 signing_state: 'REJECTED',
                 denial_reason: `HARD_TX_LIMIT_EXCEEDED: ${request.effect_spec.max_sol_debit} SOL > hard limit ${this.maxSolPerTx} SOL`,
+                execution_timestamp_ms: Date.now(),
+            };
+        }
+        // 7b. Verify Intent Equivalence (Manifest must be authorized subset of EffectSpec)
+        const decoder = new VeritasTransactionDecoder();
+        const equiv = decoder.verifyIntentEquivalence(request.effect_spec, request.manifest);
+        if (!equiv.is_equivalent) {
+            return {
+                success: false,
+                sign_operation_id: opId,
+                signing_state: 'REJECTED',
+                denial_reason: `INTENT_MISMATCH: ${equiv.material_mismatches.join('; ')}`,
+                execution_timestamp_ms: Date.now(),
+            };
+        }
+        // 7c. Verify Commit Certificate Bound (Manifest debit cannot exceed authorized commit certificate)
+        if (request.manifest.estimated_sol_debit > request.commit_certificate.max_sol_debit + 0.000001) {
+            return {
+                success: false,
+                sign_operation_id: opId,
+                signing_state: 'REJECTED',
+                denial_reason: `EXCESSIVE_SOL_DEBIT: manifest ${request.manifest.estimated_sol_debit} > authorized commit ${request.commit_certificate.max_sol_debit}`,
                 execution_timestamp_ms: Date.now(),
             };
         }

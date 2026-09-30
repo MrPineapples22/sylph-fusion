@@ -54,6 +54,10 @@ export class RevocationEngine {
     return this.currentEpoch;
   }
 
+  public getActiveRevocationsCount(): number {
+    return this.activeRevocations.size;
+  }
+
   /**
    * Triggers a selective or global revocation (Parts LVII & LVIII).
    * Monotonically advances RevocationEpoch.

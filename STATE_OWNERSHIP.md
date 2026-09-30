@@ -1,34 +1,37 @@
-# SOL-SYLPH — State Ownership & Authority Charter
-*Generated as Mandatory Deliverable #5 pursuant to Section 2 of the Intelligence Fabric Master Specification.*
+# SYLPH FUSION — STATE OWNERSHIP & AUTHORITY BOUNDARIES
+**Specification Standard:** Master Quantitative Upgrade § 2.1  
+**Core Invariant:** Exactly ONE authoritative owner per critical system fact. No competing truth.
 
 ---
 
-## 1. Single Authoritative Ownership Principle
+## 1. CANONICAL STATE REGISTRY
 
-No piece of state may exist in duplicate with conflicting sources of truth. Every domain of state in SOL-SYLPH has exactly ONE authoritative owner. Downstream consumers maintain read-only views or reference the authoritative owner.
-
----
-
-## 2. Domain State Authority Matrix
-
-| State Domain | Authoritative Owner | Location in Codebase | Mutability | Persistence Mechanism |
-| :--- | :--- | :--- | :--- | :--- |
-| **Solana Slot & Reorgs** | `ChainTruthEngine` | `src/intelligence/truth/chain-truth.ts` | Append-only / Rollback | Memory + Forensic event store |
-| **System Clocks** | `ThreeClocks` | `src/intelligence/truth/three-clocks.ts` | Monotonic forward | Ephemeral per tick |
-| **Historical Features** | `PointInTimeFeatureStore` | `src/intelligence/truth/feature-store.ts` | Strictly Immutable | SHA-256 snapshot archive |
-| **Wallet & Actor Graph** | `ActorKnowledgeGraph` | `src/intelligence/adversarial/actor-graph.ts` | Append / Relationship edge update | Graph store |
-| **Financial Ledger & Balances**| `EventLedger` & `DoubleEntryJournal` | `src/platform/ledger/` | Cryptographic append-only | SHA-256 hash-chained JSONL |
-| **Segregated Vault Balances** | `VaultManager` | `src/platform/vault/vault-manager.ts` | Controlled state machine | Ledger reconciliation |
-| **Active Live Positions** | `PositionManager` | `src/paper.ts` / `src/core.ts` | Mutated by fills/exits only | Periodic session checkpoint |
-| **Position Risk & Defense** | `PositionDefenseState` | `src/intelligence/execution/position-defense.ts` | Real-time tick evaluation | In-memory + audit trace |
-| **System Capital Authority** | `SafetyMonitor` | `src/intelligence/safety/safety-monitor.ts` | Fail-closed state latch | Memory + Incident flight recorder |
-| **Order Execution Lifecycle** | `ExecutionStateMachine` | `src/intelligence/execution/execution-state-machine.ts` | Strict sequential transition | `fills.csv` + execution log |
-| **Active Champion Strategy** | `StrategyGovernance` | `src/intelligence/governance/manifest.ts` | Immutable manifest versioning | Manifest archive |
-| **Historical Failures** | `NegativeKnowledgeDB` | `src/intelligence/research/negative-db.ts` | Permanent append-only | Disk JSON database |
-| **GUI Presentation** | Aether Flux View Model | `src/intelligence/master-orchestrator.ts` | Read-only presentation projection | Rendered to Tkinter cockpit |
+| Domain Fact | Authoritative Owner | State Storage / Type | Allowed Mutations | Consumer Access Mode |
+|---|---|---|---|---|
+| **Provider Health** | `ProviderHealthTracker` | Circular latency buffer, consecutive error counters | Heartbeat pings, RPC failures, WS timeouts | Read-only capability query |
+| **Market Slot & Clock** | `ChainTruthEngine` | Monotonic slot & commitment state | Confirmed block events, RPC slot pings | Read-only point-in-time check |
+| **Token Identity & Security** | `TokenProgramInspector` | Account state cache, immutable mint pubkey | On-chain account change events | Pure query; never keyed by ticker symbol |
+| **Microstructure EV & Factors**| `SpieEngine` | Ephemeral evaluation vector | Evaluated per candidate tick | Input to Unified Decision Engine |
+| **Opportunity Decision** | `UnifiedDecisionEngine` | Append-only decision journal | Reconciled across Vetoes, Risk, SPIE, and ML | Read-only immutable decision artifact |
+| **Capital Availability & Cash** | `CapitalTruthEngine` | Double-entry append-only event ledger (WAL) | `reserveCapital`, `settleExecution`, `settleExit` | Immutable snapshot (`CapitalState`) |
+| **Confirmed Positions** | `CapitalTruthEngine` | `Map<string, ConfirmedPosition>` | `settleExecution` (open), `settleExit` (close) | Read-only query (`getOpenPositionsCount`) |
+| **Global Authority Mode** | `CapitalKernel` | `AuthorityMode` (A0 to A5 Lattice) | System-integrity failure trip, `RecoveryCertificate` | Read-only query (`getAuthorityMode`) |
+| **Revocation Epoch & Scopes** | `RevocationEngine` | Monotonic integer `currentEpoch` + active map | `triggerRevocation`, `resolveRevocation`, `expire` | Pre-sign barrier check (`verifyRevocationBarrier`) |
+| **Route Identity & Limits** | `ExecutionPlanning` / `Veritas` | Concrete route string (`EffectSpec.allowed_programs`) | Execution route selection | Bound to TransactionManifest & CommitCert |
+| **Signing Authority & Custody** | `VaultSigner` | Hardware keypair / KMS, signed registry | Atomic signature after 15 pre-sign assertions | Pure signing response |
+| **Transaction Delivery Status** | `JanusReconciler` | Submitted transaction state machine | RPC status polls, signature confirmations | Ambiguity reconciliation before retry |
+| **Realized PnL & Fees** | `CapitalTruthEngine` | Double-entry balance sheet | `settleExit`, fee attribution | Double-entry conservation audit |
+| **Outcome Truth & Attribution** | `OutcomeGroundTruthLedger` | Chained outcome record with feature hash | Settlement finalization event | Learning pipeline, Drift Engine |
 
 ---
 
-## 3. Critical Invariant on Presentation Layer
+## 2. PROHIBITED COMPETITIVE TRUTH PATTERNS
 
-The Aether Flux GUI cockpit (`terminal/`) is strictly a **presentation projection**. Under no circumstances may the GUI act as a source of state, originate capital authorizations, or override the `SafetyMonitor` or `IndependentRiskEngine`.
+1. **No Multiple Position Counters:**
+   `PortfolioEvacuationEngine` and `RiskEngine` do NOT maintain independent counts of confirmed positions. They query `CapitalTruthEngine.getOpenPositionsCount()` and receive position registrations strictly after on-chain settlement.
+2. **No Speculative Capital Mutation:**
+   Discovering, scoring, simulating, or recommending a token NEVER mutates capital, reservations, or cash balance. Only valid lifecycle transitions (`reserveCapital` -> `writeCommitCertificate` -> `settleExecution`) mutate balance truth.
+3. **No Optimistic Health Defaults:**
+   An unobserved or unreachable provider is classified as `UNKNOWN` or `DISCONNECTED`, never coerced to `HEALTHY` via fallback booleans (`?? true`).
+4. **No Bypassing Unified Decision:**
+   Upstream opportunity models (Multiplier-X, SPIE, NEXUS-MX) do not command execution directly. All signals must pass through `UnifiedDecisionEngine.reconcile()`, where security vetoes possess absolute priority.
