@@ -11,6 +11,9 @@ export class AwsKmsEd25519 {
         this.verificationKey = verificationKey;
         this.publicKey = publicKey;
     }
+    get wallet() {
+        return this.publicKey.toBase58();
+    }
     static async connect(transport, keyArn, expectedWallet) {
         // Pin a concrete key, never an alias that can silently redirect signing.
         if (!/^arn:aws(?:-us-gov|-cn)?:kms:[a-z0-9-]+:\d{12}:key\/[a-f0-9-]{36}$/.test(keyArn)) {

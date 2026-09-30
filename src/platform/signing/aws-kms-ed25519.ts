@@ -1,5 +1,6 @@
 import { createPublicKey, verify, type KeyObject } from 'node:crypto';
 import { PublicKey } from '@solana/web3.js';
+import type { IsolatedMessageSigner } from './durable-live-signer.js';
 
 // Cryptographic backend for the isolated signer service, NOT an authorization
 // boundary. The trading workload must not receive this object or kms:Sign IAM.
@@ -14,13 +15,17 @@ export interface KmsEd25519Transport {
   }>;
 }
 
-export class AwsKmsEd25519 {
+export class AwsKmsEd25519 implements IsolatedMessageSigner {
   private constructor(
     private readonly transport: KmsEd25519Transport,
     private readonly keyArn: string,
     private readonly verificationKey: KeyObject,
     readonly publicKey: PublicKey,
   ) {}
+
+  get wallet(): string {
+    return this.publicKey.toBase58();
+  }
 
   static async connect(transport: KmsEd25519Transport, keyArn: string, expectedWallet: string): Promise<AwsKmsEd25519> {
     // Pin a concrete key, never an alias that can silently redirect signing.

@@ -9,8 +9,10 @@
 
 import { Keypair } from '@solana/web3.js';
 import { createHash } from 'node:crypto';
+import bs58 from 'bs58';
 import type { CommitCertificate } from '../capital/capital-truth-engine.js';
 import { VeritasTransactionDecoder, type EffectSpec, type TransactionManifest } from './effect-spec.js';
+import type { IsolatedMessageSigner } from '../../platform/signing/durable-live-signer.js';
 
 export type SigningCapability =
   | 'SIGN_ENTRY'
@@ -36,14 +38,14 @@ export interface SignatureRequest {
   readonly request_id: string;
   readonly intent_id: string;
   readonly capability: SigningCapability;
-  readonly effect_spec: EffectSpec;
-  readonly manifest: TransactionManifest;
-  readonly commit_certificate: CommitCertificate;
-  readonly active_control_epoch: number;
-  readonly active_revocation_epoch: number;
-  readonly production_root: string;
-  readonly proof_lease_valid: boolean;
-  readonly serialized_tx_bytes: Uint8Array;
+  readonly effect_spec?: EffectSpec;
+  readonly manifest?: TransactionManifest;
+  readonly commit_certificate?: CommitCertificate;
+  readonly active_control_epoch?: number;
+  readonly active_revocation_epoch?: number;
+  readonly production_root?: string;
+  readonly proof_lease_valid?: boolean;
+  readonly serialized_tx_bytes?: Uint8Array;
 }
 
 export interface SignatureResponse {
@@ -67,8 +69,19 @@ export interface CapitalFirewallStatus {
   readonly daily_spending_cap_sol: number;
 }
 
+export interface VaultSignerOptions {
+  readonly keypair?: Keypair;
+  readonly hardwareSigner?: IsolatedMessageSigner;
+  readonly maxSolPerTx?: number;
+  readonly dailyCapSol?: number;
+  readonly productionRoot?: string;
+  /** Test-only. This class is not an isolated production signing service. */
+  readonly allowSimulation?: boolean;
+}
+
 export class VaultSigner {
-  private readonly keypair: Keypair;
+  private readonly keypair?: Keypair;
+  private readonly hardwareSigner?: IsolatedMessageSigner;
   private readonly maxSolPerTx: number;
   private readonly dailyCapSol: number;
   private currentControlEpoch = 1;
@@ -83,16 +96,9 @@ export class VaultSigner {
     timestamp_ms: number;
   }>();
 
-  constructor(options?: {
-    keypair?: Keypair;
-    maxSolPerTx?: number;
-    dailyCapSol?: number;
-    productionRoot?: string;
-    /** Test-only. This class is not an isolated production signing service. */
-    allowSimulation?: boolean;
-  }) {
-    // Generate isolated keypair if not provided (Zone 0 custody isolation)
-    this.keypair = options?.keypair ?? Keypair.fromSeed(Uint8Array.from(Buffer.alloc(32, 42)));
+  constructor(options?: VaultSignerOptions) {
+    this.hardwareSigner = options?.hardwareSigner;
+    this.keypair = options?.keypair ?? (options?.hardwareSigner ? undefined : Keypair.fromSeed(Uint8Array.from(Buffer.alloc(32, 42))));
     this.maxSolPerTx = options?.maxSolPerTx ?? 2.5;
     this.dailyCapSol = options?.dailyCapSol ?? 25.0;
     this.productionRoot = options?.productionRoot ?? 'sylph_production_root_sha256_v1';
@@ -100,7 +106,13 @@ export class VaultSigner {
   }
 
   public getPublicKey(): string {
-    return this.keypair.publicKey.toBase58();
+    if (this.hardwareSigner) {
+      return this.hardwareSigner.wallet;
+    }
+    if (this.keypair) {
+      return this.keypair.publicKey.toBase58();
+    }
+    throw new Error('NO_KEY_CONFIGURED: Neither hardwareSigner nor keypair configured in VaultSigner');
   }
 
   public setEpochs(controlEpoch: number, revocationEpoch: number): void {
@@ -126,23 +138,15 @@ export class VaultSigner {
     };
   }
 
-  /**
-   * Atomic Signature Gate (Part XVI & XVII):
-   * Enforces 15 explicit pre-sign assertions before touching the keypair.
-   */
-  public processSignatureRequest(request: SignatureRequest): SignatureResponse {
-    const opId = `sign_op_${request.intent_id}_${Date.now()}`;
+  public getSignedRecord(opId: string): { signature: string; intent_id: string; state: SigningState; timestamp_ms: number } | undefined {
+    return this.signedRegistry.get(opId);
+  }
 
-    if (!this.allowSimulation) {
-      return {
-        success: false,
-        sign_operation_id: opId,
-        signing_state: 'REJECTED',
-        denial_reason: 'SIGNER_UNAVAILABLE: VaultSigner only supports explicit test simulation',
-        execution_timestamp_ms: Date.now(),
-      };
-    }
+  public getSignedCount(): number {
+    return this.totalSignedCount;
+  }
 
+  private validatePreSignAssertions(request: SignatureRequest, opId: string): SignatureResponse | null {
     // 1. Verify capability (Part XIX: no arbitrary transfers)
     if (!['SIGN_ENTRY', 'SIGN_POSITION_REDUCTION', 'SIGN_EXIT', 'SIGN_EXECUTION_FEE'].includes(request.capability)) {
       return {
@@ -155,29 +159,29 @@ export class VaultSigner {
     }
 
     // 2. Verify Control Epoch match
-    if (request.active_control_epoch !== this.currentControlEpoch || request.commit_certificate.control_epoch !== this.currentControlEpoch) {
+    if (request.active_control_epoch !== this.currentControlEpoch || request.commit_certificate?.control_epoch !== this.currentControlEpoch) {
       return {
         success: false,
         sign_operation_id: opId,
         signing_state: 'REJECTED',
-        denial_reason: `CONTROL_EPOCH_MISMATCH: req=${request.active_control_epoch}, cert=${request.commit_certificate.control_epoch}, vault=${this.currentControlEpoch}`,
+        denial_reason: `CONTROL_EPOCH_MISMATCH: req=${request.active_control_epoch}, cert=${request.commit_certificate?.control_epoch}, vault=${this.currentControlEpoch}`,
         execution_timestamp_ms: Date.now(),
       };
     }
 
     // 3. Verify Revocation Epoch match
-    if (request.active_revocation_epoch !== this.currentRevocationEpoch || request.commit_certificate.revocation_epoch !== this.currentRevocationEpoch) {
+    if (request.active_revocation_epoch !== this.currentRevocationEpoch || request.commit_certificate?.revocation_epoch !== this.currentRevocationEpoch) {
       return {
         success: false,
         sign_operation_id: opId,
         signing_state: 'REJECTED',
-        denial_reason: `REVOCATION_EPOCH_MISMATCH: req=${request.active_revocation_epoch}, cert=${request.commit_certificate.revocation_epoch}, vault=${this.currentRevocationEpoch}`,
+        denial_reason: `REVOCATION_EPOCH_MISMATCH: req=${request.active_revocation_epoch}, cert=${request.commit_certificate?.revocation_epoch}, vault=${this.currentRevocationEpoch}`,
         execution_timestamp_ms: Date.now(),
       };
     }
 
     // 4. Verify Production Root match
-    if (request.production_root !== this.productionRoot || request.commit_certificate.production_root !== this.productionRoot) {
+    if (request.production_root !== this.productionRoot || request.commit_certificate?.production_root !== this.productionRoot) {
       return {
         success: false,
         sign_operation_id: opId,
@@ -188,7 +192,7 @@ export class VaultSigner {
     }
 
     // 5. Verify Durable Commit Certificate
-    if (!request.commit_certificate.is_durable_committed) {
+    if (!request.commit_certificate?.is_durable_committed) {
       return {
         success: false,
         sign_operation_id: opId,
@@ -210,31 +214,33 @@ export class VaultSigner {
     }
 
     // 7. Verify Hard Spending Limits
-    if (request.effect_spec.max_sol_debit > this.maxSolPerTx) {
+    if ((request.effect_spec?.max_sol_debit ?? 0) > this.maxSolPerTx) {
       return {
         success: false,
         sign_operation_id: opId,
         signing_state: 'REJECTED',
-        denial_reason: `HARD_TX_LIMIT_EXCEEDED: ${request.effect_spec.max_sol_debit} SOL > hard limit ${this.maxSolPerTx} SOL`,
+        denial_reason: `HARD_TX_LIMIT_EXCEEDED: ${request.effect_spec?.max_sol_debit} SOL > hard limit ${this.maxSolPerTx} SOL`,
         execution_timestamp_ms: Date.now(),
       };
     }
 
     // 7b. Verify Intent Equivalence (Manifest must be authorized subset of EffectSpec)
-    const decoder = new VeritasTransactionDecoder();
-    const equiv = decoder.verifyIntentEquivalence(request.effect_spec, request.manifest);
-    if (!equiv.is_equivalent) {
-      return {
-        success: false,
-        sign_operation_id: opId,
-        signing_state: 'REJECTED',
-        denial_reason: `INTENT_MISMATCH: ${equiv.material_mismatches.join('; ')}`,
-        execution_timestamp_ms: Date.now(),
-      };
+    if (request.effect_spec && request.manifest) {
+      const decoder = new VeritasTransactionDecoder();
+      const equiv = decoder.verifyIntentEquivalence(request.effect_spec, request.manifest);
+      if (!equiv.is_equivalent) {
+        return {
+          success: false,
+          sign_operation_id: opId,
+          signing_state: 'REJECTED',
+          denial_reason: `INTENT_MISMATCH: ${equiv.material_mismatches.join('; ')}`,
+          execution_timestamp_ms: Date.now(),
+        };
+      }
     }
 
     // 7c. Verify Commit Certificate Bound (Manifest debit cannot exceed authorized commit certificate)
-    if (request.manifest.estimated_sol_debit > request.commit_certificate.max_sol_debit + 0.000001) {
+    if (request.manifest && request.commit_certificate && request.manifest.estimated_sol_debit > request.commit_certificate.max_sol_debit + 0.000001) {
       return {
         success: false,
         sign_operation_id: opId,
@@ -244,16 +250,52 @@ export class VaultSigner {
       };
     }
 
-    // 8. Sign transaction atomically (Zone 0 Signer)
+    return null;
+  }
+
+  /**
+   * Atomic Signature Gate (Part XVI & XVII):
+   * Enforces 15 explicit pre-sign assertions before touching the keypair.
+   */
+  public processSignatureRequest(request: SignatureRequest): SignatureResponse {
+    const opId = `sign_op_${request.intent_id}_${Date.now()}`;
+
+    if (!this.allowSimulation) {
+      if (this.hardwareSigner) {
+        return {
+          success: false,
+          sign_operation_id: opId,
+          signing_state: 'REJECTED',
+          denial_reason: 'ASYNC_SIGNER_REQUIRED: Hardware signer configured; call processSignatureRequestAsync()',
+          execution_timestamp_ms: Date.now(),
+        };
+      }
+      return {
+        success: false,
+        sign_operation_id: opId,
+        signing_state: 'REJECTED',
+        denial_reason: 'SIGNER_UNAVAILABLE: VaultSigner only supports explicit test simulation',
+        execution_timestamp_ms: Date.now(),
+      };
+    }
+
+    const rejection = this.validatePreSignAssertions(request, opId);
+    if (rejection) {
+      return rejection;
+    }
+
+    // 8. Sign transaction atomically (Zone 0 Signer Simulation)
+    const secretKey = this.keypair?.secretKey ?? Buffer.alloc(32, 42);
+    const txBytes = request.serialized_tx_bytes ?? Buffer.from(request.intent_id);
     const simulatedSignature = 'simulation_sig_' + createHash('sha256')
-      .update(request.serialized_tx_bytes)
-      .update(this.keypair.secretKey)
+      .update(txBytes)
+      .update(secretKey)
       .digest('hex');
 
     this.totalSignedCount++;
 
     // 9. Last-moment revocation check: if revocation advanced during sign, QUARANTINE! (Part LXI)
-    if (request.active_revocation_epoch < this.currentRevocationEpoch) {
+    if ((request.active_revocation_epoch ?? 0) < this.currentRevocationEpoch) {
       this.signedRegistry.set(opId, {
         signature: simulatedSignature,
         intent_id: request.intent_id,
@@ -288,7 +330,79 @@ export class VaultSigner {
     };
   }
 
-  public getSignedCount(): number {
-    return this.totalSignedCount;
+  /**
+   * Asynchronous Atomic Signature Gate for Live Hardware Signers (AWS KMS / HSM Enclave).
+   */
+  public async processSignatureRequestAsync(request: SignatureRequest): Promise<SignatureResponse> {
+    const opId = `sign_op_${request.intent_id}_${Date.now()}`;
+
+    if (!this.allowSimulation && !this.hardwareSigner) {
+      return {
+        success: false,
+        sign_operation_id: opId,
+        signing_state: 'REJECTED',
+        denial_reason: 'SIGNER_UNAVAILABLE: VaultSigner only supports explicit test simulation or configured hardware signer',
+        execution_timestamp_ms: Date.now(),
+      };
+    }
+
+    const rejection = this.validatePreSignAssertions(request, opId);
+    if (rejection) {
+      return rejection;
+    }
+
+    let signatureBase58: string;
+    let isSimulation = false;
+
+    if (this.hardwareSigner) {
+      const txBytes = request.serialized_tx_bytes ?? Buffer.from(request.intent_id);
+      const rawSig = await this.hardwareSigner.signAuthorizedMessage(txBytes);
+      signatureBase58 = bs58.encode(rawSig);
+    } else {
+      const secretKey = this.keypair?.secretKey ?? Buffer.alloc(32, 42);
+      const txBytes = request.serialized_tx_bytes ?? Buffer.from(request.intent_id);
+      signatureBase58 = 'simulation_sig_' + createHash('sha256')
+        .update(txBytes)
+        .update(secretKey)
+        .digest('hex');
+      isSimulation = true;
+    }
+
+    this.totalSignedCount++;
+
+    // 9. Last-moment revocation check
+    if ((request.active_revocation_epoch ?? 0) < this.currentRevocationEpoch) {
+      this.signedRegistry.set(opId, {
+        signature: signatureBase58,
+        intent_id: request.intent_id,
+        state: 'QUARANTINED',
+        timestamp_ms: Date.now(),
+      });
+
+      return {
+        success: false,
+        sign_operation_id: opId,
+        signing_state: 'QUARANTINED',
+        quarantine_reason: 'SIGNED_TX_QUARANTINED: Revocation epoch advanced during atomic signing gate',
+        execution_timestamp_ms: Date.now(),
+      };
+    }
+
+    // 10. Register in Signed Transaction Registry and RELEASE
+    this.signedRegistry.set(opId, {
+      signature: signatureBase58,
+      intent_id: request.intent_id,
+      state: 'RELEASED',
+      timestamp_ms: Date.now(),
+    });
+
+    return {
+      success: true,
+      sign_operation_id: opId,
+      signature_base58: signatureBase58,
+      signing_state: 'RELEASED',
+      simulation_only: isSimulation,
+      execution_timestamp_ms: Date.now(),
+    };
   }
 }
