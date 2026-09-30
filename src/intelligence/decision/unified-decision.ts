@@ -61,6 +61,7 @@ export interface ReconcileDecisionInputs {
   readonly tokenId: string;
   readonly symbol: string;
   readonly slot: number;
+  readonly timestamp?: number;
   readonly marketSnapshotId?: string;
   readonly spieEvaluation?: SpieEvaluation;
   readonly walletIntelMetrics?: {
@@ -103,13 +104,17 @@ export class UnifiedDecisionEngine {
    * Safety vetoes and risk blocks strictly override speculative opportunity scores.
    */
   public reconcile(input: ReconcileDecisionInputs): UnifiedOpportunityDecision {
-    const timestamp = Date.now();
-    const decisionId = `dec_${input.tokenId.slice(0, 8)}_${input.slot}_${timestamp}`;
+    const timestamp = input.timestamp ?? Date.now();
     const opportunityId = `opp_${input.tokenId.slice(0, 8)}_${input.slot}`;
     const marketSnapshotId = input.marketSnapshotId ?? `snap_${input.tokenId.slice(0, 8)}_${input.slot}`;
     const strategyVersion = input.strategyVersion ?? 'sylph_momentum_v1.0';
     const featureVersion = input.featureVersion ?? 'features_v1';
     const freshnessMs = input.freshnessMs ?? 250;
+    const inputDigest = createHash('sha256')
+      .update(`${input.tokenId}:${input.slot}:${marketSnapshotId}:${strategyVersion}:${featureVersion}`)
+      .digest('hex')
+      .slice(0, 12);
+    const decisionId = `dec_${input.tokenId.slice(0, 8)}_${input.slot}_${inputDigest}`;
 
     const walletEvidenceIds = input.walletIntelMetrics?.evidenceIds ?? [`wallet_${input.tokenId.slice(0, 8)}`];
     const graphEvidenceIds = input.graphMetrics?.evidenceIds ?? [`graph_${input.tokenId.slice(0, 8)}`];

@@ -537,32 +537,34 @@ async function readLive(path){
  }
  if(path.startsWith('/api/capital/authority')) return capitalEvidence();
  if(path.startsWith('/api/research/audit')){
-  const trials = masterEngine.researchLedger.getTrials();
-  const graveyard = masterEngine.featureGraveyard.getGraveyard();
-  const falsification = masterEngine.falsificationEngine.stressTest({
-    experimentId: 'exp_production_baseline',
-    baselineNetEdgeBps: 220,
-    trades: [
-      { pnlBps: 450, latencyMs: 220, slippageBps: 35, regime: 'RISK_ON' },
-      { pnlBps: 120, latencyMs: 250, slippageBps: 40, regime: 'RISK_ON' },
-      { pnlBps: 85, latencyMs: 270, slippageBps: 45, regime: 'NEUTRAL' },
-      { pnlBps: -60, latencyMs: 310, slippageBps: 55, regime: 'NEUTRAL' },
-    ],
-  });
-  const capitalRegime = CapitalYieldRegimeEngine.getInstance().createRegimeSnapshot();
-  return {
-    evidenceStatus: 'ILLUSTRATIVE_RESEARCH',
-    champion: null,
-    challenger: null,
-    totalHypothesesTested: masterEngine.researchLedger.getTotalHypothesesCount(),
-    activeTrialsCount: trials.length,
-    trials,
-    graveyard,
-    falsificationBenchmark: falsification,
-    capitalRegime,
-    timestampMs: Date.now(),
-  };
- }
+   const trials = masterEngine.researchLedger.getTrials();
+   const graveyard = masterEngine.featureGraveyard.getGraveyard();
+   const autopsies = globalTradeLearningService.getSnapshot().recentAutopsies || [];
+   const empiricalTrades = autopsies.map((a) => ({
+     pnlBps: Math.round(a.realizedPnlPct * 100),
+     latencyMs: a.holdDurationMs || 0,
+     slippageBps: Math.round((a.profitCaptureRatio ? (1 - a.profitCaptureRatio) * 100 : 0)),
+     regime: 'EMPIRICAL',
+   }));
+   const falsification = masterEngine.falsificationEngine.stressTest({
+     experimentId: 'exp_empirical_baseline',
+     baselineNetEdgeBps: empiricalTrades.length > 0 ? 150 : 0,
+     trades: empiricalTrades,
+   });
+   const capitalRegime = CapitalYieldRegimeEngine.getInstance().createRegimeSnapshot();
+   return {
+     evidenceStatus: empiricalTrades.length > 0 ? 'EMPIRICAL_RESEARCH' : 'UNAVAILABLE_NO_SETTLED_TRADES',
+     champion: null,
+     challenger: null,
+     totalHypothesesTested: masterEngine.researchLedger.getTotalHypothesesCount(),
+     activeTrialsCount: trials.length,
+     trials,
+     graveyard,
+     falsificationBenchmark: falsification,
+     capitalRegime,
+     timestampMs: Date.now(),
+   };
+  }
   if(path.startsWith('/api/system/health') || path.startsWith('/api/system/trust')) {
     const health = globalProviderHealthTracker.getReport();
     const cert = globalReleaseCertificationAuthority.getReport();
