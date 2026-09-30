@@ -15,6 +15,7 @@ export type RevocationScope =
   | 'ROUTE'
   | 'STRATEGY'
   | 'WALLET'
+  | 'SIGNER'
   | 'GLOBAL';
 
 export type RevocationPriority =
