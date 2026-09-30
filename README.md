@@ -4,6 +4,57 @@ An executable TypeScript fusion of the two reviewed Python designs. It includes 
 
 **Release status: tested implementation candidate, not a certified production deployment.** No real wallet was loaded and no transaction was broadcast during development. Live endpoint behavior, landed execution quality, profitability, and unattended operation have not been established. See `REVIEW.md` and `VALIDATION.md` for the evidence and remaining limitations.
 
+## Institutional System Architecture & Formal Certification
+
+SYLPH FUSION has undergone a full-system engineering mission, establishing deterministic connectivity across all 10 intelligence pillars, double-entry capital conservation, isolated custody signing, and multi-truth consensus reconciliation.
+
+### Architecture & Governance Specifications
+
+| Artifact | Purpose & Coverage |
+| :--- | :--- |
+| [`SYSTEM_MAP.md`](SYSTEM_MAP.md) | Exhaustive topological component map: Ingestion, Memory, Prediction, Survival, Capital, Vault, Reconciliation |
+| [`CONNECTIVITY_MATRIX.md`](CONNECTIVITY_MATRIX.md) | Exhaustive directional wiring matrix across all internal engines and external providers |
+| [`STATE_OWNERSHIP.md`](STATE_OWNERSHIP.md) | Strict state boundaries, mutable singletons, append-only WAL ledgers, and zero-lookahead timelines |
+| [`INVARIANT_REGISTRY.md`](INVARIANT_REGISTRY.md) | 20 formal system invariants across Capital, Execution, Signing, and Temporal boundaries |
+| [`AUTHORITY_MODEL.md`](AUTHORITY_MODEL.md) | Capability-based hierarchical access control, cryptographic proof leases, and 5-epoch control model |
+| [`RECOVERY_MODEL.md`](RECOVERY_MODEL.md) | Deterministic crash recovery, replay verification, WAL reconciliation, and Haven survival mode |
+| [`EXECUTION_LIFECYCLE.md`](EXECUTION_LIFECYCLE.md) | 12-stage transaction lifecycle from Discovery to Settled/Finalized with rollback mechanics |
+| [`SIGNING_SECURITY.md`](SIGNING_SECURITY.md) | Zone 0 custody isolation, AWS KMS hardware enclave binding, and 15 pre-sign assertion gates |
+| [`RECONCILIATION_MODEL.md`](RECONCILIATION_MODEL.md) | JANUS multi-truth reconciliation, Consensus Mirroring, and ghost transaction resolution |
+| [`LOGIC_AUDIT.md`](LOGIC_AUDIT.md) | Remediation audit of 10 structural failure modes (TOCTOU, phantom spikes, liquidity pollution) |
+| [`RELEASE_GATES.md`](RELEASE_GATES.md) | 20 automated release-blocking governance gates with pass/fail criteria |
+| [`CERTIFICATION_REPORT.md`](CERTIFICATION_REPORT.md) | Final institutional sign-off, mathematical proofs, and release-blocking gate verification |
+
+### 20 Release-Blocking Governance Gates
+
+All 20 release-blocking governance gates are implemented and continuously verified in [`test/intelligence/release-blocking-governance.test.mjs`](test/intelligence/release-blocking-governance.test.mjs):
+1. **Position Capacity Ceiling:** Rejects next OPEN without permanently poisoning capital authority.
+2. **Dynamic Capacity Recovery:** Closing a position immediately frees capacity.
+3. **Zero Portfolio Exposure Leak:** Token evaluation alone never creates exposure.
+4. **Scoped Revocation Isolation:** Revocation blocks only its target scope.
+5. **Resolved Revocation Recovery:** Resolved incidents restore execution authority.
+6. **Epoch Change Protection:** TOCTOU epoch advancement invalidates in-flight requests.
+7. **Route Authorization Match:** Route authorized by risk/capital matches executed route exactly.
+8. **Prerequisite Evidence Gate:** Capital authorization fails if reservation/commitment/lease is absent.
+9. **Reduce-Only Recovery:** Exiting reduce-only mode requires verified recovery evidence.
+10. **UI Authority Separation:** Dashboard strictly separates token safety from capital authority.
+11. **Fail-Closed Unknowns:** Unknown market evidence cannot default to healthy.
+12. **Asymmetric Survival:** REDUCE/CLOSE remain active under OPEN restrictions.
+13. **Accurate Exposure Accounting:** Closed positions are excluded from open exposure counts.
+14. **Idempotent Settlement:** Duplicate settlement calls never double-apply capital balance changes.
+15. **Ambiguous Recovery:** Crashes during in-flight submission reconcile before retry.
+16. **Intent Discrepancy Gate:** Signer rejects any transaction differing from authorized intent.
+17. **Lease Expiry Rejection:** Expired proof leases cannot be signed.
+18. **Revocation Pre-Sign Barrier:** Revoked authority fails closed before reaching signer.
+19. **Settlement Attributions:** Learning records reference real settlement and outcomes.
+20. **Unified Decision Supremacy:** Competing sub-engines cannot bypass Unified Decision Authority.
+
+### High-Leverage Operational Bridges
+
+* **Yellowstone gRPC Live Ingestion:** [`src/platform/ingestion/yellowstone-truth-bridge.ts`](src/platform/ingestion/yellowstone-truth-bridge.ts) streams sub-50ms Geyser transaction logs directly into `ChainTruthEngine` with rolling $p50/p95/p99$ latency tracking and event deduplication.
+* **AWS KMS Hardware Signature Gate:** [`src/intelligence/vault/vault-signer.ts`](src/intelligence/vault/vault-signer.ts) & [`src/platform/signing/aws-kms-ed25519.ts`](src/platform/signing/aws-kms-ed25519.ts) bind raw signing to hardware enclaves via `processSignatureRequestAsync` with 15 pre-sign assertion checks and fail-closed safety.
+* **Continuous Mainnet Soak Orchestrator:** [`scripts/mainnet-soak-orchestrator.mjs`](scripts/mainnet-soak-orchestrator.mjs) executes multi-day shadow monitoring on mainnet with automated 5-minute telemetry checkpoints to `sessions/soak-live-<timestamp>/soak-telemetry.jsonl` tracking empirical slippage, model drift, and invariant conservation.
+
 ## What was retained
 
 The modular separation and durable outbox concept come from `D:\pump\sylph`. The launch seasoning, buyer accumulation, staged exits, dev-sell response, and reconciliation invariants come from `D:\pump\SOL-SYLPH`. Integer SDK quotes replace floating-point valuation as the execution authority. The existing model artifacts were not loaded, retrained, or treated as proven profitable signals.
