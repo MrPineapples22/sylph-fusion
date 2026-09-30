@@ -46,6 +46,7 @@ export interface RevalidationReport {
 export class RevocationEngine {
   private currentEpoch = 1;
   private readonly activeRevocations = new Map<string, RevocationRecord>();
+  private readonly resolvedRevocations = new Map<string, { record: RevocationRecord; resolvedSlot: number; resolutionReason: string }>();
   private readonly latencySamplesMs: number[] = [];
 
   public getCurrentEpoch(): number {
@@ -85,9 +86,42 @@ export class RevocationEngine {
   }
 
   /**
+   * Resolves an active revocation after verified remediation or recovery (Section 12).
+   * Advances the revocation epoch so active leases revalidate cleanly.
+   */
+  public resolveRevocation(revocationId: string, reason: string, slot: number): boolean {
+    const existing = this.activeRevocations.get(revocationId);
+    if (!existing) return false;
+
+    this.activeRevocations.delete(revocationId);
+    this.resolvedRevocations.set(revocationId, {
+      record: existing,
+      resolvedSlot: slot,
+      resolutionReason: reason,
+    });
+    this.currentEpoch++;
+    return true;
+  }
+
+  /**
+   * Expires stale time-bounded revocations (Section 12).
+   */
+  public expireRevocations(currentSlot: number, maxAgeSlots = 300): number {
+    let expiredCount = 0;
+    for (const [id, rev] of Array.from(this.activeRevocations.entries())) {
+      if (rev.slot > 0 && currentSlot - rev.slot > maxAgeSlots) {
+        this.resolveRevocation(id, `EXPIRED_AGE_SLOTS_${currentSlot - rev.slot}`, currentSlot);
+        expiredCount++;
+      }
+    }
+    return expiredCount;
+  }
+
+  /**
    * Pre-Sign Revocation Barrier & Last-Moment Revalidation (Parts LIX & LX):
    * Placed immediately before irreversible signing to verify no material dependency
    * has changed, expired, or been revoked.
+   * Checks all supported scopes: GLOBAL, TOKEN, POSITION, PROGRAM, WALLET, ROUTE, STRATEGY, SIGNER.
    */
   public verifyRevocationBarrier(params: {
     token_mint: string;
@@ -95,11 +129,15 @@ export class RevocationEngine {
     strategy_id: string;
     route_name: string;
     request_revocation_epoch: number;
+    wallet_address?: string;
+    program_id?: string;
+    position_id?: string;
+    signer_id?: string;
   }): RevalidationReport {
     const startMs = Date.now();
     const blocking: RevocationRecord[] = [];
 
-    // Check epoch stale
+    // Check epoch stale (TOCTOU fence)
     if (params.request_revocation_epoch !== this.currentEpoch) {
       blocking.push({
         revocation_id: `STALE_EPOCH_${params.request_revocation_epoch}`,
@@ -126,6 +164,14 @@ export class RevocationEngine {
       } else if (rev.scope === 'STRATEGY' && rev.target_entity_id === params.strategy_id) {
         blocking.push(rev);
       } else if (rev.scope === 'ROUTE' && rev.target_entity_id === params.route_name) {
+        blocking.push(rev);
+      } else if (rev.scope === 'WALLET' && params.wallet_address && rev.target_entity_id === params.wallet_address) {
+        blocking.push(rev);
+      } else if (rev.scope === 'PROGRAM' && params.program_id && rev.target_entity_id === params.program_id) {
+        blocking.push(rev);
+      } else if (rev.scope === 'POSITION' && ((params.position_id && rev.target_entity_id === params.position_id) || rev.target_entity_id === params.token_mint)) {
+        blocking.push(rev);
+      } else if (rev.scope === 'SIGNER' && params.signer_id && rev.target_entity_id === params.signer_id) {
         blocking.push(rev);
       }
     }
@@ -155,5 +201,9 @@ export class RevocationEngine {
 
   public getActiveRevocations(): readonly RevocationRecord[] {
     return Array.from(this.activeRevocations.values());
+  }
+
+  public getResolvedRevocations(): readonly RevocationRecord[] {
+    return Array.from(this.resolvedRevocations.values()).map(r => r.record);
   }
 }
