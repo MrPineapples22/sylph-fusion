@@ -177,4 +177,26 @@ export class SettlementFirewall {
         return this.settlementStore.get(settlementId);
     }
 }
+export class InMemorySettlementStore {
+    records = new Map();
+    byCycle = new Map();
+    destinations = new Map();
+    async saveSettlementRecord(record) {
+        this.records.set(record.settlementId, { ...record });
+        this.byCycle.set(JSON.stringify([record.vaultId, record.cycleId]), record.settlementId);
+    }
+    async getSettlementRecord(settlementId) {
+        const r = this.records.get(settlementId);
+        return r ? { ...r } : undefined;
+    }
+    async getSettlementByCycle(vaultId, cycleId) {
+        return this.byCycle.get(JSON.stringify([vaultId, cycleId]));
+    }
+    async saveConfirmedDestination(vaultId, address) {
+        this.destinations.set(vaultId, address);
+    }
+    async getConfirmedDestination(vaultId) {
+        return this.destinations.get(vaultId);
+    }
+}
 //# sourceMappingURL=settlement-firewall.js.map
