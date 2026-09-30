@@ -17,6 +17,7 @@ export class PositionSurvivalCore {
     evaluateSurvival(params) {
         const route = params.route_name ?? 'Orca_Whirlpool_Route';
         const numRoutes = params.independent_routes_count ?? 1;
+        let tranches = [];
         // 1. Determine Exit Proof Level (Part XXIII)
         let level = 'E0_UNKNOWN';
         if (!params.has_freeze_authority) {
@@ -24,15 +25,19 @@ export class PositionSurvivalCore {
             if (params.pool_liquidity_sol > 2.0) {
                 level = 'E2_ROUTE_EXISTS';
                 // 2. Partial Exit Proofs at 25%, 50%, 75%, 100% (Part XXIV)
-                const tranches = [25, 50, 75, 100].map((pct) => {
+                // 2. Partial Exit Proofs at 25%, 50%, 75%, 100% (Part XXIV)
+                tranches = [25, 50, 75, 100].map((pct) => {
                     const sliceSol = (params.position_size_sol * pct) / 100;
-                    const impact = (sliceSol / params.pool_liquidity_sol) * 100;
-                    const executable = impact < 25.0 && sliceSol < params.pool_liquidity_sol * 0.4;
+                    const poolSol = params.pool_liquidity_sol;
+                    // Non-linear constant product impact
+                    const nonLinearImpact = (sliceSol / (poolSol + sliceSol)) * 100;
+                    const executable = nonLinearImpact < 25.0 && sliceSol < poolSol * 0.4;
+                    const realisticFee = Math.max(0.0001, sliceSol * 0.0025);
                     return {
                         tranche_pct: pct,
-                        expected_output_sol: sliceSol * (1 - impact / 100),
-                        price_impact_pct: Number(impact.toFixed(2)),
-                        fee_sol: 0.0001,
+                        expected_output_sol: Math.max(0, sliceSol * (1 - nonLinearImpact / 100) - realisticFee),
+                        price_impact_pct: Number(nonLinearImpact.toFixed(2)),
+                        fee_sol: realisticFee,
                         route,
                         is_executable: executable,
                     };
@@ -60,7 +65,7 @@ export class PositionSurvivalCore {
         else if (level === 'E1_SEMANTICALLY_TRANSFERABLE' || level === 'E2_ROUTE_EXISTS') {
             health = 'CRITICAL';
         }
-        // 5. Survival State Root hash (Part XXIX)
+        // 5. Survival State Root hash (Part XXIX) - binding verified tranche outputs
         const survivalStateRoot = createHash('sha256')
             .update(JSON.stringify({
             mint: params.mint,
@@ -70,6 +75,7 @@ export class PositionSurvivalCore {
             health,
             generation: this.evidenceGeneration,
             slot: params.current_slot,
+            tranches: tranches.map(t => ({ p: t.tranche_pct, out: t.expected_output_sol, imp: t.price_impact_pct })),
         }))
             .digest('hex');
         const isValid = (level === 'E3_SIMULATION_PASSES' || level === 'E4_EXECUTABLE_QUOTE_VERIFIED' || level === 'E5_MULTIPLE_INDEPENDENT_ROUTES')

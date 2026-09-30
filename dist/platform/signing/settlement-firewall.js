@@ -14,6 +14,10 @@ export class SettlementFirewall {
     settlementStore = new Map();
     settlementByCycle = new Map();
     confirmedDestinationsByVault = new Map();
+    durableStore;
+    constructor(durableStore) {
+        this.durableStore = durableStore;
+    }
     cycleKey(vaultId, cycleId) {
         return JSON.stringify([vaultId, cycleId]);
     }
@@ -29,6 +33,9 @@ export class SettlementFirewall {
             throw new Error(`Confirmed destination is immutable for vault ${vaultId}`);
         }
         this.confirmedDestinationsByVault.set(vaultId, confirmedDestinationAddress);
+        if (this.durableStore) {
+            this.durableStore.saveConfirmedDestination(vaultId, confirmedDestinationAddress).catch(() => { });
+        }
     }
     getConfirmedDestination(vaultId) {
         return this.confirmedDestinationsByVault.get(vaultId);
@@ -142,6 +149,9 @@ export class SettlementFirewall {
         };
         this.settlementStore.set(req.settlementId, record);
         this.settlementByCycle.set(cycleKey, req.settlementId);
+        if (this.durableStore) {
+            this.durableStore.saveSettlementRecord(record).catch(() => { });
+        }
         return {
             approved: true,
             settlementId: req.settlementId,
@@ -155,6 +165,9 @@ export class SettlementFirewall {
         if (record && record.state === 'AUTHORIZED') {
             record.state = 'SUBMITTED';
             record.submittedAt = Date.now();
+            if (this.durableStore) {
+                this.durableStore.saveSettlementRecord(record).catch(() => { });
+            }
         }
     }
     recordConfirmation(settlementId, txSignature) {
@@ -163,6 +176,9 @@ export class SettlementFirewall {
             record.state = 'CONFIRMED';
             record.confirmedAt = Date.now();
             record.txSignature = txSignature;
+            if (this.durableStore) {
+                this.durableStore.saveSettlementRecord(record).catch(() => { });
+            }
         }
     }
     recordFailure(settlementId, reason) {

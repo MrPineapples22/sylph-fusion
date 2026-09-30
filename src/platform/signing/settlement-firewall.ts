@@ -38,6 +38,11 @@ export class SettlementFirewall {
   private readonly settlementStore: Map<string, SettlementRecord> = new Map();
   private readonly settlementByCycle: Map<string, string> = new Map();
   private readonly confirmedDestinationsByVault: Map<string, string> = new Map();
+  private readonly durableStore?: DurableSettlementStore;
+
+  constructor(durableStore?: DurableSettlementStore) {
+    this.durableStore = durableStore;
+  }
 
   private cycleKey(vaultId: string, cycleId: string): string {
     return JSON.stringify([vaultId, cycleId]);
@@ -55,6 +60,9 @@ export class SettlementFirewall {
       throw new Error(`Confirmed destination is immutable for vault ${vaultId}`);
     }
     this.confirmedDestinationsByVault.set(vaultId, confirmedDestinationAddress);
+    if (this.durableStore) {
+      this.durableStore.saveConfirmedDestination(vaultId, confirmedDestinationAddress).catch(() => {});
+    }
   }
 
   public getConfirmedDestination(vaultId: string): string | undefined {
@@ -179,6 +187,9 @@ export class SettlementFirewall {
 
     this.settlementStore.set(req.settlementId, record);
     this.settlementByCycle.set(cycleKey, req.settlementId);
+    if (this.durableStore) {
+      this.durableStore.saveSettlementRecord(record).catch(() => {});
+    }
 
     return {
       approved: true,
@@ -194,6 +205,9 @@ export class SettlementFirewall {
     if (record && record.state === 'AUTHORIZED') {
       record.state = 'SUBMITTED';
       record.submittedAt = Date.now();
+      if (this.durableStore) {
+        this.durableStore.saveSettlementRecord(record).catch(() => {});
+      }
     }
   }
 
@@ -203,6 +217,9 @@ export class SettlementFirewall {
       record.state = 'CONFIRMED';
       record.confirmedAt = Date.now();
       record.txSignature = txSignature;
+      if (this.durableStore) {
+        this.durableStore.saveSettlementRecord(record).catch(() => {});
+      }
     }
   }
 
