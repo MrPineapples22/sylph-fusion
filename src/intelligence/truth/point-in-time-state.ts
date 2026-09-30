@@ -78,12 +78,27 @@ export class PointInTimeStateEngine {
   private readonly eventsByWallet = new Map<string, CanonicalEvent[]>();
   private readonly globalEvents: CanonicalEvent[] = [];
   private readonly portfolioSnapshots: PortfolioPointInTimeState[] = [];
+  private readonly solPriceObservations: Array<{ timestampMs: number; slot: number; priceUsd: number }> = [];
+
+  /**
+   * Record authoritative point-in-time SOL/USD oracle observation.
+   */
+  public recordSolPrice(timestampMs: number, slot: number, priceUsd: number): void {
+    if (Number.isFinite(priceUsd) && priceUsd > 0) {
+      this.solPriceObservations.push({ timestampMs, slot, priceUsd });
+    }
+  }
 
   /**
    * Ingest canonical event chronologically.
    */
   public ingestEvent(event: CanonicalEvent): void {
     this.globalEvents.push(event);
+
+    const eventPrice = Number(event.payload?.['solPriceUsd'] ?? event.payload?.['oraclePriceUsd']);
+    if (Number.isFinite(eventPrice) && eventPrice > 0) {
+      this.recordSolPrice(event.receivedTimestampMs, event.slot, eventPrice);
+    }
 
     if (event.mint) {
       const list = this.eventsByMint.get(event.mint) ?? [];
@@ -241,10 +256,15 @@ export class PointInTimeStateEngine {
       }
     }
 
+    const latestPrice = this.solPriceObservations
+      .filter((o) => o.timestampMs <= timestampMs)
+      .sort((a, b) => b.timestampMs - a.timestampMs)[0];
+    const solPriceUsd = latestPrice?.priceUsd ?? 0.0;
+
     return {
       asOfTimestampMs: timestampMs,
       asOfSlot: slot,
-      solPriceUsd: 150.0,
+      solPriceUsd,
       solReturn24hPct: 2.5,
       activeTokensCount: activeMints.size,
       launchesLastHourCount: launchesLastHour,

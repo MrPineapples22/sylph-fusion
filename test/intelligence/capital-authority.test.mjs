@@ -309,6 +309,19 @@ test('Survival Core & Evacuation: Dual Admission & Tranche Safety Envelope', () 
   assert.equal(badCert.is_valid, false);
   assert.equal(badCert.exit_proof_level, 'E0_UNKNOWN');
 
+  // 2b. Reject / fail-closed if no verified route exists
+  const noRouteCert = survivalCore.evaluateSurvival({
+    mint: 'mint_no_route',
+    position_size_sol: 1.0,
+    pool_liquidity_sol: 50.0,
+    has_freeze_authority: false,
+    has_mint_authority: false,
+    route_name: 'UNKNOWN_ROUTE',
+    current_slot: 502,
+  });
+  assert.equal(noRouteCert.is_valid, false);
+  assert.equal(noRouteCert.exit_proof_level, 'E0_UNKNOWN');
+
   // 3. Register position in Evacuation Engine
   evacuation.registerPosition({
     mint: 'mint_safe_token',

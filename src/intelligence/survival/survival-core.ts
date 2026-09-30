@@ -63,14 +63,17 @@ export class PositionSurvivalCore {
     independent_routes_count?: number;
     current_slot: number;
   }): SurvivalCertificate {
-    const route = params.route_name ?? 'Orca_Whirlpool_Route';
-    const numRoutes = params.independent_routes_count ?? 1;
+    const hasExplicitRoute = typeof params.route_name === 'string' && params.route_name.trim().length > 0;
+    const route = hasExplicitRoute
+      ? params.route_name!
+      : (params.independent_routes_count && params.independent_routes_count > 0 ? 'canonical_primary_route' : 'UNKNOWN_ROUTE');
+    const numRoutes = params.independent_routes_count ?? (hasExplicitRoute ? 1 : 0);
     let tranches: PartialExitSimulation[] = [];
 
     // 1. Determine Exit Proof Level (Part XXIII)
     let level: ExitProofLevel = 'E0_UNKNOWN';
 
-    if (!params.has_freeze_authority) {
+    if (!params.has_freeze_authority && route !== 'UNKNOWN_ROUTE') {
       level = 'E1_SEMANTICALLY_TRANSFERABLE';
 
       if (params.pool_liquidity_sol > 2.0) {

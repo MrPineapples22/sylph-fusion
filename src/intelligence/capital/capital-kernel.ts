@@ -93,12 +93,14 @@ export class CapitalKernel {
   }
 
   /**
-   * Authority restoration requires explicit proof and complete reconciliation.
+   * Authority restoration requires explicit proof and complete reconciliation via RecoveryCertificate.
+   * Direct boolean restoration without cryptographic certificate verification is strictly rejected (BP §48).
    */
-  public restoreAuthority(targetMode: AuthorityMode, proofConfirmed: boolean): boolean {
-    if (!proofConfirmed) return false;
-    this.authorityMode = targetMode;
-    return true;
+  public restoreAuthority(targetModeOrCert: AuthorityMode | RecoveryCertificate, _proofConfirmed?: boolean): boolean {
+    if (typeof targetModeOrCert === 'object' && targetModeOrCert !== null && 'recovery_id' in targetModeOrCert) {
+      return this.restoreAuthorityWithCertificate(targetModeOrCert);
+    }
+    return false;
   }
 
   /**
@@ -112,6 +114,7 @@ export class CapitalKernel {
     if (cert.signer_state !== 'READY') return false;
     if (cert.market_freshness_ms > 30_000 || cert.market_freshness_ms < 0) return false;
     if (!cert.capital_state_root || cert.capital_state_root.length < 16) return false;
+    if (!cert.position_reconciliation_hash || cert.position_reconciliation_hash.length < 8) return false;
 
     // Validate upward progression step in recovery lattice
     const rank = (m: AuthorityMode) => {

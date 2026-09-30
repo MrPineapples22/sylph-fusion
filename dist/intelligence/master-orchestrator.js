@@ -638,6 +638,10 @@ export class MasterIntelligenceEngine {
     async processEvent(event, context) {
         const requestRevocationEpoch = this.revocationEngine.getCurrentEpoch();
         const targetRoute = context.tokenAgeSec > 300 && context.liquiditySol > 25 ? 'Raydium_Main_Pool' : 'Pump_Bonding_Curve';
+        const pitState = this.pointInTimeState.get_market_state(event.receivedTimestampMs, event.slot);
+        const oracleSolPriceUsd = (typeof context.solPriceUsd === 'number' && context.solPriceUsd > 0)
+            ? context.solPriceUsd
+            : (pitState.solPriceUsd > 0 ? pitState.solPriceUsd : 0.0);
         const trace = new DecisionTrace({
             eventId: event.eventId,
             rootTimestampMs: event.receivedTimestampMs,
@@ -875,7 +879,7 @@ export class MasterIntelligenceEngine {
         // 11. Context Snapshot & OOD Sentinel
         const contextSnapshot = this.contextEngine.captureSnapshot({
             slot: event.slot,
-            solPriceUsd: 150,
+            solPriceUsd: oracleSolPriceUsd,
             solReturn1hPct: 0.5,
             solReturn24hPct: 2.5,
             solVolatilityPct: 3.5,
@@ -1248,6 +1252,8 @@ export class MasterIntelligenceEngine {
             pool_liquidity_sol: context.liquiditySol,
             has_freeze_authority: context.hasFreezeAuthority,
             has_mint_authority: context.hasMintAuthority,
+            route_name: targetRoute,
+            independent_routes_count: 1,
             current_slot: event.slot,
         });
         // 2. Epistemic Proof Debt Evaluation (Part LIII)
@@ -1297,6 +1303,16 @@ export class MasterIntelligenceEngine {
             decision = 'CHALLENGED_ABSTAIN';
             whyExecutionBlocked = 'BLOCKED — OBSERVING MARKET MICROSTRUCTURE';
         }
+        else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
+            decision = 'AUTHORIZED_SELL';
+            const exitResult = this.executeExit({
+                mint: event.mint,
+                netProceedsSol: context.liquiditySol > 0 ? Math.min(context.liquiditySol, 0.5) : 0.45,
+                slot: event.slot,
+                reason: 'POLICY_ROUTER_EXIT',
+            });
+            allocatedSol = exitResult.realizedPnlSol;
+        }
         else if (councilVerdict.state === 'STRONG_CONSENSUS' && councilVerdict.authorizedToProceed && policyDecision.action === 'ENTER' && proofReport.isExecutionReady && survivalCert.is_valid && revalReport.is_cleared_to_sign) {
             const capSnapshot = this.capitalTruth.getSnapshot();
             const proposedSizeSol = 0.5 * regime.riskMultiplier * policyDecision.targetAllocationMultiplier * oodAssessment.allowedCapitalMultiplier;
@@ -1341,7 +1357,7 @@ export class MasterIntelligenceEngine {
                     emergency_reserve_sol: updatedCapSnapshot.emergency_reserve_sol,
                     current_open_positions_count: updatedCapSnapshot.confirmed_positions_count,
                     unresolved_intents_count: updatedCapSnapshot.unresolved_intents_count,
-                    unknown_capital_sol: 0.0,
+                    unknown_capital_sol: updatedCapSnapshot.unresolved_transactions_count > 0 ? updatedCapSnapshot.reserved_cash_sol : 0.0,
                     has_active_reservation: true,
                     has_commit_certificate: !!commitCert.is_durable_committed,
                     has_valid_survival_certificate: survivalCert.is_valid,
@@ -1376,10 +1392,28 @@ export class MasterIntelligenceEngine {
                         max_tip_sol: 0.001,
                         recipient_wallet: this.vaultSigner.getPublicKey(),
                     });
-                    const manifest = VeritasTransactionDecoder.decodeMockManifest({
-                        mint: event.mint,
-                        solDebit: allocatedSol,
-                        recipient: this.vaultSigner.getPublicKey(),
+                    const manifest = this.veritasDecoder.decodeTransaction({
+                        candidate_id: `cand_${event.mint.slice(0, 6)}_${event.slot}`,
+                        fee_payer: this.vaultSigner.getPublicKey(),
+                        instructions: [
+                            {
+                                programId: 'ComputeBudget111111111111111111111111111111',
+                                keys: [{ pubkey: this.vaultSigner.getPublicKey(), isSigner: true, isWritable: true }],
+                                dataLength: 9,
+                            },
+                            {
+                                programId: '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P',
+                                keys: [
+                                    { pubkey: this.vaultSigner.getPublicKey(), isSigner: true, isWritable: true },
+                                    { pubkey: event.mint, isSigner: false, isWritable: true },
+                                ],
+                                dataLength: 24,
+                            },
+                        ],
+                        sol_amount_debit: allocatedSol,
+                        token_mint: event.mint,
+                        jito_tip_sol: 0.0001,
+                        priority_fee_micro_lamports: 10_000,
                     });
                     const sigResponse = this.vaultSigner.processSignatureRequest({
                         request_id: `req_${event.eventId}`,
@@ -1391,7 +1425,7 @@ export class MasterIntelligenceEngine {
                         active_control_epoch: updatedCapSnapshot.control_epoch,
                         active_revocation_epoch: this.revocationEngine.getCurrentEpoch(),
                         production_root: 'sylph_production_root_sha256_v1',
-                        proof_lease_valid: true,
+                        proof_lease_valid: commitCert.expiration_slot > event.slot,
                         serialized_tx_bytes: new Uint8Array([1, 2, 3, 4]),
                     });
                     if (sigResponse.success && sigResponse.signature_base58) {
@@ -1539,7 +1573,7 @@ export class MasterIntelligenceEngine {
         const archimedesApplicability = this.archimedes.verifyApplicability('hyp_fresh_capital_velocity', {
             regime: regime.majorRegime === 'RISK_ON' ? 'RISK_ON' : 'NEUTRAL',
             token_age_sec: context.tokenAgeSec,
-            liquidity_usd: context.liquiditySol * 150,
+            liquidity_usd: context.liquiditySol * oracleSolPriceUsd,
             crowding_pct: canonicalOpp.internal_crowding === 'HIGH' ? 75 : 30,
             horizon: 'SHORT_5M',
         });
@@ -2445,6 +2479,27 @@ export class MasterIntelligenceEngine {
             `System Integrity: NOMINAL (All 8 scientific assurance gates passed)`,
             'Decision Robustness: HIGH',
         ].join('\n');
+    }
+    /**
+     * Authoritatively settles position exit across CapitalTruth and PortfolioEvacuation engines.
+     */
+    executeExit(params) {
+        const fee = params.feeSol ?? 0.0001;
+        const pos = this.capitalTruth.getPosition(params.mint);
+        if (!pos) {
+            return { success: false, realizedPnlSol: 0 };
+        }
+        const result = this.capitalTruth.settleExit({
+            intent_id: `exit_${params.mint.slice(0, 8)}_${params.slot}`,
+            mint: params.mint,
+            sol_received: params.netProceedsSol,
+            fee_sol: fee,
+            is_full_close: true,
+            slot: params.slot,
+        });
+        this.portfolioEvac.removePosition(params.mint);
+        this.liveThesis.invalidateThesis(params.mint, params.reason || 'POSITION_EXIT');
+        return { success: result.success, realizedPnlSol: result.realized_pnl_sol };
     }
     /**
      * System Intelligence & Omega Telemetry

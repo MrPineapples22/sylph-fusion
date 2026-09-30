@@ -67,7 +67,7 @@ export function calculateOptimalBuyPositionValue(
   token: TokenSizingProfile = {},
   options: PositionSizerOptions = {}
 ): DynamicPositionSizingResult {
-  const solPriceUsd = options.solPriceUsd ?? 150;
+  const solPriceUsd = options.solPriceUsd;
   const maxPositions = options.maxPositions ?? 2;
   const activePositions = options.activePositionsCount ?? 0;
   const maxPriceImpactBps = options.maxPriceImpactBps ?? 250; // 2.5% max price impact
@@ -102,8 +102,22 @@ export function calculateOptimalBuyPositionValue(
   // Ensures price impact remains bounded (<= 2.5% default)
   let poolLiquidityUsd = Number(token.liquidity || 0);
   if (!Number.isFinite(poolLiquidityUsd) || poolLiquidityUsd <= 0) {
-    // Default fallback: Standard pump.fun initial curve depth ~30 SOL
-    poolLiquidityUsd = 30 * solPriceUsd; // $4,500
+    if (typeof solPriceUsd === 'number' && solPriceUsd > 0 && typeof (token as any).liquiditySol === 'number' && (token as any).liquiditySol > 0) {
+      poolLiquidityUsd = (token as any).liquiditySol * solPriceUsd;
+    } else {
+      return {
+        optimalUsd: 0,
+        minViableUsd: 0,
+        maxAllowedUsd: 0,
+        baseSlotUsd: 0,
+        unreservedCashUsd,
+        convictionMultiplier: 0,
+        estimatedPriceImpactPct: 0,
+        liquidityCapUsd: 0,
+        rationale: 'Capital allocation blocked: pool liquidity is missing or zero; failing closed',
+        confidenceGrade: 'BLOCKED_RESERVE',
+      };
+    }
   }
 
   const liquidityCapUsd = poolLiquidityUsd * (maxPriceImpactBps / 10000);

@@ -167,6 +167,18 @@ export class LiveThesisEngine {
     getThesis(mint) {
         return this.activeTheses.get(mint);
     }
+    invalidateThesis(mint, reason) {
+        const existing = this.activeTheses.get(mint);
+        if (!existing)
+            return;
+        this.activeTheses.set(mint, {
+            ...existing,
+            lastEvaluatedAtMs: Date.now(),
+            state: 'INVALIDATED',
+            invalidationConditionsMet: [...existing.invalidationConditionsMet, reason],
+            summary: `Thesis INVALIDATED: ${reason}`,
+        });
+    }
     calculateThesisScore(thesis) {
         return thesis.assumptions.reduce((acc, a) => {
             const weight = a.status === 'VERIFIED' ? 1.0 : a.status === 'HOLDING' ? 0.7 : a.status === 'DEGRADED' ? 0.3 : 0.0;
