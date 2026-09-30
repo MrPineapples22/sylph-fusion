@@ -39,9 +39,9 @@ export class Feed {
     this.parser = new EventParser(PUMP_PROGRAM_ID, getPumpProgram(connection).coder);
   }
   healthy() { const age = Date.now() - this.last; return !this.stopped && this.last > 0 && age >= 0 && age < this.cfg.FEED_STALE_MS && Date.now() - this.readySince >= this.cfg.MIN_AGE_MS; }
-  accept(signature: string, slot: number, logs: string[], source: { sourceId: string; providerId: string; transport: string; commitment?: RawObservationEnvelope['commitment']; observedAt?: number } = { sourceId: 'unknown', providerId: 'unknown', transport: 'unknown', commitment: 'unknown' }) {
+  accept(signature: string, slot: number, logs: string[], source: { sourceId: string; providerId: string; transport: string; commitment?: RawObservationEnvelope['commitment']; observedAt?: number; isRepair?: boolean; allowLate?: boolean } = { sourceId: 'unknown', providerId: 'unknown', transport: 'unknown', commitment: 'unknown' }) {
     const now = Date.now();
-    if (this.stopped || !Number.isSafeInteger(slot) || slot < 0 || (this.slot > 0 && slot < this.slot) || typeof signature !== 'string' || !signature || !Array.isArray(logs) || logs.length === 0 || logs.some(line => typeof line !== 'string')) return;
+    if (this.stopped || !Number.isSafeInteger(slot) || slot < 0 || (this.slot > 0 && slot < this.slot && !source?.isRepair && !source?.allowLate) || (this.slot > 0 && this.slot - slot > 1000) || typeof signature !== 'string' || !signature || !Array.isArray(logs) || logs.length === 0 || logs.some(line => typeof line !== 'string')) return;
     try { validateSource(source); } catch { log('feed_source_rejected'); return; }
     // Execution freshness and historical validity are separate.  A late
     // canonical transaction must still be available to repair materialized
@@ -84,8 +84,12 @@ export class Feed {
     if (this.stopped) return;
     // A program-filtered transaction stream does not contain every chain slot.
     this.gapReconciler.registerSlot(slot, decoded.length, false);
-    if (now - this.last >= this.cfg.FEED_STALE_MS) this.readySince = now;
-    this.last = now; this.slot = Math.max(this.slot, slot);
+    const isLate = this.slot > 0 && slot < this.slot;
+    if (!isLate) {
+      if (now - this.last >= this.cfg.FEED_STALE_MS) this.readySince = now;
+      this.last = now;
+      this.slot = Math.max(this.slot, slot);
+    }
   }
   async run() {
     await Promise.all([...this.cfg.WS_URLS.map((url, i) => this.websocket(url, i)), ...(this.cfg.YELLOWSTONE_URL ? [this.geyser()] : [])]);

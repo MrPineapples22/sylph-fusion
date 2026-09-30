@@ -741,10 +741,13 @@ export class Engine {
             let exit = exitDecision(p, value, this.cfg.STOP_BPS);
             // A stop uses emergency execution economics. Re-mark with the panic
             // slippage and panic tip before persisting the mark or recording P&L.
-            if (!p.panic && exit?.reason === 'stop' && !s.curve.complete) {
-                const grossExit = this.market.sellQuote(s, BigInt(p.qty));
-                value = simulationSellProceeds(this.cfg, grossExit, true);
-                exit = exitDecision(p, value, this.cfg.STOP_BPS) ?? exit;
+            if (!p.panic && exit?.reason === 'stop') {
+                try {
+                    const grossExit = this.market.sellQuote(s, BigInt(p.qty));
+                    value = simulationSellProceeds(this.cfg, grossExit, true);
+                    exit = exitDecision(p, value, this.cfg.STOP_BPS) ?? exit;
+                }
+                catch { }
             }
             this.marks.set(p.mint, { value: String(value), at: Date.now() });
             const currentPct = BigInt(p.cost) > 0n ? Number(((value - BigInt(p.cost)) * 10000n) / BigInt(p.cost)) / 100 : 0;
