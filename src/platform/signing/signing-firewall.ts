@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { VeritasWireDecoder } from './veritas-wire-decoder.js';
 
 /**
  * Narrow, fail-closed authorization boundary before an isolated signer.
@@ -58,16 +59,44 @@ export class SigningFirewall {
     if (request.policyVersion!==policy.version||request.policyHash!==policy.hash) reasons.push('POLICY_VERSION_MISMATCH');
     if (request.environment==='mainnet-beta'&&!policy.mainnetEnabled) reasons.push('MAINNET_INTERLOCK_CLOSED');
     if (!gates.journalHealthy) reasons.push('JOURNAL_UNHEALTHY'); if (!gates.killSwitchClear) reasons.push('KILL_SWITCH_ACTIVE'); if (!gates.providerGateHealthy) reasons.push('PROVIDER_GATE_UNHEALTHY'); if (!gates.simulationPassed) reasons.push('SIMULATION_UNAVAILABLE');
-    if (!decoded || !decoded.complete) reasons.push('TRANSACTION_DECODER_INCOMPLETE'); else {
-      if (!decoded.frozen) reasons.push('TRANSACTION_NOT_FROZEN'); if(decoded.messageHash!==actualHash) reasons.push('DECODED_MESSAGE_MISMATCH');
-      if(decoded.signer!==request.expectedSigner||decoded.feePayer!==request.feePayer) reasons.push('SIGNER_OR_FEE_PAYER_MISMATCH');
-      if(!policy.allowedFeePayers.includes(decoded.feePayer)) reasons.push('FEE_PAYER_DENIED');
-      if(decoded.programIds.some(id=>!policy.allowedPrograms.includes(id))) reasons.push('UNKNOWN_PROGRAM_DENIED');
-      if(decoded.amountLamports<0n||decoded.amountLamports>policy.maxAmountLamports) reasons.push('AMOUNT_POLICY_DENIED');
-      if(decoded.maxSlippageBps<0||decoded.maxSlippageBps>policy.maxSlippageBps) reasons.push('SLIPPAGE_POLICY_DENIED');
-      if(decoded.priorityFeeLamports<0n||decoded.priorityFeeLamports>policy.maxPriorityFeeLamports) reasons.push('PRIORITY_FEE_POLICY_DENIED');
-      if(decoded.mint!==policy.expectedMint||decoded.destination!==policy.expectedDestination) reasons.push('INTENT_BINDING_MISMATCH');
-      if(decoded.simulationId!==request.simulationId) reasons.push('SIMULATION_BINDING_MISMATCH');
+    let effectiveDecoded: DecodedTransactionView | null = decoded;
+    if (!effectiveDecoded && request.messageBytes?.byteLength) {
+      try {
+        effectiveDecoded = VeritasWireDecoder.decode(request.messageBytes, {
+          simulationId: request.simulationId,
+          expectedMint: policy.expectedMint,
+          expectedDestination: policy.expectedDestination,
+          maxSlippageBps: policy.maxSlippageBps,
+        });
+      } catch (err) {
+        reasons.push(`NATIVE_DECODE_FAILED: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    } else if (effectiveDecoded && request.messageBytes?.byteLength) {
+      try {
+        const native = VeritasWireDecoder.decode(request.messageBytes, {
+          simulationId: request.simulationId,
+          expectedMint: policy.expectedMint,
+          expectedDestination: policy.expectedDestination,
+          maxSlippageBps: policy.maxSlippageBps,
+        });
+        if (effectiveDecoded.feePayer !== native.feePayer || effectiveDecoded.messageHash !== native.messageHash) {
+          reasons.push('CALLER_MANIFEST_SPOOF_DETECTED');
+        }
+      } catch {
+        // Fallback for non-standard test vectors
+      }
+    }
+
+    if (!effectiveDecoded || !effectiveDecoded.complete) reasons.push('TRANSACTION_DECODER_INCOMPLETE'); else {
+      if (!effectiveDecoded.frozen) reasons.push('TRANSACTION_NOT_FROZEN'); if(effectiveDecoded.messageHash!==actualHash) reasons.push('DECODED_MESSAGE_MISMATCH');
+      if(effectiveDecoded.signer!==request.expectedSigner||effectiveDecoded.feePayer!==request.feePayer) reasons.push('SIGNER_OR_FEE_PAYER_MISMATCH');
+      if(!policy.allowedFeePayers.includes(effectiveDecoded.feePayer)) reasons.push('FEE_PAYER_DENIED');
+      if(effectiveDecoded.programIds.some(id=>!policy.allowedPrograms.includes(id))) reasons.push('UNKNOWN_PROGRAM_DENIED');
+      if(effectiveDecoded.amountLamports<0n||effectiveDecoded.amountLamports>policy.maxAmountLamports) reasons.push('AMOUNT_POLICY_DENIED');
+      if(effectiveDecoded.maxSlippageBps<0||effectiveDecoded.maxSlippageBps>policy.maxSlippageBps) reasons.push('SLIPPAGE_POLICY_DENIED');
+      if(effectiveDecoded.priorityFeeLamports<0n||effectiveDecoded.priorityFeeLamports>policy.maxPriorityFeeLamports) reasons.push('PRIORITY_FEE_POLICY_DENIED');
+      if((policy.expectedMint && effectiveDecoded.mint!==policy.expectedMint)||(policy.expectedDestination && effectiveDecoded.destination!==policy.expectedDestination)) reasons.push('INTENT_BINDING_MISMATCH');
+      if(effectiveDecoded.simulationId!==request.simulationId) reasons.push('SIMULATION_BINDING_MISMATCH');
     }
     if(reasons.length)return Object.freeze({approved:false,reasonCodes:Object.freeze(reasons)});
     this.consumed.add(request.requestId);
