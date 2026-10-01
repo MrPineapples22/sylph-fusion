@@ -101,7 +101,92 @@ export function evaluatePaperVsBaselineComparison({
   };
 }
 
-export function aggregateSessionStats(outcomes = [], fills = [], solPriceUsd = 150) {
+export function groupOutcomesIntoEpisodes(outcomes = []) {
+  if (!Array.isArray(outcomes) || outcomes.length === 0) return [];
+  const episodes = new Map();
+  let nextFallbackId = 1;
+
+  for (const outcome of outcomes) {
+    const positionKey = outcome.positionId ||
+      outcome.position_id ||
+      outcome.candidateId ||
+      outcome.tradeId ||
+      outcome.intentId ||
+      (outcome.tokenMint ? `${outcome.tokenMint}:${outcome.entrySlot || outcome.openTimestamp || 'default'}` : null) ||
+      `episode_${nextFallbackId++}`;
+
+    if (!episodes.has(positionKey)) {
+      episodes.set(positionKey, {
+        positionId: positionKey,
+        candidateId: outcome.candidateId,
+        tokenMint: outcome.tokenMint || outcome.mint,
+        costBasisLamports: 0n,
+        grossProceedsLamports: 0n,
+        dexImpactLamports: 0n,
+        priorityFeeLamports: 0n,
+        jitoTipLamports: 0n,
+        ataRentLamports: 0n,
+        frictionTotalLamports: 0n,
+        netReturnLamports: 0n,
+        censored: false,
+        exitStages: [],
+        exitStage: outcome.exitStage,
+        terminalState: outcome.terminalState,
+        observationDurationMs: 0,
+        subOutcomesCount: 0,
+      });
+    }
+
+    const ep = episodes.get(positionKey);
+    ep.subOutcomesCount++;
+    if (outcome.censored) {
+      ep.censored = true;
+    }
+
+    const cost = BigInt(String(outcome.costBasisLamports || '0'));
+    const proceeds = BigInt(String(outcome.grossProceedsLamports || '0'));
+    const dex = BigInt(String(outcome.dexImpactLamports || '0'));
+    const priority = BigInt(String(outcome.priorityFeeLamports || '0'));
+    const tip = BigInt(String(outcome.jitoTipLamports || '0'));
+    const rent = BigInt(String(outcome.ataRentLamports || '0'));
+    const friction = outcome.frictionTotalLamports
+      ? BigInt(String(outcome.frictionTotalLamports))
+      : (outcome.totalFrictionLamports
+        ? BigInt(String(outcome.totalFrictionLamports))
+        : dex + priority + tip + rent);
+
+    const net = outcome.netReturnLamports
+      ? BigInt(String(outcome.netReturnLamports))
+      : (outcome.netRealizedPnlLamports
+        ? BigInt(String(outcome.netRealizedPnlLamports))
+        : proceeds - cost - friction);
+
+    ep.costBasisLamports += cost;
+    ep.grossProceedsLamports += proceeds;
+    ep.dexImpactLamports += dex;
+    ep.priorityFeeLamports += priority;
+    ep.jitoTipLamports += tip;
+    ep.ataRentLamports += rent;
+    ep.frictionTotalLamports += friction;
+    ep.netReturnLamports += net;
+    ep.observationDurationMs = Math.max(ep.observationDurationMs, Number(outcome.observationDurationMs || outcome.holdingPeriodMs || 0));
+
+    if (outcome.exitStage !== undefined) {
+      ep.exitStages.push(outcome.exitStage);
+      ep.exitStage = outcome.exitStage;
+    }
+    if (outcome.terminalState) {
+      ep.terminalState = outcome.terminalState;
+    }
+  }
+
+  return Array.from(episodes.values());
+}
+
+export function aggregateSessionStats(outcomes = [], fills = [], solPriceUsd = 150, options = {}) {
+  const groupByEpisode = options.groupByEpisode !== false;
+  const processedOutcomes = groupByEpisode ? groupOutcomesIntoEpisodes(outcomes) : outcomes;
+
   let costBasisLamports = 0n;
   let grossProceedsLamports = 0n;
   let dexImpactLamports = 0n;
@@ -132,7 +217,7 @@ export function aggregateSessionStats(outcomes = [], fills = [], solPriceUsd = 1
   let peakEquityLamports = 0n;
   let maxDrawdownLamports = 0n;
 
-  for (const outcome of outcomes) {
+  for (const outcome of processedOutcomes) {
     if (outcome.censored) {
       censoredCount++; exitStageCounts.censored++;
       continue;
@@ -217,7 +302,10 @@ export function aggregateSessionStats(outcomes = [], fills = [], solPriceUsd = 1
     : 0;
 
   return {
-    tradeCount: outcomes.length,
+    tradeCount: processedOutcomes.length,
+    rawTradeCount: outcomes.length,
+    episodeCount: processedOutcomes.length,
+    isEpisodeGrouped: groupByEpisode,
     resolvedTrades,
     winsCount,
     lossesCount,
@@ -226,7 +314,7 @@ export function aggregateSessionStats(outcomes = [], fills = [], solPriceUsd = 1
     lossRatePct: Number(lossRatePct.toFixed(1)),
     payoffRatio: Number(payoffRatio.toFixed(2)),
     profitFactor: Number(profitFactor.toFixed(2)),
-    avgDurationSec: outcomes.length > 0 ? Math.round(totalDurationMs / outcomes.length / 1000) : 0,
+    avgDurationSec: processedOutcomes.length > 0 ? Math.round(totalDurationMs / processedOutcomes.length / 1000) : 0,
     costBasisSol: toSol(costBasisLamports),
     grossProceedsSol: toSol(grossProceedsLamports),
     frictionTotalSol: toSol(totalFrictionLamports),

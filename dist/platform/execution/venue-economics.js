@@ -39,7 +39,9 @@ export class VenueEconomicsAuthority {
                 evaluatedAmountLamports: params.evaluatedAmountLamports,
                 venuesEvaluated: params.venueCandidates,
                 selectedVenue: fallback,
+                expectedAlphaLamports: params.expectedAlphaLamports ?? 0n,
                 expectedNetRoundTripEVLamports: 0n,
+                estimatedNetTerminalCapitalLamports: 0n,
                 issuedAtSlot: params.slot,
                 isApprovedForEntry: false,
                 rejectionReason: 'No venue met round-trip exitability and capital trapping safety thresholds',
@@ -57,7 +59,15 @@ export class VenueEconomicsAuthority {
             return b.landingProbability - a.landingProbability;
         });
         const selectedVenue = viableVenues[0];
-        const payload = `${params.mint}:${params.slot}:${selectedVenue.venue}:${selectedVenue.netRoundTripCostLamports}`;
+        const expectedAlpha = params.expectedAlphaLamports ?? 0n;
+        const expectedNetRoundTripEVLamports = expectedAlpha - selectedVenue.netRoundTripCostLamports;
+        const estimatedNetTerminalCapitalLamports = params.evaluatedAmountLamports + expectedAlpha - selectedVenue.netRoundTripCostLamports;
+        const isEvPositive = expectedNetRoundTripEVLamports > 0n;
+        const isApprovedForEntry = params.requirePositiveEV ? isEvPositive : true;
+        const rejectionReason = !isApprovedForEntry
+            ? `Negative expected round-trip EV (${expectedNetRoundTripEVLamports} lamports) after venue fees and execution impact`
+            : undefined;
+        const payload = `${params.mint}:${params.slot}:${selectedVenue.venue}:${selectedVenue.netRoundTripCostLamports}:${expectedNetRoundTripEVLamports}:${isApprovedForEntry}`;
         const digest = createHash('sha256').update(payload).digest('hex');
         return {
             certificateId: `ROUNDTRIP-${digest.slice(0, 16)}`,
@@ -65,9 +75,12 @@ export class VenueEconomicsAuthority {
             evaluatedAmountLamports: params.evaluatedAmountLamports,
             venuesEvaluated: params.venueCandidates,
             selectedVenue,
-            expectedNetRoundTripEVLamports: params.evaluatedAmountLamports - selectedVenue.netRoundTripCostLamports,
+            expectedAlphaLamports: expectedAlpha,
+            expectedNetRoundTripEVLamports,
+            estimatedNetTerminalCapitalLamports,
             issuedAtSlot: params.slot,
-            isApprovedForEntry: true,
+            isApprovedForEntry,
+            rejectionReason,
             digest
         };
     }

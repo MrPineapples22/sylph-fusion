@@ -96,6 +96,8 @@ export class Executor {
         return { instructions, alts, output: BigInt(quote.outAmount) };
     }
     async build(s, side, amount, creator, stage, reason, panic) {
+        if (Date.now() - s.at > this.cfg.QUOTE_MAX_AGE_MS)
+            throw new Error('quote expired');
         const started = performance.now(), slippage = panic ? this.cfg.PANIC_SLIPPAGE_BPS : this.cfg.SLIPPAGE_BPS;
         let instructions, alts = [];
         let output;
@@ -225,7 +227,11 @@ export class Executor {
             throw new Error('compute budget exceeds chain limit');
         const maxPrice = BigInt(this.cfg.MAX_PRIORITY_LAMPORTS) * 1000000n / BigInt(units);
         const price = suggested > maxPrice ? maxPrice : suggested;
-        const transaction = await make(units, price), wire = Buffer.from(transaction.serialize()).toString('base64');
+        const transaction = await make(units, price);
+        const finalSim = await c.simulateTransaction(transaction, { sigVerify: true, commitment: 'confirmed', minContextSlot: s.slot });
+        if (finalSim.value.err)
+            throw new Error(`final transaction simulation failed: ${JSON.stringify(finalSim.value.err)}`);
+        const wire = Buffer.from(transaction.serialize()).toString('base64');
         if (Buffer.from(wire, 'base64').length > 1232)
             throw new Error('transaction exceeds packet limit');
         if (Date.now() - s.at > this.cfg.QUOTE_MAX_AGE_MS)

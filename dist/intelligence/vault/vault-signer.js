@@ -13,6 +13,7 @@ import { VeritasTransactionDecoder } from './effect-spec.js';
 export class VaultSigner {
     keypair;
     hardwareSigner;
+    durableSigner;
     maxSolPerTx;
     dailyCapSol;
     currentControlEpoch = 1;
@@ -23,7 +24,8 @@ export class VaultSigner {
     signedRegistry = new Map();
     constructor(options) {
         this.hardwareSigner = options?.hardwareSigner;
-        this.keypair = options?.keypair ?? (options?.hardwareSigner ? undefined : Keypair.fromSeed(Uint8Array.from(Buffer.alloc(32, 42))));
+        this.durableSigner = options?.durableSigner;
+        this.keypair = options?.keypair ?? (options?.hardwareSigner || options?.durableSigner ? undefined : Keypair.fromSeed(Uint8Array.from(Buffer.alloc(32, 42))));
         this.maxSolPerTx = options?.maxSolPerTx ?? 2.5;
         this.dailyCapSol = options?.dailyCapSol ?? 25.0;
         this.productionRoot = options?.productionRoot ?? 'sylph_production_root_sha256_v1';
@@ -105,7 +107,7 @@ export class VaultSigner {
                 execution_timestamp_ms: Date.now(),
             };
         }
-        // 5. Verify Durable Commit Certificate
+        // 5. Verify Durable Commit Certificate & Intent Identity
         if (!request.commit_certificate?.is_durable_committed) {
             return {
                 success: false,
@@ -114,6 +116,48 @@ export class VaultSigner {
                 denial_reason: 'NO_DURABLE_COMMIT: Write-Ahead Log commit confirmation missing',
                 execution_timestamp_ms: Date.now(),
             };
+        }
+        if (request.commit_certificate.intent_id !== request.intent_id) {
+            return {
+                success: false,
+                sign_operation_id: opId,
+                signing_state: 'REJECTED',
+                denial_reason: `COMMIT_INTENT_MISMATCH: req=${request.intent_id}, cert=${request.commit_certificate.intent_id}`,
+                execution_timestamp_ms: Date.now(),
+            };
+        }
+        // 5b. Verify SignerAdmissionEnvelopeV1 if present
+        if (request.envelope) {
+            if (request.envelope.intentId !== request.intent_id) {
+                return {
+                    success: false,
+                    sign_operation_id: opId,
+                    signing_state: 'REJECTED',
+                    denial_reason: `ENVELOPE_INTENT_MISMATCH: req=${request.intent_id}, env=${request.envelope.intentId}`,
+                    execution_timestamp_ms: Date.now(),
+                };
+            }
+            if (request.envelope.controlEpoch !== this.currentControlEpoch || request.envelope.revocationEpoch !== this.currentRevocationEpoch) {
+                return {
+                    success: false,
+                    sign_operation_id: opId,
+                    signing_state: 'REJECTED',
+                    denial_reason: 'ENVELOPE_EPOCH_STALE: Admission envelope epochs do not match active vault epochs',
+                    execution_timestamp_ms: Date.now(),
+                };
+            }
+            if (request.serialized_tx_bytes) {
+                const actualHash = createHash('sha256').update(request.serialized_tx_bytes).digest('hex');
+                if (actualHash !== request.envelope.exactMessageHash) {
+                    return {
+                        success: false,
+                        sign_operation_id: opId,
+                        signing_state: 'REJECTED',
+                        denial_reason: 'ENVELOPE_MESSAGE_HASH_MISMATCH: Serialized tx bytes hash does not match admission envelope',
+                        execution_timestamp_ms: Date.now(),
+                    };
+                }
+            }
         }
         // 6. Verify Proof Lease validity
         if (!request.proof_lease_valid) {
@@ -249,7 +293,22 @@ export class VaultSigner {
         }
         let signatureBase58;
         let isSimulation = false;
-        if (this.hardwareSigner) {
+        if (this.durableSigner) {
+            const txBytes = request.serialized_tx_bytes ?? Buffer.from(request.intent_id);
+            const msgSha256 = createHash('sha256').update(txBytes).digest('hex');
+            const grant = {
+                grantId: `grant_${request.intent_id}_${Date.now()}`,
+                economicIntentId: request.intent_id,
+                wallet: this.getPublicKey(),
+                messageSha256: msgSha256,
+                issuedAtMs: Date.now(),
+                expiresAtMs: Date.now() + 30_000,
+                controlEpoch: this.currentControlEpoch,
+            };
+            const rawSig = await this.durableSigner.sign(grant, txBytes);
+            signatureBase58 = bs58.encode(rawSig);
+        }
+        else if (this.hardwareSigner) {
             const txBytes = request.serialized_tx_bytes ?? Buffer.from(request.intent_id);
             const rawSig = await this.hardwareSigner.signAuthorizedMessage(txBytes);
             signatureBase58 = bs58.encode(rawSig);

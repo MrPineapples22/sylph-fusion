@@ -153,7 +153,9 @@ export class Market {
     const fees = computeFeesBps({ global: s.global, feeConfig: s.fee, mintSupply: new BN(String(s.supply)), virtualQuoteReserves: s.curve.virtualQuoteReserves, virtualTokenReserves: s.curve.virtualTokenReserves, quoteMint: s.curve.quoteMint, creatorFeeBps: s.curve.creatorFeeBps });
     if (fees.protocolFeeBps.add(fees.creatorFeeBps).gtn(this.cfg.MAX_FEE_BPS)) throw new Error('fee cap exceeded');
     const input = BigInt(this.cfg.BUY_LAMPORTS), output = this.buyQuote(s, input);
-    const spotOutput = input * BigInt(s.curve.virtualTokenReserves.toString()) / BigInt(s.curve.virtualQuoteReserves.toString());
+    const totalFeeBps = BigInt(fees.protocolFeeBps.add(fees.creatorFeeBps).toNumber());
+    const netInput = (input * 10_000n) / (10_000n + totalFeeBps);
+    const spotOutput = (netInput * BigInt(s.curve.virtualTokenReserves.toString())) / BigInt(s.curve.virtualQuoteReserves.toString());
     if (output <= 0n || output < mulBps(spotOutput, 10_000 - this.cfg.MAX_IMPACT_BPS)) throw new Error('entry impact exceeds cap');
   }
   async safety(s: Snapshot, creator: string): Promise<void> {

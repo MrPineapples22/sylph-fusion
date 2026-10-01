@@ -57,6 +57,24 @@ test('DecisionTrace & Backpressure: propagates correlation IDs and preserves P0 
   assert.equal(serialized.overallStatus, 'PASS');
   assert.match(serialized.steps[0].inputsHash, /^[a-f0-9]{64}$/);
 
+  // Finalize and seal the trace
+  const finalized = trace.finalize();
+  assert.equal(trace.isSealed(), true);
+  assert.match(finalized.traceHash, /^[a-f0-9]{64}$/);
+  assert.equal(trace.getTraceHash(), finalized.traceHash);
+
+  // Attempting to record step on sealed trace must throw
+  assert.throws(() => {
+    trace.recordStep({
+      stepName: 'illegal_post_finalize_step',
+      componentId: 'token-inspector',
+      durationMs: 1,
+      inputs: {},
+      outputs: {},
+      status: 'FAIL',
+    });
+  }, /sealed against mutation/);
+
   // Priority Backpressure
   const bp = new PriorityBackpressureController(10); // Small limit to test shedding
 

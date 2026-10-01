@@ -4,6 +4,7 @@ import {
   evaluatePaperVsBaselineComparison,
   aggregateSessionStats,
   evaluateFilterAlpha,
+  groupOutcomesIntoEpisodes,
 } from '../src/paper-baseline-eval.js';
 
 test('aggregateSessionStats correctly calculates net P&L after friction, win rate, and drawdown', () => {
@@ -183,3 +184,60 @@ test('evaluatePaperVsBaselineComparison flags small sample, censored tokens, and
   assert.match(res.sampleValidity.censoredNotice, /right-censored and excluded/);
   assert.match(res.sampleValidity.unavailableNotice, /fail-closed as model-unavailable/);
 });
+
+test('groupOutcomesIntoEpisodes eliminates pseudoreplication across multi-stage partial fills', () => {
+  // A single position (pos_alpha) exited via TP1 (33%), TP2 (33%), and Stop Loss (34%)
+  const partialOutcomes = [
+    {
+      positionId: 'pos_alpha',
+      costBasisLamports: '33000000',
+      grossProceedsLamports: '45000000', // +12M lamports
+      frictionTotalLamports: '1000000',
+      netReturnLamports: '11000000',
+      exitStage: 1,
+      observationDurationMs: 15000,
+    },
+    {
+      positionId: 'pos_alpha',
+      costBasisLamports: '33000000',
+      grossProceedsLamports: '50000000', // +17M lamports
+      frictionTotalLamports: '1000000',
+      netReturnLamports: '16000000',
+      exitStage: 2,
+      observationDurationMs: 30000,
+    },
+    {
+      positionId: 'pos_alpha',
+      costBasisLamports: '34000000',
+      grossProceedsLamports: '25000000', // -9M lamports
+      frictionTotalLamports: '1000000',
+      netReturnLamports: '-10000000',
+      exitStage: 0,
+      terminalState: 'stop_loss',
+      observationDurationMs: 45000,
+    },
+  ];
+
+  // Raw un-grouped stats would show 3 trades, 2 wins, 1 loss (distorting win rate to 66.7%)
+  const rawStats = aggregateSessionStats(partialOutcomes, [], 150, { groupByEpisode: false });
+  assert.equal(rawStats.tradeCount, 3);
+  assert.equal(rawStats.winsCount, 2);
+  assert.equal(rawStats.lossesCount, 1);
+  assert.equal(rawStats.winRatePct, 66.7);
+
+  // Default grouped episode stats correctly aggregate into 1 single position episode
+  const episodeStats = aggregateSessionStats(partialOutcomes, [], 150);
+  assert.equal(episodeStats.tradeCount, 1); // 1 position episode!
+  assert.equal(episodeStats.rawTradeCount, 3);
+  assert.equal(episodeStats.episodeCount, 1);
+  assert.equal(episodeStats.isEpisodeGrouped, true);
+  // Net return = 11M + 16M - 10M = 17M lamports (> 0, so 1 win)
+  assert.equal(episodeStats.winsCount, 1);
+  assert.equal(episodeStats.lossesCount, 0);
+  assert.equal(episodeStats.winRatePct, 100.0);
+  assert.equal(episodeStats.costBasisSol, 0.1); // 33M + 33M + 34M = 100M = 0.1 SOL
+  assert.equal(episodeStats.grossProceedsSol, 0.12); // 45M + 50M + 25M = 120M = 0.12 SOL
+  assert.equal(episodeStats.frictionTotalSol, 0.003); // 3M = 0.003 SOL
+  assert.equal(Number(episodeStats.netReturnSol.toFixed(5)), 0.017); // 17M lamports
+});
+

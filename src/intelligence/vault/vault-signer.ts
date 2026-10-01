@@ -12,7 +12,8 @@ import { createHash } from 'node:crypto';
 import bs58 from 'bs58';
 import type { CommitCertificate } from '../capital/capital-truth-engine.js';
 import { VeritasTransactionDecoder, type EffectSpec, type TransactionManifest } from './effect-spec.js';
-import type { IsolatedMessageSigner } from '../../platform/signing/durable-live-signer.js';
+import { DurableLiveSigner, type IsolatedMessageSigner, type LiveSigningGrant } from '../../platform/signing/durable-live-signer.js';
+import type { SignerAdmissionEnvelopeV1 } from './signer-admission-envelope.js';
 
 export type SigningCapability =
   | 'SIGN_ENTRY'
@@ -41,6 +42,7 @@ export interface SignatureRequest {
   readonly effect_spec?: EffectSpec;
   readonly manifest?: TransactionManifest;
   readonly commit_certificate?: CommitCertificate;
+  readonly envelope?: SignerAdmissionEnvelopeV1;
   readonly active_control_epoch?: number;
   readonly active_revocation_epoch?: number;
   readonly production_root?: string;
@@ -72,6 +74,7 @@ export interface CapitalFirewallStatus {
 export interface VaultSignerOptions {
   readonly keypair?: Keypair;
   readonly hardwareSigner?: IsolatedMessageSigner;
+  readonly durableSigner?: DurableLiveSigner;
   readonly maxSolPerTx?: number;
   readonly dailyCapSol?: number;
   readonly productionRoot?: string;
@@ -82,6 +85,7 @@ export interface VaultSignerOptions {
 export class VaultSigner {
   private readonly keypair?: Keypair;
   private readonly hardwareSigner?: IsolatedMessageSigner;
+  private readonly durableSigner?: DurableLiveSigner;
   private readonly maxSolPerTx: number;
   private readonly dailyCapSol: number;
   private currentControlEpoch = 1;
@@ -98,7 +102,8 @@ export class VaultSigner {
 
   constructor(options?: VaultSignerOptions) {
     this.hardwareSigner = options?.hardwareSigner;
-    this.keypair = options?.keypair ?? (options?.hardwareSigner ? undefined : Keypair.fromSeed(Uint8Array.from(Buffer.alloc(32, 42))));
+    this.durableSigner = options?.durableSigner;
+    this.keypair = options?.keypair ?? (options?.hardwareSigner || options?.durableSigner ? undefined : Keypair.fromSeed(Uint8Array.from(Buffer.alloc(32, 42))));
     this.maxSolPerTx = options?.maxSolPerTx ?? 2.5;
     this.dailyCapSol = options?.dailyCapSol ?? 25.0;
     this.productionRoot = options?.productionRoot ?? 'sylph_production_root_sha256_v1';
@@ -191,7 +196,7 @@ export class VaultSigner {
       };
     }
 
-    // 5. Verify Durable Commit Certificate
+    // 5. Verify Durable Commit Certificate & Intent Identity
     if (!request.commit_certificate?.is_durable_committed) {
       return {
         success: false,
@@ -200,6 +205,49 @@ export class VaultSigner {
         denial_reason: 'NO_DURABLE_COMMIT: Write-Ahead Log commit confirmation missing',
         execution_timestamp_ms: Date.now(),
       };
+    }
+    if (request.commit_certificate.intent_id !== request.intent_id) {
+      return {
+        success: false,
+        sign_operation_id: opId,
+        signing_state: 'REJECTED',
+        denial_reason: `COMMIT_INTENT_MISMATCH: req=${request.intent_id}, cert=${request.commit_certificate.intent_id}`,
+        execution_timestamp_ms: Date.now(),
+      };
+    }
+
+    // 5b. Verify SignerAdmissionEnvelopeV1 if present
+    if (request.envelope) {
+      if (request.envelope.intentId !== request.intent_id) {
+        return {
+          success: false,
+          sign_operation_id: opId,
+          signing_state: 'REJECTED',
+          denial_reason: `ENVELOPE_INTENT_MISMATCH: req=${request.intent_id}, env=${request.envelope.intentId}`,
+          execution_timestamp_ms: Date.now(),
+        };
+      }
+      if (request.envelope.controlEpoch !== this.currentControlEpoch || request.envelope.revocationEpoch !== this.currentRevocationEpoch) {
+        return {
+          success: false,
+          sign_operation_id: opId,
+          signing_state: 'REJECTED',
+          denial_reason: 'ENVELOPE_EPOCH_STALE: Admission envelope epochs do not match active vault epochs',
+          execution_timestamp_ms: Date.now(),
+        };
+      }
+      if (request.serialized_tx_bytes) {
+        const actualHash = createHash('sha256').update(request.serialized_tx_bytes).digest('hex');
+        if (actualHash !== request.envelope.exactMessageHash) {
+          return {
+            success: false,
+            sign_operation_id: opId,
+            signing_state: 'REJECTED',
+            denial_reason: 'ENVELOPE_MESSAGE_HASH_MISMATCH: Serialized tx bytes hash does not match admission envelope',
+            execution_timestamp_ms: Date.now(),
+          };
+        }
+      }
     }
 
     // 6. Verify Proof Lease validity
@@ -354,7 +402,21 @@ export class VaultSigner {
     let signatureBase58: string;
     let isSimulation = false;
 
-    if (this.hardwareSigner) {
+    if (this.durableSigner) {
+      const txBytes = request.serialized_tx_bytes ?? Buffer.from(request.intent_id);
+      const msgSha256 = createHash('sha256').update(txBytes).digest('hex');
+      const grant: LiveSigningGrant = {
+        grantId: `grant_${request.intent_id}_${Date.now()}`,
+        economicIntentId: request.intent_id,
+        wallet: this.getPublicKey(),
+        messageSha256: msgSha256,
+        issuedAtMs: Date.now(),
+        expiresAtMs: Date.now() + 30_000,
+        controlEpoch: this.currentControlEpoch,
+      };
+      const rawSig = await this.durableSigner.sign(grant, txBytes);
+      signatureBase58 = bs58.encode(rawSig);
+    } else if (this.hardwareSigner) {
       const txBytes = request.serialized_tx_bytes ?? Buffer.from(request.intent_id);
       const rawSig = await this.hardwareSigner.signAuthorizedMessage(txBytes);
       signatureBase58 = bs58.encode(rawSig);

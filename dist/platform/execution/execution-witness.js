@@ -104,10 +104,12 @@ export class ExecutionWitnessAuthority {
         if (simulation.unitsConsumed > witness.computeUnitsLimit) {
             throw new WitnessInvariantViolationError(`Simulation consumed ${simulation.unitsConsumed} CU exceeding configured limit ${witness.computeUnitsLimit}`);
         }
-        // Attach simulation
+        // Attach simulation and re-seal witnessDigest
         witness.simulationResult = simulation;
         witness.computeUnitsSimulated = simulation.unitsConsumed;
         witness.stage = 'SIMULATED';
+        const updatedPayload = `${witness.witnessDigest}:${simulation.unitsConsumed}:${simulation.simulatedStateHash}`;
+        witness.witnessDigest = createHash('sha256').update(updatedPayload).digest('hex');
         return witness;
     }
     /**
@@ -127,18 +129,22 @@ export class ExecutionWitnessAuthority {
         if (nowMs - lease.leasedAtMs > lease.maxAgeMs) {
             throw new WitnessInvariantViolationError(`ExecutionStateLease expired for witness ${witnessId}: age ${nowMs - lease.leasedAtMs}ms exceeds max ${lease.maxAgeMs}ms`);
         }
-        // Verify critical account hashes have not drifted
+        // Verify slot boundary
+        if (currentSlot < lease.snapshotSlot || currentSlot > lease.snapshotSlot + 300) {
+            throw new WitnessInvariantViolationError(`Slot boundary violation for witness ${witnessId}: currentSlot ${currentSlot} outside allowed window [${lease.snapshotSlot}, ${lease.snapshotSlot + 300}]`);
+        }
+        // Verify critical account hashes have not drifted (fail closed on missing observation)
         for (const [acc, expectedHash] of Object.entries(lease.criticalAccountHashes)) {
             const observed = observedAccountHashes[acc];
-            if (observed && observed !== expectedHash) {
-                throw new WitnessInvariantViolationError(`State drift on account ${acc} for witness ${witnessId}: expected ${expectedHash}, observed ${observed}`);
+            if (!observed || observed !== expectedHash) {
+                throw new WitnessInvariantViolationError(`State drift on account ${acc} for witness ${witnessId}: expected ${expectedHash}, observed ${observed ?? 'MISSING'}`);
             }
         }
-        // 2. Verify ALT Certification (Section 33)
+        // 2. Verify ALT Certification (Section 33) (fail closed on missing observation)
         for (const alt of witness.altCertificates) {
             const observedAltHash = observedAltHashes[alt.lookupTableAddress];
-            if (observedAltHash && observedAltHash !== alt.tableAccountHash) {
-                throw new WitnessInvariantViolationError(`ALT Integrity Violation on table ${alt.lookupTableAddress}: expected hash ${alt.tableAccountHash}, observed ${observedAltHash}`);
+            if (!observedAltHash || observedAltHash !== alt.tableAccountHash) {
+                throw new WitnessInvariantViolationError(`ALT Integrity Violation on table ${alt.lookupTableAddress}: expected hash ${alt.tableAccountHash}, observed ${observedAltHash ?? 'MISSING'}`);
             }
         }
         witness.stage = 'AUTHORIZED';

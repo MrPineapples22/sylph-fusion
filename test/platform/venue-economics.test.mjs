@@ -98,4 +98,64 @@ describe('VENUE ECONOMICS & PORTFOLIO EXITNET (Sections 55, 56)', () => {
     // Position scale = 1 / 1.8 ~= 0.55 (scaled down)
     assert.ok(bottleneckedEval.maxRecommendedPositionScale < 0.6);
   });
+
+  it('correctly calculates net round-trip EV and enforces requirePositiveEV gate', () => {
+    const authority = new VenueEconomicsAuthority();
+    const mint = 'TokenEVTest11111111111111111111111111111111';
+
+    const venue = {
+      venue: 'PUMP_FUN',
+      entryPriceLamports: 1000n,
+      entryFeeLamports: 10000n,
+      entryImpactBps: 50,
+      expectedExitPriceLamports: 1000n,
+      expectedExitFeeLamports: 10000n,
+      expectedExitImpactBps: 50,
+      landingProbability: 0.99,
+      capitalTrappingRiskBps: 50,
+      netRoundTripCostLamports: 20000n, // 0.00002 SOL cost
+      isViable: true
+    };
+
+    // 1. Without alpha, net EV is -netRoundTripCostLamports
+    const certWithoutAlpha = authority.evaluateRoundTripEconomics({
+      mint,
+      evaluatedAmountLamports: 100000000n,
+      slot: 289450010,
+      venueCandidates: [venue]
+    });
+
+    assert.equal(certWithoutAlpha.isApprovedForEntry, true);
+    assert.equal(certWithoutAlpha.expectedAlphaLamports, 0n);
+    assert.equal(certWithoutAlpha.expectedNetRoundTripEVLamports, -20000n);
+    assert.equal(certWithoutAlpha.estimatedNetTerminalCapitalLamports, 100000000n - 20000n);
+
+    // 2. With requirePositiveEV enabled and zero alpha -> rejected fail-closed
+    const certRejected = authority.evaluateRoundTripEconomics({
+      mint,
+      evaluatedAmountLamports: 100000000n,
+      slot: 289450011,
+      venueCandidates: [venue],
+      requirePositiveEV: true
+    });
+
+    assert.equal(certRejected.isApprovedForEntry, false);
+    assert.ok(certRejected.rejectionReason.includes('Negative expected round-trip EV'));
+
+    // 3. With positive alpha exceeding round-trip cost -> approved
+    const certWithAlpha = authority.evaluateRoundTripEconomics({
+      mint,
+      evaluatedAmountLamports: 100000000n,
+      slot: 289450012,
+      venueCandidates: [venue],
+      expectedAlphaLamports: 50000n,
+      requirePositiveEV: true
+    });
+
+    assert.equal(certWithAlpha.isApprovedForEntry, true);
+    assert.equal(certWithAlpha.expectedAlphaLamports, 50000n);
+    assert.equal(certWithAlpha.expectedNetRoundTripEVLamports, 30000n); // 50000 - 20000
+    assert.equal(certWithAlpha.estimatedNetTerminalCapitalLamports, 100000000n + 30000n);
+  });
 });
+

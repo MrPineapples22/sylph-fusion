@@ -71,7 +71,7 @@ All 50 controls from the Exit Excellence charter are catalogued and verified:
 
 ## 4. Historical Defect Status Summary
 
-Of the 78 historical defects audited:
-- **76 items FIXED and VERIFIED** with deterministic tests and runtime evidence.
+Of the 83 historical defects audited:
+- **81 items FIXED and VERIFIED** with deterministic tests and runtime evidence.
 - **2 items BLOCKED_EXTERNAL** (Isolated KMS HSM hardware signer credentials, and Mainnet funded wallet operator ceremony), both safely enforced by fail-closed release gates (`LIVE_SIGNING_UNAVAILABLE`, `PAPER_ONLY_RUNTIME`).
 - **0 UNRESOLVED internal architectural defects.**
