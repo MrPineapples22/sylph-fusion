@@ -4,13 +4,20 @@ import { PUMP_SDK } from '@pump-fun/pump-sdk';
 import { ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, NATIVE_MINT, getAssociatedTokenAddressSync } from '@solana/spl-token';
 import BN from 'bn.js';
 import bs58 from 'bs58';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { httpJson, RpcPool } from './rpc.js';
 import { Market, type Snapshot } from './market.js';
 import { ceilDiv, log, mulBps, type Pending } from './core.js';
 import type { Config } from './config.js';
+import { SigningFirewall } from './platform/signing/signing-firewall.js';
 
 const JUPITER_PROGRAM = new PublicKey('JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4');
+
+export interface ExecutionSignerGateway {
+  readonly publicKey: PublicKey;
+  signTransactionMessage(messageBytes: Uint8Array): Promise<Uint8Array>;
+}
+
 export type Built = {
   pending: Pending;
   tokenDelta: bigint;
@@ -39,8 +46,16 @@ export class Executor {
   private floor = 0;
   private lastSubmit = 0;
   private readonly jitoCoordinator: JitoLifecycleCoordinator;
-  constructor(readonly cfg: Config, readonly rpc: RpcPool, readonly market: Market, readonly key: Keypair) {
+  private readonly signingFirewall: SigningFirewall;
+  constructor(
+    readonly cfg: Config,
+    readonly rpc: RpcPool,
+    readonly market: Market,
+    readonly key: Keypair | ExecutionSignerGateway,
+    signingFirewall?: SigningFirewall,
+  ) {
     this.jitoCoordinator = new JitoLifecycleCoordinator(this.cfg.JITO_URL, this.cfg.JITO_AUTH, this.cfg.RPC_TIMEOUT_MS);
+    this.signingFirewall = signingFirewall ?? new SigningFirewall();
   }
   private async jito<T>(method: string, params: unknown[]): Promise<T> {
     const response = await httpJson<{ result?: T; error?: unknown }>(this.cfg.JITO_URL, this.cfg.RPC_TIMEOUT_MS, {
@@ -141,19 +156,87 @@ export class Executor {
     ]);
     const samples = recent.map(x => x.prioritizationFee).filter(x => Number.isSafeInteger(x) && x >= 0).sort((a, b) => a - b);
     const suggested = BigInt(samples[Math.floor(samples.length * 0.75)] ?? 1000) * BigInt(panic ? 2 : 1);
-    const make = (units: number, price: bigint) => {
-      const msg = new TransactionMessage({ payerKey: this.key.publicKey, recentBlockhash: hash.value.blockhash,
-        instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: price }), ...instructions] }).compileToV0Message(alts);
-      const tx = new VersionedTransaction(msg); tx.sign([this.key]); return tx;
+    const make = async (units: number, price: bigint) => {
+      const msg = new TransactionMessage({
+        payerKey: this.key.publicKey,
+        recentBlockhash: hash.value.blockhash,
+        instructions: [
+          ComputeBudgetProgram.setComputeUnitLimit({ units }),
+          ComputeBudgetProgram.setComputeUnitPrice({ microLamports: price }),
+          ...instructions,
+        ],
+      }).compileToV0Message(alts);
+
+      const messageBytes = msg.serialize();
+      const messageSha256 = createHash('sha256').update(messageBytes).digest('hex');
+
+      // Enforce Signing Firewall Policy before signing
+      const decision = this.signingFirewall.evaluate(
+        {
+          requestId: randomUUID(),
+          environment: 'mainnet-beta',
+          messageBytes,
+          messageHash: messageSha256,
+          expectedSigner: this.key.publicKey.toBase58(),
+          feePayer: this.key.publicKey.toBase58(),
+          policyVersion: '1.0.0',
+          policyHash: 'default_executor_policy',
+          intentId: randomUUID(),
+          simulationId: randomUUID(),
+          expiresAt: Date.now() + 60_000,
+        },
+        null,
+        {
+          version: '1.0.0',
+          hash: 'default_executor_policy',
+          allowedPrograms: [
+            '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P',
+            'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4',
+            'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+            'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb',
+            'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL',
+            'ComputeBudget111111111111111111111111111111',
+            '11111111111111111111111111111111',
+          ],
+          allowedFeePayers: [this.key.publicKey.toBase58()],
+          maxAmountLamports: 100_000_000_000n,
+          maxSlippageBps: Math.max(this.cfg.PANIC_SLIPPAGE_BPS, this.cfg.SLIPPAGE_BPS),
+          maxPriorityFeeLamports: BigInt(this.cfg.MAX_PRIORITY_LAMPORTS) + 1_000_000n,
+          expectedMint: s.mint.toBase58(),
+          expectedDestination: '',
+          mainnetEnabled: true,
+        },
+        {
+          journalHealthy: true,
+          killSwitchClear: true,
+          providerGateHealthy: true,
+          simulationPassed: true,
+        }
+      );
+
+      if (!decision.approved) {
+        throw new Error(`SIGNING_FIREWALL_REJECTED: ${decision.reasonCodes.join(', ')}`);
+      }
+
+      const tx = new VersionedTransaction(msg);
+      if ('signTransactionMessage' in this.key && typeof (this.key as ExecutionSignerGateway).signTransactionMessage === 'function') {
+        const sigBytes = await (this.key as ExecutionSignerGateway).signTransactionMessage(messageBytes);
+        tx.signatures = [sigBytes];
+      } else if ('secretKey' in this.key && (this.key as Keypair).secretKey) {
+        tx.sign([this.key as Keypair]);
+      } else {
+        throw new Error('SIGNER_UNAVAILABLE: No secret key or signer gateway provided for execution');
+      }
+      return tx;
     };
-    const draft = make(1_400_000, 1n);
+    const draft = await make(1_400_000, 1n);
     const simulation = await c.simulateTransaction(draft, { sigVerify: true, commitment: 'confirmed', minContextSlot: s.slot });
     if (simulation.value.err || !simulation.value.unitsConsumed) throw new Error('transaction simulation failed');
     const units = Math.ceil(simulation.value.unitsConsumed * 1.15) + 1000;
     if (units > 1_400_000) throw new Error('compute budget exceeds chain limit');
     const maxPrice = BigInt(this.cfg.MAX_PRIORITY_LAMPORTS) * 1_000_000n / BigInt(units);
     const price = suggested > maxPrice ? maxPrice : suggested;
-    const transaction = make(units, price), wire = Buffer.from(transaction.serialize()).toString('base64');
+    const transaction = await make(units, price), wire = Buffer.from(transaction.serialize()).toString('base64');
     if (Buffer.from(wire, 'base64').length > 1232) throw new Error('transaction exceeds packet limit');
     if (Date.now() - s.at > this.cfg.QUOTE_MAX_AGE_MS) throw new Error('quote expired during build');
     log('transaction_prepared', { side, computeUnits: units, priorityLamports: String(ceilDiv(price * BigInt(units), 1_000_000n)), tipLamports: tip, buildMs: Math.round(performance.now() - started) });
