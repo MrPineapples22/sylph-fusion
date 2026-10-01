@@ -56,6 +56,28 @@ export class Store implements DurableSigningJournal {
     const text = await this.call('get-coverage-frontier', lane);
     return text ? JSON.parse(text) : null;
   }
+  async saveContractCanary(health: Record<string, unknown>): Promise<void> {
+    await this.call('save-contract-canary', JSON.stringify(health));
+  }
+  async getContractCanary(providerId: string): Promise<Record<string, unknown> | null> {
+    const text = await this.call('get-contract-canary', providerId);
+    return text ? JSON.parse(text) : null;
+  }
+  async getAllContractCanaries(): Promise<Record<string, unknown>[]> {
+    const text = await this.call('get-all-contract-canaries');
+    return text ? JSON.parse(text) : [];
+  }
+  async saveProviderQuota(quota: Record<string, unknown>): Promise<void> {
+    await this.call('save-provider-quota', JSON.stringify(quota));
+  }
+  async getProviderQuota(providerId: string): Promise<Record<string, unknown> | null> {
+    const text = await this.call('get-provider-quota', providerId);
+    return text ? JSON.parse(text) : null;
+  }
+  async getAllProviderQuotas(): Promise<Record<string, unknown>[]> {
+    const text = await this.call('get-all-provider-quotas');
+    return text ? JSON.parse(text) : [];
+  }
   async backup(destinationPath: string): Promise<void> { await this.call('backup', destinationPath); }
   async pruneAudit(maxAgeMs?: number): Promise<void> { await this.call('prune', maxAgeMs ? String(maxAgeMs) : undefined); }
   close(): Promise<void> {
@@ -77,4 +99,16 @@ export interface DurableRecoveryJournal {
   getRecoveryCertificate(certificateIdOrGapId: string): Promise<Record<string, unknown> | null>;
   saveCoverageFrontier(frontier: { lane: string; continuousSlot: number; sealedSlot: number; coverageRoot: string }): Promise<void>;
   getCoverageFrontier(lane: string): Promise<{ lane: string; continuousSlot: number; sealedSlot: number; coverageRoot: string } | null>;
+}
+
+export interface DurableContractCanaryJournal {
+  saveContractCanary(health: Record<string, unknown>): Promise<void>;
+  getContractCanary(providerId: string): Promise<Record<string, unknown> | null>;
+  getAllContractCanaries(): Promise<Record<string, unknown>[]>;
+}
+
+export interface DurableProviderQuotaJournal {
+  saveProviderQuota(quota: Record<string, unknown>): Promise<void>;
+  getProviderQuota(providerId: string): Promise<Record<string, unknown> | null>;
+  getAllProviderQuotas(): Promise<Record<string, unknown>[]>;
 }

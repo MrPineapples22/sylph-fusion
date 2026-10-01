@@ -73,7 +73,7 @@ function applyReport(out: RiskCheck, report: any) {
   out.bundling.state = bundle ? 'flagged' : 'clear';
   const dangerous = out.risks.some(r => /danger|critical/i.test(r.level));
   const isUnsafe = out.rugged === true || dangerous || out.authorities.freeze !== null || out.holders.top10Status === 'over-limit';
-  const isVerifiedSafe = !out.rugged && out.authorities.status === 'revoked' && !dangerous && out.holders.top10Status === 'within-limit' && (['burned','locked'].includes(out.liquidity.state) || out.liquidity.state === 'bonding_curve');
+  const isVerifiedSafe = out.rugged === false && out.authorities.status === 'revoked' && !dangerous && out.holders.top10Status === 'within-limit' && (['burned','locked'].includes(out.liquidity.state) || out.liquidity.state === 'bonding_curve');
   out.safe = isUnsafe ? false : isVerifiedSafe ? true : null;
 }
 
@@ -111,7 +111,7 @@ export async function scanToken(mint: string, rpcUrl: string, rugUrl: string, tr
   if (out.token2022.transferHook) out.risks.push({ level: 'warning', name: 'Token-2022 transfer hook', description: 'Transfers invoke an external program.' });
   // Missing evidence is unknown, never a pass; final checks include RPC extensions.
   const dangerous = out.rugged === true || out.authorities.freeze !== null || out.holders.top10Status === 'over-limit' || out.risks.some(r => /danger|critical/i.test(r.level)) || !!out.token2022.transferHook;
-  out.safe = dangerous ? false : out.providers.rpc === 'live' && out.providers.rugcheck === 'live' && out.authorities.status === 'revoked' && out.holders.top10Status === 'within-limit' && (['burned','locked'].includes(out.liquidity.state) || out.liquidity.state === 'bonding_curve') ? true : null;
+  out.safe = dangerous ? false : out.providers.rpc === 'live' && out.providers.rugcheck === 'live' && out.rugged === false && out.authorities.status === 'revoked' && out.holders.top10Status === 'within-limit' && (['burned','locked'].includes(out.liquidity.state) || out.liquidity.state === 'bonding_curve') ? true : null;
   return out;
 }
 

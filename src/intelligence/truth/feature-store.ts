@@ -50,9 +50,28 @@ function compareSnapshots(a: FeatureSnapshot, b: FeatureSnapshot): number {
     (a.snapshotId < b.snapshotId ? -1 : a.snapshotId > b.snapshotId ? 1 : 0);
 }
 
+export type SnapshotValidityStatus =
+  | 'ACTIVE'
+  | 'CONTAMINATED'
+  | 'INVALIDATED'
+  | 'SUPERSEDED';
+
+export interface SnapshotValidityRecord {
+  readonly snapshotId: string;
+  readonly status: SnapshotValidityStatus;
+  readonly reason?: string;
+  readonly invalidatedBy?: string;
+  readonly invalidatedAtMs?: number;
+  readonly replacementSnapshotId?: string;
+  readonly contractEpochId?: string;
+}
+
+export type ReplayMode = 'AS_KNOWN_THEN' | 'CORRECTED_TRUTH';
+
 export class PointInTimeFeatureStore {
   private readonly snapshots = new Map<string, FeatureSnapshot>();
   private readonly snapshotsByMint = new Map<string, FeatureSnapshot[]>();
+  private readonly validityRecords = new Map<string, SnapshotValidityRecord>();
 
   /** Retain the most recently recorded unique snapshots; retries do not renew retention. */
   constructor(private readonly maxSnapshots = 10_000) {
@@ -64,7 +83,7 @@ export class PointInTimeFeatureStore {
   /**
    * Save an immutable feature snapshot with cryptographic SHA-256 seal.
    */
-  public recordSnapshot(params: Omit<FeatureSnapshot, 'snapshotHash'>): FeatureSnapshot {
+  public recordSnapshot(params: Omit<FeatureSnapshot, 'snapshotHash'> & { contractEpochId?: string }): FeatureSnapshot {
     // Select the schema fields once so the seal covers exactly the data retained.
     const data = {
       snapshotId: params.snapshotId,
@@ -112,6 +131,11 @@ export class PointInTimeFeatureStore {
     });
 
     this.snapshots.set(snapshot.snapshotId, snapshot);
+    this.validityRecords.set(snapshot.snapshotId, {
+      snapshotId: snapshot.snapshotId,
+      status: 'ACTIVE',
+      contractEpochId: params.contractEpochId,
+    });
 
     const list = this.snapshotsByMint.get(snapshot.mint) ?? [];
     list.push(snapshot);
@@ -122,6 +146,7 @@ export class PointInTimeFeatureStore {
     if (this.snapshots.size > this.maxSnapshots) {
       const oldest = this.snapshots.values().next().value!;
       this.snapshots.delete(oldest.snapshotId);
+      this.validityRecords.delete(oldest.snapshotId);
       const retained = this.snapshotsByMint.get(oldest.mint)!
         .filter((item) => item.snapshotId !== oldest.snapshotId);
       if (retained.length) this.snapshotsByMint.set(oldest.mint, retained);
@@ -136,22 +161,92 @@ export class PointInTimeFeatureStore {
   }
 
   /**
+   * Invalidate or contaminate a feature snapshot with audit reason and optional replacement.
+   */
+  public invalidateSnapshot(params: {
+    snapshotId: string;
+    status: 'CONTAMINATED' | 'INVALIDATED' | 'SUPERSEDED';
+    reason: string;
+    invalidatedBy?: string;
+    replacementSnapshotId?: string;
+  }): SnapshotValidityRecord {
+    const existing = this.validityRecords.get(params.snapshotId);
+    const updated: SnapshotValidityRecord = {
+      snapshotId: params.snapshotId,
+      status: params.status,
+      reason: params.reason,
+      invalidatedBy: params.invalidatedBy ?? 'CONTRACT_CANARY_AUTHORITY',
+      invalidatedAtMs: Date.now(),
+      replacementSnapshotId: params.replacementSnapshotId,
+      contractEpochId: existing?.contractEpochId,
+    };
+    this.validityRecords.set(params.snapshotId, updated);
+    return updated;
+  }
+
+  /**
+   * Invalidates all snapshots associated with a compromised contract epoch.
+   */
+  public invalidateSnapshotsForContractEpoch(
+    contractEpochId: string,
+    reason: string,
+    invalidatedBy = 'CONTRACT_CANARY_AUTHORITY'
+  ): number {
+    let count = 0;
+    const now = Date.now();
+    for (const [snapId, record] of this.validityRecords.entries()) {
+      if (record.contractEpochId === contractEpochId && record.status === 'ACTIVE') {
+        this.validityRecords.set(snapId, {
+          ...record,
+          status: 'INVALIDATED',
+          reason,
+          invalidatedBy,
+          invalidatedAtMs: now,
+        });
+        count++;
+      }
+    }
+    return count;
+  }
+
+  public getSnapshotValidity(snapshotId: string): SnapshotValidityRecord {
+    return this.validityRecords.get(snapshotId) ?? {
+      snapshotId,
+      status: 'ACTIVE',
+    };
+  }
+
+  /**
    * Retrieve the latest feature snapshot for a mint strictly as-of decision point (T, slot),
-   * enforcing zero lookahead leakage.
+   * enforcing zero lookahead leakage and epistemic snapshot validity.
+   *
+   * Replay Modes:
+   * - 'CORRECTED_TRUTH' (default): Purges CONTAMINATED and INVALIDATED snapshots; follows replacement snapshots if available.
+   * - 'AS_KNOWN_THEN': Returns snapshot as believed at time T, regardless of subsequent retroactive invalidation.
    */
   public getSnapshotAsOf(
     mint: string,
     decisionTimeMs: number,
-    decisionSlot: number
+    decisionSlot: number,
+    replayMode: ReplayMode = 'CORRECTED_TRUTH'
   ): FeatureSnapshot | undefined {
     assertTemporalCoordinates(decisionTimeMs, decisionSlot);
     const list = this.snapshotsByMint.get(mint);
     if (!list || list.length === 0) return undefined;
 
     // Filter with Temporal Firewall
-    const eligible = list.filter(
+    let eligible = list.filter(
       (s) => s.timestampMs <= decisionTimeMs && s.slot <= decisionSlot
     );
+
+    if (replayMode === 'CORRECTED_TRUTH') {
+      eligible = eligible.filter((s) => {
+        const val = this.validityRecords.get(s.snapshotId);
+        if (!val) return true;
+        // In CORRECTED_TRUTH, exclude invalidated or contaminated snapshots
+        return val.status === 'ACTIVE' || val.status === 'SUPERSEDED';
+      });
+    }
 
     if (eligible.length === 0) return undefined;
 

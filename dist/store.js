@@ -69,6 +69,28 @@ export class Store {
         const text = await this.call('get-coverage-frontier', lane);
         return text ? JSON.parse(text) : null;
     }
+    async saveContractCanary(health) {
+        await this.call('save-contract-canary', JSON.stringify(health));
+    }
+    async getContractCanary(providerId) {
+        const text = await this.call('get-contract-canary', providerId);
+        return text ? JSON.parse(text) : null;
+    }
+    async getAllContractCanaries() {
+        const text = await this.call('get-all-contract-canaries');
+        return text ? JSON.parse(text) : [];
+    }
+    async saveProviderQuota(quota) {
+        await this.call('save-provider-quota', JSON.stringify(quota));
+    }
+    async getProviderQuota(providerId) {
+        const text = await this.call('get-provider-quota', providerId);
+        return text ? JSON.parse(text) : null;
+    }
+    async getAllProviderQuotas() {
+        const text = await this.call('get-all-provider-quotas');
+        return text ? JSON.parse(text) : [];
+    }
     async backup(destinationPath) { await this.call('backup', destinationPath); }
     async pruneAudit(maxAgeMs) { await this.call('prune', maxAgeMs ? String(maxAgeMs) : undefined); }
     close() {

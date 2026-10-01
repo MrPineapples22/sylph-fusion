@@ -1,32 +1,47 @@
 /**
- * SYLPH FUSION — YELLOWSTONE gRPC CHAIN TRUTH BRIDGE
+ * SYLPH FUSION â€” YELLOWSTONE gRPC CHAIN TRUTH BRIDGE
  * Connects raw Yellowstone gRPC streams directly into ChainTruthEngine.
  * Enforces sub-50ms tick latency, zero-lookahead point-in-time slots,
  * and immutable event provenance.
  */
-import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
+import { createWireWitness } from './contract-canary.js';
 export class YellowstoneTruthBridge extends EventEmitter {
     chainTruth;
     endpointUrl;
     workerId;
+    topology;
+    validatorIdentity;
     totalIngested = 0;
     totalDuplicates = 0;
     lastSlot = 0;
     lastIngestionTimeMs = 0;
     latencySamplesMs = [];
-    constructor(chainTruthOrOptions, endpointUrl, workerId) {
+    constructor(chainTruthOrOptions, endpointUrl, workerId, topology, validatorIdentity) {
         super();
         if ('chainTruth' in chainTruthOrOptions) {
             this.chainTruth = chainTruthOrOptions.chainTruth;
             this.endpointUrl = chainTruthOrOptions.endpointUrl ?? 'grpc.yellowstone.solana:10000';
             this.workerId = chainTruthOrOptions.workerId ?? 'worker_geyser_01';
+            this.topology = chainTruthOrOptions.topology ?? (this.endpointUrl.includes('validator') ? 'DIRECT_VALIDATOR_GEYSER' : 'INTERMEDIATE_PROXY_RELAY');
+            this.validatorIdentity = chainTruthOrOptions.validatorIdentity;
         }
         else {
             this.chainTruth = chainTruthOrOptions;
             this.endpointUrl = endpointUrl ?? 'grpc.yellowstone.solana:10000';
             this.workerId = workerId ?? 'worker_geyser_01';
+            this.topology = topology ?? (this.endpointUrl.includes('validator') ? 'DIRECT_VALIDATOR_GEYSER' : 'INTERMEDIATE_PROXY_RELAY');
+            this.validatorIdentity = validatorIdentity;
         }
+    }
+    getTopologyMeta() {
+        return {
+            endpointUrl: this.endpointUrl,
+            topology: this.topology,
+            validatorIdentity: this.validatorIdentity,
+            verifiedDirectLeader: this.topology === 'DIRECT_VALIDATOR_GEYSER',
+            maxAllowedSlotSkew: this.topology === 'DIRECT_VALIDATOR_GEYSER' ? 2 : 8,
+        };
     }
     /**
      * Ingests a raw transaction update from Yellowstone gRPC into ChainTruthEngine.
@@ -62,10 +77,15 @@ export class YellowstoneTruthBridge extends EventEmitter {
                 mint = mintMatch[1];
             }
         }
-        const rawPayloadHash = createHash('sha256')
-            .update(JSON.stringify({ signature: update.signature, slot, logs: update.logs }))
-            .digest('hex');
+        const rawPayload = JSON.stringify({ signature: update.signature, slot, logs: update.logs });
+        const wireWitness = createWireWitness('SOLANA_GEYSER', 'TRANSACTION_STREAM', 'GRPC', rawPayload, 200);
         const eventId = `geyser_${slot}_${update.signature.slice(0, 16)}`;
+        // Calibrate confidence by connection topology
+        const sourceConfidence = this.topology === 'DIRECT_VALIDATOR_GEYSER'
+            ? 0.999
+            : this.topology === 'INTERMEDIATE_PROXY_RELAY'
+                ? 0.850
+                : 0.700;
         const canonicalEvent = {
             eventId,
             eventType,
@@ -79,20 +99,22 @@ export class YellowstoneTruthBridge extends EventEmitter {
             slot,
             commitment: 'confirmed',
             chainState: 'CONFIRMED',
-            sourceConfidence: 0.999,
+            sourceConfidence,
             freshnessMs: Math.max(0, receivedTime - sourceTime),
             provenance: {
                 endpointId: this.endpointUrl,
                 transport: 'geyser_grpc',
-                rawPayloadHash,
+                rawPayloadHash: wireWitness.payloadHash,
                 ingestedByWorkerId: this.workerId,
             },
             payload: {
-                rawPayloadHash,
+                rawPayloadHash: wireWitness.payloadHash,
                 logCount: update.logs.length,
                 transport: 'geyser_grpc',
                 endpoint: this.endpointUrl,
                 workerId: this.workerId,
+                topology: this.topology,
+                wireWitnessId: wireWitness.witnessId,
             },
         };
         const registered = this.chainTruth.registerEvent(canonicalEvent);

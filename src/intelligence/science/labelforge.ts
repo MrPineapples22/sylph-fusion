@@ -48,6 +48,7 @@ export interface DatasetSplitEvaluation {
   readonly trainingExamples: readonly TrainingExampleCertificate[];
   readonly testExamples: readonly TrainingExampleCertificate[];
   readonly embargoGapMs: number;
+  /** No violations of the checked windows/identities; not proof of label availability or settlement finality. */
   readonly isLeakageFree: boolean;
   readonly leakageViolations: readonly string[];
 }
@@ -82,6 +83,9 @@ export class LabelForgeAuthority {
     frictionFeesLamports: bigint;
     priceImpactBps: number;
   }): TrainingExampleCertificate {
+    if (![params.featureAvailableAtMs, params.decisionTimestampMs, params.targetTimestampMs].every(Number.isFinite)) {
+      throw new Error('INVALID_TEMPORAL_INPUT: Feature, decision and target timestamps must be finite numbers');
+    }
     // 1. Anti-leakage: Feature causality check (Invariant 13)
     if (params.featureAvailableAtMs > params.decisionTimestampMs) {
       throw new Error(
@@ -129,13 +133,27 @@ export class LabelForgeAuthority {
 
   /**
    * Produces a leakage-resistant chronological walk-forward split with cluster-aware embargo gaps.
+   * targetTimestampMs is the inclusive end of each label's observation window. Actual label
+   * availability after that target (for example delayed settlement) is not modeled or certified.
    */
   public static createChronologicalSplit(
     examples: readonly TrainingExampleCertificate[],
     splitRatio: number = 0.8,
     embargoGapMs: number = LabelForgeAuthority.EMBARGO_GAP_MS_DEFAULT
   ): DatasetSplitEvaluation {
+    if (!Number.isFinite(splitRatio) || splitRatio <= 0 || splitRatio >= 1) {
+      throw new Error('INVALID_SPLIT_RATIO: Expected a finite ratio strictly between zero and one');
+    }
+    if (!Number.isFinite(embargoGapMs) || embargoGapMs < 0) {
+      throw new Error('INVALID_EMBARGO: Expected a finite nonnegative duration');
+    }
     const finalExamples = examples.filter((e) => e.labelFinality === 'ECONOMIC_FINAL');
+    for (const example of finalExamples) {
+      if (!Number.isFinite(example.decisionTimestampMs) || !Number.isFinite(example.targetTimestampMs)
+        || example.targetTimestampMs <= example.decisionTimestampMs) {
+        throw new Error(`INVALID_LABEL_WINDOW: Example ${example.exampleId} requires finite decision < target timestamps`);
+      }
+    }
     // Sort strictly chronologically
     const sorted = [...finalExamples].sort((a, b) => a.decisionTimestampMs - b.decisionTimestampMs);
 
@@ -152,6 +170,16 @@ export class LabelForgeAuthority {
 
     const testExamples: TrainingExampleCertificate[] = [];
     const leakageViolations: string[] = [];
+    // Freeze the boundary before test exclusions: removing test rows must not admit labels
+    // that observe the original holdout period. Equality overlaps the inclusive window.
+    const testStartTimestamp = rawCandidateTest[0]?.decisionTimestampMs;
+    const trainingExamples = rawTrain.filter((example) => {
+      if (testStartTimestamp !== undefined && example.targetTimestampMs >= testStartTimestamp) {
+        leakageViolations.push(`LABEL_WINDOW_OVERLAP: Example ${example.exampleId} target reaches the holdout beginning at ${testStartTimestamp}ms`);
+        return false;
+      }
+      return true;
+    });
 
     for (const testEx of rawCandidateTest) {
       if (testEx.decisionTimestampMs < testCutoffTimestamp) {
@@ -175,7 +203,7 @@ export class LabelForgeAuthority {
     return {
       totalExamples: examples.length,
       certifiedFinalExamples: finalExamples.length,
-      trainingExamples: rawTrain,
+      trainingExamples,
       testExamples,
       embargoGapMs,
       isLeakageFree: leakageViolations.length === 0,

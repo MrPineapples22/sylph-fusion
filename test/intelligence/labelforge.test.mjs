@@ -2,7 +2,19 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   LabelForgeAuthority
-} from '../../dist/intelligence/science/labelforge.js';
+} from '../../src/intelligence/science/labelforge.ts';
+
+function example(id, decisionTimestampMs, targetTimestampMs, overrides = {}) {
+  return LabelForgeAuthority.certifyExample({
+    tokenMint: id, creatorIdentity: `creator-${id}`, funderClusterId: `cluster-${id}`,
+    candidateGenerationId: id, decisionTimestampMs, targetTimestampMs, decisionSlot: 1,
+    featureAvailableAtMs: decisionTimestampMs - 1, featureSnapshotHash: id,
+    featureSchemaVersion: '1', modelVersion: '1', strategyVersion: '1', configurationHash: 'cfg',
+    actionTaken: 'BUY', actionProbability: 1, eventualFinalLabel: 1, labelFinality: 'ECONOMIC_FINAL',
+    outcomeEvidenceIds: [id], realizedGrossPnlLamports: 2n, realizedNetPnlLamports: 1n,
+    frictionFeesLamports: 1n, priceImpactBps: 0, ...overrides,
+  });
+}
 
 describe('LABELFORGE: Leakage-Resistant Economic Dataset Certification (Upgrade 4)', () => {
   it('certifies examples and strictly blocks future feature leakage (Invariant 13)', () => {
@@ -107,5 +119,97 @@ describe('LABELFORGE: Leakage-Resistant Economic Dataset Certification (Upgrade 
     assert.equal(split.totalExamples, 10);
     assert.equal(split.certifiedFinalExamples, 10);
     assert.ok(split.trainingExamples.length > 0);
+  });
+
+  it('purges a long training outcome that reaches beyond an otherwise valid embargo', () => {
+    const train = example('train', 0, 100_000);
+    const holdout = example('test', 10_000, 20_000);
+    const split = LabelForgeAuthority.createChronologicalSplit([train, holdout], 0.5, 1_000);
+    assert.deepEqual(split.trainingExamples, []);
+    assert.deepEqual(split.testExamples, [holdout]);
+    assert.equal(split.isLeakageFree, false);
+    assert.match(split.leakageViolations[0], /LABEL_WINDOW_OVERLAP/);
+  });
+
+  it('treats outcome end equality as overlap and accepts an end immediately before holdout', () => {
+    for (const target of [9_999, 10_000, 10_001]) {
+      const train = example('train', 0, target);
+      const holdout = example('test', 10_000, 20_000);
+      const split = LabelForgeAuthority.createChronologicalSplit([holdout, train], 0.5, 0);
+      assert.equal(split.trainingExamples.length, target < 10_000 ? 1 : 0);
+      assert.equal(split.isLeakageFree, target < 10_000);
+      assert.deepEqual(split.testExamples, [holdout]);
+    }
+  });
+
+  it('keeps the original holdout boundary when its first row is excluded by embargo', () => {
+    const rows = [example('a', 0, 10_500), example('b', 9_000, 9_500),
+      example('c', 10_000, 10_100), example('d', 20_000, 21_000)];
+    const split = LabelForgeAuthority.createChronologicalSplit(rows, 0.5, 2_000);
+    assert.deepEqual(split.trainingExamples, [rows[1]]);
+    assert.deepEqual(split.testExamples, [rows[3]]);
+    assert.ok(split.leakageViolations.some(v => v.startsWith('LABEL_WINDOW_OVERLAP')));
+    assert.ok(split.leakageViolations.some(v => v.startsWith('EMBARGO_BREACH')));
+  });
+
+  it('preserves creator/funder exclusions, final-only selection, and input order', () => {
+    const train = example('a', 0, 100);
+    const creator = example('b', 1_000, 1_100, { creatorIdentity: train.creatorIdentity });
+    const funder = example('c', 2_000, 2_100, { funderClusterId: train.funderClusterId });
+    const valid = example('d', 3_000, 3_100);
+    const pending = { ...train, labelFinality: 'SETTLEMENT_PENDING', targetTimestampMs: undefined };
+    const rows = Object.freeze([valid, pending, funder, train, creator]);
+    const split = LabelForgeAuthority.createChronologicalSplit(rows, 0.25, 0);
+    assert.deepEqual(split.trainingExamples, [train]);
+    assert.deepEqual(split.testExamples, [valid]);
+    assert.equal(split.certifiedFinalExamples, 4);
+    assert.equal(rows[0], valid);
+    assert.ok(split.leakageViolations.some(v => v.startsWith('CREATOR_LEAKAGE')));
+    assert.ok(split.leakageViolations.some(v => v.startsWith('CLUSTER_LEAKAGE')));
+  });
+
+  it('rejects missing and nonfinite clocks before certifying or sorting final examples', () => {
+    const valid = example('valid', 0, 100);
+    for (const field of ['decisionTimestampMs', 'targetTimestampMs', 'featureAvailableAtMs']) {
+      for (const value of [undefined, null, NaN, Infinity, -Infinity, '100']) {
+        assert.throws(() => example('bad', 0, 100, { [field]: value }), /INVALID_TEMPORAL_INPUT/);
+        if (field !== 'featureAvailableAtMs') {
+          assert.throws(() => LabelForgeAuthority.createChronologicalSplit(
+            [{ ...valid, [field]: value }], 0.5, 0), /INVALID_LABEL_WINDOW/);
+        }
+      }
+    }
+    for (const targetTimestampMs of [-1, 0]) {
+      assert.throws(() => LabelForgeAuthority.createChronologicalSplit(
+        [{ ...valid, targetTimestampMs }], 0.5, 0), /INVALID_LABEL_WINDOW/);
+    }
+    // Relative replay clocks and pre-decision feature timestamps remain supported.
+    assert.equal(example('relative', -100, -1).decisionTimestampMs, -100);
+  });
+
+  it('rejects invalid split controls and handles an empty final cohort', () => {
+    for (const ratio of [0, 1, -0.1, 1.1, NaN, Infinity, null]) {
+      assert.throws(() => LabelForgeAuthority.createChronologicalSplit([], ratio, 0), /INVALID_SPLIT_RATIO/);
+    }
+    for (const embargo of [-1, NaN, Infinity, null]) {
+      assert.throws(() => LabelForgeAuthority.createChronologicalSplit([], 0.5, embargo), /INVALID_EMBARGO/);
+    }
+    const split = LabelForgeAuthority.createChronologicalSplit([], 0.5, 0);
+    assert.deepEqual(split.trainingExamples, []);
+    assert.deepEqual(split.testExamples, []);
+  });
+
+  it('preserves target-before-test isolation for mixed horizons and split ratios', () => {
+    const rows = Array.from({ length: 30 }, (_, i) => example(`m${i}`, i * 1_000, i * 1_000 + (i % 5 + 1) * 750));
+    for (const ratio of [0.2, 0.5, 0.8]) {
+      for (const embargo of [0, 1_000, 5_000]) {
+        const split = LabelForgeAuthority.createChronologicalSplit(rows, ratio, embargo);
+        assert.ok(split.trainingExamples.length > 0);
+        assert.ok(split.testExamples.length > 0);
+        for (const train of split.trainingExamples) {
+          for (const holdout of split.testExamples) assert.ok(train.targetTimestampMs < holdout.decisionTimestampMs);
+        }
+      }
+    }
   });
 });

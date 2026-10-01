@@ -55,6 +55,30 @@ CREATE TABLE IF NOT EXISTS coverage_frontiers(
   sealed_slot INTEGER,
   coverage_root TEXT,
   updated_at_ms INTEGER NOT NULL
+) STRICT;
+CREATE TABLE IF NOT EXISTS contract_canaries(
+  provider_id TEXT PRIMARY KEY,
+  transport_health TEXT NOT NULL,
+  schema_health TEXT NOT NULL,
+  semantic_health TEXT NOT NULL,
+  freshness_health TEXT NOT NULL,
+  quota_health TEXT NOT NULL,
+  is_quarantined INTEGER NOT NULL,
+  last_validated_slot INTEGER NOT NULL,
+  last_validated_at_ms INTEGER NOT NULL,
+  failure_reason TEXT,
+  contract_epoch_id TEXT,
+  contract_fingerprint TEXT,
+  updated_at_ms INTEGER NOT NULL
+) STRICT;
+CREATE TABLE IF NOT EXISTS provider_quotas(
+  provider_id TEXT PRIMARY KEY,
+  rate_limited_until_ms INTEGER NOT NULL,
+  circuit_state TEXT NOT NULL,
+  circuit_tripped_at_ms INTEGER NOT NULL,
+  consecutive_recovery INTEGER NOT NULL,
+  last_failure_reason TEXT,
+  updated_at_ms INTEGER NOT NULL
 ) STRICT;`);
 parentPort.on('message', (m) => {
     try {
@@ -141,6 +165,57 @@ parentPort.on('message', (m) => {
             const lane = m.body;
             const row = db.prepare('SELECT lane, continuous_slot, sealed_slot, coverage_root, updated_at_ms FROM coverage_frontiers WHERE lane=?').get(lane);
             parentPort.postMessage({ id: m.id, value: row ? JSON.stringify(row) : null });
+        }
+        else if (m.op === 'save-contract-canary') {
+            const canary = JSON.parse(m.body);
+            db.prepare(`INSERT INTO contract_canaries(
+        provider_id, transport_health, schema_health, semantic_health, freshness_health, quota_health,
+        is_quarantined, last_validated_slot, last_validated_at_ms, failure_reason, contract_epoch_id, contract_fingerprint, updated_at_ms
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(provider_id) DO UPDATE SET
+        transport_health=excluded.transport_health,
+        schema_health=excluded.schema_health,
+        semantic_health=excluded.semantic_health,
+        freshness_health=excluded.freshness_health,
+        quota_health=excluded.quota_health,
+        is_quarantined=excluded.is_quarantined,
+        last_validated_slot=excluded.last_validated_slot,
+        last_validated_at_ms=excluded.last_validated_at_ms,
+        failure_reason=excluded.failure_reason,
+        contract_epoch_id=excluded.contract_epoch_id,
+        contract_fingerprint=excluded.contract_fingerprint,
+        updated_at_ms=excluded.updated_at_ms`).run(canary.providerId ?? canary.provider_id, canary.transportHealth ?? canary.transport_health ?? 'HEALTHY', canary.schemaHealth ?? canary.schema_health ?? 'HEALTHY', canary.semanticHealth ?? canary.semantic_health ?? 'HEALTHY', canary.freshnessHealth ?? canary.freshness_health ?? 'HEALTHY', canary.quotaHealth ?? canary.quota_health ?? 'HEALTHY', canary.isQuarantined || canary.is_quarantined ? 1 : 0, canary.lastValidatedSlot ?? canary.last_validated_slot ?? 0, canary.lastValidatedAtMs ?? canary.last_validated_at_ms ?? Date.now(), canary.failureReason ?? canary.failure_reason ?? null, canary.contractEpochId ?? canary.contract_epoch_id ?? null, canary.contractFingerprint ?? canary.contract_fingerprint ?? null, Date.now());
+            parentPort.postMessage({ id: m.id, value: null });
+        }
+        else if (m.op === 'get-contract-canary') {
+            const providerId = m.body;
+            const row = db.prepare('SELECT * FROM contract_canaries WHERE provider_id=?').get(providerId);
+            parentPort.postMessage({ id: m.id, value: row ? JSON.stringify(row) : null });
+        }
+        else if (m.op === 'get-all-contract-canaries') {
+            const rows = db.prepare('SELECT * FROM contract_canaries').all();
+            parentPort.postMessage({ id: m.id, value: JSON.stringify(rows) });
+        }
+        else if (m.op === 'save-provider-quota') {
+            const q = JSON.parse(m.body);
+            db.prepare(`INSERT INTO provider_quotas(provider_id, rate_limited_until_ms, circuit_state, circuit_tripped_at_ms, consecutive_recovery, last_failure_reason, updated_at_ms)
+        VALUES(?,?,?,?,?,?,?) ON CONFLICT(provider_id) DO UPDATE SET
+          rate_limited_until_ms=excluded.rate_limited_until_ms,
+          circuit_state=excluded.circuit_state,
+          circuit_tripped_at_ms=excluded.circuit_tripped_at_ms,
+          consecutive_recovery=excluded.consecutive_recovery,
+          last_failure_reason=excluded.last_failure_reason,
+          updated_at_ms=excluded.updated_at_ms`).run(q.providerId ?? q.provider_id, q.rateLimitedUntilMs ?? q.rate_limited_until_ms ?? 0, q.circuitState ?? q.circuit_state ?? 'CLOSED', q.circuitTrippedAtMs ?? q.circuit_tripped_at_ms ?? 0, q.consecutiveRecovery ?? q.consecutive_recovery ?? 0, q.lastFailureReason ?? q.last_failure_reason ?? null, Date.now());
+            parentPort.postMessage({ id: m.id, value: null });
+        }
+        else if (m.op === 'get-provider-quota') {
+            const providerId = m.body;
+            const row = db.prepare('SELECT * FROM provider_quotas WHERE provider_id=?').get(providerId);
+            parentPort.postMessage({ id: m.id, value: row ? JSON.stringify(row) : null });
+        }
+        else if (m.op === 'get-all-provider-quotas') {
+            const rows = db.prepare('SELECT * FROM provider_quotas').all();
+            parentPort.postMessage({ id: m.id, value: JSON.stringify(rows) });
         }
         else if (m.op === 'prune') {
             const maxAgeMs = Number(m.body) || (7 * 86_400_000);

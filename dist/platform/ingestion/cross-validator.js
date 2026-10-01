@@ -6,6 +6,57 @@
  * RugCheck, Jupiter, and Solana RPC into an authoritative CanonicalMarketSnapshot
  * with cryptographic provenance, confidence calibration, and disagreement detection.
  */
+export const PROVIDER_INDEPENDENCE_REGISTRY = {
+    SOLANA_RPC: {
+        provider: 'SOLANA_RPC',
+        independenceGroup: 'SOLANA_CONSENSUS_VALIDATOR',
+        upstreamSourceGroup: 'VALIDATOR_RPC_NODE',
+        infrastructureGroup: 'SOLANA_CLUSTER',
+        transportGroup: 'JSON_RPC',
+    },
+    SOLANA_GEYSER: {
+        provider: 'SOLANA_GEYSER',
+        independenceGroup: 'SOLANA_CONSENSUS_VALIDATOR',
+        upstreamSourceGroup: 'VALIDATOR_GEYSER_PLUGIN',
+        infrastructureGroup: 'SOLANA_CLUSTER',
+        transportGroup: 'GRPC_STREAM',
+    },
+    PUMPPORTAL_WS: {
+        provider: 'PUMPPORTAL_WS',
+        independenceGroup: 'AMM_BONDING_INDEXER',
+        upstreamSourceGroup: 'PUMP_CURVE_INDEXER',
+        infrastructureGroup: 'PUMP_PORTAL_EDGE',
+        transportGroup: 'WEBSOCKET',
+    },
+    DEXSCREENER_API: {
+        provider: 'DEXSCREENER_API',
+        independenceGroup: 'AMM_BONDING_INDEXER',
+        upstreamSourceGroup: 'DEXSCREENER_SCRAPER_INDEXER',
+        infrastructureGroup: 'DEXSCREENER_CLOUD',
+        transportGroup: 'REST_HTTP',
+    },
+    JUPITER_QUOTE: {
+        provider: 'JUPITER_QUOTE',
+        independenceGroup: 'DEX_ROUTER_SIMULATION',
+        upstreamSourceGroup: 'JUPITER_ROUTING_ENGINE',
+        infrastructureGroup: 'JUPITER_INFRA',
+        transportGroup: 'REST_HTTP',
+    },
+    RUGCHECK_API: {
+        provider: 'RUGCHECK_API',
+        independenceGroup: 'RISK_SECURITY_ENRICHMENT',
+        upstreamSourceGroup: 'RUGCHECK_RISK_ENGINE',
+        infrastructureGroup: 'RUGCHECK_CLOUD',
+        transportGroup: 'REST_HTTP',
+    },
+    KOLSCAN_SCRAPER: {
+        provider: 'KOLSCAN_SCRAPER',
+        independenceGroup: 'SCRAPED_UNOFFICIAL',
+        upstreamSourceGroup: 'SOCIAL_SCRAPER',
+        infrastructureGroup: 'COMMUNITY_SCRAPER',
+        transportGroup: 'SCRAPER_POLL',
+    },
+};
 export const DEFAULT_CROSS_VALIDATION_CONFIG = {
     maxPriceDivergencePct: 0.08,
     maxLiquidityDivergencePct: 0.12,
@@ -107,15 +158,36 @@ export class MultiSourceCrossValidator {
             };
         }
         if (agreeingSources.length >= 1) {
-            return {
-                priceUsd: primary.value,
-                status: 'VERIFIED',
-                primarySource: primary.provider,
-                supportingSources: agreeingSources,
-                confidence: Number(Math.min(0.99, primary.confidence + 0.15).toFixed(2)),
-                primaryTimestampMs: primary.timestampMs,
-                disagreements,
-            };
+            const primaryGroup = PROVIDER_INDEPENDENCE_REGISTRY[primary.provider]?.independenceGroup;
+            const distinctIndependentAgreeing = agreeingSources.filter(secProvider => {
+                const secGroup = PROVIDER_INDEPENDENCE_REGISTRY[secProvider]?.independenceGroup;
+                return secGroup && secGroup !== primaryGroup;
+            });
+            if (distinctIndependentAgreeing.length >= 1) {
+                return {
+                    priceUsd: primary.value,
+                    status: 'VERIFIED',
+                    primarySource: primary.provider,
+                    supportingSources: agreeingSources,
+                    confidence: Number(Math.min(0.99, primary.confidence + 0.15).toFixed(2)),
+                    primaryTimestampMs: primary.timestampMs,
+                    disagreements,
+                };
+            }
+            else {
+                // Demote to PARTIALLY_VERIFIED when all agreeing sources share the exact same upstream independence group
+                const groupName = primaryGroup ?? 'UNKNOWN_GROUP';
+                disagreements.push(`CORRELATED_SOURCES_SHARED_GROUP_${groupName}`);
+                return {
+                    priceUsd: primary.value,
+                    status: 'PARTIALLY_VERIFIED',
+                    primarySource: primary.provider,
+                    supportingSources: agreeingSources,
+                    confidence: Number(Math.min(0.85, primary.confidence + 0.05).toFixed(2)),
+                    primaryTimestampMs: primary.timestampMs,
+                    disagreements,
+                };
+            }
         }
         return {
             priceUsd: primary.value,
