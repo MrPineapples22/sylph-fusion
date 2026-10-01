@@ -11,6 +11,7 @@
 
 export type JitoBundleStatus =
   | 'RELAY_ACCEPTED'
+  | 'RELAY_UNAVAILABLE'
   | 'INFLIGHT_PENDING'
   | 'AUCTION_LOST'
   | 'SIMULATION_FAILED'
@@ -124,10 +125,10 @@ export class JitoLifecycleCoordinator {
         return {
           bundleId,
           signature,
-          status: 'SIMULATION_FAILED',
-          failureReason: 'BUNDLE_SIMULATION_OR_BID_INVALID',
+          status: 'RELAY_UNAVAILABLE',
+          failureReason: 'BUNDLE_DROPPED_BY_JITO_RELAY_NON_TERMINAL',
           latencyMs: Date.now() - started,
-          terminal: true,
+          terminal: false,
         };
       }
 

@@ -4,8 +4,9 @@ import { rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { DurableGenerationFenceAuthority } from '../../dist/platform/execution/durable-generation-fence.js';
 import { JitoLifecycleCoordinator } from '../../dist/platform/execution/jito-lifecycle-coordinator.js';
+import { NoLandVerificationAuthority } from '../../dist/platform/execution/no-land-certificate.js';
 
-test('DurableGenerationFenceAuthority: enforces single active generation per intent', async () => {
+test('DurableGenerationFenceAuthority: enforces single active generation per intent and requires terminal proof to advance', async () => {
   const testStorage = resolve('data', 'test-generation-fences.json');
   try {
     await rm(testStorage, { force: true });
@@ -22,14 +23,52 @@ test('DurableGenerationFenceAuthority: enforces single active generation per int
       /GENERATION_ALREADY_ACTIVE/
     );
 
-    // Cannot advance while block height <= lastValidBlockHeight
+    // Advancing with raw block height or missing certificate is rejected
     await assert.rejects(
-      () => authority.advanceGeneration(intentId, 'sig-333', 1100, 999),
+      () => authority.advanceGeneration(intentId, 'sig-333', 1100, 1001),
+      /TERMINAL_PROOF_REQUIRED/
+    );
+
+    // Cannot advance if certificate indicates block height <= lastValidBlockHeight
+    const prematureCert = {
+      certificateType: 'NO_LAND_CERTIFICATE',
+      intentId,
+      generation: 1,
+      signature: 'sig-111',
+      lastValidBlockHeight: 1000,
+      observedBlockHeight: 999,
+      finalizedSlot: 1050,
+      verifiedAt: Date.now(),
+      rpcEndpoint: 'https://rpc.test',
+      proofDigest: NoLandVerificationAuthority.computeNoLandDigest({
+        intentId,
+        generation: 1,
+        signature: 'sig-111',
+        lastValidBlockHeight: 1000,
+        observedBlockHeight: 999,
+        finalizedSlot: 1050,
+        rpcEndpoint: 'https://rpc.test',
+      }),
+    };
+
+    await assert.rejects(
+      () => authority.advanceGeneration(intentId, 'sig-333', 1100, prematureCert),
       /FENCE_BREACH_PREVENTED/
     );
 
-    // Advancing once proven expired succeeds
-    const gen2 = await authority.advanceGeneration(intentId, 'sig-333', 1100, 1001);
+    // Advancing once proven terminated via verified NoLandCertificate succeeds
+    const validCert = NoLandVerificationAuthority.certifyNoLand({
+      intentId,
+      generation: 1,
+      signature: 'sig-111',
+      lastValidBlockHeight: 1000,
+      observedBlockHeight: 1001,
+      finalizedSlot: 1050,
+      rpcEndpoint: 'https://rpc.test',
+      searchHistoryConfirmedNotFound: true,
+    });
+
+    const gen2 = await authority.advanceGeneration(intentId, 'sig-333', 1100, validCert);
     assert.equal(gen2.generation, 2);
     assert.equal(gen2.signature, 'sig-333');
 
@@ -72,4 +111,29 @@ test('JitoLifecycleCoordinator: polls inflight bundle statuses and maps results'
   assert.equal(result.terminal, true);
   assert.equal(result.landedSlot, 300001);
   assert.equal(callCount, 1);
+});
+
+test('JitoLifecycleCoordinator: inverts Invalid status to non-terminal RELAY_UNAVAILABLE', async () => {
+  const mockFetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      result: {
+        context: { slot: 300000 },
+        value: [
+          {
+            bundle_id: 'bundle-invalid-1',
+            status: 'Invalid',
+          },
+        ],
+      },
+    }),
+  });
+
+  const coordinator = new JitoLifecycleCoordinator('https://test-jito.mock/api/v1/bundles', undefined, 2000, mockFetch);
+  const result = await coordinator.checkInflightStatus('bundle-invalid-1', 'sig-invalid-1');
+
+  assert.equal(result.status, 'RELAY_UNAVAILABLE');
+  assert.equal(result.terminal, false);
+  assert.match(result.failureReason, /NON_TERMINAL/);
 });

@@ -11,6 +11,11 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
+import {
+  type NoLandCertificate,
+  type FinalizedSettlementCertificate,
+  NoLandVerificationAuthority,
+} from './no-land-certificate.js';
 
 export interface DurableGenerationEntry {
   readonly intentId: string;
@@ -80,13 +85,15 @@ export class DurableGenerationFenceAuthority {
   }
 
   /**
-   * Advances generation to N+1 only if previous generation is proven expired or dropped.
+   * Advances generation to N+1 only if previous generation is proven terminated
+   * via a verified NoLandCertificate or FinalizedSettlementCertificate.
+   * Advancing on block height alone without proof of non-landing is strictly forbidden.
    */
   public async advanceGeneration(
     intentId: string,
     newSignature: string,
     newLastValidBlockHeight: number,
-    currentBlockHeight: number
+    terminalProof: NoLandCertificate | FinalizedSettlementCertificate
   ): Promise<DurableGenerationEntry> {
     const state = await this.load();
     const current = state.entries[intentId];
@@ -94,11 +101,35 @@ export class DurableGenerationFenceAuthority {
       throw new Error("INTENT_NOT_REGISTERED: Cannot advance generation for unregistered intent " + intentId);
     }
 
-    // Safety Invariant: cannot advance if previous generation may still land
-    if (current.state === 'ACTIVE' && currentBlockHeight <= current.lastValidBlockHeight) {
+    if (!terminalProof || typeof (terminalProof as any) === 'number' || !(terminalProof as any).certificateType) {
       throw new Error(
-        "FENCE_BREACH_PREVENTED: Generation " + current.generation + " is still in flight (current " + currentBlockHeight + " <= max " + current.lastValidBlockHeight + ")"
+        "TERMINAL_PROOF_REQUIRED: Advancing generation requires a verified NoLandCertificate or FinalizedSettlementCertificate. Raw block height is forbidden."
       );
+    }
+
+    if (terminalProof.intentId !== intentId) {
+      throw new Error(
+        `TERMINAL_PROOF_INTENT_MISMATCH: Proof intent ${terminalProof.intentId} !== ${intentId}`
+      );
+    }
+
+    if (terminalProof.generation !== current.generation) {
+      throw new Error(
+        `TERMINAL_PROOF_GENERATION_MISMATCH: Proof generation ${terminalProof.generation} !== current ${current.generation}`
+      );
+    }
+
+    if (!NoLandVerificationAuthority.validateCertificateDigest(terminalProof)) {
+      throw new Error("TERMINAL_PROOF_DIGEST_INVALID: Certificate digest validation failed");
+    }
+
+    // Safety Invariant: cannot advance if previous generation may still land
+    if (terminalProof.certificateType === 'NO_LAND_CERTIFICATE') {
+      if (terminalProof.observedBlockHeight <= current.lastValidBlockHeight) {
+        throw new Error(
+          "FENCE_BREACH_PREVENTED: Generation " + current.generation + " is still in flight (current " + terminalProof.observedBlockHeight + " <= max " + current.lastValidBlockHeight + ")"
+        );
+      }
     }
 
     const now = Date.now();

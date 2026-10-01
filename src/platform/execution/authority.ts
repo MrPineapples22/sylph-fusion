@@ -241,25 +241,21 @@ export class LiveExecutionAuthority implements ExecutionAuthority {
       throw new Error('LiveExecutionAuthority pre-conditions not satisfied');
     }
 
-    const built = await this.executor.build(s, side, amount, creator, stage, reason, panic);
-
-    if (
-      !built.pending.signature ||
-      built.pending.signature === 'paper' ||
-      built.pending.signature.startsWith('sim_') ||
-      built.pending.wire.length === 0
-    ) {
-      throw new Error('Live execution produced invalid or placeholder transaction signature');
-    }
-
-    return built;
+    // Direct uncoordinated invocation of build() is quarantined to prevent unfenced execution.
+    // Live execution MUST be routed exclusively through CertifiedLiveExecutionCoordinator.
+    throw new Error(
+      'QUARANTINED_LEGACY_EXECUTION: Direct invocation of LiveExecutionAuthority.build() is quarantined. Live orders must be routed exclusively through CertifiedLiveExecutionCoordinator.'
+    );
   }
 
   async broadcast(order: Pending): Promise<BroadcastOutcome> {
     if (order.signature === 'paper' || order.signature.startsWith('sim_')) {
       throw new Error(`LiveExecutionAuthority cannot broadcast simulated signature: ${order.signature}`);
     }
-    return this.executor.broadcast(order);
+    // Direct uncoordinated broadcast is quarantined to prevent unfenced execution.
+    throw new Error(
+      'QUARANTINED_LEGACY_BROADCAST: Direct invocation of LiveExecutionAuthority.broadcast() is quarantined. Live submission must be routed exclusively through CertifiedLiveExecutionCoordinator.'
+    );
   }
 
   async reconcile(order: Pending): Promise<ExecutionReconcileResult> {

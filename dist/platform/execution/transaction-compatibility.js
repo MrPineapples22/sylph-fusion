@@ -42,9 +42,6 @@ export class TransactionCompatibilityAuthority {
         if (typeof limits.computeLimit !== 'number' || !Number.isSafeInteger(limits.computeLimit)) {
             throw new Error(`computeLimit must be a safe integer (got ${String(limits.computeLimit)})`);
         }
-        if (typeof limits.priorityFeeMicroLamports !== 'bigint' || limits.priorityFeeMicroLamports < 0n) {
-            throw new Error('priorityFeeMicroLamports must be a non-negative bigint');
-        }
         if (limits.loadedAccountsDataSizeLimit !== undefined &&
             (!Number.isSafeInteger(limits.loadedAccountsDataSizeLimit) || limits.loadedAccountsDataSizeLimit <= 0)) {
             throw new Error('loadedAccountsDataSizeLimit must be a positive safe integer');
@@ -55,6 +52,9 @@ export class TransactionCompatibilityAuthority {
         }
         const policyVersion = `resource-policy-2026-${version.toLowerCase()}`;
         if (version === 'LEGACY') {
+            if (typeof limits.priorityFeeMicroLamports !== 'bigint' || limits.priorityFeeMicroLamports < 0n) {
+                throw new Error('priorityFeeMicroLamports must be a non-negative bigint');
+            }
             if (limits.computeLimit <= 0 || limits.computeLimit > 1_400_000) {
                 throw new Error(`LEGACY compute limit must be in range 1..1,400,000 (got ${limits.computeLimit})`);
             }
@@ -68,6 +68,9 @@ export class TransactionCompatibilityAuthority {
             };
         }
         if (version === 'V0') {
+            if (typeof limits.priorityFeeMicroLamports !== 'bigint' || limits.priorityFeeMicroLamports < 0n) {
+                throw new Error('priorityFeeMicroLamports must be a non-negative bigint');
+            }
             if (limits.computeLimit <= 0 || limits.computeLimit > 1_400_000) {
                 throw new Error(`V0 compute limit must be in range 1..1,400,000 (got ${limits.computeLimit})`);
             }
@@ -88,12 +91,31 @@ export class TransactionCompatibilityAuthority {
             if (!limits.loadedAccountsDataSizeLimit || limits.loadedAccountsDataSizeLimit <= 0) {
                 throw new Error('V1 transactions require explicit loadedAccountsDataSizeLimit in message config');
             }
+            let priorityFee;
+            let v1TotalPriorityFeeLamports;
+            if (limits.v1PriorityFeeTotalLamports !== undefined) {
+                if (typeof limits.v1PriorityFeeTotalLamports !== 'bigint' || limits.v1PriorityFeeTotalLamports < 0n) {
+                    throw new Error('v1PriorityFeeTotalLamports must be a non-negative bigint');
+                }
+                priorityFee = limits.v1PriorityFeeTotalLamports;
+                v1TotalPriorityFeeLamports = limits.v1PriorityFeeTotalLamports;
+            }
+            else if (limits.priorityFeeMicroLamports !== undefined) {
+                if (typeof limits.priorityFeeMicroLamports !== 'bigint' || limits.priorityFeeMicroLamports < 0n) {
+                    throw new Error('priorityFeeMicroLamports must be a non-negative bigint');
+                }
+                priorityFee = limits.priorityFeeMicroLamports;
+            }
+            else {
+                throw new Error('V1 requires priority fee specification (v1PriorityFeeTotalLamports or priorityFeeMicroLamports)');
+            }
             return {
                 version: 'V1',
                 computeLimit: limits.computeLimit,
                 loadedAccountsLimit: limits.loadedAccountsDataSizeLimit,
                 heapLimit: limits.heapLimitBytes ?? 32 * 1024,
-                priorityFee: limits.priorityFeeMicroLamports,
+                priorityFee,
+                v1TotalPriorityFeeLamports,
                 resourcePolicyVersion: policyVersion,
             };
         }
