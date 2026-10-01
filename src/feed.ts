@@ -8,7 +8,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { BoundedSet, log } from './core.js';
 import type { Config } from './config.js';
 import { IngestionGapReconciler } from './platform/ingestion/gap-reconciler.js';
-import type { RawObservationEnvelope } from './platform/ingestion/types.js';
+import type { RawObservationEnvelope, ProcessingIntent } from './platform/ingestion/types.js';
 
 function providerLabel(endpoint: string): string {
   try { return new URL(endpoint).origin; }
@@ -39,15 +39,17 @@ export class Feed {
     this.parser = new EventParser(PUMP_PROGRAM_ID, getPumpProgram(connection).coder);
   }
   healthy() { const age = Date.now() - this.last; return !this.stopped && this.last > 0 && age >= 0 && age < this.cfg.FEED_STALE_MS && Date.now() - this.readySince >= this.cfg.MIN_AGE_MS; }
-  accept(signature: string, slot: number, logs: string[], source: { sourceId: string; providerId: string; transport: string; commitment?: RawObservationEnvelope['commitment']; observedAt?: number; isRepair?: boolean; allowLate?: boolean } = { sourceId: 'unknown', providerId: 'unknown', transport: 'unknown', commitment: 'unknown' }) {
+  accept(signature: string, slot: number, logs: string[], source: { sourceId: string; providerId: string; transport: string; commitment?: RawObservationEnvelope['commitment']; observedAt?: number; isRepair?: boolean; allowLate?: boolean; processingIntent?: ProcessingIntent } = { sourceId: 'unknown', providerId: 'unknown', transport: 'unknown', commitment: 'unknown' }) {
     const now = Date.now();
-    if (this.stopped || !Number.isSafeInteger(slot) || slot < 0 || (this.slot > 0 && slot < this.slot && !source?.isRepair && !source?.allowLate) || (this.slot > 0 && this.slot - slot > 1000) || typeof signature !== 'string' || !signature || !Array.isArray(logs) || logs.length === 0 || logs.some(line => typeof line !== 'string')) return;
+    const isHistoricalRepair = Boolean(source?.isRepair || source?.processingIntent === 'HISTORICAL_REPAIR');
+    if (this.stopped || !Number.isSafeInteger(slot) || slot < 0 || (this.slot > 0 && slot < this.slot && !isHistoricalRepair && !source?.allowLate) || (this.slot > 0 && !isHistoricalRepair && this.slot - slot > 1000) || typeof signature !== 'string' || !signature || !Array.isArray(logs) || logs.length === 0 || logs.some(line => typeof line !== 'string')) return;
     try { validateSource(source); } catch { log('feed_source_rejected'); return; }
     // Execution freshness and historical validity are separate.  A late
     // canonical transaction must still be available to repair materialized
     // history even though it cannot renew the execution-freshness clock.
     const rawPayloadHash = createHash('sha256').update(JSON.stringify(logs)).digest('hex');
-    const identity = JSON.stringify({ sourceId: source.sourceId, providerId: source.providerId, transport: source.transport, commitment: source.commitment ?? 'unknown', signature, slot, rawPayloadHash, schemaVersion: 'solana-program-logs/v1' });
+    const intent: ProcessingIntent = source.processingIntent ?? (isHistoricalRepair ? 'HISTORICAL_REPAIR' : 'LIVE');
+    const identity = JSON.stringify({ sourceId: source.sourceId, providerId: source.providerId, transport: source.transport, commitment: source.commitment ?? 'unknown', signature, slot, rawPayloadHash, schemaVersion: 'solana-program-logs/v1', processingIntent: intent });
     const envelope: RawObservationEnvelope = Object.freeze({
       observationId: createHash('sha256').update(identity).digest('hex'),
       sourceId: source.sourceId,
@@ -61,6 +63,7 @@ export class Feed {
       transactionVersion: 'unknown',
       rawPayloadHash,
       schemaVersion: 'solana-program-logs/v1',
+      processingIntent: intent,
     });
     const decoded: MarketEvent[] = [];
     try {

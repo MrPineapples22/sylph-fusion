@@ -50,21 +50,40 @@ export class PointInTimeStateEngine {
         this.portfolioSnapshots.push(snapshot);
     }
     /**
+     * Helper to evaluate whether an event was known / available at the specified cutoff.
+     * Under SYLPH_AS_KNOWN, repaired history received later is excluded from decision-time queries.
+     */
+    isEventEligible(event, timestampMs, slot, perspective) {
+        if (event.slot > slot)
+            return false;
+        if (perspective === 'MARKET_AS_WAS') {
+            return event.sourceTimestampMs <= timestampMs;
+        }
+        const knownAt = (event.receivedTimestampMs && event.receivedTimestampMs > 0)
+            ? event.receivedTimestampMs
+            : event.sourceTimestampMs;
+        return knownAt <= timestampMs;
+    }
+    /**
      * Reconstruct historical token state strictly as-of decision point (T, slot).
      */
-    get_token_state(mint, timestampMs, slot = Number.MAX_SAFE_INTEGER) {
+    get_token_state(mint, timestampMs, slot = Number.MAX_SAFE_INTEGER, options) {
         const list = this.eventsByMint.get(mint);
         if (!list || list.length === 0)
             return undefined;
-        // Filter strictly with Temporal Firewall
-        const eligible = list.filter((e) => e.sourceTimestampMs <= timestampMs && e.slot <= slot);
+        const perspective = options?.perspective ?? 'SYLPH_AS_KNOWN';
+        // Filter strictly with bitemporal cutoff
+        const eligible = list.filter((e) => this.isEventEligible(e, timestampMs, slot, perspective));
         if (eligible.length === 0)
             return undefined;
         // Enforce temporal firewall assertion
         const latest = eligible[eligible.length - 1];
+        const availableTimestamp = perspective === 'MARKET_AS_WAS'
+            ? latest.sourceTimestampMs
+            : ((latest.receivedTimestampMs && latest.receivedTimestampMs > 0) ? latest.receivedTimestampMs : latest.sourceTimestampMs);
         TemporalFirewall.assertAvailableBeforeDecision({
             artifactId: latest.eventId,
-            availableTimestampMs: latest.sourceTimestampMs,
+            availableTimestampMs: availableTimestamp,
             availableSlot: latest.slot,
         }, { decisionTimestampMs: timestampMs, decisionSlot: slot });
         let buyCount = 0;
@@ -113,11 +132,12 @@ export class PointInTimeStateEngine {
     /**
      * Reconstruct historical wallet state strictly as-of decision point (T, slot).
      */
-    get_wallet_state(wallet, timestampMs, slot = Number.MAX_SAFE_INTEGER) {
+    get_wallet_state(wallet, timestampMs, slot = Number.MAX_SAFE_INTEGER, options) {
         const list = this.eventsByWallet.get(wallet);
         if (!list || list.length === 0)
             return undefined;
-        const eligible = list.filter((e) => e.sourceTimestampMs <= timestampMs && e.slot <= slot);
+        const perspective = options?.perspective ?? 'SYLPH_AS_KNOWN';
+        const eligible = list.filter((e) => this.isEventEligible(e, timestampMs, slot, perspective));
         if (eligible.length === 0)
             return undefined;
         const firstSeen = eligible[0].slot;
@@ -149,8 +169,9 @@ export class PointInTimeStateEngine {
     /**
      * Reconstruct macro market state strictly as-of decision point (T, slot).
      */
-    get_market_state(timestampMs, slot = Number.MAX_SAFE_INTEGER) {
-        const eligible = this.globalEvents.filter((e) => e.sourceTimestampMs <= timestampMs && e.slot <= slot);
+    get_market_state(timestampMs, slot = Number.MAX_SAFE_INTEGER, options) {
+        const perspective = options?.perspective ?? 'SYLPH_AS_KNOWN';
+        const eligible = this.globalEvents.filter((e) => this.isEventEligible(e, timestampMs, slot, perspective));
         const activeMints = new Set();
         const oneHourAgo = timestampMs - 3_600_000;
         let launchesLastHour = 0;

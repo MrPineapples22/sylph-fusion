@@ -359,21 +359,24 @@ export class CensusRJournalAuthority {
   /**
    * Canonical Sealing: Seals events up to the specified finalized slot.
    */
-  public sealUpToSlot(finalizedSlot: number): number {
+  public sealUpToSlot(finalizedSlot: number, verifiedCompletenessThroughSlot?: number): number {
     if (!Number.isSafeInteger(finalizedSlot) || finalizedSlot < 0) throw new Error('CENSUS_INVALID_FINALIZED_SLOT');
+    const sealEligibleThrough = Number.isSafeInteger(verifiedCompletenessThroughSlot)
+      ? Math.min(finalizedSlot, verifiedCompletenessThroughSlot!)
+      : finalizedSlot;
     let sealedCount = 0;
     let lastSealedId: string | undefined;
 
     for (const ev of this.journal) {
-      if (ev.slot <= finalizedSlot && this.currentStage(ev.eventId) === 'CANONICAL') {
+      if (ev.slot <= sealEligibleThrough && this.currentStage(ev.eventId) === 'CANONICAL') {
         this.recordStage(ev.eventId, 'SEALED');
         sealedCount++;
         lastSealedId = ev.eventId;
       }
     }
 
-    if (finalizedSlot > this.watermark.highestSealedSlot) {
-      this.watermark.highestSealedSlot = finalizedSlot;
+    if (sealEligibleThrough > this.watermark.highestSealedSlot) {
+      this.watermark.highestSealedSlot = sealEligibleThrough;
       if (lastSealedId) this.watermark.lastSealedEventId = lastSealedId;
     }
 

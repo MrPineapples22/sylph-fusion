@@ -49,6 +49,26 @@ export class Store {
     async markSigningIntentSigned(economicIntentId, messageSha256, signatureBase64) {
         await this.call('mark-signed', JSON.stringify({ economicIntentId, messageSha256, signatureBase64 }));
     }
+    async saveCapitalCommit(commit) {
+        await this.call('save-capital-commit', JSON.stringify(commit, (_, v) => typeof v === 'bigint' ? v.toString() : v));
+    }
+    async appendCapitalEvent(event) {
+        await this.call('append-capital-event', JSON.stringify(event, (_, v) => typeof v === 'bigint' ? v.toString() : v));
+    }
+    async saveRecoveryCertificate(cert) {
+        await this.call('save-recovery-certificate', JSON.stringify(cert));
+    }
+    async getRecoveryCertificate(certificateIdOrGapId) {
+        const text = await this.call('get-recovery-certificate', certificateIdOrGapId);
+        return text ? JSON.parse(text) : null;
+    }
+    async saveCoverageFrontier(frontier) {
+        await this.call('save-coverage-frontier', JSON.stringify(frontier));
+    }
+    async getCoverageFrontier(lane) {
+        const text = await this.call('get-coverage-frontier', lane);
+        return text ? JSON.parse(text) : null;
+    }
     async backup(destinationPath) { await this.call('backup', destinationPath); }
     async pruneAudit(maxAgeMs) { await this.call('prune', maxAgeMs ? String(maxAgeMs) : undefined); }
     close() {

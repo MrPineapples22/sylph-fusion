@@ -1415,6 +1415,12 @@ export class MasterIntelligenceEngine {
                         jito_tip_sol: 0.0001,
                         priority_fee_micro_lamports: 10_000,
                     });
+                    // In live mode, in-memory synthetic settlement without chain landing is strictly prohibited
+                    if (process.env.SYLPH_RUNTIME_MODE === 'live' || process.env.MODE === 'live') {
+                        throw new Error('LIVE_EXECUTION_BLOCKED: CertifiedLiveExecutionCoordinator required for live capital mutations');
+                    }
+                    // Domain-tagged deterministic simulated transaction wire for paper mode (Sections 37 & 103)
+                    const domainTaggedPaperWire = Buffer.from(`SYLPH/PAPER_TX/V1:${intentId}:${event.mint}:${event.slot}`);
                     const sigResponse = this.vaultSigner.processSignatureRequest({
                         request_id: `req_${event.eventId}`,
                         intent_id: intentId,
@@ -1426,7 +1432,7 @@ export class MasterIntelligenceEngine {
                         active_revocation_epoch: this.revocationEngine.getCurrentEpoch(),
                         production_root: 'sylph_production_root_sha256_v1',
                         proof_lease_valid: commitCert.expiration_slot > event.slot,
-                        serialized_tx_bytes: new Uint8Array([1, 2, 3, 4]),
+                        serialized_tx_bytes: domainTaggedPaperWire,
                     });
                     if (sigResponse.success && sigResponse.signature_base58) {
                         this.janusReconciler.registerTransaction({

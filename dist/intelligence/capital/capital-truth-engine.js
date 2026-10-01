@@ -8,6 +8,7 @@
  */
 import { createHash } from 'node:crypto';
 export class CapitalTruthEngine {
+    journal;
     confirmedCashSol;
     reservedCashSol = 0.0;
     emergencyReserveSol = 5.0; // Protected SOL never exposed to trades
@@ -40,7 +41,8 @@ export class CapitalTruthEngine {
     positions = new Map();
     unresolvedTxsCount = 0;
     unresolvedIntentsCount = 0;
-    constructor(initialCashSol = 100.0) {
+    constructor(initialCashSol = 100.0, journal) {
+        this.journal = journal;
         this.initialPrincipalSol = initialCashSol;
         this.confirmedCashSol = initialCashSol;
         this.recordEvent({
@@ -183,13 +185,27 @@ export class CapitalTruthEngine {
             certificate_hash: certHash,
         };
         this.commitLog.set(params.intent_id, cert);
-        this.recordEvent({
+        const ev = this.recordEvent({
             event_type: 'INTENT_COMMITTED',
             entity_id: params.intent_id,
             delta_sol: 0,
             slot: params.slot,
             payload: { certId, certHash },
         });
+        if (this.journal) {
+            this.journal.saveCapitalCommit({
+                intentId: params.intent_id,
+                reservationId: params.reservation_id,
+                certificateId: certId,
+                capitalStateRoot: stateRoot,
+                certificateHash: certHash,
+            }).catch(() => { });
+            this.journal.appendCapitalEvent({
+                ...ev,
+                delta_lamports: 0n,
+                balance_after_lamports: BigInt(Math.round(this.confirmedCashSol * 1e9)),
+            }).catch(() => { });
+        }
         return cert;
     }
     /**
@@ -405,11 +421,14 @@ export class CapitalTruthEngine {
     }
     /**
      * Returns cryptographic state root (Part V).
+     * Binds exact integer lamport strings without floating-point toFixed(6) truncation.
      */
     getCapitalStateRoot() {
+        const confirmedCashLamports = BigInt(Math.round(this.confirmedCashSol * 1e9));
+        const reservedCashLamports = BigInt(Math.round(this.reservedCashSol * 1e9));
         const summary = JSON.stringify({
-            confirmedCash: this.confirmedCashSol.toFixed(6),
-            reservedCash: this.reservedCashSol.toFixed(6),
+            confirmedCashLamports: confirmedCashLamports.toString(),
+            reservedCashLamports: reservedCashLamports.toString(),
             controlEpoch: this.controlEpoch,
             revocationEpoch: this.revocationEpoch,
             stateVersion: this.stateVersion,
@@ -420,6 +439,7 @@ export class CapitalTruthEngine {
     }
     /**
      * Computes full double-entry accounting report and verifies conservation of capital (Part IV).
+     * Strict invariant: Exactly 0 lamports discrepancy permitted.
      */
     getDoubleEntryReport() {
         let positionSolValue = 0;
@@ -438,8 +458,13 @@ export class CapitalTruthEngine {
             this.failedTxCostsSol +
             this.realizedLossesSol -
             this.realizedProceedsSol;
-        const discrepancy = Math.abs(totalAccounted - this.initialPrincipalSol);
-        const isConservationValid = discrepancy < 0.000001;
+        const totalAccountedLamports = BigInt(Math.round(totalAccounted * 1e9));
+        const initialPrincipalLamports = BigInt(Math.round(this.initialPrincipalSol * 1e9));
+        const discrepancyLamports = totalAccountedLamports >= initialPrincipalLamports
+            ? totalAccountedLamports - initialPrincipalLamports
+            : initialPrincipalLamports - totalAccountedLamports;
+        const isConservationValid = discrepancyLamports === 0n;
+        const discrepancy = Number(discrepancyLamports) / 1e9;
         return {
             principal_sol: this.initialPrincipalSol,
             token_inventory_value_sol: positionSolValue,

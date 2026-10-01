@@ -24,7 +24,7 @@ The audit is intentionally not a behavioral integration suite or deployment cert
 | 12 | Event ledger | `event-ledger.ts` | Untraceable state mutation |
 | 13 | Double-entry accounting | `double-entry.ts` | Capital conservation failures |
 | 14 | Execution readiness fence | `execution-authority-readiness.ts` | Premature execution claims |
-| 15 | Transaction compatibility | `transaction-compatibility.ts` | Version/decoder mismatch |
+| 15doitnowdoitnow     | Transaction compatibility | `transaction-compatibility.ts` | Version/decoder mismatch |
 | 16 | Transaction lifetime control | `transaction-lifetime.ts` | Blockhash/expiry ambiguity |
 | 17 | Hard veto microkernel | `hard-veto-kernel.ts` | Safety-rule bypass |
 | 18 | Token semantics inspection | `token-semantics.ts` | Unsafe program assumptions |

@@ -70,6 +70,13 @@ export class CertifiedLiveExecutionCoordinator {
         if (!intent.callerPublicKey || intent.callerPublicKey.equals(PublicKey.default)) {
             throw new Error('INVALID_ECONOMIC_INTENT: Invalid caller public key');
         }
+        // Invariant 7: Processing intent must be strictly LIVE to create live economic authority
+        if (intent.processingIntent && intent.processingIntent !== 'LIVE') {
+            throw new Error(`ECONOMIC_AUTHORITY_DENIED: ProcessingIntent must be LIVE (got ${intent.processingIntent})`);
+        }
+        if (intent.authorityEnvelope && intent.authorityEnvelope.processingIntent !== 'LIVE') {
+            throw new Error(`ECONOMIC_AUTHORITY_DENIED: Authority envelope processingIntent must be LIVE (got ${intent.authorityEnvelope.processingIntent})`);
+        }
     }
     /**
      * Step 2: Verify Transaction Capability
@@ -135,6 +142,9 @@ export class CertifiedLiveExecutionCoordinator {
      */
     sealExecutionAuthorizationRoot(params) {
         const canonicalHash = createHash('sha256').update(params.candidateTransactionBytes).digest('hex');
+        const envHash = params.authorityEnvelope
+            ? createHash('sha256').update(JSON.stringify(params.authorityEnvelope)).digest('hex')
+            : 'NO_AUTHORITY_ENVELOPE';
         const authRootHash = createHash('sha256')
             .update('EXECUTION_AUTHORIZATION_ROOT:')
             .update(params.intentId)
@@ -143,7 +153,8 @@ export class CertifiedLiveExecutionCoordinator {
             .update(`:${canonicalHash}:`)
             .update(`${params.simulationComputeUnits}:`)
             .update(`${params.estimatedNetSolDelta}:`)
-            .update(`${params.expiresAtBlockHeight}`)
+            .update(`${params.expiresAtBlockHeight}:`)
+            .update(envHash)
             .digest('hex');
         return {
             authRootHash,
@@ -155,6 +166,7 @@ export class CertifiedLiveExecutionCoordinator {
             estimatedNetSolDelta: params.estimatedNetSolDelta,
             expiresAtBlockHeight: params.expiresAtBlockHeight,
             sealedAt: Date.now(),
+            authorityEnvelope: params.authorityEnvelope,
         };
     }
     /**

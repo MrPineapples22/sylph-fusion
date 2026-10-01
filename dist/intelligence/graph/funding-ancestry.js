@@ -13,9 +13,47 @@
  * - motifs: STAR_FUNDING, CHAIN_FUNDING, CIRCULAR_FLOWS, COORDINATED_LAUNCH
  */
 export class FundingAncestryEngine {
-    historicalWalletFunding = new Map(); // wallet -> parent
-    recordFunding(wallet, parent) {
-        this.historicalWalletFunding.set(wallet, parent);
+    fundingRecords = new Map(); // wallet -> stack of records
+    recordFunding(wallet, parent, slot = 0, timestampMs = Date.now(), supportingEventId) {
+        const stack = this.fundingRecords.get(wallet) ?? [];
+        for (const r of stack) {
+            if (r.status === 'ACTIVE') {
+                r.status = 'SUPERSEDED';
+            }
+        }
+        stack.push({
+            wallet,
+            parent,
+            slot,
+            timestampMs,
+            supportingEventId,
+            status: 'ACTIVE',
+        });
+        this.fundingRecords.set(wallet, stack);
+    }
+    getParent(wallet) {
+        const stack = this.fundingRecords.get(wallet);
+        if (!stack || stack.length === 0)
+            return undefined;
+        const active = [...stack].reverse().find(r => r.status === 'ACTIVE');
+        return active?.parent;
+    }
+    rollbackSlot(slot) {
+        let rolledBackCount = 0;
+        for (const stack of this.fundingRecords.values()) {
+            for (const r of stack) {
+                if (r.slot === slot && r.status === 'ACTIVE') {
+                    r.status = 'RETRACTED';
+                    rolledBackCount++;
+                    // Restore prior non-retracted record if any
+                    const prior = [...stack].reverse().find(entry => entry.status === 'SUPERSEDED' && entry.slot < slot);
+                    if (prior) {
+                        prior.status = 'ACTIVE';
+                    }
+                }
+            }
+        }
+        return rolledBackCount;
     }
     analyzeAncestry(wallets, creatorAddress) {
         if (!wallets || wallets.length === 0) {
@@ -36,7 +74,7 @@ export class FundingAncestryEngine {
         let creatorInCluster = false;
         let totalDepth = 0;
         for (const w of wallets) {
-            const funder = w.fundingParentAddress || this.historicalWalletFunding.get(w.walletAddress) || w.walletAddress;
+            const funder = w.fundingParentAddress || this.getParent(w.walletAddress) || w.walletAddress;
             funderCounts.set(funder, (funderCounts.get(funder) ?? 0) + 1);
             totalAssigned++;
             totalDepth += w.hopsFromExchange ?? 1;

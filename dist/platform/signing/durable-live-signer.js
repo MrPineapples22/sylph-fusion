@@ -5,17 +5,21 @@ export function signingMessageHash(message) {
 /**
  * Fail-closed bridge between a durable capital grant and an isolated signer.
  * The journal commit always precedes the first call across the signing boundary.
+ * Enforces dual-epoch barrier: both controlEpoch and revocationEpoch must be valid
+ * both before journal prepare and immediately prior to calling the isolated signer.
  */
 export class DurableLiveSigner {
     signer;
     journal;
     currentControlEpoch;
     now;
-    constructor(signer, journal, currentControlEpoch, now = Date.now) {
+    currentRevocationEpoch;
+    constructor(signer, journal, currentControlEpoch, now = Date.now, currentRevocationEpoch) {
         this.signer = signer;
         this.journal = journal;
         this.currentControlEpoch = currentControlEpoch;
         this.now = now;
+        this.currentRevocationEpoch = currentRevocationEpoch;
     }
     async sign(grant, message) {
         if (!(message instanceof Uint8Array) || message.byteLength === 0)
@@ -37,6 +41,14 @@ export class DurableLiveSigner {
         if (!Number.isSafeInteger(grant.controlEpoch) || grant.controlEpoch < 0 ||
             grant.controlEpoch !== this.currentControlEpoch())
             throw new Error('SIGNING_GRANT_EPOCH_STALE');
+        if (grant.revocationEpoch !== undefined) {
+            if (!Number.isSafeInteger(grant.revocationEpoch) || grant.revocationEpoch < 0) {
+                throw new Error('SIGNING_GRANT_REVOCATION_EPOCH_INVALID');
+            }
+            if (this.currentRevocationEpoch && grant.revocationEpoch !== this.currentRevocationEpoch()) {
+                throw new Error('SIGNING_GRANT_REVOCATION_EPOCH_STALE');
+            }
+        }
         const messageSha256 = signingMessageHash(authorizedMessage);
         if (grant.messageSha256 !== messageSha256)
             throw new Error('SIGNING_MESSAGE_ALTERED');
@@ -46,12 +58,14 @@ export class DurableLiveSigner {
             wallet: grant.wallet,
             messageSha256,
             controlEpoch: grant.controlEpoch,
+            revocationEpoch: grant.revocationEpoch,
             preparedAtMs: now,
         });
         // Recheck authority after the durability boundary: a revocation may race the fsync.
         const signingTime = this.now();
         if (!Number.isSafeInteger(signingTime) || signingTime < now ||
-            grant.expiresAtMs <= signingTime || grant.controlEpoch !== this.currentControlEpoch()) {
+            grant.expiresAtMs <= signingTime || grant.controlEpoch !== this.currentControlEpoch() ||
+            (grant.revocationEpoch !== undefined && this.currentRevocationEpoch && grant.revocationEpoch !== this.currentRevocationEpoch())) {
             throw new Error('SIGNING_GRANT_REVOKED_AFTER_PREPARE');
         }
         const signature = await this.signer.signAuthorizedMessage(authorizedMessage);

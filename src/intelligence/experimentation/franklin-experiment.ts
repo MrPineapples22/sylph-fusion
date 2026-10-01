@@ -58,6 +58,9 @@ export class FranklinControlledExperimentationEngine {
   public static readonly VERSION = '1.0.0';
   private experiments: Map<string, ExperimentCandidate> = new Map();
   private consumedEvidenceRoots: Set<string> = new Set();
+  private supersededEvidenceRoots: Set<string> = new Set();
+  private experimentEvidenceRoots: Map<string, string[]> = new Map();
+  private experimentSlotRanges: Map<string, Array<{ start: number; end: number }>> = new Map();
 
   public registerExperiment(params: {
     name: string;
@@ -101,6 +104,7 @@ export class FranklinControlledExperimentationEngine {
       drawdown_pct: number;
       brier_score: number;
       evidence_root?: string;
+      slot_range?: { start: number; end: number };
     }
   ): {
     promoted: boolean;
@@ -166,7 +170,12 @@ export class FranklinControlledExperimentationEngine {
       return { promoted: false, certificate: makeCert(false, undefined, reason), rejection_reason: reason };
     }
 
-    // 2. Anti-replay verification
+    // 2. Anti-replay and supersession verification
+    if (this.supersededEvidenceRoots.has(evidenceRoot)) {
+      const reason = `Evidence root ${evidenceRoot.slice(0, 16)} has been superseded by historical gap reconciliation; stage promotion rejected`;
+      return { promoted: false, certificate: makeCert(false, undefined, reason), rejection_reason: reason };
+    }
+
     if (this.consumedEvidenceRoots.has(evidenceRoot)) {
       const reason = `Evidence root ${evidenceRoot.slice(0, 16)} already consumed; stage replay rejected`;
       return { promoted: false, certificate: makeCert(false, undefined, reason), rejection_reason: reason };
@@ -212,6 +221,15 @@ export class FranklinControlledExperimentationEngine {
     }
 
     this.consumedEvidenceRoots.add(evidenceRoot);
+    const roots = this.experimentEvidenceRoots.get(experimentId) ?? [];
+    roots.push(evidenceRoot);
+    this.experimentEvidenceRoots.set(experimentId, roots);
+
+    if (metrics.slot_range) {
+      const ranges = this.experimentSlotRanges.get(experimentId) ?? [];
+      ranges.push(metrics.slot_range);
+      this.experimentSlotRanges.set(experimentId, ranges);
+    }
 
     const updated: ExperimentCandidate = {
       ...exp,
@@ -234,5 +252,88 @@ export class FranklinControlledExperimentationEngine {
 
   public getAllExperiments(): readonly ExperimentCandidate[] {
     return Array.from(this.experiments.values());
+  }
+
+  /**
+   * Invalidates a superseded evidence root (e.g. following historical gap reconciliation / repair).
+   * Any experiment candidate advanced based on this evidence is immediately demoted back
+   * to STAGE_2_OFFLINE to prevent unverified model promotion into execution canary/production stages.
+   */
+  public invalidateEvidenceRoot(evidenceRoot: string): { demotedExperiments: string[] } {
+    this.supersededEvidenceRoots.add(evidenceRoot);
+    const demoted: string[] = [];
+
+    for (const [expId, candidate] of this.experiments.entries()) {
+      const roots = this.experimentEvidenceRoots.get(expId);
+      if (roots && roots.includes(evidenceRoot)) {
+        if (candidate.current_stage !== 'STAGE_1_HYPOTHESIS' && candidate.current_stage !== 'STAGE_2_OFFLINE') {
+          const demotedCandidate: ExperimentCandidate = {
+            ...candidate,
+            current_stage: 'STAGE_2_OFFLINE',
+          };
+          this.experiments.set(expId, demotedCandidate);
+          demoted.push(expId);
+        }
+      }
+    }
+
+    return { demotedExperiments: demoted };
+  }
+
+  /**
+   * Processes a verified RecoveryCertificate from the IngestionGapReconciler.
+   * Identifies all experiments evaluated over the gap's slot range or referencing
+   * superseded roots, invalidating their evidence roots and demoting affected cohorts.
+   */
+  public handleRecoveryCertificate(cert: {
+    gapId: string;
+    startSlot?: number;
+    endSlot?: number;
+    stateRoot?: string;
+    coverageRoot?: string;
+    supersededEvidenceRoots?: readonly string[];
+  }): { demotedExperiments: string[]; supersededRoots: string[] } {
+    const demotedSet = new Set<string>();
+    const invalidatedRoots: string[] = [];
+
+    // 1. Explicitly superseded roots
+    if (cert.supersededEvidenceRoots) {
+      for (const root of cert.supersededEvidenceRoots) {
+        invalidatedRoots.push(root);
+        const { demotedExperiments } = this.invalidateEvidenceRoot(root);
+        for (const id of demotedExperiments) demotedSet.add(id);
+      }
+    }
+
+    // 2. Slot range overlap supersession
+    if (cert.startSlot !== undefined && cert.endSlot !== undefined) {
+      const start = cert.startSlot;
+      const end = cert.endSlot;
+
+      for (const [expId, ranges] of this.experimentSlotRanges.entries()) {
+        const overlaps = ranges.some(r => Math.max(r.start, start) <= Math.min(r.end, end));
+        if (overlaps) {
+          const roots = this.experimentEvidenceRoots.get(expId) ?? [];
+          for (const root of roots) {
+            invalidatedRoots.push(root);
+            const { demotedExperiments } = this.invalidateEvidenceRoot(root);
+            for (const id of demotedExperiments) demotedSet.add(id);
+          }
+        }
+      }
+    }
+
+    return {
+      demotedExperiments: Array.from(demotedSet),
+      supersededRoots: invalidatedRoots,
+    };
+  }
+
+  public isEvidenceRootSuperseded(evidenceRoot: string): boolean {
+    return this.supersededEvidenceRoots.has(evidenceRoot);
+  }
+
+  public getExperimentEvidenceRoots(experimentId: string): readonly string[] {
+    return this.experimentEvidenceRoots.get(experimentId) ?? [];
   }
 }

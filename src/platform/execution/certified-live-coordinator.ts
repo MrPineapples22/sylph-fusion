@@ -39,6 +39,17 @@ import {
 } from '../../intelligence/capital/reservations.js';
 import { SigningFirewall } from '../signing/signing-firewall.js';
 import type { ExecutionSignerGateway } from '../../execution.js';
+import type { ProcessingIntent } from '../ingestion/types.js';
+
+export interface DecisionAuthorityEnvelope {
+  readonly decisionId: string;
+  readonly strategyId: string;
+  readonly evidenceSetHash: string;
+  readonly coverageFrontierRoot: string;
+  readonly modelPromotionHash?: string;
+  readonly processingIntent: ProcessingIntent;
+  readonly issuedAtMs: number;
+}
 
 export interface CertifiedEconomicIntent {
   readonly intentId: string;
@@ -50,6 +61,8 @@ export interface CertifiedEconomicIntent {
   readonly maxSlippageBps: number;
   readonly callerPublicKey: PublicKey;
   readonly createdAt: number;
+  readonly processingIntent?: ProcessingIntent;
+  readonly authorityEnvelope?: DecisionAuthorityEnvelope;
 }
 
 export interface ExecutionAuthorizationRoot {
@@ -62,6 +75,7 @@ export interface ExecutionAuthorizationRoot {
   readonly estimatedNetSolDelta: bigint;
   readonly expiresAtBlockHeight: number;
   readonly sealedAt: number;
+  readonly authorityEnvelope?: DecisionAuthorityEnvelope;
 }
 
 export interface CertifiedExecutionResult {
@@ -122,6 +136,13 @@ export class CertifiedLiveExecutionCoordinator {
     }
     if (!intent.callerPublicKey || intent.callerPublicKey.equals(PublicKey.default)) {
       throw new Error('INVALID_ECONOMIC_INTENT: Invalid caller public key');
+    }
+    // Invariant 7: Processing intent must be strictly LIVE to create live economic authority
+    if (intent.processingIntent && intent.processingIntent !== 'LIVE') {
+      throw new Error(`ECONOMIC_AUTHORITY_DENIED: ProcessingIntent must be LIVE (got ${intent.processingIntent})`);
+    }
+    if (intent.authorityEnvelope && intent.authorityEnvelope.processingIntent !== 'LIVE') {
+      throw new Error(`ECONOMIC_AUTHORITY_DENIED: Authority envelope processingIntent must be LIVE (got ${intent.authorityEnvelope.processingIntent})`);
     }
   }
 
@@ -212,8 +233,13 @@ export class CertifiedLiveExecutionCoordinator {
     simulationComputeUnits: number;
     estimatedNetSolDelta: bigint;
     expiresAtBlockHeight: number;
+    authorityEnvelope?: DecisionAuthorityEnvelope;
   }): ExecutionAuthorizationRoot {
     const canonicalHash = createHash('sha256').update(params.candidateTransactionBytes).digest('hex');
+    const envHash = params.authorityEnvelope
+      ? createHash('sha256').update(JSON.stringify(params.authorityEnvelope)).digest('hex')
+      : 'NO_AUTHORITY_ENVELOPE';
+
     const authRootHash = createHash('sha256')
       .update('EXECUTION_AUTHORIZATION_ROOT:')
       .update(params.intentId)
@@ -222,7 +248,8 @@ export class CertifiedLiveExecutionCoordinator {
       .update(`:${canonicalHash}:`)
       .update(`${params.simulationComputeUnits}:`)
       .update(`${params.estimatedNetSolDelta}:`)
-      .update(`${params.expiresAtBlockHeight}`)
+      .update(`${params.expiresAtBlockHeight}:`)
+      .update(envHash)
       .digest('hex');
 
     return {
@@ -235,6 +262,7 @@ export class CertifiedLiveExecutionCoordinator {
       estimatedNetSolDelta: params.estimatedNetSolDelta,
       expiresAtBlockHeight: params.expiresAtBlockHeight,
       sealedAt: Date.now(),
+      authorityEnvelope: params.authorityEnvelope,
     };
   }
 

@@ -15,6 +15,12 @@
 import { TemporalFirewall } from './temporal-firewall.js';
 import type { CanonicalEvent } from './types.js';
 
+export type TemporalQueryPerspective = 'SYLPH_AS_KNOWN' | 'MARKET_AS_WAS';
+
+export interface PointInTimeQueryOptions {
+  readonly perspective?: TemporalQueryPerspective;
+}
+
 export interface TokenPointInTimeState {
   readonly mint: string;
   readonly asOfTimestampMs: number;
@@ -118,29 +124,54 @@ export class PointInTimeStateEngine {
   }
 
   /**
+   * Helper to evaluate whether an event was known / available at the specified cutoff.
+   * Under SYLPH_AS_KNOWN, repaired history received later is excluded from decision-time queries.
+   */
+  private isEventEligible(
+    event: CanonicalEvent,
+    timestampMs: number,
+    slot: number,
+    perspective: TemporalQueryPerspective
+  ): boolean {
+    if (event.slot > slot) return false;
+    if (perspective === 'MARKET_AS_WAS') {
+      return event.sourceTimestampMs <= timestampMs;
+    }
+    const knownAt = (event.receivedTimestampMs && event.receivedTimestampMs > 0)
+      ? event.receivedTimestampMs
+      : event.sourceTimestampMs;
+    return knownAt <= timestampMs;
+  }
+
+  /**
    * Reconstruct historical token state strictly as-of decision point (T, slot).
    */
   public get_token_state(
     mint: string,
     timestampMs: number,
-    slot = Number.MAX_SAFE_INTEGER
+    slot = Number.MAX_SAFE_INTEGER,
+    options?: PointInTimeQueryOptions
   ): TokenPointInTimeState | undefined {
     const list = this.eventsByMint.get(mint);
     if (!list || list.length === 0) return undefined;
 
-    // Filter strictly with Temporal Firewall
-    const eligible = list.filter(
-      (e) => e.sourceTimestampMs <= timestampMs && e.slot <= slot
-    );
+    const perspective = options?.perspective ?? 'SYLPH_AS_KNOWN';
+
+    // Filter strictly with bitemporal cutoff
+    const eligible = list.filter((e) => this.isEventEligible(e, timestampMs, slot, perspective));
 
     if (eligible.length === 0) return undefined;
 
     // Enforce temporal firewall assertion
     const latest = eligible[eligible.length - 1];
+    const availableTimestamp = perspective === 'MARKET_AS_WAS'
+      ? latest.sourceTimestampMs
+      : ((latest.receivedTimestampMs && latest.receivedTimestampMs > 0) ? latest.receivedTimestampMs : latest.sourceTimestampMs);
+
     TemporalFirewall.assertAvailableBeforeDecision(
       {
         artifactId: latest.eventId,
-        availableTimestampMs: latest.sourceTimestampMs,
+        availableTimestampMs: availableTimestamp,
         availableSlot: latest.slot,
       },
       { decisionTimestampMs: timestampMs, decisionSlot: slot }
@@ -195,14 +226,14 @@ export class PointInTimeStateEngine {
   public get_wallet_state(
     wallet: string,
     timestampMs: number,
-    slot = Number.MAX_SAFE_INTEGER
+    slot = Number.MAX_SAFE_INTEGER,
+    options?: PointInTimeQueryOptions
   ): WalletPointInTimeState | undefined {
     const list = this.eventsByWallet.get(wallet);
     if (!list || list.length === 0) return undefined;
 
-    const eligible = list.filter(
-      (e) => e.sourceTimestampMs <= timestampMs && e.slot <= slot
-    );
+    const perspective = options?.perspective ?? 'SYLPH_AS_KNOWN';
+    const eligible = list.filter((e) => this.isEventEligible(e, timestampMs, slot, perspective));
 
     if (eligible.length === 0) return undefined;
 
@@ -239,11 +270,11 @@ export class PointInTimeStateEngine {
    */
   public get_market_state(
     timestampMs: number,
-    slot = Number.MAX_SAFE_INTEGER
+    slot = Number.MAX_SAFE_INTEGER,
+    options?: PointInTimeQueryOptions
   ): MarketPointInTimeState {
-    const eligible = this.globalEvents.filter(
-      (e) => e.sourceTimestampMs <= timestampMs && e.slot <= slot
-    );
+    const perspective = options?.perspective ?? 'SYLPH_AS_KNOWN';
+    const eligible = this.globalEvents.filter((e) => this.isEventEligible(e, timestampMs, slot, perspective));
 
     const activeMints = new Set<string>();
     const oneHourAgo = timestampMs - 3_600_000;

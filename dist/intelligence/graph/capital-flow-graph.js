@@ -29,10 +29,21 @@ export class CapitalFlowGraph {
     creatorStates = new Map();
     recentExitsByWallet = new Map();
     /**
-     * Record a capital transfer in the ecosystem.
+     * Record a capital transfer in the ecosystem with immutable contribution tracking.
      */
     recordTransfer(edge) {
-        this.transfers.push(edge);
+        const transferId = edge.transferId ?? `${edge.slot}:${edge.fromNode}:${edge.toNode}:${edge.timestampMs}:${this.transfers.length}`;
+        const storedEdge = {
+            ...edge,
+            transferId,
+            status: edge.status ?? 'ACTIVE',
+        };
+        // Insert maintaining chronological ordering
+        let insertIdx = this.transfers.length;
+        while (insertIdx > 0 && this.transfers[insertIdx - 1].timestampMs > edge.timestampMs) {
+            insertIdx--;
+        }
+        this.transfers.splice(insertIdx, 0, storedEdge);
         if (this.transfers.length > 5000)
             this.transfers.shift();
         // 1. Update wallet state
@@ -82,11 +93,65 @@ export class CapitalFlowGraph {
         return { detectedRotation, updatedWalletState: nextState };
     }
     /**
-     * Evaluate capital flow dynamics and phase for a token.
+     * Reversibility: Roll back all active transfers at a specified slot, cleanly
+     * deducting balances and restoring wallet behavior states.
+     */
+    rollbackSlot(slot) {
+        let rolledBackCount = 0;
+        for (const t of this.transfers) {
+            if (t.slot === slot && t.status === 'ACTIVE') {
+                t.status = 'RETRACTED';
+                rolledBackCount++;
+                // Reverse wallet holding mutations
+                const walletRecord = this.walletStates.get(t.fromNode);
+                if (walletRecord) {
+                    if (t.toNode.startsWith('token:') || t.toNode.startsWith('pool:') || t.toNode.startsWith('mint:')) {
+                        walletRecord.netHoldingSol = Math.max(0, walletRecord.netHoldingSol - t.amountSol);
+                    }
+                    else if (t.fromNode.startsWith('token:') || t.fromNode.startsWith('pool:') || t.fromNode.startsWith('mint:')) {
+                        walletRecord.netHoldingSol += t.amountSol;
+                    }
+                    walletRecord.state = walletRecord.netHoldingSol <= 0 ? (walletRecord.netHoldingSol === 0 ? 'SCOUTING' : 'EXITED') : 'ACCUMULATING';
+                }
+            }
+        }
+        return rolledBackCount;
+    }
+    /**
+     * Retract a specific transfer by its unique transfer ID.
+     */
+    retractTransfer(transferId) {
+        const t = this.transfers.find(e => e.transferId === transferId);
+        if (!t || t.status !== 'ACTIVE')
+            return false;
+        t.status = 'RETRACTED';
+        const walletRecord = this.walletStates.get(t.fromNode);
+        if (walletRecord) {
+            if (t.toNode.startsWith('token:') || t.toNode.startsWith('pool:') || t.toNode.startsWith('mint:')) {
+                walletRecord.netHoldingSol = Math.max(0, walletRecord.netHoldingSol - t.amountSol);
+            }
+            else if (t.fromNode.startsWith('token:') || t.fromNode.startsWith('pool:') || t.fromNode.startsWith('mint:')) {
+                walletRecord.netHoldingSol += t.amountSol;
+            }
+            walletRecord.state = walletRecord.netHoldingSol <= 0 ? (walletRecord.netHoldingSol === 0 ? 'SCOUTING' : 'EXITED') : 'ACCUMULATING';
+        }
+        return true;
+    }
+    getNetHolding(wallet) {
+        return this.walletStates.get(wallet)?.netHoldingSol ?? 0;
+    }
+    /**
+     * Evaluate capital flow dynamics and phase for a token using only active transfers.
      */
     evaluateTokenFlow(mint, windowMs = 60_000, asOfTimestampMs) {
-        const now = asOfTimestampMs ?? (this.transfers.length > 0 ? this.transfers[this.transfers.length - 1].timestampMs : Date.now());
-        const recent = this.transfers.filter((t) => t.mint === mint && t.timestampMs >= now - windowMs && t.timestampMs <= now);
+        const activeTransfers = this.transfers.filter(t => t.status === 'ACTIVE');
+        const maxActiveTs = activeTransfers.length > 0
+            ? (asOfTimestampMs !== undefined
+                ? Math.max(...activeTransfers.filter(t => t.timestampMs <= asOfTimestampMs).map(t => t.timestampMs), 0)
+                : activeTransfers[activeTransfers.length - 1].timestampMs)
+            : Date.now();
+        const now = asOfTimestampMs ?? (maxActiveTs > 0 ? maxActiveTs : Date.now());
+        const recent = activeTransfers.filter((t) => t.mint === mint && t.timestampMs >= now - windowMs && t.timestampMs <= now);
         let inflow = 0;
         let outflow = 0;
         const activeWallets = new Set();

@@ -34,11 +34,65 @@ export interface FundingAncestryReport {
   readonly isSyntheticSybilCluster: boolean;
 }
 
-export class FundingAncestryEngine {
-  private readonly historicalWalletFunding = new Map<string, string>(); // wallet -> parent
+export interface FundingRelationshipRecord {
+  readonly wallet: string;
+  readonly parent: string;
+  readonly slot: number;
+  readonly timestampMs: number;
+  readonly supportingEventId?: string;
+  status: 'ACTIVE' | 'RETRACTED' | 'SUPERSEDED';
+}
 
-  public recordFunding(wallet: string, parent: string): void {
-    this.historicalWalletFunding.set(wallet, parent);
+export class FundingAncestryEngine {
+  private readonly fundingRecords = new Map<string, FundingRelationshipRecord[]>(); // wallet -> stack of records
+
+  public recordFunding(
+    wallet: string,
+    parent: string,
+    slot = 0,
+    timestampMs = Date.now(),
+    supportingEventId?: string
+  ): void {
+    const stack = this.fundingRecords.get(wallet) ?? [];
+    for (const r of stack) {
+      if (r.status === 'ACTIVE') {
+        r.status = 'SUPERSEDED';
+      }
+    }
+    stack.push({
+      wallet,
+      parent,
+      slot,
+      timestampMs,
+      supportingEventId,
+      status: 'ACTIVE',
+    });
+    this.fundingRecords.set(wallet, stack);
+  }
+
+  public getParent(wallet: string): string | undefined {
+    const stack = this.fundingRecords.get(wallet);
+    if (!stack || stack.length === 0) return undefined;
+    const active = [...stack].reverse().find(r => r.status === 'ACTIVE');
+    return active?.parent;
+  }
+
+  public rollbackSlot(slot: number): number {
+    let rolledBackCount = 0;
+    for (const stack of this.fundingRecords.values()) {
+      for (const r of stack) {
+        if (r.slot === slot && r.status === 'ACTIVE') {
+          r.status = 'RETRACTED';
+          rolledBackCount++;
+          // Restore prior non-retracted record if any
+          const prior = [...stack].reverse().find(entry => entry.status === 'SUPERSEDED' && entry.slot < slot);
+          if (prior) {
+            prior.status = 'ACTIVE';
+          }
+        }
+      }
+    }
+    return rolledBackCount;
   }
 
   public analyzeAncestry(
@@ -65,7 +119,7 @@ export class FundingAncestryEngine {
     let totalDepth = 0;
 
     for (const w of wallets) {
-      const funder = w.fundingParentAddress || this.historicalWalletFunding.get(w.walletAddress) || w.walletAddress;
+      const funder = w.fundingParentAddress || this.getParent(w.walletAddress) || w.walletAddress;
       funderCounts.set(funder, (funderCounts.get(funder) ?? 0) + 1);
       totalAssigned++;
       totalDepth += w.hopsFromExchange ?? 1;

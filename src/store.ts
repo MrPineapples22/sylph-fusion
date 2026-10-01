@@ -36,6 +36,26 @@ export class Store implements DurableSigningJournal {
   async markSigningIntentSigned(economicIntentId: string, messageSha256: string, signatureBase64: string): Promise<void> {
     await this.call('mark-signed', JSON.stringify({ economicIntentId, messageSha256, signatureBase64 }));
   }
+  async saveCapitalCommit(commit: { intentId: string; reservationId: string; certificateId: string; capitalStateRoot: string; certificateHash: string }): Promise<void> {
+    await this.call('save-capital-commit', JSON.stringify(commit, (_, v) => typeof v === 'bigint' ? v.toString() : v));
+  }
+  async appendCapitalEvent(event: Record<string, unknown>): Promise<void> {
+    await this.call('append-capital-event', JSON.stringify(event, (_, v) => typeof v === 'bigint' ? v.toString() : v));
+  }
+  async saveRecoveryCertificate(cert: Record<string, unknown>): Promise<void> {
+    await this.call('save-recovery-certificate', JSON.stringify(cert));
+  }
+  async getRecoveryCertificate(certificateIdOrGapId: string): Promise<Record<string, unknown> | null> {
+    const text = await this.call('get-recovery-certificate', certificateIdOrGapId);
+    return text ? JSON.parse(text) : null;
+  }
+  async saveCoverageFrontier(frontier: { lane: string; continuousSlot: number; sealedSlot: number; coverageRoot: string }): Promise<void> {
+    await this.call('save-coverage-frontier', JSON.stringify(frontier));
+  }
+  async getCoverageFrontier(lane: string): Promise<{ lane: string; continuousSlot: number; sealedSlot: number; coverageRoot: string } | null> {
+    const text = await this.call('get-coverage-frontier', lane);
+    return text ? JSON.parse(text) : null;
+  }
   async backup(destinationPath: string): Promise<void> { await this.call('backup', destinationPath); }
   async pruneAudit(maxAgeMs?: number): Promise<void> { await this.call('prune', maxAgeMs ? String(maxAgeMs) : undefined); }
   close(): Promise<void> {
@@ -45,4 +65,16 @@ export class Store implements DurableSigningJournal {
     this.closePromise = (async () => { try { await this.call('close'); } finally { await this.worker.terminate(); } })();
     return this.closePromise;
   }
+}
+
+export interface DurableCapitalJournal {
+  saveCapitalCommit(commit: { intentId: string; reservationId: string; certificateId: string; capitalStateRoot: string; certificateHash: string }): Promise<void>;
+  appendCapitalEvent(event: Record<string, unknown>): Promise<void>;
+}
+
+export interface DurableRecoveryJournal {
+  saveRecoveryCertificate(cert: Record<string, unknown>): Promise<void>;
+  getRecoveryCertificate(certificateIdOrGapId: string): Promise<Record<string, unknown> | null>;
+  saveCoverageFrontier(frontier: { lane: string; continuousSlot: number; sealedSlot: number; coverageRoot: string }): Promise<void>;
+  getCoverageFrontier(lane: string): Promise<{ lane: string; continuousSlot: number; sealedSlot: number; coverageRoot: string } | null>;
 }

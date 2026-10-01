@@ -30,10 +30,17 @@ export class TemporalEvidenceGraph {
     addOrUpdateEdge(params) {
         const edgeKey = `${params.sourceNode}->${params.relationship}->${params.targetNode}`;
         const now = Date.now();
+        const contribution = {
+            slot: params.slot,
+            amountSol: params.amountSol ?? 0,
+            timestampMs: now,
+            supportingEventId: params.supportingEventId,
+        };
         const existing = this.edges.get(edgeKey);
         if (existing) {
+            existing.contributions.push(contribution);
             existing.lastSeenMs = now;
-            existing.lastSlot = params.slot;
+            existing.lastSlot = Math.max(existing.lastSlot, params.slot);
             existing.observationCount++;
             existing.transactionCount++;
             existing.amountTotalSol += params.amountSol ?? 0;
@@ -43,10 +50,22 @@ export class TemporalEvidenceGraph {
             if (params.commitment) {
                 existing.commitment = params.commitment;
             }
+            const srcNode = this.nodes.get(params.sourceNode);
+            if (srcNode)
+                srcNode.activityCount++;
+            const tgtNode = this.nodes.get(params.targetNode);
+            if (tgtNode)
+                tgtNode.activityCount++;
             this.decayOrBoostHeat(params.sourceNode, 0.1);
             this.decayOrBoostHeat(params.targetNode, 0.1);
             return existing;
         }
+        const srcNode = this.nodes.get(params.sourceNode);
+        if (srcNode)
+            srcNode.activityCount++;
+        const tgtNode = this.nodes.get(params.targetNode);
+        if (tgtNode)
+            tgtNode.activityCount++;
         const edge = {
             edgeId: edgeKey,
             sourceNode: params.sourceNode,
@@ -65,6 +84,7 @@ export class TemporalEvidenceGraph {
             inferenceRule: params.inferenceRule,
             commitment: params.commitment ?? 'confirmed',
             active: true,
+            contributions: [contribution],
         };
         this.edges.set(edgeKey, edge);
         // Track adjacency
@@ -83,14 +103,43 @@ export class TemporalEvidenceGraph {
     rollbackSlotEdges(slot) {
         let rolledBackCount = 0;
         for (const [edgeKey, edge] of this.edges.entries()) {
-            if (edge.firstSlot === slot) {
+            if (!edge.active)
+                continue;
+            const matchingContribs = edge.contributions.filter(c => c.slot === slot);
+            if (matchingContribs.length === 0)
+                continue;
+            const removedAmount = matchingContribs.reduce((sum, c) => sum + c.amountSol, 0);
+            const removedEventIds = new Set(matchingContribs.map(c => c.supportingEventId).filter(Boolean));
+            edge.contributions = edge.contributions.filter(c => c.slot !== slot);
+            edge.amountTotalSol = Math.max(0, edge.amountTotalSol - removedAmount);
+            edge.observationCount = Math.max(0, edge.observationCount - matchingContribs.length);
+            edge.transactionCount = Math.max(0, edge.transactionCount - matchingContribs.length);
+            if (removedEventIds.size > 0) {
+                for (let i = edge.supportingEventIds.length - 1; i >= 0; i--) {
+                    if (removedEventIds.has(edge.supportingEventIds[i])) {
+                        edge.supportingEventIds.splice(i, 1);
+                    }
+                }
+            }
+            // Decrement node activity
+            const srcNode = this.nodes.get(edge.sourceNode);
+            if (srcNode) {
+                srcNode.activityCount = Math.max(0, srcNode.activityCount - matchingContribs.length);
+                this.decayOrBoostHeat(edge.sourceNode, -0.1 * matchingContribs.length);
+            }
+            const tgtNode = this.nodes.get(edge.targetNode);
+            if (tgtNode) {
+                tgtNode.activityCount = Math.max(0, tgtNode.activityCount - matchingContribs.length);
+                this.decayOrBoostHeat(edge.targetNode, -0.1 * matchingContribs.length);
+            }
+            if (edge.contributions.length === 0) {
                 edge.active = false;
-                rolledBackCount++;
             }
-            else if (edge.lastSlot === slot) {
-                edge.lastSlot = slot - 1;
-                rolledBackCount++;
+            else {
+                edge.lastSlot = Math.max(...edge.contributions.map(c => c.slot));
+                edge.lastSeenMs = Math.max(...edge.contributions.map(c => c.timestampMs));
             }
+            rolledBackCount++;
         }
         return rolledBackCount;
     }

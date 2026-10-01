@@ -9,6 +9,8 @@
  */
 
 export interface HistoricalLaunchRecord {
+  readonly launchId?: string;
+  readonly slot?: number;
   readonly mint: string;
   readonly creatorAddress: string;
   readonly fundingAncestor?: string;
@@ -17,6 +19,7 @@ export interface HistoricalLaunchRecord {
   readonly maePct: number;
   readonly survivedMigration: boolean;
   readonly rapidLiquidityLoss: boolean; // Rug / hard dump within 60s
+  status?: 'ACTIVE' | 'RETRACTED' | 'SUPERSEDED';
 }
 
 export interface ActorProfile {
@@ -39,7 +42,13 @@ export class ActorKnowledgeGraph {
    * Register a new or historical token launch into the ecosystem graph.
    */
   public registerLaunch(record: HistoricalLaunchRecord): void {
-    this.launchHistory.push(record);
+    const launchId = record.launchId ?? `${record.slot ?? 0}:${record.mint}:${record.creatorAddress}`;
+    const storedRecord: HistoricalLaunchRecord = {
+      ...record,
+      launchId,
+      status: record.status ?? 'ACTIVE',
+    };
+    this.launchHistory.push(storedRecord);
 
     const actorId = record.fundingAncestor ?? record.creatorAddress;
     this.addressToActorId.set(record.creatorAddress, actorId);
@@ -47,24 +56,35 @@ export class ActorKnowledgeGraph {
       this.addressToActorId.set(record.fundingAncestor, actorId);
     }
 
+    this.recomputeActorProfile(actorId);
+  }
+
+  private recomputeActorProfile(actorId: string): void {
     const pastLaunches = this.launchHistory.filter(
-      (l) => l.creatorAddress === record.creatorAddress || (record.fundingAncestor && l.fundingAncestor === record.fundingAncestor)
+      (l) => l.status === 'ACTIVE' && (l.creatorAddress === actorId || l.fundingAncestor === actorId)
     );
 
     const total = pastLaunches.length;
+    if (total === 0) {
+      this.actorProfiles.delete(actorId);
+      return;
+    }
+
     const rugs = pastLaunches.filter((l) => l.rapidLiquidityLoss || l.maePct >= 65).length;
     const runners = pastLaunches.filter((l) => l.mfePct >= 100).length;
     const sumMfe = pastLaunches.reduce((acc, l) => acc + l.mfePct, 0);
 
-    const rugRate = total > 0 ? (rugs / total) * 100 : 0;
-    const runnerRate = total > 0 ? (runners / total) * 100 : 0;
-    const avgMfe = total > 0 ? sumMfe / total : 0;
+    const rugRate = (rugs / total) * 100;
+    const runnerRate = (runners / total) * 100;
+    const avgMfe = sumMfe / total;
 
     // Reputation score computation: high rug rate severely drops score
     let rep = 50;
     if (rugRate >= 60) rep = 10;
     else if (rugRate >= 30) rep = 30;
     else if (runnerRate >= 30 && rugRate < 20) rep = 85;
+
+    const lastActive = Math.max(...pastLaunches.map(l => l.launchTimestampMs));
 
     const profile: ActorProfile = {
       actorId,
@@ -74,10 +94,46 @@ export class ActorKnowledgeGraph {
       runnerRatePct: Number(runnerRate.toFixed(1)),
       averageMfePct: Number(avgMfe.toFixed(1)),
       reputationScore: rep,
-      lastActiveTimestampMs: record.launchTimestampMs,
+      lastActiveTimestampMs: lastActive,
     };
 
     this.actorProfiles.set(actorId, profile);
+  }
+
+  public rollbackSlot(slot: number): number {
+    let rolledBackCount = 0;
+    const affectedActors = new Set<string>();
+
+    for (const l of this.launchHistory) {
+      if (l.slot === slot && l.status === 'ACTIVE') {
+        l.status = 'RETRACTED';
+        rolledBackCount++;
+        affectedActors.add(l.creatorAddress);
+        if (l.fundingAncestor) affectedActors.add(l.fundingAncestor);
+      }
+    }
+
+    for (const actor of affectedActors) {
+      const actorId = this.addressToActorId.get(actor) ?? actor;
+      this.recomputeActorProfile(actorId);
+    }
+
+    return rolledBackCount;
+  }
+
+  public retractLaunch(launchId: string): boolean {
+    const l = this.launchHistory.find(rec => rec.launchId === launchId);
+    if (!l || l.status !== 'ACTIVE') return false;
+    l.status = 'RETRACTED';
+    const actorId = this.addressToActorId.get(l.creatorAddress) ?? l.creatorAddress;
+    this.recomputeActorProfile(actorId);
+    return true;
+  }
+
+  public getActiveLaunchesForActor(actorId: string): readonly HistoricalLaunchRecord[] {
+    return Object.freeze(this.launchHistory.filter(
+      l => l.status === 'ACTIVE' && (l.creatorAddress === actorId || l.fundingAncestor === actorId)
+    ));
   }
 
   /**
@@ -86,6 +142,10 @@ export class ActorKnowledgeGraph {
   public getActorProfileForAddress(address: string): ActorProfile | undefined {
     const actorId = this.addressToActorId.get(address) ?? address;
     return this.actorProfiles.get(actorId);
+  }
+
+  public getActorProfile(actorId: string): ActorProfile | undefined {
+    return this.actorProfiles.get(actorId) ?? this.getActorProfileForAddress(actorId);
   }
 
   /**

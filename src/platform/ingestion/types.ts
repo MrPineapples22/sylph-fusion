@@ -1,6 +1,26 @@
-/**
- * Ingestion Gap-Fill & Continuity Types
- */
+export type ProcessingIntent =
+  | 'LIVE'
+  | 'HISTORICAL_REPAIR'
+  | 'DETERMINISTIC_REPLAY'
+  | 'SHADOW_REPLAY';
+
+export type SlotGapClassification =
+  | 'SKIPPED_SLOT'
+  | 'DEAD_FORK'
+  | 'MISSING_OBSERVATION'
+  | 'PROVIDER_LOSS'
+  | 'UNAVAILABLE_HISTORY'
+  | 'PARTIAL_RECOVERY'
+  | 'PROVIDER_DISAGREEMENT'
+  | 'UNKNOWN';
+
+export type CoverageLane =
+  | 'CHAIN_BLOCK'
+  | 'PUMP_TRANSACTION'
+  | 'ACCOUNT_WRITE'
+  | 'ENTRY'
+  | 'FORK_LINEAGE'
+  | 'BLOCK_FOOTER';
 
 /** Immutable provenance for one provider observation. This is not proof of
  * transaction execution: log-only sources remain observations until decoded
@@ -19,6 +39,7 @@ export interface RawObservationEnvelope {
   readonly transactionVersion?: number | 'legacy' | 'unknown';
   readonly rawPayloadHash: string;
   readonly schemaVersion: string;
+  readonly processingIntent?: ProcessingIntent;
 }
 
 export interface SlotReceipt {
@@ -26,16 +47,41 @@ export interface SlotReceipt {
   readonly signatureCount: number;
   readonly receivedAtMs: number;
   readonly isBackfilled: boolean;
+  readonly processingIntent?: ProcessingIntent;
 }
 
 export interface SlotGap {
+  readonly gapId?: string;
   readonly startSlot: number;
   readonly endSlot: number;
   readonly missingSlotCount: number;
   readonly detectedAtMs: number;
   readonly resolvedAtMs?: number;
   readonly isResolved: boolean;
+  readonly providerId?: string;
+  readonly classification?: SlotGapClassification;
+  readonly lane?: CoverageLane;
+  readonly bankHash?: string;
 }
+
+export interface RecoveryCertificate {
+  readonly certificateId: string;
+  readonly gapId: string;
+  readonly startSlot: number;
+  readonly endSlot: number;
+  readonly providerId: string;
+  readonly classification: SlotGapClassification;
+  readonly lane: CoverageLane;
+  readonly recoveredEventIds: readonly string[];
+  readonly perSlotStatus: Readonly<Record<number, 'RECOVERED' | 'SKIPPED' | 'DEAD_FORK' | 'EMPTY' | 'UNAVAILABLE'>>;
+  readonly stateRoot: string;
+  readonly coverageRoot: string;
+  readonly isVerified: boolean;
+  readonly certifiedAtMs: number;
+}
+
+export type BackfillResult = boolean | RecoveryCertificate;
+export type BackfillHandler = (gap: SlotGap) => Promise<BackfillResult>;
 
 export interface ReconciliationReport {
   readonly unresolvedHistoryTruncated: boolean;
@@ -47,3 +93,4 @@ export interface ReconciliationReport {
   readonly latestContinuousSlot: number;
   readonly circularBufferSize: number;
 }
+
