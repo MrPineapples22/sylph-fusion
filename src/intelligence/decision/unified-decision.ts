@@ -12,6 +12,7 @@ import { MarketRegimeType } from '../spie/kelly-allocator.js';
 import { createHash } from 'node:crypto';
 import { AlphaHalfLifeEngine, AlphaHalfLifeEstimate, OpportunityStage as AlphaOpportunityStage } from '../timing/alpha-half-life.js';
 import { ValueOfInformationEngine, VoiEvaluation } from './value-of-information.js';
+import { ModelFailurePredictor, ModelFailureEvaluation } from '../science/model-failure-predictor.js';
 
 export interface UnifiedOpportunityDecision {
   readonly decisionId: string;                     // Canonical decision_id
@@ -61,6 +62,7 @@ export interface UnifiedOpportunityDecision {
   readonly alphaBurnRateBpsPerMs?: number;         // Instantaneous burn rate (Roadmap #2)
   readonly economicEventHorizonMs?: number;        // Time after which net edge drops to zero (Roadmap #10)
   readonly voiEvaluation?: VoiEvaluation;          // Value of Information evaluation (Roadmap #203, #204)
+  readonly modelFailureEvaluation?: ModelFailureEvaluation; // P(Model Failure) (Roadmap #93, #220)
 }
 
 export interface ReconcileDecisionInputs {
@@ -216,6 +218,25 @@ export class UnifiedDecisionEngine {
       }
     }
 
+    // 5c. Model-Failure Predictor & Specialist Disagreement Geometry (Roadmap #93, #220)
+    let modelFailureEvaluation: ModelFailureEvaluation | undefined = undefined;
+    if (spie?.factors) {
+      modelFailureEvaluation = ModelFailurePredictor.evaluateFailureProbability({
+        factors: spie.factors,
+        confidence,
+        conformalUncertainty: uncertainty,
+        netEvBps,
+      });
+
+      if (modelFailureEvaluation.isModelFailureVeto) {
+        if (finalAction !== 'ABSTAIN') {
+          conflicts.push(`Model-Failure Predictor vetoed ${finalAction}: ${modelFailureEvaluation.rationale}`);
+          finalAction = 'ABSTAIN';
+        }
+        reasonsForRejection.push(modelFailureEvaluation.rationale);
+      }
+    }
+
     if (finalAction === 'FAST_BUY' || finalAction === 'BREAKOUT_ENTER') {
       reasonsForAcceptance.push(`Positive Net EV (+${netEvBps} bps) exceeds hurdle`);
       reasonsForAcceptance.push(`Strong dominant factor: ${spie?.dominantPositiveFactor ?? 'momentum'}`);
@@ -288,6 +309,7 @@ export class UnifiedDecisionEngine {
       alphaBurnRateBpsPerMs: halfLifeEstimate.burnRateBpsPerMs,
       economicEventHorizonMs: halfLifeEstimate.economicEventHorizonMs,
       voiEvaluation,
+      modelFailureEvaluation,
     };
 
     this.decisions.set(decisionId, decision);

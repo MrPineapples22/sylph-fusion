@@ -9,6 +9,7 @@
 import { createHash } from 'node:crypto';
 import { AlphaHalfLifeEngine } from '../timing/alpha-half-life.js';
 import { ValueOfInformationEngine } from './value-of-information.js';
+import { ModelFailurePredictor } from '../science/model-failure-predictor.js';
 export class UnifiedDecisionEngine {
     decisions = new Map();
     /**
@@ -106,6 +107,23 @@ export class UnifiedDecisionEngine {
                 reasonsForRejection.push(`VOI_ABSTAIN: ${voiEvaluation.rationale}`);
             }
         }
+        // 5c. Model-Failure Predictor & Specialist Disagreement Geometry (Roadmap #93, #220)
+        let modelFailureEvaluation = undefined;
+        if (spie?.factors) {
+            modelFailureEvaluation = ModelFailurePredictor.evaluateFailureProbability({
+                factors: spie.factors,
+                confidence,
+                conformalUncertainty: uncertainty,
+                netEvBps,
+            });
+            if (modelFailureEvaluation.isModelFailureVeto) {
+                if (finalAction !== 'ABSTAIN') {
+                    conflicts.push(`Model-Failure Predictor vetoed ${finalAction}: ${modelFailureEvaluation.rationale}`);
+                    finalAction = 'ABSTAIN';
+                }
+                reasonsForRejection.push(modelFailureEvaluation.rationale);
+            }
+        }
         if (finalAction === 'FAST_BUY' || finalAction === 'BREAKOUT_ENTER') {
             reasonsForAcceptance.push(`Positive Net EV (+${netEvBps} bps) exceeds hurdle`);
             reasonsForAcceptance.push(`Strong dominant factor: ${spie?.dominantPositiveFactor ?? 'momentum'}`);
@@ -177,6 +195,7 @@ export class UnifiedDecisionEngine {
             alphaBurnRateBpsPerMs: halfLifeEstimate.burnRateBpsPerMs,
             economicEventHorizonMs: halfLifeEstimate.economicEventHorizonMs,
             voiEvaluation,
+            modelFailureEvaluation,
         };
         this.decisions.set(decisionId, decision);
         return Object.freeze(decision);
