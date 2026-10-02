@@ -388,6 +388,7 @@ export class CommandGateway {
         const tokenDecimals = isBuy ? payload.tokenDecimals ?? 9 : existingPosition.tokenDecimals ?? 9;
         // 4. Capacity & Cash validation
         const config = globalConfigAuthority.getConfig();
+        let effectiveEmergency = payload.emergency ?? false;
         if (autonomousExit) {
             const position = existingPosition;
             const decisionNow = Math.max(cmd.timestamp || 0, exitEvidence?.observedAt || 0, Date.now());
@@ -400,14 +401,16 @@ export class CommandGateway {
                 stopBps: config.stopBps, markAt: exitEvidence.observedAt, maxMarkAgeMs: config.feedStaleMs,
                 lastPeakAt: position.lastPeakAt ?? position.openedAt, partialExitBps: 5_000,
             });
-            const isEmergencyBailout = (r) => ['STOP_LOSS', 'FALSE_BREAKOUT', 'DEV_DUMP_BAILOUT', 'LIQUIDITY_SHOCK', 'ADVERSE_FLOW_TOXICITY'].includes(r);
+            const isFullExit = (r) => ['STOP_LOSS', 'FALSE_BREAKOUT', 'DEV_DUMP_BAILOUT', 'LIQUIDITY_SHOCK', 'ADVERSE_FLOW_TOXICITY', 'STAGNATION', 'TRAILING_PROFIT', 'MOMENTUM_EXHAUSTION'].includes(r);
+            const isBothFullExit = isFullExit(autonomousExit.reason) && isFullExit(refreshedDecision?.reason || '') &&
+                autonomousExit.fractionBps === 10_000 && refreshedDecision?.fractionBps === 10_000;
             const compatibleReason = refreshedDecision && (refreshedDecision.reason === autonomousExit.reason ||
-                (isEmergencyBailout(autonomousExit.reason) && isEmergencyBailout(refreshedDecision.reason)));
-            if (!refreshedDecision || !compatibleReason ||
+                isBothFullExit);
+            const emergencyCompatible = refreshedDecision && (refreshedDecision.emergency === autonomousExit.emergency ||
+                (isBothFullExit && refreshedDecision.emergency === true));
+            if (!refreshedDecision || !compatibleReason || !emergencyCompatible ||
                 refreshedDecision.fractionBps !== autonomousExit.fractionBps ||
-                refreshedDecision.emergency !== autonomousExit.emergency ||
                 refreshedDecision.nextStage !== autonomousExit.nextStage ||
-                payload.emergency !== refreshedDecision.emergency ||
                 payload.tokenQty !== position.qty * refreshedDecision.fractionBps / 10_000) {
                 // The guardian evaluates each position once per tick, so this emits at most one skip per position/tick.
                 console.warn('[CommandGateway] Autonomous exit skipped', {
@@ -417,6 +420,8 @@ export class CommandGateway {
                 });
                 throw new Error('EXIT_BLOCKED: Fresh verified evidence changed the autonomous exit decision.');
             }
+            if (refreshedDecision.emergency)
+                effectiveEmergency = true;
             this.updateSolPriceUsd(exitEvidence.solPriceUsd);
         }
         let effectiveUsdAmount = payload.usdAmount;
@@ -494,7 +499,7 @@ export class CommandGateway {
                 amountDecimals: tokenDecimals,
                 maxSlippageBps: payload.maxSlippageBps ?? config.slippageBps,
                 triggerTimestamp: Date.now(),
-                emergency: payload.emergency ?? false,
+                emergency: effectiveEmergency,
                 fallbackPriceSol: payload.fallbackPriceSol,
             };
             // 6. Execute through the isolated simulator. No network delivery exists here.
