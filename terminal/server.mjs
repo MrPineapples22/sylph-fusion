@@ -908,6 +908,13 @@ async function handleRequest(req,res){
         // coverage and required signals are verified. Enforce that at the
         // command boundary so stale clients cannot bypass the UI/reducer gate.
         if (parsed.type === 'SUBMIT_ORDER' && parsed.payload.side === 'BUY') {
+          const sym = (parsed.payload.symbol || '').toUpperCase().trim();
+          const pNum = Number(parsed.payload.priceUsd || 0);
+          if (pNum > 1.0 || parsed.payload.mint?.startsWith('So111111') || sym === 'SOL' || sym === 'WSOL' || sym === 'USDC' || sym === 'USDT' || sym === 'USDH' || parsed.payload.mint?.startsWith('EPjFW') || parsed.payload.mint?.startsWith('Es9v')) {
+            res.writeHead(400, {'Content-Type': 'application/json'});
+            res.end(JSON.stringify({ok:false,error:'ENTRY_BLOCKED: Base currency (SOL) and stablecoins cannot be traded as speculative breakout tokens.'}));
+            return;
+          }
           const basket = await astraFeed();
           if (false && (basket?.verified !== true || basket?.entryAllowed !== true)) {
             res.writeHead(409, {'Content-Type': 'application/json'});

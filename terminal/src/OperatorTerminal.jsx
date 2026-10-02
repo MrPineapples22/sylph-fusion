@@ -168,12 +168,16 @@ export default function OperatorTerminal(){
   if (positions.length >= 3) return;
   if (projection?.feedStale) return;
 
-  // 1. Gather all unowned, unvetoed pump breakout candidates
-  const unowned = tokens.filter(t =>
-    t?.mint &&
-    !positions.some(p => p.mint === t.mint || p.asset === t.mint || p.asset === t.pair) &&
-    (!t.vetoes || t.vetoes.length === 0)
-  );
+  // 1. Gather all unowned, unvetoed pump breakout candidates (excluding base SOL & stablecoins)
+  const unowned = tokens.filter(t => {
+    if (!t?.mint) return false;
+    const sym = (t.symbol || '').toUpperCase().trim();
+    const pNum = Number(t.price || t.priceUsd || 0);
+    if (pNum > 1.0 || t.mint.startsWith('So111111') || sym === 'SOL' || sym === 'WSOL' || sym === 'USDC' || sym === 'USDT' || sym === 'USDH' || t.mint.startsWith('EPjFW') || t.mint.startsWith('Es9v')) return false;
+    if (positions.some(p => p.mint === t.mint || p.asset === t.mint || p.asset === t.pair)) return false;
+    if (t.vetoes && t.vetoes.length > 0) return false;
+    return true;
+  });
 
   // 2. Score and rank candidates: PRIME tier (+60), HSI (0-100), UP momentum (+20), liquidity
   const scored = unowned

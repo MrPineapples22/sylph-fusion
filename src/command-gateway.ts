@@ -595,7 +595,7 @@ export class CommandGateway {
       const position = existingPosition!;
       const refreshedDecision = exitEvidence && decideExit({
         entry: position.entry, mark: exitEvidence.priceUsd, peak: position.peak,
-        stage: position.stage, openedAt: position.openedAt, now: Date.now(),
+        stage: position.stage, openedAt: position.openedAt, now: cmd.timestamp || Date.now(),
         stopBps: config.stopBps, markAt: exitEvidence.observedAt, maxMarkAgeMs: config.feedStaleMs,
         lastPeakAt: position.lastPeakAt ?? position.openedAt, partialExitBps: 5_000,
       });
