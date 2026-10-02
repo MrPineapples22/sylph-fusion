@@ -79,6 +79,55 @@ CREATE TABLE IF NOT EXISTS provider_quotas(
   consecutive_recovery INTEGER NOT NULL,
   last_failure_reason TEXT,
   updated_at_ms INTEGER NOT NULL
+) STRICT;
+CREATE TABLE IF NOT EXISTS counterfactual_regrets(
+  evaluation_id TEXT PRIMARY KEY,
+  decision_id TEXT NOT NULL,
+  opportunity_id TEXT NOT NULL,
+  token_id TEXT NOT NULL,
+  strategy_version TEXT NOT NULL,
+  slot INTEGER NOT NULL,
+  timestamp_ms INTEGER NOT NULL,
+  action_taken TEXT NOT NULL,
+  realized_pnl_bps INTEGER NOT NULL,
+  best_counterfactual_scenario TEXT NOT NULL,
+  max_counterfactual_pnl_bps INTEGER NOT NULL,
+  overall_regret_bps INTEGER NOT NULL,
+  discovery_regret_bps INTEGER NOT NULL,
+  pricing_regret_bps INTEGER NOT NULL,
+  execution_regret_bps INTEGER NOT NULL,
+  exit_regret_bps INTEGER NOT NULL,
+  primary_failure_subsystem TEXT NOT NULL,
+  actionable_policy_tuning TEXT NOT NULL,
+  evaluation_json TEXT NOT NULL
+) STRICT;
+CREATE TABLE IF NOT EXISTS falsification_reports(
+  report_id TEXT PRIMARY KEY,
+  mint TEXT NOT NULL,
+  slot INTEGER NOT NULL,
+  is_thesis_falsified INTEGER NOT NULL,
+  falsification_confidence REAL NOT NULL,
+  survivability_index REAL NOT NULL,
+  minimum_plausible_break_capital_sol REAL NOT NULL,
+  lethal_attack_vector TEXT NOT NULL,
+  is_veto_recommended INTEGER NOT NULL,
+  rationale TEXT NOT NULL,
+  report_json TEXT NOT NULL,
+  created_at_ms INTEGER NOT NULL
+) STRICT;
+CREATE TABLE IF NOT EXISTS entity_control_evaluations(
+  mint TEXT PRIMARY KEY,
+  raw_wallet_count INTEGER NOT NULL,
+  resolved_entity_count INTEGER NOT NULL,
+  deception_gap REAL NOT NULL,
+  entity_entropy REAL NOT NULL,
+  normalized_entity_entropy REAL NOT NULL,
+  dominant_entity_supply_fraction REAL NOT NULL,
+  latent_inventory_fraction REAL NOT NULL,
+  supply_avalanche_risk REAL NOT NULL,
+  is_entropy_collapsed INTEGER NOT NULL,
+  evaluation_json TEXT NOT NULL,
+  evaluated_at_ms INTEGER NOT NULL
 ) STRICT;`);
 parentPort!.on('message', (m: { id: number; op: string; body?: string; event?: string }) => {
   try {
@@ -231,6 +280,64 @@ parentPort!.on('message', (m: { id: number; op: string; body?: string; event?: s
     } else if (m.op === 'get-all-provider-quotas') {
       const rows: any[] = db.prepare('SELECT * FROM provider_quotas').all();
       parentPort!.postMessage({ id: m.id, value: JSON.stringify(rows) });
+    } else if (m.op === 'save-counterfactual-evaluation') {
+      const ev = JSON.parse(m.body!);
+      db.prepare(`INSERT INTO counterfactual_regrets(
+        evaluation_id, decision_id, opportunity_id, token_id, strategy_version, slot, timestamp_ms,
+        action_taken, realized_pnl_bps, best_counterfactual_scenario, max_counterfactual_pnl_bps,
+        overall_regret_bps, discovery_regret_bps, pricing_regret_bps, execution_regret_bps, exit_regret_bps,
+        primary_failure_subsystem, actionable_policy_tuning, evaluation_json
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(evaluation_id) DO UPDATE SET evaluation_json=excluded.evaluation_json`).run(
+        ev.evaluationId, ev.decisionId, ev.opportunityId, ev.tokenId, ev.strategyVersion, ev.slot, ev.timestamp,
+        ev.actionTaken, ev.realizedPnlBps, ev.bestCounterfactualScenario, ev.maxCounterfactualPnlBps,
+        ev.overallRegretBps, ev.alphaDecomposition?.discoveryRegretBps ?? 0, ev.alphaDecomposition?.pricingRegretBps ?? 0,
+        ev.alphaDecomposition?.executionRegretBps ?? 0, ev.alphaDecomposition?.exitRegretBps ?? 0,
+        ev.primaryFailureSubsystem, ev.actionablePolicyTuning, JSON.stringify(ev)
+      );
+      parentPort!.postMessage({ id: m.id, value: null });
+    } else if (m.op === 'get-counterfactual-evaluation') {
+      const id = m.body!;
+      const row: any = db.prepare('SELECT evaluation_json FROM counterfactual_regrets WHERE evaluation_id=?').get(id);
+      parentPort!.postMessage({ id: m.id, value: row?.evaluation_json ?? null });
+    } else if (m.op === 'get-counterfactual-evaluations-for-token') {
+      const tokenId = m.body!;
+      const rows: any[] = db.prepare('SELECT evaluation_json FROM counterfactual_regrets WHERE token_id=? ORDER BY slot ASC').all(tokenId);
+      parentPort!.postMessage({ id: m.id, value: JSON.stringify(rows.map(r => JSON.parse(r.evaluation_json))) });
+    } else if (m.op === 'save-falsification-report') {
+      const rep = JSON.parse(m.body!);
+      db.prepare(`INSERT INTO falsification_reports(
+        report_id, mint, slot, is_thesis_falsified, falsification_confidence, survivability_index,
+        minimum_plausible_break_capital_sol, lethal_attack_vector, is_veto_recommended, rationale, report_json, created_at_ms
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(report_id) DO UPDATE SET report_json=excluded.report_json`).run(
+        rep.reportId, rep.mint, rep.slot, rep.isThesisFalsified ? 1 : 0, rep.falsificationConfidence,
+        rep.survivabilityIndex, rep.minimumPlausibleBreakCapitalSol, rep.lethalAttackVector,
+        rep.isVetoRecommended ? 1 : 0, rep.rationale, JSON.stringify(rep), Date.now()
+      );
+      parentPort!.postMessage({ id: m.id, value: null });
+    } else if (m.op === 'get-falsification-report') {
+      const id = m.body!;
+      const row: any = db.prepare('SELECT report_json FROM falsification_reports WHERE report_id=?').get(id);
+      parentPort!.postMessage({ id: m.id, value: row?.report_json ?? null });
+    } else if (m.op === 'save-entity-control-evaluation') {
+      const evalResult = JSON.parse(m.body!);
+      db.prepare(`INSERT INTO entity_control_evaluations(
+        mint, raw_wallet_count, resolved_entity_count, deception_gap, entity_entropy,
+        normalized_entity_entropy, dominant_entity_supply_fraction, latent_inventory_fraction,
+        supply_avalanche_risk, is_entropy_collapsed, evaluation_json, evaluated_at_ms
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(mint) DO UPDATE SET evaluation_json=excluded.evaluation_json, evaluated_at_ms=excluded.evaluated_at_ms`).run(
+        evalResult.mint, evalResult.rawWalletCount, evalResult.resolvedEntityCount,
+        evalResult.deceptionGap, evalResult.entityEntropy, evalResult.normalizedEntityEntropy,
+        evalResult.dominantEntitySupplyFraction, evalResult.latentInventoryFraction,
+        evalResult.supplyAvalancheRisk, evalResult.isEntropyCollapsed ? 1 : 0, JSON.stringify(evalResult), Date.now()
+      );
+      parentPort!.postMessage({ id: m.id, value: null });
+    } else if (m.op === 'get-entity-control-evaluation') {
+      const mint = m.body!;
+      const row: any = db.prepare('SELECT evaluation_json FROM entity_control_evaluations WHERE mint=?').get(mint);
+      parentPort!.postMessage({ id: m.id, value: row?.evaluation_json ?? null });
     } else if (m.op === 'prune') {
       const maxAgeMs = Number(m.body) || (7 * 86_400_000);
       const cutoff = Date.now() - maxAgeMs;

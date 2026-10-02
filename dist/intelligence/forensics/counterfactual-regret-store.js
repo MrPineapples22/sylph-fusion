@@ -152,8 +152,10 @@ export class ExecutionRegretEngine {
 export class CounterfactualRegretStore {
     records = new Map();
     maxCapacity;
-    constructor(maxCapacity = 2000) {
+    journal;
+    constructor(maxCapacity = 2000, journal) {
         this.maxCapacity = maxCapacity;
+        this.journal = journal;
     }
     recordEvaluation(evalResult) {
         if (this.records.size >= this.maxCapacity) {
@@ -163,6 +165,9 @@ export class CounterfactualRegretStore {
             }
         }
         this.records.set(evalResult.evaluationId, evalResult);
+        if (this.journal) {
+            void this.journal.saveCounterfactualEvaluation(evalResult);
+        }
     }
     getEvaluation(evaluationId) {
         return this.records.get(evaluationId);

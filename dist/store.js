@@ -91,6 +91,31 @@ export class Store {
         const text = await this.call('get-all-provider-quotas');
         return text ? JSON.parse(text) : [];
     }
+    async saveCounterfactualEvaluation(evaluation) {
+        await this.call('save-counterfactual-evaluation', JSON.stringify(evaluation, (_, v) => typeof v === 'bigint' ? v.toString() : v));
+    }
+    async getCounterfactualEvaluation(evaluationId) {
+        const text = await this.call('get-counterfactual-evaluation', evaluationId);
+        return text ? JSON.parse(text) : null;
+    }
+    async getCounterfactualEvaluationsForToken(tokenId) {
+        const text = await this.call('get-counterfactual-evaluations-for-token', tokenId);
+        return text ? JSON.parse(text) : [];
+    }
+    async saveFalsificationReport(report) {
+        await this.call('save-falsification-report', JSON.stringify(report, (_, v) => typeof v === 'bigint' ? v.toString() : v));
+    }
+    async getFalsificationReport(reportId) {
+        const text = await this.call('get-falsification-report', reportId);
+        return text ? JSON.parse(text) : null;
+    }
+    async saveEntityControlEvaluation(evaluation) {
+        await this.call('save-entity-control-evaluation', JSON.stringify(evaluation, (_, v) => typeof v === 'bigint' ? v.toString() : v));
+    }
+    async getEntityControlEvaluation(mint) {
+        const text = await this.call('get-entity-control-evaluation', mint);
+        return text ? JSON.parse(text) : null;
+    }
     async backup(destinationPath) { await this.call('backup', destinationPath); }
     async pruneAudit(maxAgeMs) { await this.call('prune', maxAgeMs ? String(maxAgeMs) : undefined); }
     close() {

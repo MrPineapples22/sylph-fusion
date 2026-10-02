@@ -1,7 +1,15 @@
 import { Worker } from 'node:worker_threads';
 import type { State } from './core.js';
 import type { DurableSigningJournal, PreparedSigningIntent } from './platform/signing/durable-live-signer.js';
-export class Store implements DurableSigningJournal {
+export class Store implements
+  DurableSigningJournal,
+  DurableCapitalJournal,
+  DurableRecoveryJournal,
+  DurableContractCanaryJournal,
+  DurableProviderQuotaJournal,
+  DurableRegretJournal,
+  DurableFalsificationJournal,
+  DurableEntityControlJournal {
   private worker: Worker;
   private seq = 0;
   private failure: Error | null = null;
@@ -78,6 +86,31 @@ export class Store implements DurableSigningJournal {
     const text = await this.call('get-all-provider-quotas');
     return text ? JSON.parse(text) : [];
   }
+  async saveCounterfactualEvaluation(evaluation: Record<string, unknown>): Promise<void> {
+    await this.call('save-counterfactual-evaluation', JSON.stringify(evaluation, (_, v) => typeof v === 'bigint' ? v.toString() : v));
+  }
+  async getCounterfactualEvaluation(evaluationId: string): Promise<Record<string, unknown> | null> {
+    const text = await this.call('get-counterfactual-evaluation', evaluationId);
+    return text ? JSON.parse(text) : null;
+  }
+  async getCounterfactualEvaluationsForToken(tokenId: string): Promise<Record<string, unknown>[]> {
+    const text = await this.call('get-counterfactual-evaluations-for-token', tokenId);
+    return text ? JSON.parse(text) : [];
+  }
+  async saveFalsificationReport(report: Record<string, unknown>): Promise<void> {
+    await this.call('save-falsification-report', JSON.stringify(report, (_, v) => typeof v === 'bigint' ? v.toString() : v));
+  }
+  async getFalsificationReport(reportId: string): Promise<Record<string, unknown> | null> {
+    const text = await this.call('get-falsification-report', reportId);
+    return text ? JSON.parse(text) : null;
+  }
+  async saveEntityControlEvaluation(evaluation: Record<string, unknown>): Promise<void> {
+    await this.call('save-entity-control-evaluation', JSON.stringify(evaluation, (_, v) => typeof v === 'bigint' ? v.toString() : v));
+  }
+  async getEntityControlEvaluation(mint: string): Promise<Record<string, unknown> | null> {
+    const text = await this.call('get-entity-control-evaluation', mint);
+    return text ? JSON.parse(text) : null;
+  }
   async backup(destinationPath: string): Promise<void> { await this.call('backup', destinationPath); }
   async pruneAudit(maxAgeMs?: number): Promise<void> { await this.call('prune', maxAgeMs ? String(maxAgeMs) : undefined); }
   close(): Promise<void> {
@@ -111,4 +144,20 @@ export interface DurableProviderQuotaJournal {
   saveProviderQuota(quota: Record<string, unknown>): Promise<void>;
   getProviderQuota(providerId: string): Promise<Record<string, unknown> | null>;
   getAllProviderQuotas(): Promise<Record<string, unknown>[]>;
+}
+
+export interface DurableRegretJournal {
+  saveCounterfactualEvaluation(evaluation: Record<string, unknown>): Promise<void>;
+  getCounterfactualEvaluation(evaluationId: string): Promise<Record<string, unknown> | null>;
+  getCounterfactualEvaluationsForToken(tokenId: string): Promise<Record<string, unknown>[]>;
+}
+
+export interface DurableFalsificationJournal {
+  saveFalsificationReport(report: Record<string, unknown>): Promise<void>;
+  getFalsificationReport(reportId: string): Promise<Record<string, unknown> | null>;
+}
+
+export interface DurableEntityControlJournal {
+  saveEntityControlEvaluation(evaluation: Record<string, unknown>): Promise<void>;
+  getEntityControlEvaluation(mint: string): Promise<Record<string, unknown> | null>;
 }

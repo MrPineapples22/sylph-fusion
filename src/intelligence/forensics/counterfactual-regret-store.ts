@@ -259,12 +259,16 @@ export class ExecutionRegretEngine {
   }
 }
 
+import type { DurableRegretJournal } from '../../store.js';
+
 export class CounterfactualRegretStore {
   private readonly records = new Map<string, CounterfactualEvaluation>();
   private readonly maxCapacity: number;
+  private readonly journal?: DurableRegretJournal;
 
-  constructor(maxCapacity: number = 2000) {
+  constructor(maxCapacity: number = 2000, journal?: DurableRegretJournal) {
     this.maxCapacity = maxCapacity;
+    this.journal = journal;
   }
 
   public recordEvaluation(evalResult: CounterfactualEvaluation): void {
@@ -275,6 +279,9 @@ export class CounterfactualRegretStore {
       }
     }
     this.records.set(evalResult.evaluationId, evalResult);
+    if (this.journal) {
+      void this.journal.saveCounterfactualEvaluation(evalResult as unknown as Record<string, unknown>);
+    }
   }
 
   public getEvaluation(evaluationId: string): CounterfactualEvaluation | undefined {
