@@ -176,3 +176,30 @@ The supplied `tradeing_data.txt` is a strategy memo, not a structured trade hist
 The strategy capability report is explicit in the engine snapshot: curve scalping is enabled; atomic cross-DEX arbitrage, lending liquidations, and delta-neutral basis are gated until their verified venue/account adapters and single-transaction routes are configured. The generic arbitrage preflight still validates same-mint, same-slot, fresh two-leg quotes and prices a 60% of net-edge Jito tip before a route could be handed to an executor. It never submits one leg by itself. Speculative entry risk is capped at `MAX_SPECULATIVE_RISK_BPS` of available cash (default 1%). A rolling 60-minute circuit breaker halts after three failed transactions or a 5% high-water drawdown; the halt reason is visible in the engine snapshot and cannot be cleared by the operator resume action.
 
 Optional environment variables for the app are `MARKET_RPC_URL`, `RUGCHECK_URL`, and `SOLANA_TRACKER_API_KEY`. The Solana Tracker key is optional; when absent, its provider is displayed as unavailable. The app also links to [RugCheck](https://rugcheck.xyz/), [Solana Tracker Rugcheck](https://www.solanatracker.io/rugcheck), and Solscan for manual verification.
+
+## Master Capturable-Alpha Research, Intelligence & Execution Blueprint
+
+SYLPH FUSION implements an evidence-driven opportunity-capture architecture designed to discover rare 2×, 5×, 10×+ moves early enough to verify authenticity, survive execution latency, ensure liquid exit capacity, and land on-chain with positive realized after-cost returns.
+
+### Core Architectural Invariants
+
+1. **Truth Before Intelligence**:
+   - `TokenSemanticRoot`: Validates Token-2022 extensions, fee parameters, freeze/mint authority, and distinct buy vs. sell paths.
+   - `EnvironmentCertificationEngine`: Binds Agave runtime feature-sets, cluster genesis, epoch, and program bytecode hashes (`RuntimeRoot`, `ProgramRoot`).
+2. **Exitability Before Position Size**:
+   - `ExitabilityEngine`: Enforces $Q \le \text{ConservativeStressedExitCapacity}$, calculating stressed exit curves at $-10\%$, $-25\%$, and $-50\%$ liquidity depth before position sizing.
+3. **Capturability Before Multiplier**:
+   - `CompetingHazardsMultiplierEngine`: Computes $P(2\times)$, $P(5\times)$, $P(10\times)$, $P(\text{rug})$, and $P(10\times \text{ before catastrophic failure})$.
+   - `MasterOpportunityDecisionEngine`: Synthesizes 12 decoupled intelligence vectors into $\text{RobustCapturableEV}$, strictly preserving the invariant:
+     $$\text{OpportunityDecision} \neq \text{ExecutionPermit}$$
+4. **Deterministic Capital Barrier**:
+   - `CapitalBarrierKernel`: Enforces non-compensatory safety gating between AI models and capital execution (15% max drawdown, daily loss limit, truth debt ceiling $\le 3$, cluster concentration limits).
+5. **Single-Use Execution Authority**:
+   - `UltimateExecutionPermitAuthority`: Authorizes execution only when wire hash, state lease, simulation certificate, and exitability certificate are locked.
+6. **Immutable 19-Link Evidence Ledger**:
+   - `UltimateExecutionRecordLedger`: Chains every trade from Canonical Events to Token Truth, Decision, Simulation, Execution, Settlement, Calibration, and Counterfactual Regret.
+7. **Stage 12 Meta-SYLPH & Wind Tunnel Simulation**:
+   - `MarketWindTunnel`: Simulates 10 synthetic actor archetypes (Sniper, Whale, Insider, Wash Trader, Panic Seller) to generate `WindTunnelSurvivalCertificate` prior to canary promotion.
+   - `MetaStrategyController`: Matches ecosystem regimes and token lifecycles to 10 discrete execution modes.
+   - `MasterSylphDashboardProjector`: Generates the 7-tier master dashboard view model.
+

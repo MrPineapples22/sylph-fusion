@@ -96,3 +96,36 @@ test('falsification lineage labels synthetic outputs and keeps heuristic confide
   assert.equal(labelled.falsificationConfidence, unlabelled.falsificationConfidence);
   assert.deepEqual(labelled.stressScenariosTested, unlabelled.stressScenariosTested);
 });
+
+test('AutomaticFalsificationAgent: integrates MarketWindTunnel multi-agent simulation', () => {
+  const cert = AutomaticFalsificationAgent.runAdversarialWindTunnel({
+    mint: 'MINT_WIND_TUNNEL_TEST',
+    initialPoolSol: 40,
+    sylphPositionSol: 0.5,
+    scenariosCount: 10,
+  });
+
+  assert.equal(cert.mint, 'MINT_WIND_TUNNEL_TEST');
+  assert.equal(cert.testedScenariosCount, 10);
+  assert.ok(cert.survivalRate >= 0.0 && cert.survivalRate <= 1.0);
+  assert.ok(typeof cert.isApprovedForCanary === 'boolean');
+  assert.ok(cert.certificateHash.length === 64);
+
+  const reportWithWindTunnel = AutomaticFalsificationAgent.falsifyOpportunity({
+    mint: 'MINT_WIND_TUNNEL_OPPORTUNITY',
+    slot: 260_000,
+    poolSolReserve: 60,
+    latentInventoryFraction: 0.15,
+    expectedNetEvBps: 350,
+    alphaHalfLifeMs: 2000,
+    maxSlippageBps: 100,
+    washTradingProbability: 0.10,
+    enableWindTunnel: true,
+  });
+
+  assert.ok(reportWithWindTunnel.windTunnelCertificate);
+  assert.equal(reportWithWindTunnel.windTunnelCertificate.mint, 'MINT_WIND_TUNNEL_OPPORTUNITY');
+  assert.ok(reportWithWindTunnel.survivabilityIndex > 0);
+  assert.match(reportWithWindTunnel.rationale, /wind tunnel/i);
+});
+

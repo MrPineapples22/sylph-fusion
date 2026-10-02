@@ -15,6 +15,7 @@
  *    - Falsification veto to fail-safe against brittle claims.
  */
 import { createHash } from 'node:crypto';
+import { MarketWindTunnel } from '../../intelligence/simulation/market-wind-tunnel.js';
 export class AdversarialScenarioGenerator {
     /**
      * Generates plausible adversarial attacks based on pool micro-state and entity control.
@@ -97,17 +98,45 @@ export class AdversarialScenarioGenerator {
 }
 export class AutomaticFalsificationAgent {
     /**
+     * Runs an adversarial multi-agent wind tunnel stress test across 10 synthetic actor archetypes.
+     */
+    static runAdversarialWindTunnel(params) {
+        const result = MarketWindTunnel.runSimulation({
+            mint: params.mint,
+            initialPoolSol: Math.max(0.1, params.initialPoolSol),
+            initialPoolTokens: params.initialPoolTokens ?? 1_000_000_000,
+            sylphPositionSol: params.sylphPositionSol ?? 0.5,
+            scenariosCount: params.scenariosCount ?? 15,
+            slotsHorizon: params.slotsHorizon ?? 10,
+        });
+        return result.survivalCertificate;
+    }
+    /**
      * Systematically attempts to falsify the hypothesis that buying this token produces positive net EV.
      */
     static falsifyOpportunity(params) {
-        const { mint, slot, poolSolReserve } = params;
+        const { mint, slot, poolSolReserve, enableWindTunnel, windTunnelPositionSol } = params;
         const scenarios = AdversarialScenarioGenerator.generateAttacks(params);
         // Compute survivability index (average survival probability)
         const avgSurvival = scenarios.reduce((sum, s) => sum + s.survivalProbability, 0) / scenarios.length;
-        const survivabilityIndex = Number(avgSurvival.toFixed(3));
+        let survivabilityIndex = Number(avgSurvival.toFixed(3));
+        // Optional multi-agent Market Wind Tunnel integration
+        let windTunnelCertificate = undefined;
+        if (enableWindTunnel) {
+            windTunnelCertificate = AutomaticFalsificationAgent.runAdversarialWindTunnel({
+                mint,
+                initialPoolSol: poolSolReserve,
+                sylphPositionSol: windTunnelPositionSol ?? 0.5,
+            });
+            // Composite survivability weighting 60% analytical vectors, 40% wind tunnel
+            survivabilityIndex = Number((survivabilityIndex * 0.60 + windTunnelCertificate.survivalRate * 0.40).toFixed(3));
+        }
         // Find lethal scenarios
         const lethalScenarios = scenarios.filter(s => s.isLethalToPosition);
-        const isThesisFalsified = lethalScenarios.length > 0;
+        let isThesisFalsified = lethalScenarios.length > 0;
+        if (windTunnelCertificate && !windTunnelCertificate.isApprovedForCanary) {
+            isThesisFalsified = true;
+        }
         // Smallest plausible capital to break thesis (#400)
         let minimumPlausibleBreakCapitalSol = poolSolReserve;
         let lethalAttackVector = 'NONE';
@@ -123,12 +152,12 @@ export class AutomaticFalsificationAgent {
         // Veto recommended if thesis is falsified by an attack requiring less than 5 SOL
         // or if overall survivability index is below 0.60
         const isVetoRecommended = isThesisFalsified &&
-            (minimumPlausibleBreakCapitalSol <= 5.0 || survivabilityIndex < 0.60);
+            (minimumPlausibleBreakCapitalSol <= 5.0 || survivabilityIndex < 0.60 || (windTunnelCertificate ? !windTunnelCertificate.isApprovedForCanary : false));
         const falsificationConfidence = Number(Math.min(0.98, isThesisFalsified ? 0.70 + (1.0 - survivabilityIndex) * 0.28 : 0.85).toFixed(2));
         const reportId = `falsify_${mint.slice(0, 8)}_${slot}_${createHash('sha256').update(`${mint}:${slot}:${isThesisFalsified}`).digest('hex').slice(0, 8)}`;
         const rationale = isThesisFalsified
-            ? `THESIS_FALSIFIED: Opportunity invalidated under ${lethalAttackVector} (${lethalScenarios.length}/${scenarios.length} lethal vectors). Break capital: ${minimumPlausibleBreakCapitalSol} SOL, Survivability: ${(survivabilityIndex * 100).toFixed(1)}%`
-            : `Thesis survived all 5 red-team adversarial attacks (Survivability: ${(survivabilityIndex * 100).toFixed(1)}%, Min break capital: ${minimumPlausibleBreakCapitalSol.toFixed(1)} SOL)`;
+            ? `THESIS_FALSIFIED: Opportunity invalidated under ${lethalAttackVector} (${lethalScenarios.length}/${scenarios.length} lethal vectors${windTunnelCertificate ? `, wind tunnel canary pass: ${windTunnelCertificate.isApprovedForCanary}` : ''}). Break capital: ${minimumPlausibleBreakCapitalSol} SOL, Survivability: ${(survivabilityIndex * 100).toFixed(1)}%`
+            : `Thesis survived all ${scenarios.length} red-team adversarial attacks${windTunnelCertificate ? ` and wind tunnel survival: ${(windTunnelCertificate.survivalRate * 100).toFixed(1)}%` : ''} (Survivability: ${(survivabilityIndex * 100).toFixed(1)}%, Min break capital: ${minimumPlausibleBreakCapitalSol.toFixed(1)} SOL)`;
         return {
             reportId,
             mint,
@@ -139,6 +168,7 @@ export class AutomaticFalsificationAgent {
             minimumPlausibleBreakCapitalSol: Number(minimumPlausibleBreakCapitalSol.toFixed(2)),
             lethalAttackVector,
             stressScenariosTested: scenarios,
+            windTunnelCertificate,
             isVetoRecommended,
             rationale,
             evidenceLineage: {
