@@ -282,7 +282,10 @@ function publishObservedMarketSignal(token, now) {
   const txScore = complete ? Math.min(50, Math.max(0, Math.log10(Math.max(1, txs)) * 15)) : 0;
   const highSignalIndex = complete ? Math.min(100, Math.max(10, Math.round(liqScore + txScore))) : 0;
   
-  const pod = liquidity >= 15000 ? 'UP' : (liquidity >= 5000 ? 'FLAT' : 'DOWN');
+  const change = Number(token.change || 0);
+  const isPositiveMomentum = change >= 1.0;
+  const isSevereDowntrend = change < -1.0;
+  const pod = (isPositiveMomentum && liquidity >= 10000) ? 'UP' : (isSevereDowntrend ? 'DOWN' : 'FLAT');
   const confidence = complete ? Number(Math.min(0.95, Math.max(0.2, (highSignalIndex / 100))).toFixed(2)) : 0;
 
   discoverySignals.set(token.mint, {
