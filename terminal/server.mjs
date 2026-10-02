@@ -136,9 +136,17 @@ const guardianInterval = setInterval(async () => {
     refreshRiskEvidence(snapTokens, Date.now());
       if (snapTokens.length > 0) {
         globalCommandGateway.updatePositionMarks(snapTokens);
-      if (globalCommandGateway.getSnapshot().positions.length > 0) {
-        await globalCommandGateway.tickAutonomousExits(snapTokens);
-      }
+        if (globalCommandGateway.getSnapshot().positions.length > 0) {
+          const exits = await globalCommandGateway.tickAutonomousExits(snapTokens);
+          if (Array.isArray(exits) && exits.length > 0) {
+            const now = Date.now();
+            for (const exit of exits) {
+              if (exit && exit.mint) {
+                serverTradeCooldowns.set(exit.mint, now);
+              }
+            }
+          }
+        }
 
       // Autonomous Entry Evaluation with Dynamic Best Position Sizing:
       const snap = globalCommandGateway.getSnapshot();
@@ -183,7 +191,7 @@ const guardianInterval = setInterval(async () => {
           const curHurdle = globalTradeLearningService.getSnapshot()?.adaptiveCalibration?.adaptiveHsiHurdle ?? 80;
           if (hsi >= curHurdle && isUp) {
             const lastTrade = serverTradeCooldowns.get(t.mint) || 0;
-            if (Date.now() - lastTrade < 45_000) continue;
+            if (Date.now() - lastTrade < 180_000) continue;
 
             const sizing = calculateOptimalBuyPositionValue(
               {
