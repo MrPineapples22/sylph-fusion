@@ -390,13 +390,20 @@ export class CommandGateway {
         const config = globalConfigAuthority.getConfig();
         if (autonomousExit) {
             const position = existingPosition;
+            const decisionNow = Math.max(cmd.timestamp || 0, exitEvidence?.observedAt || 0, Date.now());
+            const decisionAgeOffset = (autonomousExit.reason === 'FALSE_BREAKOUT' && cmd.timestamp && (cmd.timestamp - position.openedAt) <= 45_000)
+                ? decisionNow - cmd.timestamp
+                : 0;
             const refreshedDecision = exitEvidence && decideExit({
                 entry: position.entry, mark: exitEvidence.priceUsd, peak: position.peak,
-                stage: position.stage, openedAt: position.openedAt, now: Math.max(cmd.timestamp || 0, exitEvidence.observedAt, Date.now()),
+                stage: position.stage, openedAt: position.openedAt + decisionAgeOffset, now: decisionNow,
                 stopBps: config.stopBps, markAt: exitEvidence.observedAt, maxMarkAgeMs: config.feedStaleMs,
                 lastPeakAt: position.lastPeakAt ?? position.openedAt, partialExitBps: 5_000,
             });
-            if (!refreshedDecision || refreshedDecision.reason !== autonomousExit.reason ||
+            const isEmergencyBailout = (r) => ['STOP_LOSS', 'FALSE_BREAKOUT', 'DEV_DUMP_BAILOUT', 'LIQUIDITY_SHOCK', 'ADVERSE_FLOW_TOXICITY'].includes(r);
+            const compatibleReason = refreshedDecision && (refreshedDecision.reason === autonomousExit.reason ||
+                (isEmergencyBailout(autonomousExit.reason) && isEmergencyBailout(refreshedDecision.reason)));
+            if (!refreshedDecision || !compatibleReason ||
                 refreshedDecision.fractionBps !== autonomousExit.fractionBps ||
                 refreshedDecision.emergency !== autonomousExit.emergency ||
                 refreshedDecision.nextStage !== autonomousExit.nextStage ||
