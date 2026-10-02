@@ -17,6 +17,8 @@ import { SimulationExecutionAuthority, LiveExecutionAuthority, simulationExecuti
 import { Store } from './store.js';
 import { strategyStatuses } from './strategy.js';
 import { SessionLogger } from './session-logger.js';
+import { ExecutionRegretEngine } from './intelligence/forensics/counterfactual-regret-store.js';
+import { AutomaticFalsificationAgent } from './platform/adversarial/automatic-falsification-agent.js';
 import { buildCandidateSnapshot, buildOutcomeLabel, deterministicCandidateId, executeModelGate, saltHashWallet, } from './candidate-snapshot.js';
 const reserveBigInt = (value) => BigInt(typeof value?.toString === 'function' ? value.toString() : String(value));
 function candidateEvaluationRetryDelayMs(reason, maxAgeMs) {
@@ -337,6 +339,29 @@ export class Engine {
                 isHolderReward: s.curve.isHolderReward,
                 isMayhemMode: s.curve.isMayhemMode,
             });
+            if (shadowNetPnlLamports !== null) {
+                const shadowCost = BigInt(state.shadowEntry?.costLamports || '1');
+                const shadowNetPnl = BigInt(shadowNetPnlLamports);
+                const shadowPnlBps = shadowCost > 0n ? Number((shadowNetPnl * 10000n) / shadowCost) : 0;
+                const omissionRegret = ExecutionRegretEngine.evaluateDecisionRegret({
+                    decisionId: `shadow_dec_${candidate.mint.slice(0, 8)}_${s.slot}`,
+                    opportunityId: candidate.candidateGenerationId,
+                    tokenId: candidate.mint,
+                    slot: s.slot,
+                    actionTaken: 'IMMEDIATE_ABSTAIN',
+                    expectedNetEvBps: 0,
+                    expectedSlippageBps: this.cfg.SLIPPAGE_BPS,
+                    realizedPnlBps: 0,
+                    realizedSlippageBps: 0,
+                    realizedTipLamports: 0n,
+                    discoveryLagMs: 100,
+                    peakObservedPriceBps: Math.max(0, shadowPnlBps),
+                    drawdownObservedPriceBps: Math.min(0, shadowPnlBps),
+                });
+                if (this.store) {
+                    void this.store.saveCounterfactualEvaluation(omissionRegret);
+                }
+            }
         }
         catch {
             this.sessionLogger?.writeEvent('paper_shadow_market_observation_unavailable', {
@@ -901,6 +926,22 @@ export class Engine {
                     return;
                 }
             }
+            // Red-Team Automatic Falsification Agent (Roadmap #82, #300, #400)
+            const poolSolReserve = Number(s.curve.realQuoteReserves) / 1e9;
+            const falsificationReport = AutomaticFalsificationAgent.falsifyOpportunity({
+                mint: candidate.mint,
+                slot: s.slot,
+                poolSolReserve: Math.max(1, poolSolReserve),
+                latentInventoryFraction: candidate.devSold ? 0.40 : (candidate.buyers.size < 4 ? 0.25 : 0.08),
+                expectedNetEvBps: 250,
+                alphaHalfLifeMs: 2500,
+                maxSlippageBps: this.cfg.SLIPPAGE_BPS,
+                washTradingProbability: candidate.buyers.size < 4 ? 0.35 : 0.05,
+            });
+            this.sessionLogger?.writeEvent('automatic_falsification_report', falsificationReport);
+            if (this.store) {
+                void this.store.saveFalsificationReport(falsificationReport);
+            }
             this.sessionLogger?.writeEvent('entry_curve_mode', {
                 candidateId: deterministicCandidateId(candidate.mint, candidate.slot, candidate.eventSignature || `eval-${candidate.mint}-${candidate.slot}`),
                 mint: candidate.mint,
@@ -994,6 +1035,29 @@ export class Engine {
                     maximumAdverseExcursionPct: posBefore?.maePct,
                     exitStage: stage,
                 }));
+                // Evaluate Counterfactual Regret & Alpha Decomposition (Roadmap #81, #299, #483)
+                const costBasisNum = Number(allocatedCost);
+                const proceedsNum = Number(grossProceeds);
+                const realizedPnlBps = costBasisNum > 0 ? Math.round(((proceedsNum - costBasisNum) / costBasisNum) * 10_000) : 0;
+                const regretEvaluation = ExecutionRegretEngine.evaluateDecisionRegret({
+                    decisionId: `dec_${built.pending.id}`,
+                    opportunityId: posBefore?.candidateId || `paper-${built.pending.id}`,
+                    tokenId: built.pending.mint,
+                    slot: s.slot,
+                    actionTaken: 'BUY_ENTER',
+                    expectedNetEvBps: 200,
+                    expectedSlippageBps: this.cfg.SLIPPAGE_BPS,
+                    realizedPnlBps,
+                    realizedSlippageBps: built.overhead?.slippageBps ?? this.cfg.SLIPPAGE_BPS,
+                    realizedTipLamports: tipLamports,
+                    discoveryLagMs: 120,
+                    peakObservedPriceBps: posBefore?.mfePct ? Math.round(posBefore.mfePct * 100) : Math.max(realizedPnlBps, 0),
+                    drawdownObservedPriceBps: posBefore?.maePct ? Math.round(posBefore.maePct * 100) : Math.min(realizedPnlBps, 0),
+                });
+                this.sessionLogger?.writeEvent('trade_counterfactual_regret', regretEvaluation);
+                if (this.store) {
+                    void this.store.saveCounterfactualEvaluation(regretEvaluation);
+                }
             }
             await this.store.save(this.state, `paper-fill:${built.pending.id}`);
             const quoteAgeMs = Date.now() - (built.quoteTimestamp ?? Date.now());
