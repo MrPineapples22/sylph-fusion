@@ -117,7 +117,7 @@ export class TradeLearningService {
             const reject = (reason) => { quality.rejectedRows++; quality.rejectionReasons[reason] = (quality.rejectionReasons[reason] ?? 0) + 1; };
             for (let i = 1; i < lines.length; i++) {
                 const row = parseCsvLine(lines[i]);
-                if (row.length !== headers.length) {
+                if (row.length < 12) {
                     reject('MALFORMED_ROW');
                     continue;
                 }
@@ -328,11 +328,11 @@ export class TradeLearningService {
         let adaptiveHsiHurdle = 80;
         let calibrationRegime = 'BALANCED';
         if (totalTrades >= 3) {
-            if (winRatePct < 40) {
+            if (penalizePolicy > 0 || winRatePct < 40) {
                 adaptiveHsiHurdle = 85;
                 calibrationRegime = 'DEFENSIVE';
             }
-            else if (winRatePct >= 65) {
+            else if (winRatePct >= 65 && doNotReinforceLuck === 0) {
                 adaptiveHsiHurdle = 80;
                 calibrationRegime = 'OPTIMAL';
             }

@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { TradeLearningService } from '../../dist/intelligence/attribution/trade-learning-service.js';
+import { PavlovOutcomeAttributionEngine } from '../../dist/intelligence/attribution/pavlov-attribution.js';
 
 const columns = ['trade_id','token_mint','symbol','entry_price_usd','exit_price_usd','cost_basis_usd','proceeds_usd','realized_pnl_usd','realized_pnl_pct','hold_duration_ms','exit_trigger','was_decision_sound','closed_at_ms','mfe_pct','mae_pct','profit_capture_ratio','exit_efficiency','credit_archetype'];
 const base = {trade_id:'a',token_mint:'Mint111',symbol:'REAL',entry_price_usd:1,exit_price_usd:1.1,cost_basis_usd:100,proceeds_usd:110,realized_pnl_usd:10,realized_pnl_pct:10,hold_duration_ms:1000,exit_trigger:'OPERATOR_CLOSE',was_decision_sound:1,closed_at_ms:1700000000000,mfe_pct:10,mae_pct:0,profit_capture_ratio:1,exit_efficiency:1};
@@ -67,3 +68,61 @@ test('empty reload removes old evidence, and invalid in-memory reports cannot re
   assert.equal(fs.readFileSync(file,'utf8'),before);
   assert.equal(svc.getSnapshot().totalTradesEvaluated,0);
 });
+
+test('Pavlov 4-Quadrant Attribution and adaptive hurdle calibration', t => {
+  // 1. Soundness evaluation
+  const soundEval = PavlovOutcomeAttributionEngine.evaluateDecisionSoundness({ passedSafety: true });
+  assert.equal(soundEval.wasDecisionSound, true);
+
+  const unsoundWash = PavlovOutcomeAttributionEngine.evaluateDecisionSoundness({ passedSafety: true, washTradingProbability: 0.50 });
+  assert.equal(unsoundWash.wasDecisionSound, false);
+  assert.equal(unsoundWash.reason, 'HIGH_WASH_TRADING_CONTAMINATION');
+
+  const unsoundDrift = PavlovOutcomeAttributionEngine.evaluateDecisionSoundness({ passedSafety: true, driftBps: 250 });
+  assert.equal(unsoundDrift.wasDecisionSound, false);
+  assert.equal(unsoundDrift.reason, 'EXCESSIVE_ENTRY_PRICE_DRIFT');
+
+  // 2. Pavlov 4 Archetypes in TradeLearningService
+  const { file } = fixture(t, []);
+  const svc = new TradeLearningService();
+  svc.loadFromCsv(file);
+
+  // A. Reinforce Alpha (Sound decision · Good outcome)
+  svc.recordClosedTrade({
+    tokenMint: 'MintAlpha1', symbol: 'ALPHA', entryPriceUsd: 1, exitPriceUsd: 1.5,
+    costBasisUsd: 100, proceedsUsd: 150, realizedPnlUsd: 50, realizedPnlPct: 50,
+    holdDurationMs: 5000, exitTrigger: 'TRAILING_TARGET', wasDecisionSound: true
+  });
+
+  // B. Neutral Variance (Sound decision · Bad outcome)
+  svc.recordClosedTrade({
+    tokenMint: 'MintNoise1', symbol: 'NOISE', entryPriceUsd: 1, exitPriceUsd: 0.9,
+    costBasisUsd: 100, proceedsUsd: 90, realizedPnlUsd: -10, realizedPnlPct: -10,
+    holdDurationMs: 3000, exitTrigger: 'STOP_LOSS', wasDecisionSound: true
+  });
+
+  // C. Filter Lucky Gamble (Bad decision · Good outcome)
+  svc.recordClosedTrade({
+    tokenMint: 'MintLuck1', symbol: 'LUCK', entryPriceUsd: 1, exitPriceUsd: 1.4,
+    costBasisUsd: 100, proceedsUsd: 140, realizedPnlUsd: 40, realizedPnlPct: 40,
+    holdDurationMs: 2000, exitTrigger: 'TRAILING_TARGET', wasDecisionSound: false
+  });
+
+  // D. Penalize Policy (Bad decision · Bad outcome)
+  svc.recordClosedTrade({
+    tokenMint: 'MintBad1', symbol: 'FLAW', entryPriceUsd: 1, exitPriceUsd: 0.8,
+    costBasisUsd: 100, proceedsUsd: 80, realizedPnlUsd: -20, realizedPnlPct: -20,
+    holdDurationMs: 1500, exitTrigger: 'EMERGENCY_UNWIND', wasDecisionSound: false
+  });
+
+  const snap = svc.getSnapshot();
+  assert.equal(snap.attributionSummary.reinforceAlpha, 1);
+  assert.equal(snap.attributionSummary.neutralVariance, 1);
+  assert.equal(snap.attributionSummary.doNotReinforceLuck, 1);
+  assert.equal(snap.attributionSummary.penalizePolicy, 1);
+
+  // Penalize policy raises adaptive HSI hurdle to 85 (DEFENSIVE)
+  assert.equal(snap.adaptiveCalibration.adaptiveHsiHurdle, 85);
+  assert.equal(snap.adaptiveCalibration.calibrationRegime, 'DEFENSIVE');
+});
+

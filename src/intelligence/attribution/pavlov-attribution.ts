@@ -34,6 +34,43 @@ export class PavlovOutcomeAttributionEngine {
   private attributions: PavlovAttributionRecord[] = [];
 
   /**
+   * Evaluates decision soundness based on pre-flight authenticity, price drift, exit capacity, and execution integrity.
+   */
+  public static evaluateDecisionSoundness(params: {
+    passedSafety: boolean;
+    washTradingProbability?: number;
+    driftBps?: number;
+    sufficientExitCapacity?: boolean;
+    hasDevSoldPrior?: boolean;
+    unverifiedExtensions?: boolean;
+    executionPermitValid?: boolean;
+    isPanicExit?: boolean;
+  }): { wasDecisionSound: boolean; reason: string } {
+    if (!params.passedSafety) {
+      return { wasDecisionSound: false, reason: 'FAILED_SAFETY_AUDIT' };
+    }
+    if (params.hasDevSoldPrior) {
+      return { wasDecisionSound: false, reason: 'DEV_SOLD_PRIOR_TO_ENTRY' };
+    }
+    if (params.unverifiedExtensions) {
+      return { wasDecisionSound: false, reason: 'UNVERIFIED_TOKEN_EXTENSIONS' };
+    }
+    if (params.washTradingProbability !== undefined && params.washTradingProbability > 0.35) {
+      return { wasDecisionSound: false, reason: 'HIGH_WASH_TRADING_CONTAMINATION' };
+    }
+    if (params.driftBps !== undefined && params.driftBps > 200) {
+      return { wasDecisionSound: false, reason: 'EXCESSIVE_ENTRY_PRICE_DRIFT' };
+    }
+    if (params.sufficientExitCapacity === false) {
+      return { wasDecisionSound: false, reason: 'INSUFFICIENT_STRESSED_EXIT_CAPACITY' };
+    }
+    if (params.executionPermitValid === false) {
+      return { wasDecisionSound: false, reason: 'INVALID_OR_EXPIRED_EXECUTION_PERMIT' };
+    }
+    return { wasDecisionSound: true, reason: 'SOUND_DECISION_PROCESS' };
+  }
+
+  /**
    * Evaluates decision credit for an outcome.
    */
   public attributeOutcome(params: {
