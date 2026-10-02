@@ -160,12 +160,10 @@ export class SimulationExecutionAuthority implements ExecutionAuthority {
     return { status: 'NOT_SENT', signature: order.signature, attemptedAt: Date.now(), reason: 'SIMULATION' };
   }
 
-  async reconcile(order: Pending): Promise<ExecutionReconcileResult> {
-    return {
-      status: 'filled',
-      tokenDelta: 0n,
-      solDelta: 0n,
-    };
+  async reconcile(_order: Pending): Promise<ExecutionReconcileResult> {
+    // Normal paper fills settle from build() results. A recovered Pending
+    // record has no durable fill deltas and cannot establish a simulated fill.
+    return { status: 'pending' };
   }
 
   async getWalletBalance(): Promise<bigint> {

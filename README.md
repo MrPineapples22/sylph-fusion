@@ -177,29 +177,14 @@ The strategy capability report is explicit in the engine snapshot: curve scalpin
 
 Optional environment variables for the app are `MARKET_RPC_URL`, `RUGCHECK_URL`, and `SOLANA_TRACKER_API_KEY`. The Solana Tracker key is optional; when absent, its provider is displayed as unavailable. The app also links to [RugCheck](https://rugcheck.xyz/), [Solana Tracker Rugcheck](https://www.solanatracker.io/rugcheck), and Solscan for manual verification.
 
-## Master Capturable-Alpha Research, Intelligence & Execution Blueprint
+## Opportunity-capture research and prototypes
 
-SYLPH FUSION implements an evidence-driven opportunity-capture architecture designed to discover rare 2×, 5×, 10×+ moves early enough to verify authenticity, survive execution latency, ensure liquid exit capacity, and land on-chain with positive realized after-cost returns.
+The repository includes research designs and prototype components for token semantics, runtime and program identity, exit capacity, multiplier estimates, capital constraints, execution permits, evidence records, synthetic market scenarios, strategy selection, and dashboard projections.
 
-### Core Architectural Invariants
+These components are not a demonstrated, connected live production execution path. Their outputs do not establish calibrated probabilities, executable exit capacity, authenticated runtime or program identity, profitable execution, or release certification.
 
-1. **Truth Before Intelligence**:
-   - `TokenSemanticRoot`: Validates Token-2022 extensions, fee parameters, freeze/mint authority, and distinct buy vs. sell paths.
-   - `EnvironmentCertificationEngine`: Binds Agave runtime feature-sets, cluster genesis, epoch, and program bytecode hashes (`RuntimeRoot`, `ProgramRoot`).
-2. **Exitability Before Position Size**:
-   - `ExitabilityEngine`: Enforces $Q \le \text{ConservativeStressedExitCapacity}$, calculating stressed exit curves at $-10\%$, $-25\%$, and $-50\%$ liquidity depth before position sizing.
-3. **Capturability Before Multiplier**:
-   - `CompetingHazardsMultiplierEngine`: Computes $P(2\times)$, $P(5\times)$, $P(10\times)$, $P(\text{rug})$, and $P(10\times \text{ before catastrophic failure})$.
-   - `MasterOpportunityDecisionEngine`: Synthesizes 12 decoupled intelligence vectors into $\text{RobustCapturableEV}$, strictly preserving the invariant:
-     $$\text{OpportunityDecision} \neq \text{ExecutionPermit}$$
-4. **Deterministic Capital Barrier**:
-   - `CapitalBarrierKernel`: Enforces non-compensatory safety gating between AI models and capital execution (15% max drawdown, daily loss limit, truth debt ceiling $\le 3$, cluster concentration limits).
-5. **Single-Use Execution Authority**:
-   - `UltimateExecutionPermitAuthority`: Authorizes execution only when wire hash, state lease, simulation certificate, and exitability certificate are locked.
-6. **Immutable 19-Link Evidence Ledger**:
-   - `UltimateExecutionRecordLedger`: Chains every trade from Canonical Events to Token Truth, Decision, Simulation, Execution, Settlement, Calibration, and Counterfactual Regret.
-7. **Stage 12 Meta-SYLPH & Wind Tunnel Simulation**:
-   - `MarketWindTunnel`: Simulates 10 synthetic actor archetypes (Sniper, Whale, Insider, Wash Trader, Panic Seller) to generate `WindTunnelSurvivalCertificate` prior to canary promotion.
-   - `MetaStrategyController`: Matches ecosystem regimes and token lifecycles to 10 discrete execution modes.
-   - `MasterSylphDashboardProjector`: Generates the 7-tier master dashboard view model.
+The paper runtime uses the existing `CapitalBarrierKernel` policy, with explicitly labeled assumptions and heuristic inputs. Passing that check does not issue an execution permit. `UltimateExecutionPermitAuthority` remains a research prototype: its unkeyed SHA-256 digest is not an authenticated signature, and its validator does not establish the authenticity of roots or certificates.
 
+`UltimateExecutionRecordLedger` contains research record-linking code. The runtime does not create a verified execution evidence chain from placeholder hashes. Ordinary paper fills are simulated accounting outcomes. A recovered paper order without durable fill evidence remains unresolved.
+
+`MarketWindTunnel` produces synthetic scenarios; it does not establish measured mainnet performance or authorize canary promotion. Strategy and dashboard components require separate integration and evidence review. The release and architecture status described above remains applicable.

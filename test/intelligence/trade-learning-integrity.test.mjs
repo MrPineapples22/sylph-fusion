@@ -126,3 +126,26 @@ test('Pavlov 4-Quadrant Attribution and adaptive hurdle calibration', t => {
   assert.equal(snap.adaptiveCalibration.calibrationRegime, 'DEFENSIVE');
 });
 
+test('historical data/pavlov_attributions.csv verifies all 4 quadrants are populated and defensive regime latches', t => {
+  const file = path.resolve(process.cwd(), 'data/pavlov_attributions.csv');
+  if (!fs.existsSync(file)) return;
+
+  const svc = new TradeLearningService();
+  const res = svc.loadFromCsv(file);
+  assert.ok(res.loadedCount > 1000, `Loaded count ${res.loadedCount} should be > 1000`);
+
+  const snap = svc.getSnapshot();
+  assert.ok(snap.attributionSummary.reinforceAlpha > 0, 'reinforceAlpha must be > 0');
+  assert.ok(snap.attributionSummary.neutralVariance > 0, 'neutralVariance must be > 0');
+  assert.ok(snap.attributionSummary.doNotReinforceLuck > 0, 'doNotReinforceLuck must be > 0 (Filter Lucky Gamble)');
+  assert.ok(snap.attributionSummary.penalizePolicy > 0, 'penalizePolicy must be > 0 (Penalize Policy)');
+
+  // Unsound losses trigger defensive calibration regime
+  assert.equal(snap.adaptiveCalibration.adaptiveHsiHurdle, 85);
+  assert.equal(snap.adaptiveCalibration.calibrationRegime, 'DEFENSIVE');
+
+  // Verify zero MALFORMED_ROW rejections
+  assert.equal(snap.dataQuality.rejectionReasons['MALFORMED_ROW'] ?? 0, 0);
+});
+
+

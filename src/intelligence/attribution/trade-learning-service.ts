@@ -32,6 +32,7 @@ export interface ClosedTradeReport {
   readonly profitCaptureRatio?: number;
   readonly exitEfficiency?: number;
   readonly exitEnvelopeHash?: string;
+  readonly decisionSoundnessReason?: string;
 }
 
 export interface TradeAutopsyRecord extends ClosedTradeReport {
@@ -141,6 +142,7 @@ export class TradeLearningService {
       process.env.PAVLOV_ATTRIBUTIONS_PATH,
       'D:/pump/SOL-SYLPH/pavlov_attributions.csv',
       'd:\\pump\\SOL-SYLPH\\pavlov_attributions.csv',
+      path.resolve(process.cwd(), 'data/pavlov_attributions.csv'),
       path.resolve(process.cwd(), 'pavlov_attributions.csv'),
     ].filter(Boolean) as string[];
 
@@ -187,16 +189,38 @@ export class TradeLearningService {
         const numeric = (name: string): number => getVal(name) === '' ? NaN : Number(getVal(name));
         const optional = (name: string): number | undefined => getVal(name) === '' ? undefined : Number(getVal(name));
         const flag = getVal('was_decision_sound').toLowerCase();
+        let wasSound = flag === '1' || flag === 'true';
+        let decisionReason = getVal('decision_soundness_reason');
+        const pnlPct = numeric('realized_pnl_pct');
+        const maePct = optional('mae_pct');
+        const trigger = getVal('exit_trigger');
+
+        // Retroactive soundness evaluation for legacy rows recorded with uncalibrated hardcoded 1
+        if (wasSound && (!decisionReason || decisionReason === '' || decisionReason === 'SOUND_DECISION_PROCESS')) {
+          const evalResult = PavlovOutcomeAttributionEngine.evaluateDecisionSoundness({
+            passedSafety: true,
+            exitTrigger: trigger,
+            realizedPnlPct: pnlPct,
+            maePct,
+          });
+          if (!evalResult.wasDecisionSound) {
+            wasSound = false;
+            decisionReason = evalResult.reason;
+          } else if (!decisionReason) {
+            decisionReason = evalResult.reason;
+          }
+        }
         const report: ClosedTradeReport = {
           tradeId: getVal('trade_id'), tokenMint: getVal('token_mint'), symbol: getVal('symbol'),
           entryPriceUsd: numeric('entry_price_usd'), exitPriceUsd: numeric('exit_price_usd'),
           costBasisUsd: numeric('cost_basis_usd'), proceedsUsd: numeric('proceeds_usd'),
           realizedPnlUsd: numeric('realized_pnl_usd'), realizedPnlPct: numeric('realized_pnl_pct'),
           holdDurationMs: numeric('hold_duration_ms'), exitTrigger: getVal('exit_trigger'),
-          wasDecisionSound: flag === '1' || flag === 'true', closedAt: numeric('closed_at_ms'),
+          wasDecisionSound: wasSound, closedAt: numeric('closed_at_ms'),
           mfePct: optional('mfe_pct'), maePct: optional('mae_pct'),
           profitCaptureRatio: optional('profit_capture_ratio'), exitEfficiency: optional('exit_efficiency'),
           exitEnvelopeHash: getVal('exit_envelope_hash'),
+          decisionSoundnessReason: decisionReason,
         };
         const reason = this.rejectionReason(report) ?? (!['1', '0', 'true', 'false'].includes(flag) ? 'INVALID_DECISION_FLAG' : undefined);
         if (reason) { reject(reason); continue; }
@@ -321,13 +345,14 @@ export class TradeLearningService {
           autopsy.exitEfficiency,
           autopsy.attribution.credit_archetype,
           autopsy.attribution.policy_reinforcement_action,
-          82,
-          'BALANCED',
+          autopsy.attribution.policy_reinforcement_action === 'PENALIZE_POLICY' ? 85 : 82,
+          autopsy.attribution.policy_reinforcement_action === 'PENALIZE_POLICY' ? 'DEFENSIVE' : 'BALANCED',
           '',
           autopsy.exitEnvelopeHash,
-          autopsy.attribution.attribution_notes.replaceAll(',', ';')
+          autopsy.attribution.attribution_notes.replaceAll(',', ';'),
+          autopsy.decisionSoundnessReason || (autopsy.wasDecisionSound ? 'SOUND_DECISION_PROCESS' : 'UNSOUND_DECISION_PROCESS')
         ];
-        const standardHeaders = 'trade_id,token_mint,symbol,entry_price_usd,exit_price_usd,cost_basis_usd,proceeds_usd,realized_pnl_usd,realized_pnl_pct,hold_duration_ms,exit_trigger,was_decision_sound,closed_at_ms,mfe_pct,mae_pct,profit_capture_ratio,exit_efficiency,credit_archetype,policy_reinforcement_action,adaptive_hsi_hurdle,calibration_regime,counterfactual_pnl_pct,exit_envelope_hash,attribution_notes'.split(',');
+        const standardHeaders = 'trade_id,token_mint,symbol,entry_price_usd,exit_price_usd,cost_basis_usd,proceeds_usd,realized_pnl_usd,realized_pnl_pct,hold_duration_ms,exit_trigger,was_decision_sound,closed_at_ms,mfe_pct,mae_pct,profit_capture_ratio,exit_efficiency,credit_archetype,policy_reinforcement_action,adaptive_hsi_hurdle,calibration_regime,counterfactual_pnl_pct,exit_envelope_hash,attribution_notes,decision_soundness_reason'.split(',');
         const mapped = new Map(standardHeaders.map((header, index) => [header, values[index]]));
         const headers = parseCsvLine(fs.readFileSync(this.csvPath, 'utf8').split(/\r?\n/, 1)[0]);
         const row = headers.map(header => {

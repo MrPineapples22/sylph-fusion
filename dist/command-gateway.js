@@ -13,6 +13,7 @@ import { DynamicTipAndContentionOracle } from './platform/execution/solaris/tip-
 import { BimodalExecutionRouter } from './platform/execution/solaris/bimodal-router.js';
 import { PostGraduationAmmBridge } from './platform/execution/solaris/amm-bridge.js';
 import { SpieEngine, KellyAllocator } from './intelligence/spie/index.js';
+import { PavlovOutcomeAttributionEngine } from './intelligence/attribution/pavlov-attribution.js';
 import { globalTradeLearningService } from './intelligence/attribution/trade-learning-service.js';
 import { decideExit, protectiveStop } from './exit-policy.js';
 function simulatedNetworkFeeUsd(report, solPriceUsd) {
@@ -573,6 +574,14 @@ export class CommandGateway {
                             const exitPriceUsd = soldQty > 0 ? grossProceedUsd / soldQty : pos.entry;
                             // Pavlov Attribution: record closed trade and update decision credit & adaptive hurdles
                             try {
+                                const maePct = pos.entry > 0 && pos.trough != null ? ((pos.trough - pos.entry) / pos.entry) * 100 : 0;
+                                const soundness = PavlovOutcomeAttributionEngine.evaluateDecisionSoundness({
+                                    passedSafety: true,
+                                    exitTrigger,
+                                    realizedPnlPct,
+                                    maePct,
+                                    isPanicExit: payload.emergency === true || exitTrigger === 'EMERGENCY_UNWIND',
+                                });
                                 globalTradeLearningService.recordClosedTrade({
                                     tokenMint: pos.mint,
                                     symbol: pos.symbol || (pos.asset ? pos.asset.slice(0, 8) : 'UNKNOWN'),
@@ -584,7 +593,8 @@ export class CommandGateway {
                                     realizedPnlPct,
                                     holdDurationMs,
                                     exitTrigger,
-                                    wasDecisionSound: true,
+                                    wasDecisionSound: soundness.wasDecisionSound,
+                                    decisionSoundnessReason: soundness.reason,
                                     mfePriceUsd: pos.peak,
                                     maePriceUsd: pos.trough,
                                 });

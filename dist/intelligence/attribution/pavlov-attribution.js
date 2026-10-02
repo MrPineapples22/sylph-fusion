@@ -13,7 +13,8 @@ export class PavlovOutcomeAttributionEngine {
     static VERSION = '1.0.0';
     attributions = [];
     /**
-     * Evaluates decision soundness based on pre-flight authenticity, price drift, exit capacity, and execution integrity.
+     * Evaluates decision soundness based on pre-flight authenticity, price drift, exit capacity, execution integrity,
+     * and structural outcome metrics (e.g. catastrophic stop-outs, severe crash unwinds, and lucky gambles).
      */
     static evaluateDecisionSoundness(params) {
         if (!params.passedSafety) {
@@ -36,6 +37,35 @@ export class PavlovOutcomeAttributionEngine {
         }
         if (params.executionPermitValid === false) {
             return { wasDecisionSound: false, reason: 'INVALID_OR_EXPIRED_EXECUTION_PERMIT' };
+        }
+        if (params.isPanicExit) {
+            return { wasDecisionSound: false, reason: 'PANIC_EXIT_DISCIPLINE_BREACH' };
+        }
+        // Execution & outcome soundness checks:
+        // 1. Unsound losses (Penalize Policy):
+        if (params.realizedPnlPct !== undefined && params.realizedPnlPct <= -10) {
+            return { wasDecisionSound: false, reason: 'CATASTROPHIC_STOP_LOSS_VIOLATION' };
+        }
+        if (params.exitTrigger === 'STOP_LOSS' && params.realizedPnlPct !== undefined && params.realizedPnlPct <= -7) {
+            return { wasDecisionSound: false, reason: 'STOP_LOSS_THRESHOLD_BREACH' };
+        }
+        if (params.exitTrigger === 'EMERGENCY_UNWIND' && params.realizedPnlPct !== undefined && params.realizedPnlPct <= -7) {
+            return { wasDecisionSound: false, reason: 'EMERGENCY_UNWIND_SEVERE_CRASH' };
+        }
+        if (params.maePct !== undefined && params.maePct <= -15) {
+            return { wasDecisionSound: false, reason: 'SEVERE_ADVERSE_EXCURSION' };
+        }
+        // 2. Unsound profits (Filter Lucky Gamble):
+        if (params.realizedPnlPct !== undefined && params.realizedPnlPct > 0) {
+            if (params.exitTrigger === 'EMERGENCY_UNWIND') {
+                return { wasDecisionSound: false, reason: 'LUCKY_EMERGENCY_UNWIND_PROFIT' };
+            }
+            if (params.exitTrigger === 'STOP_LOSS') {
+                return { wasDecisionSound: false, reason: 'LUCKY_STOP_LOSS_REVERSAL' };
+            }
+            if (params.maePct !== undefined && params.maePct <= -12) {
+                return { wasDecisionSound: false, reason: 'LUCKY_RECOVERY_FROM_EXTREME_DRAWDOWN' };
+            }
         }
         return { wasDecisionSound: true, reason: 'SOUND_DECISION_PROCESS' };
     }

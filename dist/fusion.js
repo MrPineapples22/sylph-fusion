@@ -20,10 +20,6 @@ import { SessionLogger } from './session-logger.js';
 import { ExecutionRegretEngine } from './intelligence/forensics/counterfactual-regret-store.js';
 import { AutomaticFalsificationAgent } from './platform/adversarial/automatic-falsification-agent.js';
 import { CapitalBarrierKernel } from './intelligence/capital/capital-barrier-kernel.js';
-import { UltimateExecutionPermitAuthority } from './intelligence/execution/ultimate-execution-permit.js';
-import { UltimateExecutionRecordLedger } from './platform/evidence/ultimate-execution-record.js';
-import { EnvironmentCertificationEngine } from './platform/truth/runtime-program-root.js';
-import { createHash } from 'node:crypto';
 import { buildCandidateSnapshot, buildOutcomeLabel, deterministicCandidateId, executeModelGate, saltHashWallet, } from './candidate-snapshot.js';
 const reserveBigInt = (value) => BigInt(typeof value?.toString === 'function' ? value.toString() : String(value));
 function candidateEvaluationRetryDelayMs(reason, maxAgeMs) {
@@ -687,7 +683,7 @@ export class Engine {
                     if (this.candidates.get(order.mint)?.devSold)
                         this.state.positions[order.mint].panic = true;
                 }
-                else if (order.side === 'sell') {
+                else if (order.side === 'sell' && this.cfg.MODE !== 'paper') {
                     const grossProceeds = result.solDelta > 0n ? result.solDelta : 0n;
                     this.sessionLogger?.writeOutcomeLabel(buildOutcomeLabel({
                         candidateId: posBefore?.candidateId || `order-${order.signature}`,
@@ -708,30 +704,15 @@ export class Engine {
                 }
                 await this.store.save(this.state, `filled:${order.signature}`);
                 const fillData = { mint: order.mint, side: order.side, signature: order.signature, tokenDelta: String(result.tokenDelta), netLamports: String(result.solDelta), reason: order.reason, stage: order.stage };
-                log('fill_finalized', fillData);
-                this.sessionLogger?.writeEvent('fill_finalized', fillData);
-                const executionRecord = UltimateExecutionRecordLedger.sealRecord({
-                    intentId: `intent_${order.side}_${order.mint.slice(0, 8)}_${order.created}`,
-                    mint: order.mint,
-                    canonicalEventsHash: createHash('sha256').update(`EVENTS_${order.signature}`).digest('hex'),
-                    tokenTruthCertificateHash: createHash('sha256').update(`TOKEN_TRUTH_${order.mint}`).digest('hex'),
-                    authenticityCertificateHash: createHash('sha256').update(`AUTH_${order.mint}`).digest('hex'),
-                    opportunityDecisionHash: createHash('sha256').update(`DECISION_${order.mint}`).digest('hex'),
-                    exitabilityCertificateHash: createHash('sha256').update(`EXIT_${order.mint}`).digest('hex'),
-                    quoteHash: createHash('sha256').update(`QUOTE_${order.signature}`).digest('hex'),
-                    transactionRootHash: createHash('sha256').update(`TX_${order.signature}`).digest('hex'),
-                    runtimeRootHash: createHash('sha256').update('RUNTIME_ROOT').digest('hex'),
-                    programRootsHash: createHash('sha256').update('PROGRAM_ROOTS').digest('hex'),
-                    simulationCertificateHash: createHash('sha256').update(`SIM_${order.signature}`).digest('hex'),
-                    stateLeaseHash: createHash('sha256').update(`LEASE_${order.signature}`).digest('hex'),
-                    executionPermitHash: createHash('sha256').update(`PERMIT_${order.signature}`).digest('hex'),
-                    signingIntentHash: createHash('sha256').update(`SIGNING_${order.signature}`).digest('hex'),
-                    deliveryReceiptHash: createHash('sha256').update(`RECEIPT_${order.signature}`).digest('hex'),
-                    landedOutcomeCertificateHash: createHash('sha256').update(`LANDED_${order.signature}`).digest('hex'),
-                    positionRecordHash: createHash('sha256').update(`POS_${order.mint}`).digest('hex'),
-                    settlementRecordHash: createHash('sha256').update(`SETTLE_${result.solDelta}_${result.tokenDelta}`).digest('hex'),
-                });
-                this.sessionLogger?.writeEvent('ultimate_execution_record_sealed', executionRecord);
+                if (this.cfg.MODE === 'paper') {
+                    const paperFillData = { ...fillData, evidenceClass: 'PAPER_SIMULATED_FILL', chainExecutionEvidenceStatus: 'UNAVAILABLE' };
+                    log('paper_recovery_fill', paperFillData);
+                    this.sessionLogger?.writeEvent('paper_recovery_fill', paperFillData);
+                }
+                else {
+                    log('fill_finalized', fillData);
+                    this.sessionLogger?.writeEvent('fill_finalized', fillData);
+                }
             }
             else if (result.status === 'expired' || result.status === 'failed') {
                 if (result.status === 'failed') {
@@ -763,6 +744,18 @@ export class Engine {
                 const termData = { signature: order.signature, status: result.status, mint: order.mint };
                 log('order_terminal', termData);
                 this.sessionLogger?.writeEvent('order_terminal', termData);
+            }
+            else if (this.cfg.MODE === 'paper') {
+                // A Pending record alone cannot establish a simulated fill. Retain it
+                // without settlement or delivery retries until recovery evidence exists.
+                const unresolved = {
+                    orderId: order.id, mint: order.mint, side: order.side,
+                    evidenceClass: 'PAPER_RECOVERY_EVIDENCE_MISSING',
+                    recoveryStatus: 'UNRESOLVED',
+                    reason: 'DURABLE_SIMULATED_FILL_EVIDENCE_UNAVAILABLE',
+                };
+                log('paper_recovery_unresolved', unresolved);
+                this.sessionLogger?.writeEvent('paper_recovery_unresolved', unresolved);
             }
             else
                 await this.persistAndBroadcast(order);
@@ -1007,7 +1000,7 @@ export class Engine {
             const creatorExposureSol = openPositions.filter(p => p.creator === candidate.creator).reduce((acc, p) => acc + (Number(p.cost) / 1e9), 0);
             const routeExposureSol = openPositions.reduce((acc, p) => acc + (Number(p.cost) / 1e9), 0);
             const stressedExitCapacitySol = Math.max(0.5, poolSolReserve * 0.25);
-            const barrierVerdict = CapitalBarrierKernel.evaluateCapitalBarrier({
+            const barrierInputs = {
                 proposedSizeSol,
                 totalBankrollSol: Math.max(1, totalBankrollSol),
                 currentDrawdownPct,
@@ -1021,8 +1014,35 @@ export class Engine {
                 modelUncertainty: 0.15,
                 executionReliability: 0.95,
                 truthDebtCount: this.state.reconciliationBlocked ? 1 : 0,
-            });
-            this.sessionLogger?.writeEvent('capital_barrier_verdict', barrierVerdict);
+            };
+            const barrierVerdict = CapitalBarrierKernel.evaluateCapitalBarrier(barrierInputs);
+            if (this.cfg.MODE === 'paper') {
+                this.sessionLogger?.writeEvent('paper_capital_policy_check', {
+                    ...barrierVerdict,
+                    evidenceClass: 'UNVALIDATED_PAPER_SCENARIO_POLICY_CHECK',
+                    executionPermitStatus: 'NOT_ISSUED',
+                    authorizesLiveExecution: false,
+                    inputs: barrierInputs,
+                    inputProvenance: {
+                        proposedSizeSol: 'CONFIGURED_AMOUNT_CAPPED_BY_LOCAL_CASH_POLICY',
+                        totalBankrollSol: 'LOCAL_PAPER_CASH_WITH_HEURISTIC_FLOOR',
+                        currentDrawdownPct: 'LOCAL_PAPER_CASH_AND_HIGH_WATER_CALCULATION',
+                        dailyRealizedLossSol: 'LOCAL_PAPER_ACCOUNTING',
+                        maxDailyLossSol: 'CONFIGURED_POLICY',
+                        creatorClusterExposureSol: 'LOCAL_PAPER_POSITIONS_FILTERED_BY_CREATOR',
+                        maxCreatorExposureSol: 'LOCAL_CASH_BASED_POLICY_WITH_FLOOR',
+                        routeExposureSol: 'LOCAL_PAPER_POSITION_COST_SUM',
+                        maxRouteExposureSol: 'LOCAL_CASH_BASED_POLICY_WITH_FLOOR',
+                        stressedExitCapacitySol: 'OBSERVED_RESERVE_BASED_HEURISTIC_WITH_FLOOR',
+                        modelUncertainty: 'FIXED_UNVALIDATED_ASSUMPTION',
+                        executionReliability: 'FIXED_UNVALIDATED_ASSUMPTION',
+                        truthDebtCount: 'LOCAL_RECONCILIATION_FLAG_PROXY',
+                    },
+                });
+            }
+            else {
+                this.sessionLogger?.writeEvent('capital_barrier_verdict', barrierVerdict);
+            }
             if (barrierVerdict.status === 'DENIED') {
                 this.recordRestriction(candidate.mint, 'PORTFOLIO', 'BLOCK_NEW_ENTRY', barrierVerdict.denialReasons[0] || 'capital_barrier_denied', candidateMeta, s);
                 return;
@@ -1033,31 +1053,8 @@ export class Engine {
                     entryAmount = throttledLamports;
                 }
             }
-            // Priority Item 1: Issue Sealed Ultimate Execution Permit (Section 98)
-            const executionPermit = UltimateExecutionPermitAuthority.issuePermit({
-                intentId: `intent_buy_${candidate.mint.slice(0, 8)}_${s.slot}`,
-                candidateId: deterministicCandidateId(candidate.mint, candidate.slot, candidate.eventSignature || `eval-${candidate.mint}-${candidate.slot}`),
-                exactTransactionHash: createHash('sha256').update(`${candidate.mint}:${s.slot}:${entryAmount}`).digest('hex'),
-                mint: candidate.mint,
-                routeHash: createHash('sha256').update(`PUMP_CURVE_${candidate.mint}`).digest('hex'),
-                runtimeRoot: EnvironmentCertificationEngine.createRuntimeRoot({
-                    epoch: Math.floor(s.slot / 432_000),
-                    contextSlot: s.slot,
-                }),
-                programRoots: [EnvironmentCertificationEngine.createProgramRoot({
-                        programId: '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P',
-                        deploymentSlot: 200_000_000,
-                        executableBytecodeHash: 'pump_program_bytecode_verified_sha256',
-                    })],
-                simulationCertificateHash: createHash('sha256').update(`SIM_${candidate.mint}_${s.slot}`).digest('hex'),
-                exitabilityCertificateHash: createHash('sha256').update(`EXIT_${candidate.mint}_${stressedExitCapacitySol}`).digest('hex'),
-                portfolioSnapshotHash: createHash('sha256').update(`PORTFOLIO_${this.state.cash}_${s.slot}`).digest('hex'),
-                stateLeaseHash: createHash('sha256').update(`LEASE_${s.slot}`).digest('hex'),
-                maximumSolLamports: entryAmount,
-                maximumTokensRaw: 1000000000000n,
-                minimumOutputTokensRaw: 1n,
-            });
-            this.sessionLogger?.writeEvent('ultimate_execution_permit_issued', executionPermit);
+            // trade() builds the paper order next. No exact-byte permit, verified
+            // simulation certificate, state lease, or authenticated root exists here.
             this.sessionLogger?.writeEvent('entry_curve_mode', {
                 candidateId: deterministicCandidateId(candidate.mint, candidate.slot, candidate.eventSignature || `eval-${candidate.mint}-${candidate.slot}`),
                 mint: candidate.mint,
