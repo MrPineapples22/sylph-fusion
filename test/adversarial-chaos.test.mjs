@@ -1,7 +1,7 @@
 import { TokenLifecycleOmegaAuthority } from '../dist/platform/lifecycle/token-lifecycle-omega.js';
 import { NumeraireAuthority, asLamports } from '../dist/platform/ledger/numeraire.js';
 import { SentinelAltAuthority } from '../dist/platform/security/sentinel-alt.js';
-import { SimulacrumXEngine } from '../dist/platform/simulation/simulacrum-x.js';
+import { SimulacrumXEngine } from '../src/platform/simulation/simulacrum-x.ts';
 import { LabelForgeAuthority } from '../dist/intelligence/science/labelforge.js';
 import { HelixStrategyCanaryAuthority } from '../dist/intelligence/control/helix-strategy-canary.js';
 import { AirgapRAuthority, AirgapSecurityViolationError } from '../dist/platform/security/airgap-r.js';
@@ -571,22 +571,18 @@ test('NEMESIS-013: Post-review compute budget alteration triggers TRANSACTION_ID
   );
 });
 
-test('NEMESIS-014: Actual fill deviating by > 15% triggers SIMULATION_MODEL_DRIFT (Upgrade 1)', () => {
+test('NEMESIS-014: research cash-delta divergence exceeds policy threshold without claiming certification', () => {
   const engine = new SimulacrumXEngine();
-  const cert = engine.simulateExecution({
-    slot: 1, blockhash: 'b1', quoteSlot: 1, virtualSolReserves: 30_000_000_000n, virtualTokenReserves: 1_000_000_000n,
-    walletSolBalanceLamports: 10_000_000_000n, walletTokenBalanceRaw: 0n, isAmmActive: false,
-    writableAccountContentionScore: 0.1, expectedLandingLatencySlots: 1, marketVelocityBpsPerSecond: 10
-  }, {
-    economicIntentId: 'I-1', side: 'BUY', inputAmountLamports: 100_000_000n, baseNetworkFeeLamports: 5000n,
-    priorityFeeLamports: 5000n, jitoTipLamports: 10000n, rentLamports: 0n, maxAllowedSlippageBps: 100, transactionVersion: 'V0'
-  });
-
-  const report = engine.evaluateResiduals(cert, (cert.netExecutableProceedsLamports * 70n) / 100n);
-  assert.equal(report.isModelDriftDetected, true);
-  assert.match(report.details, /SIMULATION_MODEL_DRIFT/);
+  const estimate = engine.simulateExecution({
+    model: 'CONSTANT_PRODUCT_SCENARIO', solReserveLamports: 30_000_000_000n,
+    tokenReserveRaw: 1_000_000_000_000n, walletSolLamports: 10_000_000_000n, walletTokenRaw: 0n,
+  }, { economicIntentId: 'I-1', side: 'BUY', inputLamports: 100_000_000n,
+    assumedNetworkCostLamports: 20000n, assumedRouteCostLamports: 0n,
+    assumedAdverseCostLamports: 0n, maxPriceImpactBps: 100 }, 1000);
+  const report = engine.evaluateResiduals(estimate, estimate.solCashDeltaLamports * 130n / 100n);
+  assert.equal(estimate.isSimulationCertificate, false);
+  assert.equal(report.status, 'POLICY_THRESHOLD_EXCEEDED');
 });
-
 test('NEMESIS-015: Feature arrival after decision time triggers FUTURE_FEATURE_LEAKAGE (Upgrade 4)', () => {
   assert.throws(
     () => LabelForgeAuthority.certifyExample({

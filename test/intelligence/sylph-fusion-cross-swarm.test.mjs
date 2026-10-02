@@ -177,9 +177,15 @@ test('SYLPH FUSION Cross-Swarm Integration: Sol Agents 1-6 & Astra Orchestration
 
   const retryFencer = new GenerationFencedRetryEngine();
   const gen1 = retryFencer.createInitialGeneration('intent_swarm_001', 'tx_hash_001');
+  assert.equal(gen1.authority, 'RESEARCH_ONLY');
+  assert.equal(gen1.isFenced, false);
   assert.equal(gen1.activeGeneration, 1);
   assert.equal(retryFencer.validateGeneration('intent_swarm_001', 1), true);
   assert.equal(retryFencer.validateGeneration('intent_swarm_001', 2), false);
+  assert.throws(() => retryFencer.advanceGeneration('intent_swarm_001', 'replacement'), /TERMINAL_TRANSITION_UNAVAILABLE/);
+  assert.throws(() => retryFencer.retireIntent('intent_swarm_001'), /TERMINAL_TRANSITION_UNAVAILABLE/);
+  assert.throws(() => retryFencer.createInitialGeneration('intent_swarm_001', 'replacement'), /GENERATION_ALREADY_ACTIVE/);
+  assert.equal(retryFencer.validateGeneration('intent_swarm_001', 1), true);
 
   // -------------------------------------------------------------------------
   // SOL AGENT 4: Risk & Capital Allocation (Optimal Sizing & Hurdle)

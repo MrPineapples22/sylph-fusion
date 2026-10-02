@@ -2,10 +2,10 @@
  * SYLPH FUSION — NO-LAND VERIFICATION AUTHORITY & FINALIZED SETTLEMENT CERTIFICATES
  * Specifications: Sections 37 (Execution Generations), 103 (Invariants 1, 2, 7).
  *
- * Implements cryptographic terminal certificates:
- * 1. FinalizedSettlementCertificate: Proof that an execution generation landed and settled on chain.
- * 2. NoLandCertificate: Irrefutable proof that a transaction generation DID NOT land and cannot land
- *    (block height exceeded AND verified absent from finalized ledger history).
+ * Legacy terminal-certificate data and checksum helpers. A digest establishes
+ * field consistency, not chain truth or authorization. Both terminal issuers
+ * are quarantined pending signature-bound chain-evidence verification.
+ * Caller assertions and block height do not establish historical absence.
  *
  * Invariant: ZERO reservation release or generation advancement without terminal proof.
  */
@@ -43,8 +43,6 @@ export interface FinalizedSettlementCertificate {
 export type TerminalExecutionCertificate = NoLandCertificate | FinalizedSettlementCertificate;
 
 export class NoLandVerificationAuthority {
-  private static readonly SAFETY_CONFIRMATION_SLOTS = 32;
-
   /**
    * Computes deterministic SHA-256 digest for a NoLandCertificate
    */
@@ -96,7 +94,8 @@ export class NoLandVerificationAuthority {
   }
 
   /**
-   * Validates cryptographic digest on a certificate
+   * Checks field consistency only; this is not evidence verification.
+   * A matching digest must never authorize a terminal transition.
    */
   public static validateCertificateDigest(cert: TerminalExecutionCertificate): boolean {
     if (cert.certificateType === 'NO_LAND_CERTIFICATE') {
@@ -130,9 +129,10 @@ export class NoLandVerificationAuthority {
   }
 
   /**
-   * Constructs and certifies a NoLandCertificate with fail-closed invariant checks
+   * Legacy API retained to reject existing callers explicitly. No trusted
+   * history-verification authority exists yet; booleans cannot substitute for it.
    */
-  public static certifyNoLand(params: {
+  public static certifyNoLand(_params: {
     intentId: string;
     generation: number;
     signature: string;
@@ -142,38 +142,14 @@ export class NoLandVerificationAuthority {
     rpcEndpoint: string;
     searchHistoryConfirmedNotFound: boolean;
   }): NoLandCertificate {
-    if (!params.searchHistoryConfirmedNotFound) {
-      throw new Error(
-        `TRANSACTION_STATUS_UNCERTAIN: Cannot certify no-land for ${params.signature} without positive RPC confirmation of absence from finalized history`
-      );
-    }
-
-    if (params.observedBlockHeight <= params.lastValidBlockHeight) {
-      throw new Error(
-        `PREMATURE_EXPIRY_ASSERTION: Observed block height ${params.observedBlockHeight} <= lastValidBlockHeight ${params.lastValidBlockHeight}`
-      );
-    }
-
-    const proofDigest = this.computeNoLandDigest(params);
-
-    return {
-      certificateType: 'NO_LAND_CERTIFICATE',
-      intentId: params.intentId,
-      generation: params.generation,
-      signature: params.signature,
-      lastValidBlockHeight: params.lastValidBlockHeight,
-      observedBlockHeight: params.observedBlockHeight,
-      finalizedSlot: params.finalizedSlot,
-      verifiedAt: Date.now(),
-      rpcEndpoint: params.rpcEndpoint,
-      proofDigest,
-    };
+    throw new Error('NO_LAND_CERTIFICATION_UNAVAILABLE: Verified historical absence authority is not implemented; retain UNKNOWN');
   }
 
   /**
-   * Constructs and certifies a FinalizedSettlementCertificate
+   * Legacy API retained to reject callers. No trusted, signature-bound
+   * settlement evidence authority exists; caller fields cannot substitute for it.
    */
-  public static certifySettlement(params: {
+  public static certifySettlement(_params: {
     intentId: string;
     generation: number;
     signature: string;
@@ -184,25 +160,6 @@ export class NoLandVerificationAuthority {
     tokenDelta: bigint;
     solDelta: bigint;
   }): FinalizedSettlementCertificate {
-    if (params.slot <= 0) {
-      throw new Error(`INVALID_SETTLEMENT_SLOT: Slot must be positive (got ${params.slot})`);
-    }
-
-    const proofDigest = this.computeSettlementDigest(params);
-
-    return {
-      certificateType: 'FINALIZED_SETTLEMENT_CERTIFICATE',
-      intentId: params.intentId,
-      generation: params.generation,
-      signature: params.signature,
-      slot: params.slot,
-      blockTime: params.blockTime,
-      feeLamports: params.feeLamports,
-      status: params.status,
-      tokenDelta: params.tokenDelta,
-      solDelta: params.solDelta,
-      finalizedAt: Date.now(),
-      proofDigest,
-    };
+    throw new Error('SETTLEMENT_CERTIFICATION_UNAVAILABLE: Verified settlement authority is not implemented; retain UNKNOWN');
   }
 }

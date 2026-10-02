@@ -29,7 +29,7 @@ test('DurableGenerationFenceAuthority: enforces single active generation per int
       /TERMINAL_PROOF_REQUIRED/
     );
 
-    // Cannot advance if certificate indicates block height <= lastValidBlockHeight
+    // No-land records are quarantined even with a matching checksum.
     const prematureCert = {
       certificateType: 'NO_LAND_CERTIFICATE',
       intentId,
@@ -53,29 +53,27 @@ test('DurableGenerationFenceAuthority: enforces single active generation per int
 
     await assert.rejects(
       () => authority.advanceGeneration(intentId, 'sig-333', 1100, prematureCert),
-      /FENCE_BREACH_PREVENTED/
+      /NO_LAND_CERTIFICATION_UNAVAILABLE/
     );
 
-    // Advancing once proven terminated via verified NoLandCertificate succeeds
-    const validCert = NoLandVerificationAuthority.certifyNoLand({
+    // Settlement assertions are also unavailable as terminal authority.
+    const fields = {
       intentId,
       generation: 1,
       signature: 'sig-111',
-      lastValidBlockHeight: 1000,
-      observedBlockHeight: 1001,
-      finalizedSlot: 1050,
-      rpcEndpoint: 'https://rpc.test',
-      searchHistoryConfirmedNotFound: true,
-    });
-
-    const gen2 = await authority.advanceGeneration(intentId, 'sig-333', 1100, validCert);
-    assert.equal(gen2.generation, 2);
-    assert.equal(gen2.signature, 'sig-333');
-
-    // Confirming generation transitions state
-    await authority.confirmGeneration(intentId, 2);
+      slot: 1050,
+      feeLamports: 5000n,
+      status: 'INSTRUCTION_ERROR',
+      tokenDelta: 0n,
+      solDelta: -5000n,
+    };
+    assert.throws(() => NoLandVerificationAuthority.certifySettlement(fields), /SETTLEMENT_CERTIFICATION_UNAVAILABLE/);
+    const record = { ...fields, certificateType: 'FINALIZED_SETTLEMENT_CERTIFICATE', finalizedAt: 0,
+      proofDigest: NoLandVerificationAuthority.computeSettlementDigest(fields) };
+    await assert.rejects(authority.advanceGeneration(intentId, 'sig-333', 1100, record), /TERMINAL_TRANSITION_UNAVAILABLE/);
+    await assert.rejects(authority.confirmGeneration(intentId, 1), /TERMINAL_TRANSITION_UNAVAILABLE/);
     const active = await authority.getActiveGeneration(intentId);
-    assert.equal(active, undefined);
+    assert.deepEqual(active, gen1);
   } finally {
     await rm(testStorage, { force: true });
   }

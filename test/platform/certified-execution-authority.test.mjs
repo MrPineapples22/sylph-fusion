@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Keypair, PublicKey } from '@solana/web3.js';
+import { Keypair, PublicKey, TransactionMessage, VersionedMessage, VersionedTransaction } from '@solana/web3.js';
 import { rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
@@ -66,11 +66,11 @@ test('Pass 22 - Upgrade 3: Exact-base-unit bigint reservations and DurableReserv
   assert.equal(intent.capability.is_released, false);
 });
 
-test('Pass 22 - Upgrade 2: NoLandVerificationAuthority fail-closed certificate generation and tamper detection', () => {
+test('both terminal issuers are quarantined; settlement checksums confer no authority', () => {
   const intentId = 'intent-pass22-noland';
   const sig = '5Kj1...sig';
 
-  // 1. Rejects if searchHistoryConfirmedNotFound is false
+  // A caller boolean is never historical-absence evidence.
   assert.throws(
     () =>
       NoLandVerificationAuthority.certifyNoLand({
@@ -83,10 +83,10 @@ test('Pass 22 - Upgrade 2: NoLandVerificationAuthority fail-closed certificate g
         rpcEndpoint: 'https://rpc.valid',
         searchHistoryConfirmedNotFound: false,
       }),
-    /TRANSACTION_STATUS_UNCERTAIN/
+    /NO_LAND_CERTIFICATION_UNAVAILABLE/
   );
 
-  // 2. Rejects if observed block height <= lastValidBlockHeight
+  // Neither current nor expired lifetime is sufficient.
   assert.throws(
     () =>
       NoLandVerificationAuthority.certifyNoLand({
@@ -99,11 +99,10 @@ test('Pass 22 - Upgrade 2: NoLandVerificationAuthority fail-closed certificate g
         rpcEndpoint: 'https://rpc.valid',
         searchHistoryConfirmedNotFound: true,
       }),
-    /PREMATURE_EXPIRY_ASSERTION/
+    /NO_LAND_CERTIFICATION_UNAVAILABLE/
   );
 
-  // 3. Valid NoLandCertificate produces valid cryptographic digest
-  const validNoLand = NoLandVerificationAuthority.certifyNoLand({
+  assert.throws(() => NoLandVerificationAuthority.certifyNoLand({
     intentId,
     generation: 1,
     signature: sig,
@@ -112,17 +111,10 @@ test('Pass 22 - Upgrade 2: NoLandVerificationAuthority fail-closed certificate g
     finalizedSlot: 1060,
     rpcEndpoint: 'https://rpc.valid',
     searchHistoryConfirmedNotFound: true,
-  });
+  }), /NO_LAND_CERTIFICATION_UNAVAILABLE/);
 
-  assert.equal(validNoLand.certificateType, 'NO_LAND_CERTIFICATE');
-  assert.equal(NoLandVerificationAuthority.validateCertificateDigest(validNoLand), true);
-
-  // Tamper detection: altering any field invalidates digest
-  const tampered = { ...validNoLand, observedBlockHeight: 1051 };
-  assert.equal(NoLandVerificationAuthority.validateCertificateDigest(tampered), false);
-
-  // 4. Valid FinalizedSettlementCertificate
-  const settlement = NoLandVerificationAuthority.certifySettlement({
+  // Checksum consistency remains a diagnostic, not verified chain evidence.
+  const fields = {
     intentId,
     generation: 1,
     signature: sig,
@@ -131,7 +123,14 @@ test('Pass 22 - Upgrade 2: NoLandVerificationAuthority fail-closed certificate g
     status: 'SUCCESS',
     tokenDelta: 50_000_000n,
     solDelta: -1_000_000_000n,
-  });
+  };
+  assert.throws(() => NoLandVerificationAuthority.certifySettlement(fields), /SETTLEMENT_CERTIFICATION_UNAVAILABLE/);
+  const settlement = {
+    ...fields,
+    certificateType: 'FINALIZED_SETTLEMENT_CERTIFICATE',
+    finalizedAt: 0,
+    proofDigest: NoLandVerificationAuthority.computeSettlementDigest(fields),
+  };
 
   assert.equal(settlement.certificateType, 'FINALIZED_SETTLEMENT_CERTIFICATE');
   assert.equal(NoLandVerificationAuthority.validateCertificateDigest(settlement), true);
@@ -315,7 +314,7 @@ test('Pass 22 - Upgrade 1: Legacy LiveExecutionAuthority.build() and broadcast()
   );
 });
 
-test('Pass 22 - Upgrade 1: CertifiedLiveExecutionCoordinator coordinates 14-step proof-carrying chain', async () => {
+test('Coordinator reservation and offline signed-wire identity subset (not complete execution certification)', async () => {
   const liveCfg = config({
     MODE: 'live',
     KEYPAIR_PATH: 'keypair.json',
@@ -329,9 +328,14 @@ test('Pass 22 - Upgrade 1: CertifiedLiveExecutionCoordinator coordinates 14-step
     },
   };
   const mockMarket = {};
+  const fixtureKey = Keypair.fromSeed(new Uint8Array(32).fill(17));
   const signerGateway = {
-    publicKey: Keypair.generate().publicKey,
-    signTransactionMessage: async (bytes) => new Uint8Array([...bytes, 255]),
+    publicKey: fixtureKey.publicKey,
+    signTransactionMessage: async (bytes) => {
+      const tx = new VersionedTransaction(VersionedMessage.deserialize(bytes));
+      tx.sign([fixtureKey]);
+      return tx.signatures[0];
+    },
   };
 
   const testStorage = resolve('data', 'test-coord-fences.json');
@@ -390,7 +394,7 @@ test('Pass 22 - Upgrade 1: CertifiedLiveExecutionCoordinator coordinates 14-step
     );
 
     // Step 9: Seal Execution Authorization Root
-    const dummyBytes = new Uint8Array([10, 20, 30, 40]);
+    const dummyBytes = new TransactionMessage({ payerKey: fixtureKey.publicKey, recentBlockhash: PublicKey.default.toBase58(), instructions: [] }).compileToV0Message().serialize();
     const authRoot = coordinator.sealExecutionAuthorizationRoot({
       intentId,
       generation: 1,
@@ -406,7 +410,7 @@ test('Pass 22 - Upgrade 1: CertifiedLiveExecutionCoordinator coordinates 14-step
     // Steps 10-12: Two-Phase Isolated Signer Invocation
     const signedBytes = await coordinator.invokeCertifiedSigning(authRoot);
     assert.ok(signedBytes);
-    assert.equal(signedBytes.length, dummyBytes.length + 1);
+    assert.deepEqual(VersionedTransaction.deserialize(signedBytes).message.serialize(), dummyBytes);
 
     // Verifying side effect fence recorded the signing commit
     const fenceRecord = sideEffectFence.getByPhase(intentId, 1, 'SIGNING');

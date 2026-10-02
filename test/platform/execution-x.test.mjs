@@ -148,27 +148,61 @@ test('AlphaTtlEngine: computes effective TTL, detects alpha expiration and negat
   }), /quoteTtlSeconds/);
 });
 
-test('GenerationFencedRetryEngine: enforces strict generation increments and supersession fences', () => {
+test('GenerationFencedRetryEngine: research allocation cannot advance, retire or reset', () => {
   const engine = new GenerationFencedRetryEngine();
 
   // Create initial generation
   const gen1 = engine.createInitialGeneration('intent_gen_test', 'tx_hash_1');
+  assert.equal(gen1.authority, 'RESEARCH_ONLY');
+  assert.equal(gen1.isFenced, false);
   assert.equal(gen1.activeGeneration, 1);
   assert.equal(engine.validateGeneration('intent_gen_test', 1), true);
   assert.equal(engine.validateGeneration('intent_gen_test', 2), false);
 
-  // Advance generation on replacement
-  const gen2 = engine.advanceGeneration('intent_gen_test', 'tx_hash_2');
-  assert.equal(gen2.activeGeneration, 2);
-  assert.equal(gen2.supersedesGeneration, 1);
-
-  // Generation 1 is now invalidated/fenced!
-  assert.equal(engine.validateGeneration('intent_gen_test', 1), false);
-  assert.equal(engine.validateGeneration('intent_gen_test', 2), true);
-
-  // Retire intent
-  engine.retireIntent('intent_gen_test');
+  // No proof and fabricated caller proof are equally incapable of authority.
+  for (const proof of [undefined, { certificateType: 'NO_LAND_CERTIFICATE', proofDigest: 'fabricated' },
+    { certificateType: 'FINALIZED_SETTLEMENT_CERTIFICATE', signature: 'unrelated', proofDigest: 'fabricated' }]) {
+    assert.throws(() => engine.advanceGeneration('intent_gen_test', 'tx_hash_2', proof), /TERMINAL_TRANSITION_UNAVAILABLE/);
+    assert.throws(() => engine.retireIntent('intent_gen_test', proof), /TERMINAL_TRANSITION_UNAVAILABLE/);
+    assert.throws(() => engine.createInitialGeneration('intent_gen_test', 'replacement'), /GENERATION_ALREADY_ACTIVE/);
+  }
+  assert.throws(() => { gen1.activeGeneration = 2; }, TypeError);
+  assert.throws(() => { gen1.authority = 'LIVE'; }, TypeError);
+  assert.equal(engine.validateGeneration('intent_gen_test', 1), true);
   assert.equal(engine.validateGeneration('intent_gen_test', 2), false);
+});
+
+test('GenerationFencedRetryEngine: reserved/malformed IDs and missing generation never match', () => {
+  const engine = new GenerationFencedRetryEngine();
+  for (const id of ['__proto__', 'constructor', 'prototype', 'Constructor', '', ' ', 'trailing\n',
+    'a/b', 'a\\b', 'économic', 'x'.repeat(257), null, undefined, 1, {}, ['intent']]) {
+    assert.throws(() => engine.createInitialGeneration(id, 'tx'), /INVALID_INTENT_ID/);
+    assert.equal(engine.validateGeneration(id, 1), false);
+    assert.throws(() => engine.advanceGeneration(id, 'tx'), /TERMINAL_TRANSITION_UNAVAILABLE/);
+    assert.throws(() => engine.retireIntent(id), /TERMINAL_TRANSITION_UNAVAILABLE/);
+  }
+  engine.createInitialGeneration('valid', 'tx');
+  for (const generation of [undefined, null, 0, -1, 1.5, NaN, Infinity, '1']) {
+    assert.equal(engine.validateGeneration('missing', generation), false);
+    assert.equal(engine.validateGeneration('valid', generation), false);
+  }
+  for (const id of ['a', 'intent.valid-1:part_2', 'x'.repeat(256)]) {
+    engine.createInitialGeneration(id, 'tx');
+    assert.equal(engine.validateGeneration(id, 1), true);
+    assert.throws(() => engine.createInitialGeneration(id, 'replacement'), /GENERATION_ALREADY_ACTIVE/);
+  }
+});
+
+test('GenerationFencedRetryEngine: new object has no durable history and only emits research records', () => {
+  const first = new GenerationFencedRetryEngine();
+  first.createInitialGeneration('process_local', 'tx1');
+  const restarted = new GenerationFencedRetryEngine();
+  assert.equal(restarted.validateGeneration('process_local', 1), false);
+  const record = restarted.createInitialGeneration('process_local', 'tx2');
+  assert.equal(record.authority, 'RESEARCH_ONLY');
+  assert.equal(record.isFenced, false);
+  assert.throws(() => restarted.advanceGeneration('process_local', 'tx3'), /TERMINAL_TRANSITION_UNAVAILABLE/);
+  assert.throws(() => restarted.retireIntent('process_local'), /TERMINAL_TRANSITION_UNAVAILABLE/);
 });
 
 test('AllInBreakevenEngine: models ATA rent separately under an explicit recovery assumption', () => {

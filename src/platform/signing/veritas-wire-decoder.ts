@@ -52,8 +52,11 @@ const PUMP_SELL_DISCRIMINATOR = '33e685a4017f83ad';
 
 export class VeritasWireDecoder {
   /**
-   * Directly deserializes compiled Solana transaction message bytes and extracts
-   * an authoritative, tamper-proof DecodedTransactionView.
+   * Extracts observed message facts. `complete` supports only payer-origin native
+   * transfers to one recipient and the CU limit/price instructions decoded below.
+   * Pump (including SDK 2.0.0 V2), Jupiter, ATA and token effects are not yet
+   * authority-complete and therefore cannot authorize signing. No account-state,
+   * simulation, fee-inclusive wallet exposure or venue certification is implied.
    */
   public static decode(
     messageBytes: Uint8Array,
@@ -73,6 +76,9 @@ export class VeritasWireDecoder {
     let message: VersionedMessage;
     try {
       message = VersionedMessage.deserialize(messageBytes);
+      if (!Buffer.from(message.serialize()).equals(Buffer.from(messageBytes))) {
+        throw new Error('Noncanonical message encoding or trailing bytes');
+      }
     } catch (err) {
       throw new Error(`VERITAS_DECODE_FAILED: Deserialization failed: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -143,9 +149,12 @@ export class VeritasWireDecoder {
     let priorityFeeLamports = 0n;
     let computeUnitLimit: number | undefined;
     let computeUnitPriceMicroLamports: bigint | undefined;
-    let jitoTipLamports = 0n;
-    let detectedMint = options.expectedMint ?? '';
-    let detectedDestination = options.expectedDestination ?? '';
+    // Policy expectations are not observations. Unsupported token/swap effects
+    // remain diagnostic only until their complete economic/account contract is decoded.
+    let detectedMint = '';
+    let detectedDestination = '';
+    let complete = header.numRequiredSignatures === 1 && numWritableSigners === 1;
+    let transferCount = 0;
     let pumpTokensRaw: bigint | undefined;
     let pumpMaxCostLamports: bigint | undefined;
     let pumpMinOutputLamports: bigint | undefined;
@@ -179,13 +188,13 @@ export class VeritasWireDecoder {
       if (progPubkey === COMPUTE_BUDGET_ID) {
         if (dataLength === 5 && data[0] === 2) {
           instructionType = 'COMPUTE_BUDGET_LIMIT';
+          if (computeUnitLimit !== undefined || ixAccountKeys.length !== 0) complete = false;
           computeUnitLimit = data.readUInt32LE(1);
+          if (computeUnitLimit === 0 || computeUnitLimit > 1_400_000) complete = false;
         } else if (dataLength === 9 && data[0] === 3) {
           instructionType = 'COMPUTE_BUDGET_PRICE';
+          if (computeUnitPriceMicroLamports !== undefined || ixAccountKeys.length !== 0) complete = false;
           computeUnitPriceMicroLamports = data.readBigUInt64LE(1);
-          if (computeUnitLimit !== undefined) {
-            priorityFeeLamports = (computeUnitPriceMicroLamports * BigInt(computeUnitLimit) + 999_999n) / 1_000_000n;
-          }
         }
       } else if (progPubkey === SYSTEM_PROGRAM_ID) {
         // System Program: index 2 is Transfer (u32 LE = 2, lamports u64 LE at offset 4)
@@ -193,8 +202,12 @@ export class VeritasWireDecoder {
           instructionType = 'SYSTEM_TRANSFER';
           valueLamports = data.readBigUInt64LE(4);
           destPubkey = ixAccountKeys[1];
+          if (ixAccountKeys.length !== 2 || ixAccountKeys[0] !== feePayer
+            || !ixAccountKeys.every(k => writableAccountSet.has(k))) complete = false;
+          if (detectedDestination && detectedDestination !== destPubkey) complete = false;
+          transferCount++;
           totalAmountLamports += valueLamports;
-          jitoTipLamports += valueLamports; // Transfers to tip accounts or recipients
+          // A System transfer is not evidence that its recipient is a Jito tip account.
           if (!detectedDestination && destPubkey) detectedDestination = destPubkey;
         }
       } else if (progPubkey === ATA_PROGRAM_ID) {
@@ -222,13 +235,18 @@ export class VeritasWireDecoder {
           if (!detectedMint && targetMint) detectedMint = targetMint;
         }
       } else if (progPubkey === JUPITER_V6_ID) {
-        instructionType = 'JUPITER_SWAP';
+        // Program allowlisting does not establish the instruction or routed effects.
+        instructionType = 'UNKNOWN';
       } else if (progPubkey === SPL_TOKEN_ID || progPubkey === TOKEN_2022_ID) {
         if (dataLength >= 9 && (data[0] === 3 || data[0] === 12)) {
           instructionType = 'SPL_TRANSFER';
           tokenAmountRaw = data.readBigUInt64LE(1);
           destPubkey = ixAccountKeys[1];
         }
+      }
+
+      if (!['SYSTEM_TRANSFER', 'COMPUTE_BUDGET_LIMIT', 'COMPUTE_BUDGET_PRICE'].includes(instructionType)) {
+        complete = false;
       }
 
       instructionDetails.push({
@@ -245,8 +263,14 @@ export class VeritasWireDecoder {
       });
     }
 
+    if (computeUnitPriceMicroLamports !== undefined) {
+      // The message must explicitly bound CU usage; do not invent a default fee envelope.
+      if (computeUnitLimit === undefined) complete = false;
+      else priorityFeeLamports = (computeUnitPriceMicroLamports * BigInt(computeUnitLimit) + 999_999n) / 1_000_000n;
+    }
+
     return Object.freeze({
-      complete: true,
+      complete: complete && transferCount > 0,
       frozen: true,
       messageHash,
       version: message.version as 'legacy' | 0,
@@ -260,13 +284,13 @@ export class VeritasWireDecoder {
       amountLamports: totalAmountLamports,
       mint: detectedMint,
       destination: detectedDestination,
-      maxSlippageBps: options.maxSlippageBps ?? 300,
+      // Exact native transfers have no slippage. Swap bounds are currently unsupported.
+      maxSlippageBps: 0,
       priorityFeeLamports,
       simulationId: options.simulationId ?? `sim_${messageHash.slice(0, 16)}`,
       instructions: Object.freeze(instructionDetails),
       computeUnitLimit,
       computeUnitPriceMicroLamports,
-      jitoTipLamports,
       pumpTokensRaw,
       pumpMaxCostLamports,
       pumpMinOutputLamports,

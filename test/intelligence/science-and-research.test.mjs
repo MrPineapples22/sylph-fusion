@@ -22,7 +22,7 @@ test('OutcomeTruthEngine evaluates multi-horizon checkpoints, excursions, and la
   ];
 
   const runnerOutcome = engine.evaluateOutcome('mint_runner', entryPrice, initialLiq, entryTime, runnerTrajectory);
-  assert.equal(runnerOutcome.primaryLabel, 'RUNNER');
+  assert.equal(runnerOutcome.observedPathLabel, 'RUNNER');
   assert.ok(runnerOutcome.mfePct >= 200);
   assert.equal(runnerOutcome.checkpoints['5s']?.recordedPriceUsd, 1.2);
   assert.equal(runnerOutcome.checkpoints['1m']?.recordedPriceUsd, 3.5);
@@ -34,7 +34,7 @@ test('OutcomeTruthEngine evaluates multi-horizon checkpoints, excursions, and la
   ];
 
   const rugOutcome = engine.evaluateOutcome('mint_rug', entryPrice, initialLiq, entryTime, rugTrajectory);
-  assert.equal(rugOutcome.primaryLabel, 'RUG');
+  assert.equal(rugOutcome.observedPathLabel, 'RUG');
   assert.ok(rugOutcome.timeToFailureMs !== undefined);
 });
 
@@ -43,7 +43,7 @@ test('CounterfactualEngine evaluates filter efficacy and alternative timing', ()
   const counterfactualEngine = new CounterfactualEngine();
   const entryTime = 1_000_000;
 
-  // Scenario 1: Model rejected a token that ended up rugged -> TRUE NEGATIVE (positive filter value)
+  // Scenario 1: Observed rug on a partial path cannot certify filter value.
   const rugOutcome = truthEngine.evaluateOutcome(
     'mint_rug_test',
     1.0,
@@ -56,10 +56,10 @@ test('CounterfactualEngine evaluates filter efficacy and alternative timing', ()
   );
 
   const evalReject = counterfactualEngine.evaluateDecision('mint_rug_test', 'REJECT', rugOutcome);
-  assert.equal(evalReject.filterAssessment.isTrueNegative, true);
-  assert.ok(evalReject.filterAssessment.filterValueScore > 0, 'Rejecting a rug must yield positive filter value');
+  assert.equal(evalReject.filterAssessment.isTrueNegative, false);
+  assert.equal(evalReject.filterAssessment.filterValueScore, null, 'Partial paths cannot certify filter value');
 
-  // Scenario 2: Model entered a runner -> TRUE POSITIVE
+  // Scenario 2: A partial runner path supports observed returns, not a certified verdict.
   const runnerOutcome = truthEngine.evaluateOutcome(
     'mint_run_test',
     1.0,
@@ -72,7 +72,7 @@ test('CounterfactualEngine evaluates filter efficacy and alternative timing', ()
   );
 
   const evalEnter = counterfactualEngine.evaluateDecision('mint_run_test', 'ENTER', runnerOutcome);
-  assert.equal(evalEnter.filterAssessment.isTruePositive, true);
+  assert.equal(evalEnter.filterAssessment.isTruePositive, false);
   assert.ok(evalEnter.counterfactualReturns.enterNowPct > 0);
 });
 

@@ -59,9 +59,10 @@ function mockSnapshot(mintKey, address) {
   };
 }
 
-test('Executor: Signs via decoupled ExecutionSignerGateway without raw secret key in memory', async () => {
+test('Executor: unsupported Pump V2 effects are denied before signer or simulation', async () => {
   const kp = Keypair.generate();
   let signingInvoked = false;
+  let simulationInvoked = false;
 
   const isolatedGateway = {
     publicKey: kp.publicKey,
@@ -78,7 +79,7 @@ test('Executor: Signs via decoupled ExecutionSignerGateway without raw secret ke
         value: { blockhash: PublicKey.default.toBase58(), lastValidBlockHeight: 100 },
       }),
       getRecentPrioritizationFees: async () => [{ prioritizationFee: 1000 }],
-      simulateTransaction: async () => ({ value: { err: null, unitsConsumed: 100000 } }),
+      simulateTransaction: async () => { simulationInvoked = true; return { value: { err: null, unitsConsumed: 100000 } }; },
     },
   };
 
@@ -93,11 +94,10 @@ test('Executor: Signs via decoupled ExecutionSignerGateway without raw secret ke
   const mint = Keypair.generate().publicKey;
   const snapshot = mockSnapshot(mint, kp.publicKey);
 
-  const built = await executor.build(snapshot, 'buy', 10_000_000n, kp.publicKey.toBase58(), 0, 'test_decoupled', false);
-
-  assert.equal(signingInvoked, true, 'Isolated signer gateway must be invoked');
-  assert.ok(built.pending.signature.length > 0);
-  assert.notEqual(built.pending.signature, 'paper');
+  await assert.rejects(executor.build(snapshot, 'buy', 10_000_000n, kp.publicKey.toBase58(), 0, 'test_decoupled', false),
+    /SIGNING_FIREWALL_REJECTED.*TRANSACTION_DECODER_INCOMPLETE/);
+  assert.equal(signingInvoked, false);
+  assert.equal(simulationInvoked, false);
 });
 
 test('Executor: SigningFirewall blocks transaction when unauthorized program ID is injected', async () => {

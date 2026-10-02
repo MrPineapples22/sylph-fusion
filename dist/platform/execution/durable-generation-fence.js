@@ -2,15 +2,14 @@
  * SYLPH FUSION - DURABLE GENERATION FENCE AUTHORITY
  * Specifications: Sections 37 (Execution Generations), 103 (Invariants 1, 2).
  *
- * Enforces the core distributed systems invariant:
- *   ONE ECONOMIC INTENT -> AT MOST ONE ACTIVE EXECUTION GENERATION
- *
- * Durable across process restarts, unhandled exceptions, and async cancellations.
+ * Prototype JSON registry. Terminal transitions are quarantined because no
+ * trusted chain-evidence authority is implemented. Existing intent IDs cannot
+ * be reinitialized. Fresh allocation still lacks multi-process exclusion and
+ * must not be treated as a production distributed generation authority.
  */
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { NoLandVerificationAuthority, } from './no-land-certificate.js';
 export class DurableGenerationFenceAuthority {
     storagePath;
     constructor(storagePath = resolve('data', 'generation-fences.json')) {
@@ -36,13 +35,26 @@ export class DurableGenerationFenceAuthority {
         await rename(tmp, this.storagePath);
     }
     /**
-     * Registers Generation 1 for a new intent. Throws if active generation already exists.
+     * Registers Generation 1 only for a never-seen intent. Historical terminal
+     * records are tombstones, not permission to reuse an economic intent ID.
      */
     async acquireInitialGeneration(intentId, signature, lastValidBlockHeight) {
+        // Persist only bounded, unambiguous own-property identities. In particular,
+        // __proto__ assignment on a plain object can disappear during JSON encoding,
+        // losing the tombstone and allowing the same economic intent to be reused.
+        if (typeof intentId !== 'string' ||
+            intentId.length < 1 || intentId.length > 256 ||
+            !/^[A-Za-z0-9]/.test(intentId) || /[^A-Za-z0-9._:-]/.test(intentId) ||
+            ['__proto__', 'constructor', 'prototype'].includes(intentId.toLowerCase())) {
+            throw new Error('INVALID_INTENT_ID: Expected a bounded non-reserved ASCII economic intent identity');
+        }
         const state = await this.load();
         const existing = state.entries[intentId];
         if (existing && existing.state === 'ACTIVE') {
             throw new Error("GENERATION_ALREADY_ACTIVE: Intent " + intentId + " is active at Gen " + existing.generation);
+        }
+        if (Object.hasOwn(state.entries, intentId)) {
+            throw new Error('INTENT_ALREADY_REGISTERED: Existing economic intent cannot be reinitialized');
         }
         const now = Date.now();
         const entry = {
@@ -54,14 +66,15 @@ export class DurableGenerationFenceAuthority {
             createdAt: now,
             updatedAt: now,
         };
-        state.entries[intentId] = entry;
+        Object.defineProperty(state.entries, intentId, {
+            value: entry, enumerable: true, writable: true, configurable: true,
+        });
         await this.save(state);
         return entry;
     }
     /**
-     * Advances generation to N+1 only if previous generation is proven terminated
-     * via a verified NoLandCertificate or FinalizedSettlementCertificate.
-     * Advancing on block height alone without proof of non-landing is strictly forbidden.
+     * Terminal transitions are unavailable until a trusted evidence authority is
+     * implemented. Legacy certificate objects and checksums grant no authority.
      */
     async advanceGeneration(intentId, newSignature, newLastValidBlockHeight, terminalProof) {
         const state = await this.load();
@@ -72,43 +85,15 @@ export class DurableGenerationFenceAuthority {
         if (!terminalProof || typeof terminalProof === 'number' || !terminalProof.certificateType) {
             throw new Error("TERMINAL_PROOF_REQUIRED: Advancing generation requires a verified NoLandCertificate or FinalizedSettlementCertificate. Raw block height is forbidden.");
         }
-        if (terminalProof.intentId !== intentId) {
-            throw new Error(`TERMINAL_PROOF_INTENT_MISMATCH: Proof intent ${terminalProof.intentId} !== ${intentId}`);
-        }
-        if (terminalProof.generation !== current.generation) {
-            throw new Error(`TERMINAL_PROOF_GENERATION_MISMATCH: Proof generation ${terminalProof.generation} !== current ${current.generation}`);
-        }
-        if (!NoLandVerificationAuthority.validateCertificateDigest(terminalProof)) {
-            throw new Error("TERMINAL_PROOF_DIGEST_INVALID: Certificate digest validation failed");
-        }
-        // Safety Invariant: cannot advance if previous generation may still land
+        // Reject even manually constructed, checksum-valid no-land records. There
+        // is no trusted historical-absence verifier; an unkeyed digest is no proof.
         if (terminalProof.certificateType === 'NO_LAND_CERTIFICATE') {
-            if (terminalProof.observedBlockHeight <= current.lastValidBlockHeight) {
-                throw new Error("FENCE_BREACH_PREVENTED: Generation " + current.generation + " is still in flight (current " + terminalProof.observedBlockHeight + " <= max " + current.lastValidBlockHeight + ")");
-            }
+            throw new Error('NO_LAND_CERTIFICATION_UNAVAILABLE: Cannot advance generation from unverified historical absence');
         }
-        const now = Date.now();
-        const nextGen = current.generation + 1;
-        const entry = {
-            intentId,
-            generation: nextGen,
-            signature: newSignature,
-            lastValidBlockHeight: newLastValidBlockHeight,
-            state: 'ACTIVE',
-            createdAt: current.createdAt,
-            updatedAt: now,
-        };
-        state.entries[intentId] = entry;
-        await this.save(state);
-        return entry;
+        throw new Error('TERMINAL_TRANSITION_UNAVAILABLE: Verified settlement authority is not implemented');
     }
-    async confirmGeneration(intentId, generation) {
-        const state = await this.load();
-        const current = state.entries[intentId];
-        if (current && current.generation === generation) {
-            state.entries[intentId] = { ...current, state: 'CONFIRMED', updatedAt: Date.now() };
-            await this.save(state);
-        }
+    async confirmGeneration(_intentId, _generation) {
+        throw new Error('TERMINAL_TRANSITION_UNAVAILABLE: Raw confirmation is not verified settlement evidence');
     }
     async getActiveGeneration(intentId) {
         const state = await this.load();

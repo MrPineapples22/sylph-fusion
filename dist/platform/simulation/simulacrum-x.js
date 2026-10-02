@@ -1,112 +1,79 @@
-/**
- * SYLPH FUSION — SIMULACRUM-X: Deterministic Solana Execution Digital Twin
- * Specifications: Section 5 (Upgrade 1: Simulacrum-X), Section 103 (Invariants 7, 8)
- *
- * Invariants:
- * 1. Do not model profit as `future price - current price`.
- * 2. Calculate counterfactual executable net proceeds minus:
- *    cost basis, slippage, price impact, base fees, priority fees, Jito tips,
- *    rent/account creation, failed attempt costs, adverse selection, and latency decay.
- * 3. Issue verifiable SimulationCertificate.
- * 4. Compare simulated predictions against actual execution receipts to detect
- *    SIMULATION_MODEL_DRIFT when residuals exceed statistically defensible thresholds.
+/** Constant-product research scenarios only. Not a protocol quote, RPC simulation,
+ * landing prediction, execution certificate, or authorization. Production Pump
+ * economics remain in Market's SDK-backed quote path. All costs are assumptions.
  */
 import { createHash } from 'node:crypto';
+function amount(name, value, positive = false) {
+    if (typeof value !== 'bigint' || value < (positive ? 1n : 0n) || value > 18446744073709551615n)
+        throw new Error(`${name} must be a ${positive ? 'positive' : 'nonnegative'} u64 bigint`);
+}
+function integer(name, value, max = Number.MAX_SAFE_INTEGER) {
+    if (!Number.isSafeInteger(value) || value < 0 || value > max)
+        throw new Error(`${name} is invalid`);
+}
+function hash(value) {
+    return createHash('sha256').update(JSON.stringify(value, (_, v) => typeof v === 'bigint' ? v.toString() : v)).digest('hex');
+}
 export class SimulacrumXEngine {
-    static ENGINE_VERSION = 'SIMULACRUM-X-2026.1';
-    static DRIFT_ERROR_THRESHOLD_PCT = 15.0; // 15% error threshold
-    /**
-     * Deterministically simulates a Solana swap execution against market depth and fees.
-     */
-    simulateExecution(context, params, nowMs = Date.now()) {
-        // 1. Calculate constant-product or bonding curve price impact
-        const solReserves = context.isAmmActive && context.realSolReserves
-            ? context.realSolReserves
-            : context.virtualSolReserves;
-        const tokenReserves = context.isAmmActive && context.realTokenReserves
-            ? context.realTokenReserves
-            : context.virtualTokenReserves;
-        if (solReserves <= 0n || tokenReserves <= 0n) {
-            throw new Error('Simulation failed: zero liquidity reserves');
-        }
-        // Constant product: deltaToken = (tokenReserves * inputSol) / (solReserves + inputSol)
-        const expectedOutputTokens = params.side === 'BUY'
-            ? (tokenReserves * params.inputAmountLamports) / (solReserves + params.inputAmountLamports)
-            : (solReserves * params.inputAmountLamports) / (tokenReserves + params.inputAmountLamports);
-        // Price impact Bps = (inputSol / (solReserves + inputSol)) * 10,000
-        const priceImpactBps = Number((params.inputAmountLamports * 10000n) / (solReserves + params.inputAmountLamports));
-        // 2. Compute total friction fees
-        const totalFrictionFeesLamports = params.baseNetworkFeeLamports + params.priorityFeeLamports + params.jitoTipLamports + params.rentLamports;
-        // 3. Adverse selection & latency decay cost
-        // adverseCost = input * (velocity * latencySeconds)
-        const latencySeconds = context.expectedLandingLatencySlots * 0.4;
-        const adverseMovementBps = Math.min(500, Math.round(context.marketVelocityBpsPerSecond * latencySeconds));
-        const adverseSelectionCostLamports = (params.inputAmountLamports * BigInt(adverseMovementBps)) / 10000n;
-        // 4. Net Executable Proceeds calculation
-        // Counterfactual value minus all frictions
-        const expectedSolDelta = params.side === 'BUY'
-            ? -(params.inputAmountLamports + totalFrictionFeesLamports + adverseSelectionCostLamports)
-            : params.inputAmountLamports - totalFrictionFeesLamports - adverseSelectionCostLamports;
-        const netExecutableProceedsLamports = params.side === 'BUY'
-            ? params.inputAmountLamports - totalFrictionFeesLamports - adverseSelectionCostLamports
-            : expectedOutputTokens;
-        // Landing probability modeled by priority fee and account contention
-        const baseLandingProb = Math.max(0.1, 1.0 - context.writableAccountContentionScore * 0.5);
-        const tipBoost = params.jitoTipLamports > 50000n ? 0.2 : 0.05;
-        const expectedLandingProbability = Math.min(0.99, baseLandingProb + tipBoost);
-        // Hashes and IDs
-        const statePayload = `${context.slot}:${context.blockhash}:${solReserves}:${tokenReserves}`;
-        const stateHash = createHash('sha256').update(statePayload).digest('hex');
-        const logPayload = `sim_log:${params.economicIntentId}:${expectedOutputTokens}:${totalFrictionFeesLamports}`;
-        const simulationLogsHash = createHash('sha256').update(logPayload).digest('hex');
-        const certPayload = `${params.economicIntentId}:${stateHash}:${expectedOutputTokens}:${expectedSolDelta}:${nowMs}`;
-        const digest = createHash('sha256').update(certPayload).digest('hex');
-        const simulationId = `SIM-CERT-${digest.slice(0, 16)}`;
-        return {
-            simulationId,
-            economicIntentId: params.economicIntentId,
-            messageHash: createHash('sha256').update(`msg:${params.economicIntentId}`).digest('hex'),
-            decisionWatermark: nowMs,
-            stateHash,
-            simulatedSlot: context.slot,
-            transactionVersion: params.transactionVersion,
-            expectedInputLamports: params.inputAmountLamports,
-            expectedOutputTokens,
-            expectedTokenDelta: params.side === 'BUY' ? expectedOutputTokens : -params.inputAmountLamports,
-            expectedSolDelta,
-            totalFrictionFeesLamports,
-            priceImpactBps,
-            expectedSlippageBps: Math.min(params.maxAllowedSlippageBps, priceImpactBps + adverseMovementBps),
-            adverseSelectionCostLamports,
-            netExecutableProceedsLamports,
-            expectedLandingProbability,
-            simulationLogsHash,
-            simulationEngineVersion: SimulacrumXEngine.ENGINE_VERSION,
-            expiresAtMs: nowMs + 10_000,
-            digest
-        };
+    simulateExecution(context, params, nowMs) {
+        if (context.model !== 'CONSTANT_PRODUCT_SCENARIO')
+            throw new Error('Unsupported research model');
+        integer('observedAtMs', nowMs);
+        integer('maxPriceImpactBps', params.maxPriceImpactBps, 10_000);
+        if (typeof params.economicIntentId !== 'string' || !params.economicIntentId.trim())
+            throw new Error('economicIntentId required');
+        if (params.side !== 'BUY' && params.side !== 'SELL')
+            throw new Error('Invalid side');
+        if ((params.side === 'BUY' && 'inputTokenRaw' in params) || (params.side === 'SELL' && 'inputLamports' in params))
+            throw new Error('Conflicting input denomination');
+        amount('solReserveLamports', context.solReserveLamports, true);
+        amount('tokenReserveRaw', context.tokenReserveRaw, true);
+        amount('walletSolLamports', context.walletSolLamports);
+        amount('walletTokenRaw', context.walletTokenRaw);
+        amount('assumedNetworkCostLamports', params.assumedNetworkCostLamports);
+        amount('assumedRouteCostLamports', params.assumedRouteCostLamports);
+        amount('assumedAdverseCostLamports', params.assumedAdverseCostLamports);
+        const input = params.side === 'BUY' ? params.inputLamports : params.inputTokenRaw;
+        amount('input', input, true);
+        const inputReserve = params.side === 'BUY' ? context.solReserveLamports : context.tokenReserveRaw;
+        const outputReserve = params.side === 'BUY' ? context.tokenReserveRaw : context.solReserveLamports;
+        const output = outputReserve * input / (inputReserve + input);
+        const costs = params.assumedNetworkCostLamports + params.assumedRouteCostLamports + params.assumedAdverseCostLamports;
+        const solCashDeltaLamports = params.side === 'BUY' ? -(input + costs) : output - costs;
+        // Snapshot known fields explicitly; ignore unrelated caller properties and retain no mutable aliases.
+        const assumptions = Object.freeze({ model: context.model, solReserveLamports: context.solReserveLamports,
+            tokenReserveRaw: context.tokenReserveRaw, walletSolLamports: context.walletSolLamports, walletTokenRaw: context.walletTokenRaw,
+            economicIntentId: params.economicIntentId, side: params.side,
+            ...(params.side === 'BUY' ? { inputLamports: input } : { inputTokenRaw: input }),
+            assumedNetworkCostLamports: params.assumedNetworkCostLamports, assumedRouteCostLamports: params.assumedRouteCostLamports,
+            assumedAdverseCostLamports: params.assumedAdverseCostLamports, maxPriceImpactBps: params.maxPriceImpactBps });
+        const payload = { evidenceClass: 'RESEARCH_ONLY_SYNTHETIC', isSimulationCertificate: false,
+            modelVersion: 'SIMULACRUM-RESEARCH-2', economicIntentId: params.economicIntentId, side: params.side,
+            observedAtMs: nowMs, assumptions, outputLamports: params.side === 'SELL' ? output : 0n,
+            outputTokenRaw: params.side === 'BUY' ? output : 0n, tokenDeltaRaw: params.side === 'BUY' ? output : -input,
+            solCashDeltaLamports, assumedTotalCostsLamports: costs,
+            priceImpactBps: Number((input * 10000n + inputReserve + input - 1n) / (inputReserve + input)),
+            priceImpactLimitExceeded: input * 10000n > BigInt(params.maxPriceImpactBps) * (inputReserve + input),
+            // Conservative upfront cost funding, including modeled adverse cost, even on SELL.
+            walletFeasibleUnderAssumptions: context.walletSolLamports >= costs + (params.side === 'BUY' ? input : 0n)
+                && (params.side === 'BUY' || context.walletTokenRaw >= input) };
+        return Object.freeze({ ...payload, scenarioHash: hash(payload) });
     }
-    /**
-     * Evaluates prediction residuals between simulated forecast and actual on-chain fill.
-     * Generates SIMULATION_MODEL_DRIFT if errors exceed statistical boundaries.
-     */
-    evaluateResiduals(certificate, actualNetProceedsLamports) {
-        const simNet = certificate.netExecutableProceedsLamports;
-        const diff = simNet > actualNetProceedsLamports ? simNet - actualNetProceedsLamports : actualNetProceedsLamports - simNet;
-        const errorRatioPct = simNet > 0n ? (Number(diff) / Number(simNet)) * 100 : 0;
-        const isModelDriftDetected = errorRatioPct > SimulacrumXEngine.DRIFT_ERROR_THRESHOLD_PCT;
-        const details = isModelDriftDetected
-            ? `SIMULATION_MODEL_DRIFT: Prediction error ${errorRatioPct.toFixed(2)}% exceeds threshold ${SimulacrumXEngine.DRIFT_ERROR_THRESHOLD_PCT}% (Simulated: ${simNet}, Actual: ${actualNetProceedsLamports})`
-            : `Simulation accuracy verified within ${errorRatioPct.toFixed(2)}% of actual execution`;
-        return {
-            intentId: certificate.economicIntentId,
-            simulatedNetProceedsLamports: simNet,
-            actualNetProceedsLamports,
-            residualErrorLamports: diff,
-            errorRatioPct,
-            isModelDriftDetected,
-            details
-        };
+    /** Compare signed SOL cash deltas in one denomination, never BUY principal to exit proceeds.
+     * A fixed threshold is a research policy, not a statistical or execution-quality certificate. */
+    evaluateResiduals(estimate, observedSolCashDeltaLamports, thresholdBps = 1500) {
+        integer('thresholdBps', thresholdBps, 10_000);
+        if (typeof observedSolCashDeltaLamports !== 'bigint')
+            throw new Error('Observed cash delta must be bigint');
+        const predicted = estimate.solCashDeltaLamports;
+        if (typeof predicted !== 'bigint')
+            throw new Error('Predicted cash delta must be bigint');
+        const abs = (x) => x < 0n ? -x : x;
+        const residualErrorLamports = abs(predicted - observedSolCashDeltaLamports);
+        const baseline = abs(predicted);
+        return Object.freeze({ residualErrorLamports, errorRatioBps: baseline === 0n ? null : residualErrorLamports * 10000n / baseline,
+            status: baseline === 0n ? 'ZERO_BASELINE_UNDEFINED' : residualErrorLamports * 10000n > baseline * BigInt(thresholdBps)
+                ? 'POLICY_THRESHOLD_EXCEEDED' : 'WITHIN_POLICY_THRESHOLD', thresholdBps });
     }
 }
 //# sourceMappingURL=simulacrum-x.js.map

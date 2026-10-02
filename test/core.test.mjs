@@ -251,37 +251,35 @@ function fixture() {
     global: { feeRecipient: address, feeRecipients: [address], feeBasisPoints: new BN(100), creatorFeeBasisPoints: zero, creatorFeeConfigurable: false },
     curve: { virtualTokenReserves: new BN('1073000000000000'), virtualQuoteReserves: new BN('30000000000'), realTokenReserves: new BN('793100000000000'), realQuoteReserves: new BN('1000000000'), tokenTotalSupply: new BN('1000000000000000'), creator: address, quoteMint: PublicKey.default, creatorFeeBps: zero, isMayhemMode: false, complete: false } };
 }
-test('live builder puts tip and swap in one signed transaction with bounded CU fee', async () => {
+test('legacy Pump V2 builder is rejected by the real firewall before signing or simulation', async () => {
   const s = fixture(), live = cfg({ MODE: 'live', KEYPAIR_PATH: 'file', QUOTE_MAX_AGE_MS: '10000' });
+  let signerCalls = 0;
+  let simulationCalls = 0;
   const rpc = { connection: {
     getLatestBlockhashAndContext: async () => ({ value: { blockhash: PublicKey.default.toBase58(), lastValidBlockHeight: 100 } }),
     getRecentPrioritizationFees: async () => [{ prioritizationFee: 999999999 }],
-    simulateTransaction: async () => ({ value: { err: null, unitsConsumed: 100000 } }),
+    simulateTransaction: async () => { simulationCalls++; return { value: { err: null, unitsConsumed: 100000 } }; },
   } };
-  const e = new Executor(live, rpc, { buyQuote: () => 1000000n, sellQuote: () => 1000000n }, key);
+  const signer = { publicKey: key.publicKey, async signTransactionMessage() { signerCalls++; return new Uint8Array(64).fill(42); } };
+  const e = new Executor(live, rpc, { buyQuote: () => 1000000n, sellQuote: () => 1000000n }, signer);
   e.tips = [Keypair.fromSeed(Buffer.alloc(32, 10)).publicKey];
-  const built = await e.build(s, 'buy', 10000000n, key.publicKey.toBase58(), 0, 'test', false);
-  const tx = VersionedTransaction.deserialize(Buffer.from(built.pending.wire, 'base64'));
-  const message = TransactionMessage.decompile(tx.message), [limit, price] = message.instructions;
-  assert.ok(limit.programId.equals(ComputeBudgetProgram.programId));
-  const units = limit.data.readUInt32LE(1), micro = price.data.readBigUInt64LE(1);
-  assert.ok(units >= 115000 && units <= 116001);
-  assert.ok(ceilDiv(BigInt(units) * micro, 1000000n) <= BigInt(live.MAX_PRIORITY_LAMPORTS));
-  const tip = message.instructions.at(-1);
-  assert.ok(tip.programId.equals(SystemProgram.programId));
-  assert.ok(tip.keys[1].pubkey.equals(e.tips[0]));
-  assert.ok(message.instructions.some(i => i.programId.equals(PUMP_PROGRAM_ID)));
-  assert.notEqual(Buffer.from(tx.signatures[0]).toString('hex'), '00'.repeat(64));
+  await assert.rejects(e.build(s, 'buy', 10000000n, key.publicKey.toBase58(), 0, 'test', false), /SIGNING_FIREWALL_REJECTED.*TRANSACTION_DECODER_INCOMPLETE/);
+  assert.equal(signerCalls, 0);
+  assert.equal(simulationCalls, 0);
 });
-test('live builder rejects simulation errors and stale snapshots without producing an order', async () => {
+test('stale snapshots reject before routing or signing', async () => {
+  let signerCalls = 0;
+  let blockhashCalls = 0;
   const e = new Executor(cfg({ MODE: 'live', KEYPAIR_PATH: 'file' }), { connection: {
-    getLatestBlockhashAndContext: async () => ({ value: { blockhash: PublicKey.default.toBase58(), lastValidBlockHeight: 100 } }),
-    getRecentPrioritizationFees: async () => [], simulateTransaction: async () => ({ value: { err: 'failed', unitsConsumed: 1000 } }),
-  } }, { buyQuote: () => 10000n }, key);
-  e.tips = [key.publicKey];
-  await assert.rejects(e.build(fixture(), 'buy', 1000000n, key.publicKey.toBase58(), 0, 'test', false), /simulation failed/);
-  e.rpc.connection.simulateTransaction = async () => ({ value: { err: null, unitsConsumed: 1000 } });
+    getLatestBlockhashAndContext: async () => { blockhashCalls++; return { value: { blockhash: PublicKey.default.toBase58(), lastValidBlockHeight: 100 } }; },
+    getRecentPrioritizationFees: async () => [], simulateTransaction: async () => { throw new Error('must not simulate'); },
+  } }, { buyQuote: () => 10000n }, {
+    publicKey: key.publicKey,
+    async signTransactionMessage() { signerCalls++; return new Uint8Array(64).fill(42); },
+  });
   await assert.rejects(e.build({ ...fixture(), at: 0 }, 'buy', 1000000n, key.publicKey.toBase58(), 0, 'test', false), /quote expired/);
+  assert.equal(blockhashCalls, 0);
+  assert.equal(signerCalls, 0);
 });
 function createLogs() {
   const program = getPumpProgram({}), zero = new BN(0);

@@ -23,6 +23,7 @@ import {OperatorReadModel} from '../dist/operator-read-model.js';
 import {createRuntimeContext} from '../dist/runtime-context.js';
 import {serveStaticRequest} from './static-files.mjs';
 import {createDiscoveryRiskCache} from './discovery-risk-cache.mjs';
+import {serveNexusResearchUnavailable} from './nexus-research-response.mjs';
 import {
   HardRuleRegistry,
   TokenSafetyMicrokernel,
@@ -818,32 +819,7 @@ async function handleRequest(req,res){
   }
 
   if (req.method === 'GET' && reqUrl.pathname === '/api/nexus_mx') {
-    const tokens = hub.snapshot().tokens || [];
-    const evaluationResults = tokens.map(t => {
-      const price = Number(t.price || 0.00001);
-      const liq = Number(t.liquidity || 1000);
-      const hsi = Number(t.highSignalIndex || 50);
-      const p2x = Number(Math.min(0.95, Math.max(0.05, hsi / 100)).toFixed(2));
-      const p5x = Number(Math.max(0.02, p2x * 0.45).toFixed(2));
-      const p10x = Number(Math.max(0.01, p5x * 0.40).toFixed(2));
-      const p50x = Number(Math.max(0.005, p10x * 0.25).toFixed(3));
-      const p100x = Number(Math.max(0.001, p50x * 0.20).toFixed(3));
-      const capturabilityScore = Number(Math.min(0.95, Math.max(0.1, liq / 50000)).toFixed(2));
-      return {
-        mint: t.mint,
-        symbol: t.symbol,
-        priceUsd: price,
-        liquidityUsd: liq,
-        hsi,
-        pod: t.pod || 'UNKNOWN',
-        barrierProbabilities: { p2x, p5x, p10x, p50x, p100x },
-        capturabilityScore,
-        certificateStatus: p2x >= 0.70 && capturabilityScore >= 0.30 ? 'ENTER_ELIGIBLE' : 'VETO_STATISTICAL',
-        timestamp: Date.now(),
-      };
-    });
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, source: 'nexus-mx-gen2-engine', totalEvaluated: evaluationResults.length, candidates: evaluationResults }));
+    serveNexusResearchUnavailable(res);
     return;
   }
 

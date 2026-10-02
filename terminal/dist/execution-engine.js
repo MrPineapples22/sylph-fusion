@@ -149,6 +149,62 @@ var ProviderHealthTracker = class {
     if (entry.samples.length > this.windowSize) entry.samples.shift();
     entry.circuitState = "DEGRADED";
   }
+  async recordRateLimitAndPersist(providerId, backoffMs = 15e3, store) {
+    this.recordRateLimit(providerId, backoffMs);
+    if (store && typeof store.saveProviderQuota === "function") {
+      const entry = this.metrics.get(providerId);
+      if (entry) {
+        await store.saveProviderQuota({
+          providerId,
+          rateLimitedUntilMs: entry.rateLimitedUntilMs,
+          circuitState: entry.circuitState,
+          circuitTrippedAtMs: entry.circuitTrippedAtMs,
+          consecutiveRecovery: entry.consecutiveRecoveryObservations,
+          lastFailureReason: entry.lastFailureReason
+        });
+      }
+    }
+  }
+  exportDurableState() {
+    const list = [];
+    for (const [providerId, entry] of this.metrics.entries()) {
+      if (entry.rateLimitedUntilMs > 0 || entry.circuitState !== "CLOSED") {
+        list.push({
+          providerId,
+          rateLimitedUntilMs: entry.rateLimitedUntilMs,
+          circuitState: entry.circuitState,
+          circuitTrippedAtMs: entry.circuitTrippedAtMs,
+          consecutiveRecovery: entry.consecutiveRecoveryObservations,
+          lastFailureReason: entry.lastFailureReason
+        });
+      }
+    }
+    return list;
+  }
+  hydrateDurableState(records) {
+    let count = 0;
+    const now = Date.now();
+    for (const r of records) {
+      const providerId = String(r.providerId ?? r.provider_id ?? "");
+      if (!providerId) continue;
+      const entry = this.metrics.get(providerId);
+      if (!entry) continue;
+      const rateLimitUntil = Number(r.rateLimitedUntilMs ?? r.rate_limited_until_ms ?? 0);
+      if (rateLimitUntil > now) {
+        entry.rateLimitedUntilMs = rateLimitUntil;
+        entry.circuitState = r.circuitState ?? r.circuit_state ?? "DEGRADED";
+        entry.lastFailureReason = String(r.lastFailureReason ?? r.last_failure_reason ?? "HTTP_429_RATE_LIMITED");
+        count++;
+      } else if (r.circuitState === "OPEN") {
+        entry.circuitState = "OPEN";
+        entry.circuitTrippedAtMs = Number(r.circuitTrippedAtMs ?? r.circuit_tripped_at_ms ?? now);
+        entry.consecutiveRecoveryObservations = Number(r.consecutiveRecovery ?? r.consecutive_recovery ?? 0);
+        entry.lastFailureReason = String(r.lastFailureReason ?? r.last_failure_reason ?? "PREVIOUSLY_OPEN");
+        count++;
+      }
+    }
+    return count;
+  }
   updateSlot(currentSlot, networkSlot) {
     const lag = Math.max(0, networkSlot - currentSlot);
     const rpc = this.metrics.get("SOLANA_RPC");

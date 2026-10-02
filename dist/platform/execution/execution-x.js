@@ -9,7 +9,7 @@
  * 3. LeaderRegimeEngine: leader classification with uncalibrated estimates withheld.
  * 4. RouteMutationEntropyEngine: ROUTE-MUTATION-ENTROPY-X pool reserve stability.
  * 5. AlphaTtlEngine: ALPHA-TTL-X, EXPIRY-FRONTIER-X, RetryEV calculation.
- * 6. GenerationFencedRetryEngine: GENERATION-FENCED-RETRY-X (OneEconomicIntent -> AtMostOneActiveExecutionGeneration).
+ * 6. GenerationFencedRetryEngine: process-local research registry; advance/retire quarantined.
  * 7. AllInBreakevenEngine: ACCOUNT-SETUP-TAX-X, ACCOUNT-WARMTH-X, ALL-IN-BREAKEVEN-X.
  * 8. SimulationEnsembleEngine: research scenario arithmetic and residual comparison.
  * This standalone module does not grant trade, signing, or release authority.
@@ -157,41 +157,47 @@ export class AlphaTtlEngine {
         };
     }
 }
+function validResearchGenerationIntentId(value) {
+    return typeof value === 'string' && value.length > 0 && value.length <= 256 &&
+        /^[A-Za-z0-9]/.test(value) && !/[^A-Za-z0-9._:-]/.test(value) &&
+        !['__proto__', 'constructor', 'prototype'].includes(value.toLowerCase());
+}
+/**
+ * Quarantined prototype, not an execution or terminal-evidence authority.
+ * First allocation is research-only and retained only for this object lifetime.
+ * New objects/processes have no shared history. Advancement and retirement are
+ * unavailable until connected to a trusted, durable terminal-evidence owner.
+ */
 export class GenerationFencedRetryEngine {
-    activeGenerations = new Map();
+    #activeGenerations = new Map();
     createInitialGeneration(intentId, txHash) {
-        if (this.activeGenerations.has(intentId)) {
+        if (!validResearchGenerationIntentId(intentId)) {
+            throw new Error('INVALID_INTENT_ID: Expected a bounded non-reserved ASCII research intent identity');
+        }
+        if (this.#activeGenerations.has(intentId)) {
             throw new Error(`GENERATION_ALREADY_ACTIVE: Intent ${intentId} already has an active execution generation.`);
         }
-        this.activeGenerations.set(intentId, 1);
-        return {
+        this.#activeGenerations.set(intentId, 1);
+        return Object.freeze({
+            authority: 'RESEARCH_ONLY',
             intentId,
             activeGeneration: 1,
             isFenced: false,
             transactionHash: txHash,
-        };
+        });
     }
-    advanceGeneration(intentId, newTxHash) {
-        const current = this.activeGenerations.get(intentId);
-        if (!current) {
-            throw new Error(`GENERATION_INTENT_NOT_FOUND: Intent ${intentId} has no registered execution generation.`);
-        }
-        const nextGen = current + 1;
-        this.activeGenerations.set(intentId, nextGen);
-        return {
-            intentId,
-            activeGeneration: nextGen,
-            supersedesGeneration: current,
-            isFenced: false,
-            transactionHash: newTxHash,
-        };
+    advanceGeneration(_intentId, _newTxHash) {
+        throw new Error('TERMINAL_TRANSITION_UNAVAILABLE: Research registry cannot authorize generation advancement');
     }
+    /** Local research identity match only; never grants execution permission. */
     validateGeneration(intentId, generation) {
-        const current = this.activeGenerations.get(intentId);
-        return current === generation; // Exact match required; old generations rejected
+        if (!validResearchGenerationIntentId(intentId) || !Number.isSafeInteger(generation) || generation <= 0)
+            return false;
+        const current = this.#activeGenerations.get(intentId);
+        return current !== undefined && current === generation;
     }
-    retireIntent(intentId) {
-        this.activeGenerations.delete(intentId);
+    retireIntent(_intentId) {
+        throw new Error('TERMINAL_TRANSITION_UNAVAILABLE: Research registry cannot authorize intent retirement');
     }
 }
 export class AllInBreakevenEngine {

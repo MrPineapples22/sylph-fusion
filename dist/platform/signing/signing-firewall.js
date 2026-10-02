@@ -41,34 +41,26 @@ export class SigningFirewall {
             reasons.push('PROVIDER_GATE_UNHEALTHY');
         if (!gates.simulationPassed)
             reasons.push('SIMULATION_UNAVAILABLE');
-        let effectiveDecoded = decoded;
-        if (!effectiveDecoded && request.messageBytes?.byteLength) {
+        let effectiveDecoded = null;
+        if (request.messageBytes?.byteLength) {
             try {
                 effectiveDecoded = VeritasWireDecoder.decode(request.messageBytes, {
                     simulationId: request.simulationId,
-                    expectedMint: policy.expectedMint,
-                    expectedDestination: policy.expectedDestination,
-                    maxSlippageBps: policy.maxSlippageBps,
                 });
-            }
-            catch (err) {
-                reasons.push(`NATIVE_DECODE_FAILED: ${err instanceof Error ? err.message : String(err)}`);
-            }
-        }
-        else if (effectiveDecoded && request.messageBytes?.byteLength) {
-            try {
-                const native = VeritasWireDecoder.decode(request.messageBytes, {
-                    simulationId: request.simulationId,
-                    expectedMint: policy.expectedMint,
-                    expectedDestination: policy.expectedDestination,
-                    maxSlippageBps: policy.maxSlippageBps,
-                });
-                if (effectiveDecoded.feePayer !== native.feePayer || effectiveDecoded.messageHash !== native.messageHash) {
-                    reasons.push('CALLER_MANIFEST_SPOOF_DETECTED');
+                if (decoded) {
+                    const fields = ['complete', 'frozen', 'messageHash', 'signer', 'feePayer', 'amountLamports',
+                        'mint', 'destination', 'maxSlippageBps', 'priorityFeeLamports', 'simulationId'];
+                    const sameSet = (a, b) => a.length === b.length && [...a].sort().every((value, index) => value === [...b].sort()[index]);
+                    if (fields.some(field => decoded[field] !== effectiveDecoded[field])
+                        || !sameSet(decoded.programIds, effectiveDecoded.programIds)
+                        || !sameSet(decoded.writableAccounts, effectiveDecoded.writableAccounts)) {
+                        reasons.push('CALLER_MANIFEST_SPOOF_DETECTED');
+                    }
                 }
             }
-            catch {
-                // Fallback for non-standard test vectors
+            catch (err) {
+                effectiveDecoded = null;
+                reasons.push(`NATIVE_DECODE_FAILED: ${err instanceof Error ? err.message : String(err)}`);
             }
         }
         if (!effectiveDecoded || !effectiveDecoded.complete)
