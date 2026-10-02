@@ -14,17 +14,20 @@ export type PavlovCreditArchetype =
   | 'GOOD_DECISION_GOOD_OUTCOME'
   | 'GOOD_DECISION_BAD_OUTCOME'
   | 'BAD_DECISION_GOOD_OUTCOME'
-  | 'BAD_DECISION_BAD_OUTCOME';
+  | 'BAD_DECISION_BAD_OUTCOME'
+  | 'UNKNOWN';
+
+export type DecisionSoundness = boolean | 'UNKNOWN';
 
 export interface PavlovAttributionRecord {
   readonly attribution_id: string;
   readonly token_mint: string;
   readonly action_taken: string;
-  readonly was_decision_sound: boolean;
+  readonly was_decision_sound: DecisionSoundness;
   readonly realized_pnl_pct: number;
   readonly counterfactual_pnl_pct?: number; // PnL if we had done the opposite
   readonly credit_archetype: PavlovCreditArchetype;
-  readonly policy_reinforcement_action: 'REINFORCE' | 'NEUTRAL_VARIANCE' | 'DO_NOT_REINFORCE_LUCK' | 'PENALIZE_POLICY';
+  readonly policy_reinforcement_action: 'REINFORCE' | 'NEUTRAL_VARIANCE' | 'DO_NOT_REINFORCE_LUCK' | 'PENALIZE_POLICY' | 'NO_POLICY_UPDATE';
   readonly attribution_notes: string;
   readonly timestamp_ms: number;
 }
@@ -34,11 +37,11 @@ export class PavlovOutcomeAttributionEngine {
   private attributions: PavlovAttributionRecord[] = [];
 
   /**
-   * Evaluates decision soundness based on pre-flight authenticity, price drift, exit capacity, execution integrity,
-   * and structural outcome metrics (e.g. catastrophic stop-outs, severe crash unwinds, and lucky gambles).
+   * Pure evaluation of supplied process evidence. Callers must verify that evidence
+   * before using this result as an assessment. Outcomes and exit triggers are not evidence.
    */
   public static evaluateDecisionSoundness(params: {
-    passedSafety: boolean;
+    passedSafety?: boolean;
     washTradingProbability?: number;
     driftBps?: number;
     sufficientExitCapacity?: boolean;
@@ -49,7 +52,10 @@ export class PavlovOutcomeAttributionEngine {
     exitTrigger?: string;
     realizedPnlPct?: number;
     maePct?: number;
-  }): { wasDecisionSound: boolean; reason: string } {
+  }): { wasDecisionSound: DecisionSoundness; reason: string } {
+    if (typeof params.passedSafety !== 'boolean') {
+      return { wasDecisionSound: 'UNKNOWN', reason: 'MISSING_VERIFIED_PROCESS_EVIDENCE' };
+    }
     if (!params.passedSafety) {
       return { wasDecisionSound: false, reason: 'FAILED_SAFETY_AUDIT' };
     }
@@ -71,38 +77,6 @@ export class PavlovOutcomeAttributionEngine {
     if (params.executionPermitValid === false) {
       return { wasDecisionSound: false, reason: 'INVALID_OR_EXPIRED_EXECUTION_PERMIT' };
     }
-    if (params.isPanicExit) {
-      return { wasDecisionSound: false, reason: 'PANIC_EXIT_DISCIPLINE_BREACH' };
-    }
-
-    // Execution & outcome soundness checks:
-    // 1. Unsound losses (Penalize Policy):
-    if (params.realizedPnlPct !== undefined && params.realizedPnlPct <= -10) {
-      return { wasDecisionSound: false, reason: 'CATASTROPHIC_STOP_LOSS_VIOLATION' };
-    }
-    if (params.exitTrigger === 'STOP_LOSS' && params.realizedPnlPct !== undefined && params.realizedPnlPct <= -7) {
-      return { wasDecisionSound: false, reason: 'STOP_LOSS_THRESHOLD_BREACH' };
-    }
-    if (params.exitTrigger === 'EMERGENCY_UNWIND' && params.realizedPnlPct !== undefined && params.realizedPnlPct <= -7) {
-      return { wasDecisionSound: false, reason: 'EMERGENCY_UNWIND_SEVERE_CRASH' };
-    }
-    if (params.maePct !== undefined && params.maePct <= -15) {
-      return { wasDecisionSound: false, reason: 'SEVERE_ADVERSE_EXCURSION' };
-    }
-
-    // 2. Unsound profits (Filter Lucky Gamble):
-    if (params.realizedPnlPct !== undefined && params.realizedPnlPct > 0) {
-      if (params.exitTrigger === 'EMERGENCY_UNWIND') {
-        return { wasDecisionSound: false, reason: 'LUCKY_EMERGENCY_UNWIND_PROFIT' };
-      }
-      if (params.exitTrigger === 'STOP_LOSS') {
-        return { wasDecisionSound: false, reason: 'LUCKY_STOP_LOSS_REVERSAL' };
-      }
-      if (params.maePct !== undefined && params.maePct <= -12) {
-        return { wasDecisionSound: false, reason: 'LUCKY_RECOVERY_FROM_EXTREME_DRAWDOWN' };
-      }
-    }
-
     return { wasDecisionSound: true, reason: 'SOUND_DECISION_PROCESS' };
   }
 
@@ -112,17 +86,21 @@ export class PavlovOutcomeAttributionEngine {
   public attributeOutcome(params: {
     token_mint: string;
     action_taken: string;
-    was_decision_sound: boolean; // Pre-flight process was valid, risk checks passed, evidence verified
+    was_decision_sound: DecisionSoundness; // Pre-flight process was valid, risk checks passed, evidence verified
     realized_pnl_pct: number;
     counterfactual_pnl_pct?: number;
   }): PavlovAttributionRecord {
     let archetype: PavlovCreditArchetype;
-    let policyAction: 'REINFORCE' | 'NEUTRAL_VARIANCE' | 'DO_NOT_REINFORCE_LUCK' | 'PENALIZE_POLICY';
+    let policyAction: 'REINFORCE' | 'NEUTRAL_VARIANCE' | 'DO_NOT_REINFORCE_LUCK' | 'PENALIZE_POLICY' | 'NO_POLICY_UPDATE';
     let notes = '';
 
     const isProfit = params.realized_pnl_pct > 0;
 
-    if (params.was_decision_sound && isProfit) {
+    if (typeof params.was_decision_sound !== 'boolean') {
+      archetype = 'UNKNOWN';
+      policyAction = 'NO_POLICY_UPDATE';
+      notes = 'Process quality is unassessed: verified process evidence is unavailable.';
+    } else if (params.was_decision_sound && isProfit) {
       archetype = 'GOOD_DECISION_GOOD_OUTCOME';
       policyAction = 'REINFORCE';
       notes = 'Sound decision process produced profitable outcome. Reinforce policy weights.';
@@ -144,7 +122,7 @@ export class PavlovOutcomeAttributionEngine {
       attribution_id: `pav_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
       token_mint: params.token_mint,
       action_taken: params.action_taken,
-      was_decision_sound: params.was_decision_sound,
+      was_decision_sound: typeof params.was_decision_sound === 'boolean' ? params.was_decision_sound : 'UNKNOWN',
       realized_pnl_pct: params.realized_pnl_pct,
       counterfactual_pnl_pct: params.counterfactual_pnl_pct,
       credit_archetype: archetype,

@@ -25,8 +25,8 @@ test('God-Tier Exit Upgrade: MFE, MAE, PCR, and EE excursion computation', () =>
   assert.equal(autopsy.profitCaptureRatio, 0.5); // 10% realized / 20% MFE
   assert.equal(autopsy.exitEfficiency, 0.6); // (110 - 95) / (120 - 95) = 15 / 25
   assert.ok(autopsy.exitEnvelopeHash.startsWith('0x'));
-  assert.equal(autopsy.attribution.credit_archetype, 'GOOD_DECISION_GOOD_OUTCOME');
-  assert.equal(autopsy.attribution.policy_reinforcement_action, 'REINFORCE');
+  assert.equal(autopsy.attribution.credit_archetype, 'UNKNOWN');
+  assert.equal(autopsy.attribution.policy_reinforcement_action, 'NO_POLICY_UPDATE');
 });
 
 test('God-Tier Exit Upgrade: Profit Capture Ratio (PCR) and Exit Efficiency (EE) bounds', () => {
@@ -51,7 +51,7 @@ test('God-Tier Exit Upgrade: Profit Capture Ratio (PCR) and Exit Efficiency (EE)
 
   assert.equal(roundTrip.profitCaptureRatio, 0); // Negative return cannot have positive PCR
   assert.ok(roundTrip.exitEfficiency >= 0 && roundTrip.exitEfficiency <= 1.0);
-  assert.equal(roundTrip.attribution.credit_archetype, 'BAD_DECISION_BAD_OUTCOME');
+  assert.equal(roundTrip.attribution.credit_archetype, 'UNKNOWN');
 
   // Case B: Perfect exit at peak MFE
   const perfectExit = service.recordClosedTrade({
@@ -102,7 +102,7 @@ test('God-Tier Exit Upgrade: Cryptographic exit envelope determinism and tamper 
   assert.equal(sealed.exitEnvelopeHash, '0xdeadbeefc001cafe1234567890abcdef');
 });
 
-test('God-Tier Exit Upgrade: Adaptive Bayesian hurdle response to successive exits', () => {
+test('God-Tier Exit Upgrade: Unassessed exits preserve baseline calibration', () => {
   const service = new TradeLearningService();
 
   // Initial state has standard balanced hurdle
@@ -110,7 +110,7 @@ test('God-Tier Exit Upgrade: Adaptive Bayesian hurdle response to successive exi
   assert.equal(initialSnap.adaptiveCalibration.calibrationRegime, 'BALANCED');
   assert.equal(initialSnap.adaptiveCalibration.adaptiveHsiHurdle, 80);
 
-  // Record 3 consecutive bad losses
+  // Record 3 losses without verified process evidence
   for (let i = 0; i < 3; i++) {
     service.recordClosedTrade({
       tokenMint: `LossMint${i}111111111111111111111111111111111`,
@@ -127,14 +127,16 @@ test('God-Tier Exit Upgrade: Adaptive Bayesian hurdle response to successive exi
     });
   }
 
-  // After 3 bad losses, calibration regime must enter DEFENSIVE (+5 hurdle: 80 -> 85)
-  const defensiveSnap = service.getSnapshot();
-  assert.equal(defensiveSnap.adaptiveCalibration.calibrationRegime, 'DEFENSIVE');
-  assert.equal(defensiveSnap.adaptiveCalibration.adaptiveHsiHurdle, 85); // 80 + 5
-  assert.equal(defensiveSnap.winRatePct, 0);
-  assert.equal(defensiveSnap.lossCount, 3);
-  assert.ok(defensiveSnap.averageProfitCaptureRatio >= 0);
-  assert.ok(defensiveSnap.averageExitEfficiency >= 0);
+  // Loss outcomes alone cannot establish process quality or update calibration
+  const unassessedSnap = service.getSnapshot();
+  assert.equal(unassessedSnap.adaptiveCalibration.calibrationRegime, 'BALANCED');
+  assert.equal(unassessedSnap.adaptiveCalibration.adaptiveHsiHurdle, 80);
+  assert.equal(unassessedSnap.attributionSummary.unknown, 3);
+  assert.equal(unassessedSnap.attributionSummary.penalizePolicy, 0);
+  assert.equal(unassessedSnap.winRatePct, 0);
+  assert.equal(unassessedSnap.lossCount, 3);
+  assert.ok(unassessedSnap.averageProfitCaptureRatio >= 0);
+  assert.ok(unassessedSnap.averageExitEfficiency >= 0);
 });
 
 test('God-Tier Exit Upgrade: False Breakout Cut & Momentum Exhaustion exit parameters', () => {

@@ -2,14 +2,14 @@
  * SOL-SYLPH Trade Learning & Attribution Service
  * Specifications: Blueprint Engine #39 (Pavlov Attribution) & Section 42 (Adaptive Feedback)
  *
- * Ingests unverified research closed trade autopsies from D:\\pump\\SOL-SYLPH\\pavlov_attributions.csv,
+ * Ingests unverified research closed trade autopsies from an explicitly selected or repository-local CSV,
  * classifies decision credit vs financial outcome via Pavlov Attribution, tracks win/loss distributions,
  * and dynamically calibrates adaptive HSI hurdles.
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { PavlovOutcomeAttributionEngine, type PavlovAttributionRecord } from './pavlov-attribution.js';
+import { PavlovOutcomeAttributionEngine, type DecisionSoundness, type PavlovAttributionRecord } from './pavlov-attribution.js';
 
 export interface ClosedTradeReport {
   readonly tradeId: string;
@@ -23,7 +23,7 @@ export interface ClosedTradeReport {
   readonly realizedPnlPct: number;
   readonly holdDurationMs: number;
   readonly exitTrigger: 'EMERGENCY_UNWIND' | 'TRAILING_TARGET' | 'OPERATOR_CLOSE' | 'AUTO_GUARDIAN' | 'STOP_LOSS' | 'TAKE_PROFIT' | 'FALSE_BREAKOUT' | string;
-  readonly wasDecisionSound: boolean;
+  readonly wasDecisionSound: DecisionSoundness;
   readonly closedAt: number;
   readonly mfePriceUsd?: number;
   readonly mfePct?: number;
@@ -33,7 +33,22 @@ export interface ClosedTradeReport {
   readonly exitEfficiency?: number;
   readonly exitEnvelopeHash?: string;
   readonly decisionSoundnessReason?: string;
+  readonly processEvidenceRef?: string;
 }
+
+/** Supplied only after an external verifier checks evidence linked to this report. */
+export interface VerifiedProcessAssessment {
+  readonly wasDecisionSound: boolean;
+  readonly reason: string;
+  readonly evidenceRef: string;
+}
+
+/** Must resolve and verify evidence independently of CSV flags, reasons and outcomes.
+ * No default verifier exists. Use the same resolver for ingestion and reload.
+ */
+export type ProcessAssessmentContext = Readonly<Pick<ClosedTradeReport,
+  'tradeId' | 'tokenMint' | 'symbol' | 'entryPriceUsd' | 'costBasisUsd' | 'processEvidenceRef'>>;
+export type ProcessAssessmentResolver = (report: ProcessAssessmentContext) => VerifiedProcessAssessment | undefined;
 
 export interface TradeAutopsyRecord extends ClosedTradeReport {
   readonly attribution: PavlovAttributionRecord;
@@ -51,6 +66,7 @@ export interface AdaptiveLearningSnapshot {
   readonly averageExitEfficiency: number;
   readonly averageHoldDurationMs: number;
   readonly attributionSummary: {
+    readonly unknown: number;
     readonly reinforceAlpha: number;
     readonly neutralVariance: number;
     readonly doNotReinforceLuck: number;
@@ -120,7 +136,7 @@ export class TradeLearningService {
     for (const value of [report.profitCaptureRatio, report.exitEfficiency]) {
       if (value !== undefined && (value < 0 || value > 1)) return 'INVALID_OPTIONAL_METRIC';
     }
-    if (typeof report.wasDecisionSound !== 'boolean') return 'INVALID_DECISION_FLAG';
+    if (typeof report.wasDecisionSound !== 'boolean' && report.wasDecisionSound !== 'UNKNOWN') return 'INVALID_DECISION_FLAG';
     return undefined;
   }
 
@@ -131,34 +147,44 @@ export class TradeLearningService {
     return TradeLearningService.instance;
   }
 
-  public constructor() {
+  public constructor(private readonly resolveProcessAssessment?: ProcessAssessmentResolver) {
     // Tests start with an isolated in-memory instance (0 records).
     // Servers call .loadFromCsv() to ingest validated but unverified research telemetry.
   }
 
-  private resolveCsvPath(preferredPath?: string): string {
-    const candidates = [
-      preferredPath,
-      process.env.PAVLOV_ATTRIBUTIONS_PATH,
-      'D:/pump/SOL-SYLPH/pavlov_attributions.csv',
-      'd:\\pump\\SOL-SYLPH\\pavlov_attributions.csv',
-      path.resolve(process.cwd(), 'data/pavlov_attributions.csv'),
-      path.resolve(process.cwd(), 'pavlov_attributions.csv'),
-    ].filter(Boolean) as string[];
-
-    for (const cand of candidates) {
-      if (fs.existsSync(cand)) {
-        return cand;
-      }
+  private assessProcess(report: ClosedTradeReport): ClosedTradeReport {
+    // Labels in the report/CSV are claims, never evidence. Fail closed if verification fails.
+    let assessment: VerifiedProcessAssessment | undefined;
+    try {
+      if (report.processEvidenceRef?.trim()) assessment = this.resolveProcessAssessment?.(Object.freeze({
+        tradeId: report.tradeId, tokenMint: report.tokenMint, symbol: report.symbol,
+        entryPriceUsd: report.entryPriceUsd, costBasisUsd: report.costBasisUsd,
+        processEvidenceRef: report.processEvidenceRef,
+      }));
+    } catch { /* unavailable evidence */ }
+    if (assessment && typeof assessment.wasDecisionSound === 'boolean' &&
+        typeof assessment.reason === 'string' && assessment.reason.trim() &&
+        typeof assessment.evidenceRef === 'string' && assessment.evidenceRef.trim() &&
+        assessment.evidenceRef === report.processEvidenceRef) {
+      return { ...report, wasDecisionSound: assessment.wasDecisionSound,
+        decisionSoundnessReason: assessment.reason, processEvidenceRef: assessment.evidenceRef };
     }
-    return preferredPath || 'D:/pump/SOL-SYLPH/pavlov_attributions.csv';
+    return { ...report, wasDecisionSound: 'UNKNOWN',
+      decisionSoundnessReason: 'MISSING_VERIFIED_PROCESS_EVIDENCE', processEvidenceRef: undefined };
+  }
+
+  private resolveCsvPath(preferredPath?: string): string {
+    // An explicitly configured source never falls through to another dataset.
+    return path.resolve(preferredPath ?? process.env.PAVLOV_ATTRIBUTIONS_PATH ?? 'data/pavlov_attributions.csv');
   }
 
   public loadFromCsv(targetPath?: string): { loadedCount: number; source: string; winRatePct: number; totalRealizedPnlUsd: number } {
     const filePath = this.resolveCsvPath(targetPath);
     this.csvPath = filePath;
-    this.autoSync = true;
+    this.autoSync = false;
     if (!fs.existsSync(filePath)) {
+      this.clear();
+      this.dataSourceName = 'Not found: ' + filePath;
       return { loadedCount: 0, source: 'Not found: ' + filePath, winRatePct: 0, totalRealizedPnlUsd: 0 };
     }
 
@@ -188,42 +214,21 @@ export class TradeLearningService {
 
         const numeric = (name: string): number => getVal(name) === '' ? NaN : Number(getVal(name));
         const optional = (name: string): number | undefined => getVal(name) === '' ? undefined : Number(getVal(name));
-        const flag = getVal('was_decision_sound').toLowerCase();
-        let wasSound = flag === '1' || flag === 'true';
-        let decisionReason = getVal('decision_soundness_reason');
-        const pnlPct = numeric('realized_pnl_pct');
-        const maePct = optional('mae_pct');
-        const trigger = getVal('exit_trigger');
-
-        // Retroactive soundness evaluation for legacy rows recorded with uncalibrated hardcoded 1
-        if (wasSound && (!decisionReason || decisionReason === '' || decisionReason === 'SOUND_DECISION_PROCESS')) {
-          const evalResult = PavlovOutcomeAttributionEngine.evaluateDecisionSoundness({
-            passedSafety: true,
-            exitTrigger: trigger,
-            realizedPnlPct: pnlPct,
-            maePct,
-          });
-          if (!evalResult.wasDecisionSound) {
-            wasSound = false;
-            decisionReason = evalResult.reason;
-          } else if (!decisionReason) {
-            decisionReason = evalResult.reason;
-          }
-        }
-        const report: ClosedTradeReport = {
+        const rawReport: ClosedTradeReport = {
           tradeId: getVal('trade_id'), tokenMint: getVal('token_mint'), symbol: getVal('symbol'),
           entryPriceUsd: numeric('entry_price_usd'), exitPriceUsd: numeric('exit_price_usd'),
           costBasisUsd: numeric('cost_basis_usd'), proceedsUsd: numeric('proceeds_usd'),
           realizedPnlUsd: numeric('realized_pnl_usd'), realizedPnlPct: numeric('realized_pnl_pct'),
           holdDurationMs: numeric('hold_duration_ms'), exitTrigger: getVal('exit_trigger'),
-          wasDecisionSound: wasSound, closedAt: numeric('closed_at_ms'),
+          wasDecisionSound: 'UNKNOWN', closedAt: numeric('closed_at_ms'),
           mfePct: optional('mfe_pct'), maePct: optional('mae_pct'),
           profitCaptureRatio: optional('profit_capture_ratio'), exitEfficiency: optional('exit_efficiency'),
           exitEnvelopeHash: getVal('exit_envelope_hash'),
-          decisionSoundnessReason: decisionReason,
+          processEvidenceRef: getVal('process_evidence_ref') || undefined,
         };
-        const reason = this.rejectionReason(report) ?? (!['1', '0', 'true', 'false'].includes(flag) ? 'INVALID_DECISION_FLAG' : undefined);
+        const reason = this.rejectionReason(rawReport);
         if (reason) { reject(reason); continue; }
+        const report = this.assessProcess(rawReport);
         if (seen.has(report.tradeId)) { reject('DUPLICATE_TRADE_ID'); continue; }
         seen.add(report.tradeId);
         const attribution = this.pavlov.attributeOutcome({
@@ -245,6 +250,7 @@ export class TradeLearningService {
       this.lastLoadedMtimeMs = stat.mtimeMs;
       this.totalCsvRecordsLoaded = parsedAutopsies.length;
       this.dataSourceName = filePath;
+      this.autoSync = true;
 
       const snapshot = this.getSnapshot();
       return {
@@ -295,8 +301,18 @@ export class TradeLearningService {
     }
     const exitEnvelopeHash = report.exitEnvelopeHash || ('0x' + Math.abs(hash).toString(16).padStart(8, '0'));
 
-    const fullReport: ClosedTradeReport = {
+    // An older header cannot persist an evidence link. Keep the runtime record
+    // unassessed too, so a later reload cannot silently change its process quality.
+    let processEvidenceRef = report.processEvidenceRef;
+    if (this.autoSync && this.csvPath) {
+      try {
+        const headers = parseCsvLine(fs.readFileSync(this.csvPath, 'utf8').split(/\r?\n/, 1)[0]);
+        if (!headers.some(header => header.toLowerCase().trim() === 'process_evidence_ref')) processEvidenceRef = undefined;
+      } catch { processEvidenceRef = undefined; }
+    }
+    const fullReport = this.assessProcess({
       ...report,
+      processEvidenceRef,
       tradeId,
       closedAt,
       mfePriceUsd: mfePrice,
@@ -306,7 +322,7 @@ export class TradeLearningService {
       profitCaptureRatio,
       exitEfficiency,
       exitEnvelopeHash,
-    };
+    });
 
     const attribution = this.pavlov.attributeOutcome({
       token_mint: fullReport.tokenMint,
@@ -337,7 +353,7 @@ export class TradeLearningService {
           autopsy.realizedPnlPct,
           autopsy.holdDurationMs,
           autopsy.exitTrigger,
-          autopsy.wasDecisionSound ? '1' : '0',
+          autopsy.wasDecisionSound === 'UNKNOWN' ? 'UNKNOWN' : (autopsy.wasDecisionSound ? '1' : '0'),
           autopsy.closedAt,
           autopsy.mfePct,
           autopsy.maePct,
@@ -345,14 +361,15 @@ export class TradeLearningService {
           autopsy.exitEfficiency,
           autopsy.attribution.credit_archetype,
           autopsy.attribution.policy_reinforcement_action,
-          autopsy.attribution.policy_reinforcement_action === 'PENALIZE_POLICY' ? 85 : 82,
-          autopsy.attribution.policy_reinforcement_action === 'PENALIZE_POLICY' ? 'DEFENSIVE' : 'BALANCED',
+          autopsy.wasDecisionSound === 'UNKNOWN' ? '' : (autopsy.attribution.policy_reinforcement_action === 'PENALIZE_POLICY' ? 85 : 82),
+          autopsy.wasDecisionSound === 'UNKNOWN' ? '' : (autopsy.attribution.policy_reinforcement_action === 'PENALIZE_POLICY' ? 'DEFENSIVE' : 'BALANCED'),
           '',
           autopsy.exitEnvelopeHash,
           autopsy.attribution.attribution_notes.replaceAll(',', ';'),
-          autopsy.decisionSoundnessReason || (autopsy.wasDecisionSound ? 'SOUND_DECISION_PROCESS' : 'UNSOUND_DECISION_PROCESS')
+          autopsy.decisionSoundnessReason,
+          autopsy.processEvidenceRef
         ];
-        const standardHeaders = 'trade_id,token_mint,symbol,entry_price_usd,exit_price_usd,cost_basis_usd,proceeds_usd,realized_pnl_usd,realized_pnl_pct,hold_duration_ms,exit_trigger,was_decision_sound,closed_at_ms,mfe_pct,mae_pct,profit_capture_ratio,exit_efficiency,credit_archetype,policy_reinforcement_action,adaptive_hsi_hurdle,calibration_regime,counterfactual_pnl_pct,exit_envelope_hash,attribution_notes,decision_soundness_reason'.split(',');
+        const standardHeaders = 'trade_id,token_mint,symbol,entry_price_usd,exit_price_usd,cost_basis_usd,proceeds_usd,realized_pnl_usd,realized_pnl_pct,hold_duration_ms,exit_trigger,was_decision_sound,closed_at_ms,mfe_pct,mae_pct,profit_capture_ratio,exit_efficiency,credit_archetype,policy_reinforcement_action,adaptive_hsi_hurdle,calibration_regime,counterfactual_pnl_pct,exit_envelope_hash,attribution_notes,decision_soundness_reason,process_evidence_ref'.split(',');
         const mapped = new Map(standardHeaders.map((header, index) => [header, values[index]]));
         const headers = parseCsvLine(fs.readFileSync(this.csvPath, 'utf8').split(/\r?\n/, 1)[0]);
         const row = headers.map(header => {
@@ -377,6 +394,7 @@ export class TradeLearningService {
     let winCount = 0;
     let lossCount = 0;
     let totalRealizedPnlUsd = 0;
+    let unknown = 0;
     let reinforceAlpha = 0;
     let neutralVariance = 0;
     let doNotReinforceLuck = 0;
@@ -394,6 +412,9 @@ export class TradeLearningService {
       totalHoldMs += a.holdDurationMs ?? 0;
 
       switch (a.attribution.credit_archetype) {
+        case 'UNKNOWN':
+          unknown++;
+          break;
         case 'GOOD_DECISION_GOOD_OUTCOME':
           reinforceAlpha++;
           break;
@@ -414,17 +435,17 @@ export class TradeLearningService {
     const averageExitEfficiency = totalTrades > 0 ? Number((totalEe / totalTrades).toFixed(3)) : 0;
     const averageHoldDurationMs = totalTrades > 0 ? Math.round(totalHoldMs / totalTrades) : 0;
 
-    // Adaptive Calibration based on empirical win rate and attribution:
-    // If recent win rate drops below 40%, raise HSI hurdle to demand higher conviction.
-    // If recent win rate >= 65%, maintain optimal hurdle.
+    // Only verified process assessments participate in calibration.
+    const assessedTrades = totalTrades - unknown;
+    const assessedWinRatePct = assessedTrades > 0 ? (reinforceAlpha + doNotReinforceLuck) / assessedTrades * 100 : 0;
     let adaptiveHsiHurdle = 80;
     let calibrationRegime: 'OPTIMAL' | 'BALANCED' | 'DEFENSIVE' = 'BALANCED';
 
-    if (totalTrades >= 3) {
-      if (penalizePolicy > 0 || winRatePct < 40) {
+    if (assessedTrades >= 3) {
+      if (penalizePolicy > 0 || assessedWinRatePct < 40) {
         adaptiveHsiHurdle = 85;
         calibrationRegime = 'DEFENSIVE';
-      } else if (winRatePct >= 65 && doNotReinforceLuck === 0) {
+      } else if (assessedWinRatePct >= 65 && doNotReinforceLuck === 0) {
         adaptiveHsiHurdle = 80;
         calibrationRegime = 'OPTIMAL';
       } else {
@@ -445,6 +466,7 @@ export class TradeLearningService {
       averageExitEfficiency,
       averageHoldDurationMs,
       attributionSummary: {
+        unknown,
         reinforceAlpha,
         neutralVariance,
         doNotReinforceLuck,

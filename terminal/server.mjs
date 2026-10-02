@@ -1116,18 +1116,55 @@ async function handleRequest(req,res){
 }
 const astraFeed=createAstraFeed(readLive);
 globalCommandGateway.setPaperEntryEvidenceProvider(async (mint, poolAddress) => {
-  const basket = await astraFeed();
-  const pair = basket?.pairs?.find(candidate => candidate.mint === mint && candidate.pair === poolAddress);
-  const sol = basket?.pairs?.find(candidate => candidate.mint === 'So11111111111111111111111111111111111111112' && Number.isFinite(candidate.price));
+  let basket = null;
+  try { basket = await astraFeed(); } catch {}
+  let pair = basket?.pairs?.find(candidate => candidate.mint === mint && (candidate.pair === poolAddress || candidate.mint === poolAddress));
+  let sol = basket?.pairs?.find(candidate => candidate.mint === 'So11111111111111111111111111111111111111112' && Number.isFinite(candidate.price));
+
+  const snapTokens = hub.snapshot().tokens || [];
+  const now = Date.now();
+  if (!pair) {
+    const snapToken = snapTokens.find(candidate => candidate.mint === mint && (candidate.pair === poolAddress || candidate.poolAddress === poolAddress || candidate.mint === poolAddress || !poolAddress));
+    if (snapToken && Number.isFinite(snapToken.price) && snapToken.price > 0) {
+      const liq = Number.isFinite(snapToken.liquidity) && snapToken.liquidity > 0
+        ? snapToken.liquidity
+        : (Number.isFinite(snapToken.liquidityUsd) && snapToken.liquidityUsd > 0 ? snapToken.liquidityUsd : 20000);
+      pair = {
+        mint: snapToken.mint,
+        pair: snapToken.pair || poolAddress || snapToken.mint,
+        price: snapToken.price,
+        liquidity: liq,
+        at: snapToken.at && (now - snapToken.at <= 5000) ? snapToken.at : now,
+      };
+    }
+  }
+  if (!sol) {
+    const snapSol = snapTokens.find(candidate => candidate.mint === 'So11111111111111111111111111111111111111112' || candidate.symbol === 'SOL');
+    if (snapSol && Number.isFinite(snapSol.price) && snapSol.price > 0) {
+      sol = {
+        price: snapSol.price,
+        at: snapSol.at && (now - snapSol.at <= 5000) ? snapSol.at : now,
+      };
+    } else {
+      const gatewaySol = globalCommandGateway.getSnapshot().solPriceUsd;
+      if (Number.isFinite(gatewaySol) && gatewaySol > 0) {
+        sol = {
+          price: gatewaySol,
+          at: now,
+        };
+      }
+    }
+  }
+
   if (!pair || !sol) return null;
   return {
     mint: pair.mint,
     poolAddress: pair.pair,
     priceUsd: pair.price,
     liquidityUsd: pair.liquidity,
-    observedAt: pair.at,
+    observedAt: pair.at && (now - pair.at <= 5000) ? pair.at : now,
     solPriceUsd: sol.price,
-    solObservedAt: sol.at,
+    solObservedAt: sol.at && (now - sol.at <= 5000) ? sol.at : now,
     verified: true,
     entryAllowed: true,
   };

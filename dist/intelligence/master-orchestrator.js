@@ -1877,7 +1877,8 @@ export class MasterIntelligenceEngine {
         this.pavlovAttribution.attributeOutcome({
             token_mint: event.mint,
             action_taken: bayesActionDecision.selected_action,
-            was_decision_sound: safetyVerdict.canAuthorizeNewCapital && !cleanRoomState.isDeceptionSevere,
+            // This forecast has no linked, verified process assessment.
+            was_decision_sound: 'UNKNOWN',
             realized_pnl_pct: hawkingTwin.expected_value_pnl_pct
         });
         // 40. WATSON: Distributed Trace & Diagnosis
