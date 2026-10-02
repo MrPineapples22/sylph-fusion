@@ -239,7 +239,7 @@ test('4. Process crash between SQLite persistence and broadcast recovers pending
   }
 });
 
-test('5. Repeated identical-wire broadcast retries remain reconciliable and settle accurately', async () => {
+test('5. Quarantined retries preserve the pending order for separate reconciliation', async () => {
   const payloads = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (_url, init) => {
@@ -251,17 +251,13 @@ test('5. Repeated identical-wire broadcast retries remain reconciliable and sett
     const executor = new Executor(cfg(), {}, {}, key);
     const order = makePending('buy', 'sig-retry-123');
 
-    // First broadcast
-    await executor.broadcast(order);
-    executor.lastSubmit = 0; // reset throttle to simulate 2s elapse
-    // Retry submission with identical wire
-    await executor.broadcast(order);
+    const originalOrder = structuredClone(order);
+    await assert.rejects(executor.broadcast(order), /QUARANTINED_LEGACY_BROADCAST/);
+    await assert.rejects(executor.broadcast(order), /QUARANTINED_LEGACY_BROADCAST/);
+    assert.equal(payloads.length, 0);
+    assert.deepEqual(order, originalOrder);
 
-    assert.equal(payloads.length, 2);
-    assert.deepEqual(payloads[0], payloads[1]);
-    assert.equal(payloads[0].params[0][0], order.wire);
-
-    // Reconcile and settle fill
+    // Separate, synthetic confirmed-fill fixture; denial is not settlement evidence.
     const testState = {
       version: 1,
       wallet: key.publicKey.toBase58(),

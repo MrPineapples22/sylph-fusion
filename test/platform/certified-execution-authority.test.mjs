@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Keypair, PublicKey, TransactionMessage, VersionedMessage, VersionedTransaction } from '@solana/web3.js';
+import { Keypair, PublicKey, TransactionMessage } from '@solana/web3.js';
 import { rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
@@ -43,7 +43,7 @@ test('Pass 22 - Upgrade 3: Exact-base-unit bigint reservations and DurableReserv
   assert.throws(() => engine.calculateWorstCaseLamports({ input_lamports: 0n }), /INVALID_INPUT_LAMPORTS/);
   assert.throws(() => engine.calculateWorstCaseLamports({ input_lamports: -100n }), /INVALID_INPUT_LAMPORTS/);
 
-  // 3. Durable Reservation Capability registration
+  // 3. Process-local registration of the named DurableReservationCapability type
   const intent = engine.createEconomicIntent({
     economic_intent_id: 'intent-pass22-001',
     candidate_transaction_id: 'tx-cand-001',
@@ -139,11 +139,11 @@ test('both terminal issuers are quarantined; settlement checksums confer no auth
   assert.equal(NoLandVerificationAuthority.validateCertificateDigest(tamperedSettlement), false);
 });
 
-test('Pass 22 - Upgrade 4: TwoPhaseSideEffectFence DB PREPARE -> COMMIT pattern', () => {
+test('TwoPhaseSideEffectFence process-local prepare/commit records', () => {
   const fence = new TwoPhaseSideEffectFence();
   const payload = new Uint8Array([1, 2, 3, 4, 5]);
 
-  // Phase 1: DB PREPARE
+  // Phase 1: prepare record in this Map instance; no database is involved.
   const prep = fence.prepare({
     intentId: 'intent-fence-01',
     generation: 1,
@@ -178,7 +178,7 @@ test('Pass 22 - Upgrade 4: TwoPhaseSideEffectFence DB PREPARE -> COMMIT pattern'
     /SIDE_EFFECT_PAYLOAD_MISMATCH/
   );
 
-  // Phase 2: DB RESULT COMMIT
+  // Phase 2: mark the in-memory result committed; no durability is tested.
   const committed = fence.commit(prep.fenceId, 'signature-result-bytes');
   assert.equal(committed.status, 'COMMITTED');
   assert.ok(committed.committedAt);
@@ -314,7 +314,7 @@ test('Pass 22 - Upgrade 1: Legacy LiveExecutionAuthority.build() and broadcast()
   );
 });
 
-test('Coordinator reservation and offline signed-wire identity subset (not complete execution certification)', async () => {
+test('Coordinator offline root diagnostics retain reservations and generations when signing is quarantined', async () => {
   const liveCfg = config({
     MODE: 'live',
     KEYPAIR_PATH: 'keypair.json',
@@ -332,9 +332,7 @@ test('Coordinator reservation and offline signed-wire identity subset (not compl
   const signerGateway = {
     publicKey: fixtureKey.publicKey,
     signTransactionMessage: async (bytes) => {
-      const tx = new VersionedTransaction(VersionedMessage.deserialize(bytes));
-      tx.sign([fixtureKey]);
-      return tx.signatures[0];
+      assert.fail('quarantined coordinator must never invoke signer');
     },
   };
 
@@ -377,7 +375,7 @@ test('Coordinator reservation and offline signed-wire identity subset (not compl
     // Step 3: Verify Token Semantics
     coordinator.verifyTokenSemantics({ curve: { complete: false } });
 
-    // Step 4: Acquire Durable Reservation
+    // Step 4 prototype: acquire process-local reservation capability.
     const capability = coordinator.acquireDurableReservation(intent, 500);
     assert.ok(capability);
     assert.equal(capability.intent_id, intentId);
@@ -407,15 +405,17 @@ test('Coordinator reservation and offline signed-wire identity subset (not compl
     assert.ok(authRoot.authRootHash);
     assert.equal(authRoot.generation, 1);
 
-    // Steps 10-12: Two-Phase Isolated Signer Invocation
-    const signedBytes = await coordinator.invokeCertifiedSigning(authRoot);
-    assert.ok(signedBytes);
-    assert.deepEqual(VersionedTransaction.deserialize(signedBytes).message.serialize(), dummyBytes);
-
-    // Verifying side effect fence recorded the signing commit
-    const fenceRecord = sideEffectFence.getByPhase(intentId, 1, 'SIGNING');
-    assert.ok(fenceRecord);
-    assert.equal(fenceRecord.status, 'COMMITTED');
+    const reservationBefore = structuredClone(reservationEngine.getIntent(intentId));
+    const generationBefore = await generationFence.getActiveGeneration(intentId);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await assert.rejects(coordinator.invokeCertifiedSigning(authRoot), /QUARANTINED_COORDINATOR_SIGNING/);
+      await assert.rejects(coordinator.submitExactBytes(intentId, 1, dummyBytes, 'untrusted'), /QUARANTINED_COORDINATOR_SUBMISSION/);
+    }
+    assert.equal(sideEffectFence.getByPhase(intentId, 1, 'SIGNING'), undefined);
+    assert.equal(sideEffectFence.getByPhase(intentId, 1, 'SUBMISSION'), undefined);
+    assert.deepEqual(reservationEngine.getIntent(intentId), reservationBefore);
+    assert.equal(reservationEngine.getCapability(intentId).is_released, false);
+    assert.deepEqual(await generationFence.getActiveGeneration(intentId), generationBefore);
   } finally {
     await rm(testStorage, { force: true });
   }

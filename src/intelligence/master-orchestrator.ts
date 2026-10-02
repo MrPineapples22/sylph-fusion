@@ -253,7 +253,7 @@ export interface AetherFluxViewModel {
   readonly podState: 'P' | 'N' | 'D';
   readonly conf: 'HIGH' | 'MED' | 'LOW';
   readonly edge: string; // e.g. '+11.8%'
-  readonly status: string; // Unified Authoritative Decision Status
+  readonly status: 'OBSERVE' | 'ABSTAIN' | 'DUMPING' | 'REJECTED' | 'PROTECTED' | 'PAPER_CANDIDATE' | 'WATCH';
   readonly intel?: 'STRONG' | 'MIXED' | 'WEAK' | 'CONFLICT' | 'UNKNOWN' | 'STALE';
   readonly risk?: 'LOW' | 'WATCH' | 'HIGH' | 'BLOCK';
   readonly attn?: 'A0' | 'A1' | 'A2' | 'A3' | 'A4' | 'A5' | 'A6';
@@ -802,6 +802,8 @@ export class MasterIntelligenceEngine {
 
   /**
    * Process a canonical market event through the institutional intelligence pipeline.
+   * Analysis-only results remain available in live mode. Synthetic entry/exit attempts
+   * reject with LIVE_EXECUTION_BLOCKED before mutating capital or exit capacity.
    */
   public async processEvent(
     event: CanonicalEvent,
@@ -1574,6 +1576,10 @@ export class MasterIntelligenceEngine {
       });
       allocatedSol = exitResult.realizedPnlSol;
     } else if (councilVerdict.state === 'STRONG_CONSENSUS' && councilVerdict.authorizedToProceed && policyDecision.action === 'ENTER' && proofReport.isExecutionReady && survivalCert.is_valid && revalReport.is_cleared_to_sign) {
+      // Deny before creating reservations, exit-capacity claims, or commit certificates.
+      if (process.env.SYLPH_RUNTIME_MODE === 'live' || process.env.MODE === 'live') {
+        throw new Error('LIVE_EXECUTION_BLOCKED: CertifiedLiveExecutionCoordinator required for live capital mutations');
+      }
       const capSnapshot = this.capitalTruth.getSnapshot();
       const proposedSizeSol = 0.5 * regime.riskMultiplier * policyDecision.targetAllocationMultiplier * oodAssessment.allowedCapitalMultiplier;
 
@@ -1734,8 +1740,9 @@ export class MasterIntelligenceEngine {
       }
     }
 
-    // Authoritative Unified Decision Status (PART CXXI & Blueprint Part XXXIII)
-    let unifiedStatus: string = 'OBSERVE';
+    // Presentation only: this engine has no trusted opportunity-validation authority.
+    // Positive heuristic edge and paper authorization cannot establish EXECUTABLE.
+    let unifiedStatus: AetherFluxViewModel['status'] = 'OBSERVE';
     if (assuranceCase.operationalState === 'HALTED' || safetyVerdict.safetyStatus === 'RED_LOCKED' || !killCheck.permitted || !kernelCheck.passed) {
       unifiedStatus = 'ABSTAIN';
     } else if (podRisk.dumpRiskScore > 75 || phaseReport.compactPhaseCode === 'COLLAPSE') {
@@ -1744,10 +1751,8 @@ export class MasterIntelligenceEngine {
       unifiedStatus = 'REJECTED';
     } else if (podRisk.dumpRiskScore > 50 || phaseReport.compactPhaseCode === 'STRESS') {
       unifiedStatus = 'PROTECTED';
-    } else if (decision === 'AUTHORIZED_BUY' && opportunityContract.expectedExecutableEdgePct > 0 && assuranceCase.isAuthorizedForExecution && proofReport.isExecutionReady) {
-      unifiedStatus = 'EXECUTABLE';
     } else if (decision === 'AUTHORIZED_BUY') {
-      unifiedStatus = 'QUALIFIED';
+      unifiedStatus = 'PAPER_CANDIDATE';
     } else if (policyDecision.action === 'ENTER' || hsiReport.compositeHsi > 60 || phaseReport.compactPhaseCode === 'EXPANSION') {
       unifiedStatus = 'WATCH';
     } else {
@@ -1755,7 +1760,7 @@ export class MasterIntelligenceEngine {
     }
 
     const podState: 'P' | 'N' | 'D' = podRisk.dumpRiskScore > 60 ? 'D' : (podRisk.dumpRiskScore < 30 && pumpScore > 50 ? 'P' : 'N');
-    const confLevel: 'HIGH' | 'MED' | 'LOW' = assuranceCase.trustVector.dataFreshness >= 75 && assuranceCase.assuranceScore >= 0.7 ? 'HIGH' : assuranceCase.assuranceScore >= 0.4 ? 'MED' : 'LOW';
+    const confLevel: 'HIGH' | 'MED' | 'LOW' = (assuranceCase?.trustVector?.dataFreshness ?? 0) >= 75 && (assuranceCase?.assuranceScore ?? 0) >= 0.7 ? 'HIGH' : (assuranceCase?.assuranceScore ?? 0) >= 0.4 ? 'MED' : 'LOW';
     const edgeFormatted = `${opportunityContract.expectedExecutableEdgePct >= 0 ? '+' : ''}${opportunityContract.expectedExecutableEdgePct.toFixed(1)}%`;
 
     // 15. Execute Blueprint Master Architecture Loop (Parts 5-56)
@@ -2217,13 +2222,13 @@ export class MasterIntelligenceEngine {
       token_id: event.mint,
       event_id: `ev_${event.slot}`,
       timestamp_ms: nowMs,
-      phase: decision === 'AUTHORIZED_BUY' ? 'EXECUTION' : 'FILTER',
-      outcome: decision === 'AUTHORIZED_BUY' ? 'EXECUTED' : 'FILTERED',
-      explanation: decision === 'AUTHORIZED_BUY' ? 'Authorized by consensus' : `Filtered: ${safetyVerdict.safetyStatus || 'Risk limits'}`,
+      phase: decision === 'AUTHORIZED_BUY' ? 'PAPER_CANDIDATE' : 'FILTER',
+      outcome: decision === 'AUTHORIZED_BUY' ? 'PASSED' : 'FILTERED',
+      explanation: decision === 'AUTHORIZED_BUY' ? 'Paper candidate selected; opportunity validation evidence is missing.' : `Filtered: ${safetyVerdict.safetyStatus || 'Risk limits'}`,
       metadata: { remedy: safetyVerdict.safetyStatus }
     });
 
-    const watsonDiagReport = this.watsonDiag.diagnose(event.mint, decision === 'AUTHORIZED_BUY' ? 'WHY_TRADED' : 'WHY_FILTERED');
+    const watsonDiagReport = this.watsonDiag.diagnose(event.mint, decision === 'AUTHORIZED_BUY' ? 'ROOT_CAUSE' : 'WHY_FILTERED');
 
     const healthStrip = {
       obs: sysIntegrityCert.status === 'VALID' ? 'OK' as const : 'WARN' as const,
@@ -2451,7 +2456,7 @@ export class MasterIntelligenceEngine {
             whyFiltered: safetyVerdict.canAuthorizeNewCapital ? undefined : (safetyVerdict.safetyStatus || 'Safety limits triggered'),
             whyWait: bayesActionDecision.selected_action === 'WAIT' ? 'Information gain from pending investigation exceeds delay cost.' : undefined,
             whyNoTrade: !safetyVerdict.canAuthorizeNewCapital ? 'Blocked by Guardian risk authority.' : undefined,
-            whyTrade: decision === 'AUTHORIZED_BUY' ? 'Formal execution permitted: consensus achieved, risk verified.' : undefined,
+            whyTrade: decision === 'AUTHORIZED_BUY' ? 'Paper candidate only; opportunity validation evidence is missing and live execution is unavailable.' : undefined,
           },
           cantorStage: cantorCandidate.current_stage,
           cantorUniverses: cantorCandidate.assigned_universes,
@@ -2587,7 +2592,7 @@ export class MasterIntelligenceEngine {
           timestamp: event.receivedTimestampMs,
         },
         overview: {
-          currentStatus: decision === 'AUTHORIZED_BUY' ? 'VERIFIED_ENTRY' : decision,
+          currentStatus: decision === 'AUTHORIZED_BUY' ? 'PAPER_CANDIDATE' : decision,
           hsi: Math.round(hsiReport.compositeHsi),
           pumpScore,
           pod: Math.round(podRisk.dumpRiskScore),
@@ -2844,7 +2849,8 @@ export class MasterIntelligenceEngine {
   }
 
   /**
-   * Authoritatively settles position exit across CapitalTruth and PortfolioEvacuation engines.
+   * Settles a synthetic position exit across CapitalTruth and PortfolioEvacuation engines.
+   * Throws LIVE_EXECUTION_BLOCKED in live mode, including when no position exists.
    */
   public executeExit(params: {
     mint: string;
@@ -2853,6 +2859,9 @@ export class MasterIntelligenceEngine {
     slot: number;
     reason?: string;
   }): { success: boolean; realizedPnlSol: number } {
+    if (process.env.SYLPH_RUNTIME_MODE === 'live' || process.env.MODE === 'live') {
+      throw new Error('LIVE_EXECUTION_BLOCKED: CertifiedLiveExecutionCoordinator required for live capital mutations');
+    }
     const fee = params.feeSol ?? 0.0001;
     const pos = this.capitalTruth.getPosition(params.mint);
     if (!pos) {

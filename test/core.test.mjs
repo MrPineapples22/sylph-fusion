@@ -219,13 +219,14 @@ test('RPC failover preserves method and request body', async () => {
   try { const pool = new RpcPool(cfg()); assert.equal(await pool.connection.getSlot(), 123); assert.equal(calls.length, 2); assert.equal(calls[0].body, calls[1].body); }
   finally { globalThis.fetch = original; }
 });
-test('Jito retry transmits identical signed bytes and explicit base64', async () => {
+test('legacy Jito broadcast and identical-wire retries reject before transport', async () => {
   const original = globalThis.fetch; const payloads = [];
   globalThis.fetch = async (_url, init) => { payloads.push(JSON.parse(init.body)); return new Response(JSON.stringify({ result: 'bundle-id' })); };
   try {
-    const e = new Executor(cfg(), {}, {}, key); await e.broadcast(pending()); e.lastSubmit = 0; await e.broadcast(pending());
-    assert.deepEqual(payloads[0].params, [['identical-signed-wire'], { encoding: 'base64' }]);
-    assert.deepEqual(payloads[0], payloads[1]);
+    const e = new Executor(cfg(), {}, {}, key);
+    await assert.rejects(e.broadcast(pending()), /QUARANTINED_LEGACY_BROADCAST/);
+    await assert.rejects(e.broadcast(pending()), /QUARANTINED_LEGACY_BROADCAST/);
+    assert.deepEqual(payloads, []);
   } finally { globalThis.fetch = original; }
 });
 test('Anchor parser rejects spoofed event from unrelated invocation', async () => {
@@ -251,7 +252,7 @@ function fixture() {
     global: { feeRecipient: address, feeRecipients: [address], feeBasisPoints: new BN(100), creatorFeeBasisPoints: zero, creatorFeeConfigurable: false },
     curve: { virtualTokenReserves: new BN('1073000000000000'), virtualQuoteReserves: new BN('30000000000'), realTokenReserves: new BN('793100000000000'), realQuoteReserves: new BN('1000000000'), tokenTotalSupply: new BN('1000000000000000'), creator: address, quoteMint: PublicKey.default, creatorFeeBps: zero, isMayhemMode: false, complete: false } };
 }
-test('legacy Pump V2 builder is rejected by the real firewall before signing or simulation', async () => {
+test('legacy live Pump V2 builder is quarantined before signing or simulation', async () => {
   const s = fixture(), live = cfg({ MODE: 'live', KEYPAIR_PATH: 'file', QUOTE_MAX_AGE_MS: '10000' });
   let signerCalls = 0;
   let simulationCalls = 0;
@@ -263,14 +264,14 @@ test('legacy Pump V2 builder is rejected by the real firewall before signing or 
   const signer = { publicKey: key.publicKey, async signTransactionMessage() { signerCalls++; return new Uint8Array(64).fill(42); } };
   const e = new Executor(live, rpc, { buyQuote: () => 1000000n, sellQuote: () => 1000000n }, signer);
   e.tips = [Keypair.fromSeed(Buffer.alloc(32, 10)).publicKey];
-  await assert.rejects(e.build(s, 'buy', 10000000n, key.publicKey.toBase58(), 0, 'test', false), /SIGNING_FIREWALL_REJECTED.*TRANSACTION_DECODER_INCOMPLETE/);
+  await assert.rejects(e.build(s, 'buy', 10000000n, key.publicKey.toBase58(), 0, 'test', false), /QUARANTINED_LEGACY_EXECUTION/);
   assert.equal(signerCalls, 0);
   assert.equal(simulationCalls, 0);
 });
-test('stale snapshots reject before routing or signing', async () => {
+test('stale paper snapshots reject before routing or signing', async () => {
   let signerCalls = 0;
   let blockhashCalls = 0;
-  const e = new Executor(cfg({ MODE: 'live', KEYPAIR_PATH: 'file' }), { connection: {
+  const e = new Executor(cfg(), { connection: {
     getLatestBlockhashAndContext: async () => { blockhashCalls++; return { value: { blockhash: PublicKey.default.toBase58(), lastValidBlockHeight: 100 } }; },
     getRecentPrioritizationFees: async () => [], simulateTransaction: async () => { throw new Error('must not simulate'); },
   } }, { buyQuote: () => 10000n }, {

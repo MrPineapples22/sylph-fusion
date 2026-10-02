@@ -7,31 +7,29 @@ import { Engine } from '../dist/fusion.js';
 const config = () => ({ JITO_URL: 'https://jito.invalid', JITO_AUTH: '', RPC_TIMEOUT_MS: 10 });
 const order = () => ({ id: 'id', mint: 'mint', side: 'buy', signature: 'signature', wire: 'identical-wire', lastValidBlockHeight: 1, created: 1, creator: 'creator', tokenProgram: 'program', stage: 0, reserve: '1', reason: 'test', requested: '1' });
 
-test('timeout after possible Jito acceptance is explicit UNKNOWN', async () => {
+test('legacy broadcast rejects before a timeout-capable transport can run', async () => {
   const original = globalThis.fetch;
-  globalThis.fetch = async () => { throw new DOMException('timed out after request transmission', 'TimeoutError'); };
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; throw new DOMException('timed out after request transmission', 'TimeoutError'); };
   try {
-    const result = await new Executor(config(), {}, {}, Keypair.generate()).broadcast(order());
-    assert.equal(result.status, 'UNKNOWN');
-    assert.equal(result.signature, 'signature');
+    await assert.rejects(new Executor(config(), {}, {}, Keypair.generate()).broadcast(order()), /QUARANTINED_LEGACY_BROADCAST/);
+    assert.equal(calls, 0);
   } finally { globalThis.fetch = original; }
 });
 
-test('submission throttle is explicit NOT_SENT and does not call transport', async () => {
+test('legacy broadcast rejects every attempt without reaching a transport', async () => {
   const original = globalThis.fetch;
   let calls = 0;
   globalThis.fetch = async () => { calls++; return new Response(JSON.stringify({ result: 'bundle' })); };
   try {
     const executor = new Executor(config(), {}, {}, Keypair.generate());
-    assert.equal((await executor.broadcast(order())).status, 'ACCEPTED');
-    const throttled = await executor.broadcast(order());
-    assert.equal(throttled.status, 'NOT_SENT');
-    assert.equal(throttled.reason, 'THROTTLED');
-    assert.equal(calls, 1);
+    await assert.rejects(executor.broadcast(order()), /QUARANTINED_LEGACY_BROADCAST/);
+    await assert.rejects(executor.broadcast(order()), /QUARANTINED_LEGACY_BROADCAST/);
+    assert.equal(calls, 0);
   } finally { globalThis.fetch = original; }
 });
 
-test('identical-wire retry records explicit delivery evidence without replacing pending order', async () => {
+test('delivery bookkeeping with a fake authority preserves identical wire and pending identity', async () => {
   const engine = Object.create(Engine.prototype);
   const pending = order();
   engine.state = { pending };

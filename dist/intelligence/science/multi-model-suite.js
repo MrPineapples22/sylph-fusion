@@ -156,28 +156,40 @@ export class UncertaintyModel {
     assess(features) {
         const { featureNoveltyScore, sampleCount, calibrationBrier, alphaScore, failureScore, regimeMatchScore, dataHealthConfidence, } = features;
         const modelFamiliarity = Number(Math.max(0, 1 - featureNoveltyScore).toFixed(3));
-        const sampleSufficiency = Number(Math.min(1, sampleCount / 100).toFixed(3));
-        const calibrationQuality = Number(Math.max(0, 1 - calibrationBrier * 3).toFixed(3));
+        const sampleSufficiency = sampleCount !== null && Number.isFinite(sampleCount) && sampleCount >= 0
+            ? Number(Math.min(1, sampleCount / 100).toFixed(3)) : null;
+        const calibrationQuality = calibrationBrier !== null && Number.isFinite(calibrationBrier) && calibrationBrier >= 0
+            ? Number(Math.max(0, 1 - calibrationBrier * 3).toFixed(3)) : null;
         // Model disagreement: when both Alpha and Failure predict high
         const modelDisagreement = Number(Math.min(1, alphaScore * failureScore * 4).toFixed(3));
         const domainSimilarity = 0.88; // Solana DEX ecosystem
         const regimeSimilarity = Number(Math.max(0, Math.min(1, regimeMatchScore)).toFixed(3));
-        const dataHealthScore = Number(Math.max(0, Math.min(1, dataHealthConfidence)).toFixed(3));
-        // Composite uncertainty calculation
-        const uncertaintyRaw = (1 - modelFamiliarity) * 0.25 +
-            (1 - sampleSufficiency) * 0.20 +
-            (1 - calibrationQuality) * 0.15 +
-            modelDisagreement * 0.20 +
-            (1 - regimeSimilarity) * 0.10 +
-            (1 - dataHealthScore) * 0.10;
-        const compositeUncertainty = Number(Math.max(0.01, Math.min(0.99, uncertaintyRaw)).toFixed(3));
-        let uncertaintyClass = 'LOW';
-        if (compositeUncertainty > 0.65)
-            uncertaintyClass = 'HIGH';
-        else if (compositeUncertainty > 0.40)
-            uncertaintyClass = 'MEDIUM';
-        else if (sampleCount < 5)
-            uncertaintyClass = 'UNKNOWN';
+        const dataHealthScore = dataHealthConfidence !== null && Number.isFinite(dataHealthConfidence) && dataHealthConfidence >= 0 && dataHealthConfidence <= 1
+            ? dataHealthConfidence : null;
+        const unavailableMetrics = [
+            ...(calibrationQuality === null ? ['calibrationQuality'] : []),
+            ...(sampleSufficiency === null ? ['sampleSufficiency'] : []),
+            ...(dataHealthScore === null ? ['dataHealthScore'] : []),
+        ];
+        let compositeUncertainty = null;
+        let uncertaintyClass = 'UNKNOWN';
+        if (sampleSufficiency !== null && calibrationQuality !== null && dataHealthScore !== null) {
+            const uncertaintyRaw = (1 - modelFamiliarity) * 0.25 +
+                (1 - sampleSufficiency) * 0.20 +
+                (1 - calibrationQuality) * 0.15 +
+                modelDisagreement * 0.20 +
+                (1 - regimeSimilarity) * 0.10 +
+                (1 - dataHealthScore) * 0.10;
+            compositeUncertainty = Number(Math.max(0.01, Math.min(0.99, uncertaintyRaw)).toFixed(3));
+            if (compositeUncertainty > 0.65)
+                uncertaintyClass = 'HIGH';
+            else if (compositeUncertainty > 0.40)
+                uncertaintyClass = 'MEDIUM';
+            else if (sampleCount !== null && sampleCount < 5)
+                uncertaintyClass = 'UNKNOWN';
+            else
+                uncertaintyClass = 'LOW';
+        }
         return {
             modelFamiliarity,
             sampleSufficiency,
@@ -188,6 +200,10 @@ export class UncertaintyModel {
             dataHealthScore,
             compositeUncertainty,
             uncertaintyClass,
+            evidenceStatus: unavailableMetrics.length === 0 ? 'KNOWN' : 'MISSING',
+            validationSource: null,
+            authority: 'HEURISTIC_ONLY',
+            unavailableMetrics,
         };
     }
 }
@@ -228,7 +244,7 @@ export class MultiModelSuite {
         const uncertainty = this.uncertaintyModel.assess({
             featureNoveltyScore: params.featureNovelty,
             sampleCount: params.memorySampleCount,
-            calibrationBrier: 0.12,
+            calibrationBrier: params.memorySampleCount !== null ? 0.12 : null,
             alphaScore: alpha.pPlus50,
             failureScore: failure.pRug,
             regimeMatchScore: 0.85,

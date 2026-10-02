@@ -28,6 +28,7 @@ export class AdversarialScenarioGenerator {
         const dumpPriceImpactBps = -Math.round((latentInventoryFraction / (1.0 + latentInventoryFraction)) * 10_000);
         const dumpLethal = Math.abs(dumpPriceImpactBps) > 1500; // Breaches 15% structural stop
         results.push({
+            evidenceClass: 'MODELLED_STRESS_SCENARIO',
             attackVector: 'CREATOR_STEALTH_DUMP',
             attackCapitalSol: Number(dumpCapitalSol.toFixed(2)),
             simulatedPostShockPriceDeltaBps: dumpPriceImpactBps,
@@ -40,6 +41,7 @@ export class AdversarialScenarioGenerator {
         const sandwichExtractionBps = -maxSlippageBps;
         const sandwichLethal = maxSlippageBps >= expectedNetEvBps;
         results.push({
+            evidenceClass: 'MODELLED_STRESS_SCENARIO',
             attackVector: 'JITO_BUNDLE_SANDWICH',
             attackCapitalSol: Number(Math.min(50, poolSolReserve * 0.20).toFixed(2)),
             simulatedPostShockPriceDeltaBps: sandwichExtractionBps,
@@ -54,6 +56,7 @@ export class AdversarialScenarioGenerator {
         const drainImpactBps = -Math.round((drainFraction / (1.0 - drainFraction)) * 5000);
         const drainLethal = Math.abs(drainImpactBps) > 1800;
         results.push({
+            evidenceClass: 'MODELLED_STRESS_SCENARIO',
             attackVector: 'LIQUIDITY_CLIFF_DRAIN',
             attackCapitalSol: Number(drainCapitalSol.toFixed(2)),
             simulatedPostShockPriceDeltaBps: drainImpactBps,
@@ -68,6 +71,7 @@ export class AdversarialScenarioGenerator {
         const starvationPriceImpactBps = -Math.round(expectedNetEvBps * (1.0 - edgeRemainingFraction));
         const starvationLethal = edgeRemainingFraction < 0.25;
         results.push({
+            evidenceClass: 'MODELLED_STRESS_SCENARIO',
             attackVector: 'SCHEDULER_LOCK_STARVATION',
             attackCapitalSol: 0.05, // Negligible tip war spam cost
             simulatedPostShockPriceDeltaBps: starvationPriceImpactBps,
@@ -80,6 +84,7 @@ export class AdversarialScenarioGenerator {
         const washImpactBps = -Math.round(washTradingProbability * 2500);
         const washLethal = washTradingProbability > 0.45;
         results.push({
+            evidenceClass: 'MODELLED_STRESS_SCENARIO',
             attackVector: 'SYBIL_ORGANIC_EVAPORATION',
             attackCapitalSol: 0,
             simulatedPostShockPriceDeltaBps: washImpactBps,
@@ -136,6 +141,27 @@ export class AutomaticFalsificationAgent {
             stressScenariosTested: scenarios,
             isVetoRecommended,
             rationale,
+            evidenceLineage: {
+                schemaVersion: 1,
+                artifactClass: 'HEURISTIC_FALSIFICATION_REPORT',
+                provenanceAuthority: 'CALLER_DECLARED',
+                inputFieldClasses: Object.freeze({
+                    poolSolReserve: params.inputFieldClasses?.poolSolReserve ?? 'CALLER_SUPPLIED_UNVERIFIED',
+                    latentInventoryFraction: params.inputFieldClasses?.latentInventoryFraction ?? 'CALLER_SUPPLIED_UNVERIFIED',
+                    expectedNetEvBps: params.inputFieldClasses?.expectedNetEvBps ?? 'CALLER_SUPPLIED_UNVERIFIED',
+                    alphaHalfLifeMs: params.inputFieldClasses?.alphaHalfLifeMs ?? 'CALLER_SUPPLIED_UNVERIFIED',
+                    maxSlippageBps: params.inputFieldClasses?.maxSlippageBps ?? 'CALLER_SUPPLIED_UNVERIFIED',
+                    washTradingProbability: params.inputFieldClasses?.washTradingProbability ?? 'CALLER_SUPPLIED_UNVERIFIED',
+                }),
+                modelledOutputFields: Object.freeze([
+                    'isThesisFalsified', 'falsificationConfidence', 'survivabilityIndex', 'minimumPlausibleBreakCapitalSol',
+                    'lethalAttackVector', 'stressScenariosTested', 'isVetoRecommended', 'rationale',
+                ]),
+                falsificationConfidence: {
+                    calibrationStatus: 'UNVALIDATED_HEURISTIC_SCORE',
+                    isCalibratedProbability: false,
+                },
+            },
         };
     }
 }

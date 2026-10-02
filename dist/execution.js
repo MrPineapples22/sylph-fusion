@@ -1,13 +1,11 @@
 import { JitoLifecycleCoordinator } from './platform/execution/jito-lifecycle-coordinator.js';
-import { PublicKey, SystemProgram, ComputeBudgetProgram, TransactionMessage, VersionedTransaction, TransactionInstruction } from '@solana/web3.js';
+import { PublicKey, TransactionInstruction } from '@solana/web3.js';
 import { PUMP_SDK } from '@pump-fun/pump-sdk';
 import { ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID, NATIVE_MINT, getAssociatedTokenAddressSync } from '@solana/spl-token';
 import BN from 'bn.js';
-import bs58 from 'bs58';
-import { randomUUID, createHash } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { httpJson } from './rpc.js';
-import { ceilDiv, log, mulBps } from './core.js';
-import { SigningFirewall } from './platform/signing/signing-firewall.js';
+import { log, mulBps } from './core.js';
 const JUPITER_PROGRAM = new PublicKey('JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4');
 export class Executor {
     cfg;
@@ -17,28 +15,25 @@ export class Executor {
     tips = [];
     tipAt = 0;
     floor = 0;
-    lastSubmit = 0;
     jitoCoordinator;
-    signingFirewall;
-    constructor(cfg, rpc, market, key, signingFirewall) {
+    constructor(cfg, rpc, market, key, _signingFirewall) {
         this.cfg = cfg;
         this.rpc = rpc;
         this.market = market;
         this.key = key;
         this.jitoCoordinator = new JitoLifecycleCoordinator(this.cfg.JITO_URL, this.cfg.JITO_AUTH, this.cfg.RPC_TIMEOUT_MS);
-        this.signingFirewall = signingFirewall ?? new SigningFirewall();
     }
-    async jito(method, params) {
+    async #getTipAccounts() {
         const response = await httpJson(this.cfg.JITO_URL, this.cfg.RPC_TIMEOUT_MS, {
             method: 'POST', headers: { 'content-type': 'application/json', ...(this.cfg.JITO_AUTH ? { 'x-jito-auth': this.cfg.JITO_AUTH } : {}) },
-            body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+            body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getTipAccounts', params: [] }),
         });
         if (response.error || response.result === undefined)
             throw new Error('Jito rejected request');
         return response.result;
     }
     async warm() {
-        const accounts = await this.jito('getTipAccounts', []);
+        const accounts = await this.#getTipAccounts();
         if (!Array.isArray(accounts) || !accounts.length)
             throw new Error('Jito returned no tip accounts');
         this.tips = accounts.map(s => new PublicKey(s));
@@ -95,10 +90,12 @@ export class Executor {
         }));
         return { instructions, alts, output: BigInt(quote.outAmount) };
     }
+    /** Paper-only compatibility builder; direct live authority is quarantined. */
     async build(s, side, amount, creator, stage, reason, panic) {
+        this.#assertPaperBuild();
         if (Date.now() - s.at > this.cfg.QUOTE_MAX_AGE_MS)
             throw new Error('quote expired');
-        const started = performance.now(), slippage = panic ? this.cfg.PANIC_SLIPPAGE_BPS : this.cfg.SLIPPAGE_BPS;
+        const slippage = panic ? this.cfg.PANIC_SLIPPAGE_BPS : this.cfg.SLIPPAGE_BPS;
         let instructions, alts = [];
         let output;
         if (s.curve.complete) {
@@ -120,160 +117,37 @@ export class Executor {
             else
                 instructions = await PUMP_SDK.sellV2Instructions({ ...shared, amount: new BN(String(amount)), quoteAmount: new BN(String(mulBps(output, 10_000 - slippage))) });
         }
+        // The caller-owned config may change while route/SDK work is awaiting.
+        this.#assertPaperBuild();
         const tip = this.tip(panic);
-        if (this.cfg.MODE === 'paper') {
-            const baseFee = 5000n;
-            const fee = BigInt(tip + this.cfg.MAX_PRIORITY_LAMPORTS) + baseFee;
-            const executedSol = side === 'sell' ? mulBps(output, 10_000 - slippage) : 0n;
-            const slippageLamports = side === 'sell' ? output - executedSol : 0n;
-            return {
-                pending: { id: randomUUID(), mint: s.mint.toBase58(), side, signature: 'paper', wire: '', lastValidBlockHeight: 0, created: Date.now(), creator, tokenProgram: s.tokenProgram.toBase58(), stage, reserve: s.curve.realQuoteReserves.toString(), reason, requested: String(amount), creatorTokens: s.creatorTokens },
-                tokenDelta: side === 'buy' ? mulBps(output, 10_000 - slippage) : -amount,
-                solDelta: side === 'buy' ? -amount - fee - 3000000n : executedSol - fee,
-                quotedOutput: output,
-                quoteTimestamp: s.at,
-                overhead: {
-                    tipLamports: String(tip),
-                    priorityLamports: String(this.cfg.MAX_PRIORITY_LAMPORTS),
-                    rentLamports: side === 'buy' ? '3000000' : '0',
-                    slippageBps: slippage,
-                    slippageLamports: String(slippageLamports),
-                    baseFeeLamports: String(baseFee),
-                },
-            };
-        }
-        if (!this.tips.length)
-            throw new Error('Jito not initialized');
-        instructions.push(SystemProgram.transfer({ fromPubkey: this.key.publicKey, toPubkey: this.tips[Math.floor(Math.random() * this.tips.length)], lamports: tip }));
-        const c = this.rpc.connection;
-        const [hash, recent] = await Promise.all([
-            c.getLatestBlockhashAndContext({ commitment: 'confirmed', minContextSlot: s.slot }),
-            c.getRecentPrioritizationFees({ lockedWritableAccounts: [s.mint, this.key.publicKey] }).catch(() => []),
-        ]);
-        const samples = recent.map(x => x.prioritizationFee).filter(x => Number.isSafeInteger(x) && x >= 0).sort((a, b) => a - b);
-        const suggested = BigInt(samples[Math.floor(samples.length * 0.75)] ?? 1000) * BigInt(panic ? 2 : 1);
-        const make = async (units, price) => {
-            const msg = new TransactionMessage({
-                payerKey: this.key.publicKey,
-                recentBlockhash: hash.value.blockhash,
-                instructions: [
-                    ComputeBudgetProgram.setComputeUnitLimit({ units }),
-                    ComputeBudgetProgram.setComputeUnitPrice({ microLamports: price }),
-                    ...instructions,
-                ],
-            }).compileToV0Message(alts);
-            const messageBytes = msg.serialize();
-            const messageSha256 = createHash('sha256').update(messageBytes).digest('hex');
-            // Enforce Signing Firewall Policy before signing
-            const decision = this.signingFirewall.evaluate({
-                requestId: randomUUID(),
-                environment: 'mainnet-beta',
-                messageBytes,
-                messageHash: messageSha256,
-                expectedSigner: this.key.publicKey.toBase58(),
-                feePayer: this.key.publicKey.toBase58(),
-                policyVersion: '1.0.0',
-                policyHash: 'default_executor_policy',
-                intentId: randomUUID(),
-                simulationId: randomUUID(),
-                expiresAt: Date.now() + 60_000,
-            }, null, {
-                version: '1.0.0',
-                hash: 'default_executor_policy',
-                allowedPrograms: [
-                    '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P',
-                    'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4',
-                    'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
-                    'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb',
-                    'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL',
-                    'ComputeBudget111111111111111111111111111111',
-                    '11111111111111111111111111111111',
-                ],
-                allowedFeePayers: [this.key.publicKey.toBase58()],
-                maxAmountLamports: 100000000000n,
-                maxSlippageBps: Math.max(this.cfg.PANIC_SLIPPAGE_BPS, this.cfg.SLIPPAGE_BPS),
-                maxPriorityFeeLamports: BigInt(this.cfg.MAX_PRIORITY_LAMPORTS) + 1000000n,
-                expectedMint: s.mint.toBase58(),
-                expectedDestination: '',
-                mainnetEnabled: true,
-            }, {
-                journalHealthy: true,
-                killSwitchClear: true,
-                providerGateHealthy: true,
-                simulationPassed: true,
-            });
-            if (!decision.approved) {
-                throw new Error(`SIGNING_FIREWALL_REJECTED: ${decision.reasonCodes.join(', ')}`);
-            }
-            const tx = new VersionedTransaction(msg);
-            if ('signTransactionMessage' in this.key && typeof this.key.signTransactionMessage === 'function') {
-                const sigBytes = await this.key.signTransactionMessage(messageBytes);
-                tx.signatures = [sigBytes];
-            }
-            else if ('secretKey' in this.key && this.key.secretKey) {
-                tx.sign([this.key]);
-            }
-            else {
-                throw new Error('SIGNER_UNAVAILABLE: No secret key or signer gateway provided for execution');
-            }
-            return tx;
-        };
-        const draft = await make(1_400_000, 1n);
-        const simulation = await c.simulateTransaction(draft, { sigVerify: true, commitment: 'confirmed', minContextSlot: s.slot });
-        if (simulation.value.err || !simulation.value.unitsConsumed)
-            throw new Error('transaction simulation failed');
-        const units = Math.ceil(simulation.value.unitsConsumed * 1.15) + 1000;
-        if (units > 1_400_000)
-            throw new Error('compute budget exceeds chain limit');
-        const maxPrice = BigInt(this.cfg.MAX_PRIORITY_LAMPORTS) * 1000000n / BigInt(units);
-        const price = suggested > maxPrice ? maxPrice : suggested;
-        const transaction = await make(units, price);
-        const finalSim = await c.simulateTransaction(transaction, { sigVerify: true, commitment: 'confirmed', minContextSlot: s.slot });
-        if (finalSim.value.err)
-            throw new Error(`final transaction simulation failed: ${JSON.stringify(finalSim.value.err)}`);
-        const wire = Buffer.from(transaction.serialize()).toString('base64');
-        if (Buffer.from(wire, 'base64').length > 1232)
-            throw new Error('transaction exceeds packet limit');
-        if (Date.now() - s.at > this.cfg.QUOTE_MAX_AGE_MS)
-            throw new Error('quote expired during build');
-        log('transaction_prepared', { side, computeUnits: units, priorityLamports: String(ceilDiv(price * BigInt(units), 1000000n)), tipLamports: tip, buildMs: Math.round(performance.now() - started) });
+        const baseFee = 5000n;
+        const fee = BigInt(tip + this.cfg.MAX_PRIORITY_LAMPORTS) + baseFee;
+        const executedSol = side === 'sell' ? mulBps(output, 10_000 - slippage) : 0n;
+        const slippageLamports = side === 'sell' ? output - executedSol : 0n;
         return {
-            pending: { id: randomUUID(), mint: s.mint.toBase58(), side, signature: bs58.encode(transaction.signatures[0]), wire, lastValidBlockHeight: hash.value.lastValidBlockHeight, created: Date.now(), creator, tokenProgram: s.tokenProgram.toBase58(), stage, reserve: s.curve.realQuoteReserves.toString(), reason, requested: String(amount), creatorTokens: s.creatorTokens },
-            tokenDelta: 0n,
-            solDelta: 0n,
+            pending: { id: randomUUID(), mint: s.mint.toBase58(), side, signature: 'paper', wire: '', lastValidBlockHeight: 0, created: Date.now(), creator, tokenProgram: s.tokenProgram.toBase58(), stage, reserve: s.curve.realQuoteReserves.toString(), reason, requested: String(amount), creatorTokens: s.creatorTokens },
+            tokenDelta: side === 'buy' ? mulBps(output, 10_000 - slippage) : -amount,
+            solDelta: side === 'buy' ? -amount - fee - 3000000n : executedSol - fee,
             quotedOutput: output,
             quoteTimestamp: s.at,
             overhead: {
                 tipLamports: String(tip),
-                priorityLamports: String(ceilDiv(price * BigInt(units), 1000000n)),
+                priorityLamports: String(this.cfg.MAX_PRIORITY_LAMPORTS),
                 rentLamports: side === 'buy' ? '3000000' : '0',
                 slippageBps: slippage,
+                slippageLamports: String(slippageLamports),
+                baseFeeLamports: String(baseFee),
             },
         };
     }
-    async broadcast(order) {
-        const attemptedAt = Date.now();
-        if (attemptedAt - this.lastSubmit < 2000) {
-            const outcome = { status: 'NOT_SENT', signature: order.signature, attemptedAt, reason: 'THROTTLED' };
-            log('bundle_not_sent', outcome);
-            return outcome;
+    #assertPaperBuild() {
+        if (this.cfg.MODE !== 'paper') {
+            throw new Error('QUARANTINED_LEGACY_EXECUTION: Direct Executor live builds are quarantined. Live execution is unavailable; CertifiedLiveExecutionCoordinator signing and submission are also quarantined.');
         }
-        this.lastSubmit = attemptedAt;
-        // Retry only these exact signed bytes. A timeout does not authorize another economic order.
-        try {
-            const bundleId = await this.jito('sendBundle', [[order.wire], { encoding: 'base64' }]);
-            const outcome = { status: 'ACCEPTED', signature: order.signature, attemptedAt, bundleId };
-            log('bundle_accepted', outcome);
-            return outcome;
-        }
-        catch (error) {
-            const outcome = {
-                status: 'UNKNOWN', signature: order.signature, attemptedAt,
-                reason: error instanceof Error ? error.name || 'SUBMISSION_ERROR' : 'SUBMISSION_ERROR',
-            };
-            log('bundle_submission_uncertain', outcome);
-            return outcome;
-        }
+    }
+    /** No direct submission is permitted, including paper mode and identical-wire retries. */
+    async broadcast(_order) {
+        throw new Error('QUARANTINED_LEGACY_BROADCAST: Direct Executor broadcast is quarantined. Live submission is unavailable; CertifiedLiveExecutionCoordinator signing and submission are also quarantined.');
     }
     async reconcile(order, bundleId) {
         if (bundleId) {

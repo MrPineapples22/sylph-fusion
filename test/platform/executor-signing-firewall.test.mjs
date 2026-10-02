@@ -1,138 +1,138 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Keypair, PublicKey } from '@solana/web3.js';
+import { PublicKey } from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
-import { PUMP_PROGRAM_ID } from '@pump-fun/pump-sdk';
-import BN from 'bn.js';
-
+import { PUMP_SDK } from '@pump-fun/pump-sdk';
 import { Executor } from '../../dist/execution.js';
-import { SigningFirewall } from '../../dist/platform/signing/signing-firewall.js';
 
-function mockConfig(overrides = {}) {
-  return {
-    MODE: 'live',
-    KEYPAIR_PATH: 'mock',
-    RPC_TIMEOUT_MS: 3000,
-    QUOTE_MAX_AGE_MS: 10000,
-    SLIPPAGE_BPS: 300,
-    PANIC_SLIPPAGE_BPS: 1000,
-    MAX_PRIORITY_LAMPORTS: 200_000,
-    MIN_TIP_LAMPORTS: 10_000,
-    MAX_TIP_LAMPORTS: 500_000,
-    JITO_URL: 'https://mock.jito',
-    JITO_AUTH: '',
-    ...overrides,
-  };
-}
-
-function mockSnapshot(mintKey, address) {
-  const zero = new BN(0);
-  return {
-    mint: mintKey,
-    tokenProgram: TOKEN_PROGRAM_ID,
-    supply: 1000000000000000n,
-    at: Date.now(),
-    slot: 1,
-    ata: null,
-    info: { data: Buffer.alloc(256), owner: PUMP_PROGRAM_ID, lamports: 100, executable: false, rentEpoch: 0 },
-    fee: null,
-    global: {
-      feeRecipient: address,
-      feeRecipients: [address],
-      feeBasisPoints: new BN(100),
-      creatorFeeBasisPoints: zero,
-      creatorFeeConfigurable: false,
-    },
-    curve: {
-      virtualTokenReserves: new BN('1073000000000000'),
-      virtualQuoteReserves: new BN('30000000000'),
-      realTokenReserves: new BN('793100000000000'),
-      realQuoteReserves: new BN('1000000000'),
-      tokenTotalSupply: new BN('1000000000000000'),
-      creator: address,
-      quoteMint: PublicKey.default,
-      creatorFeeBps: zero,
-      isMayhemMode: false,
-      complete: false,
-    },
-    creatorTokens: '0',
-  };
-}
-
-test('Executor: unsupported Pump V2 effects are denied before signer or simulation', async () => {
-  const kp = Keypair.generate();
-  let signingInvoked = false;
-  let simulationInvoked = false;
-
-  const isolatedGateway = {
-    publicKey: kp.publicKey,
-    async signTransactionMessage(messageBytes) {
-      signingInvoked = true;
-      // Mocked 64-byte signature from isolated KMS enclave
-      return new Uint8Array(64).fill(42);
-    },
-  };
-
-  const rpc = {
-    connection: {
-      getLatestBlockhashAndContext: async () => ({
-        value: { blockhash: PublicKey.default.toBase58(), lastValidBlockHeight: 100 },
-      }),
-      getRecentPrioritizationFees: async () => [{ prioritizationFee: 1000 }],
-      simulateTransaction: async () => { simulationInvoked = true; return { value: { err: null, unitsConsumed: 100000 } }; },
-    },
-  };
-
-  const executor = new Executor(
-    mockConfig(),
-    rpc,
-    { buyQuote: () => 1_000_000n, sellQuote: () => 1_000_000n },
-    isolatedGateway
-  );
-  executor.tips = [new PublicKey('96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5')];
-
-  const mint = Keypair.generate().publicKey;
-  const snapshot = mockSnapshot(mint, kp.publicKey);
-
-  await assert.rejects(executor.build(snapshot, 'buy', 10_000_000n, kp.publicKey.toBase58(), 0, 'test_decoupled', false),
-    /SIGNING_FIREWALL_REJECTED.*TRANSACTION_DECODER_INCOMPLETE/);
-  assert.equal(signingInvoked, false);
-  assert.equal(simulationInvoked, false);
+const buildDenied = /QUARANTINED_LEGACY_EXECUTION/;
+const broadcastDenied = /QUARANTINED_LEGACY_BROADCAST/;
+const address = PublicKey.default;
+const config = (mode = 'paper') => ({
+  MODE: mode, QUOTE_MAX_AGE_MS: 10_000, SLIPPAGE_BPS: 300, PANIC_SLIPPAGE_BPS: 1000,
+  MIN_TIP_LAMPORTS: 10_000, MAX_TIP_LAMPORTS: 500_000, MAX_PRIORITY_LAMPORTS: 200_000,
+  JITO_URL: 'https://jito.invalid', JITO_AUTH: '', RPC_TIMEOUT_MS: 1000,
+});
+const snapshot = (complete = false) => ({
+  at: Date.now(), slot: 1, mint: address, tokenProgram: TOKEN_PROGRAM_ID,
+  curve: { complete, realQuoteReserves: 1_000_000n }, creatorTokens: '0',
 });
 
-test('Executor: SigningFirewall blocks transaction when unauthorized program ID is injected', async () => {
-  const kp = Keypair.generate();
-  const rpc = {
-    connection: {
-      getLatestBlockhashAndContext: async () => ({
-        value: { blockhash: PublicKey.default.toBase58(), lastValidBlockHeight: 100 },
-      }),
-      getRecentPrioritizationFees: async () => [{ prioritizationFee: 1000 }],
-      simulateTransaction: async () => ({ value: { err: null, unitsConsumed: 100000 } }),
-    },
-  };
+function trappedExecutor(t, cfg) {
+  const calls = [];
+  const trap = name => (..._args) => { calls.push(name); throw new Error(`UNEXPECTED_${name}`); };
+  const rpc = { connection: {
+    getLatestBlockhashAndContext: trap('blockhash'), getRecentPrioritizationFees: trap('fees'),
+    getAddressLookupTable: trap('lookup'), simulateTransaction: trap('simulation'),
+  } };
+  const market = { buyQuote: trap('buyQuote'), sellQuote: trap('sellQuote') };
+  const signer = { publicKey: address, signTransactionMessage: trap('signer') };
+  const firewall = { evaluate: trap('firewall') };
+  t.mock.method(globalThis, 'fetch', trap('fetch'));
+  const executor = new Executor(cfg, rpc, market, signer, firewall);
+  t.mock.method(executor, 'graduatedSell', trap('route'));
+  t.mock.method(PUMP_SDK, 'buyV2Instructions', trap('buyInstructions'));
+  t.mock.method(PUMP_SDK, 'sellV2Instructions', trap('sellInstructions'));
+  return { executor, calls, market };
+}
 
-  // Restrict allowed programs in custom firewall policy
-  class DenyingFirewall extends SigningFirewall {
-    evaluate(req, dec, policy, gates) {
-      return { approved: false, reasonCodes: ['UNKNOWN_PROGRAM_DENIED', 'UNAUTHORIZED_DRAINER_DETECTED'] };
+for (const mode of ['live', 'LIVE', undefined, null, 'invalid']) {
+  test(`legacy build rejects mode ${String(mode)} before quote, RPC, firewall, or signer`, async t => {
+    const cfg = { ...config(), MODE: mode };
+    const { executor, calls } = trappedExecutor(t, cfg);
+    for (const complete of [false, true]) {
+      for (const side of ['buy', 'sell']) {
+        await assert.rejects(executor.build(snapshot(complete), side, 100n, 'creator', 0, 'test', false), buildDenied);
+      }
     }
-  }
+    // Mode quarantine also takes priority over stale/invalid event payload handling.
+    await assert.rejects(executor.build(null, 'buy', 100n, 'creator', 0, 'test', false), buildDenied);
+    assert.deepEqual(calls, []);
+  });
+}
 
-  const executor = new Executor(
-    mockConfig(),
-    rpc,
-    { buyQuote: () => 1_000_000n, sellQuote: () => 1_000_000n },
-    kp,
-    new DenyingFirewall()
-  );
-  executor.tips = [new PublicKey('96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5')];
+for (const route of ['graduated', 'curve']) {
+  test(`paper-to-live change during deferred ${route} build denies before any live action`, async t => {
+    const cfg = config();
+    const { executor, calls, market } = trappedExecutor(t, cfg);
+    let resolve;
+    const deferred = new Promise(done => { resolve = done; });
+    if (route === 'graduated') {
+      executor.graduatedSell.mock.mockImplementation(() => deferred);
+    } else {
+      t.mock.method(market, 'sellQuote', () => 1_000_000n);
+      PUMP_SDK.sellV2Instructions.mock.mockImplementation(() => deferred);
+    }
+    const pending = executor.build(snapshot(route === 'graduated'), 'sell', 100n, 'creator', 0, 'test', false);
+    cfg.MODE = 'live';
+    resolve(route === 'graduated' ? { instructions: [], alts: [], output: 1_000_000n } : []);
+    await assert.rejects(pending, buildDenied);
+    assert.deepEqual(calls, []);
+  });
+}
 
-  const mint = Keypair.generate().publicKey;
-  const snapshot = mockSnapshot(mint, kp.publicKey);
+for (const mode of ['paper', 'live', undefined, 'invalid']) {
+  test(`legacy broadcast is unconditionally quarantined for ${String(mode)}, including retries`, async t => {
+    const { executor, calls } = trappedExecutor(t, { ...config(), MODE: mode });
+    for (const signature of ['signature', 'paper', 'sim_fixture']) {
+      const order = { signature, wire: 'identical-signed-wire' };
+      const before = structuredClone(order);
+      await assert.rejects(executor.broadcast(order), broadcastDenied);
+      await assert.rejects(executor.broadcast(order), broadcastDenied);
+      assert.deepEqual(order, before);
+    }
+    await assert.rejects(executor.broadcast(null), broadcastDenied);
+    assert.deepEqual(calls, []);
+  });
+}
 
-  await assert.rejects(
-    executor.build(snapshot, 'buy', 10_000_000n, kp.publicKey.toBase58(), 0, 'test_malicious', false),
-    /SIGNING_FIREWALL_REJECTED.*UNKNOWN_PROGRAM_DENIED/
-  );
+test('legacy paper build retains buy/sell deltas and artifacts without signing or simulation', async t => {
+  const { executor, calls, market } = trappedExecutor(t, config());
+  t.mock.method(market, 'buyQuote', () => 1_000_000n);
+  t.mock.method(market, 'sellQuote', () => 1_000_000n);
+  PUMP_SDK.buyV2Instructions.mock.mockImplementation(async () => []);
+  PUMP_SDK.sellV2Instructions.mock.mockImplementation(async () => []);
+  const s = snapshot();
+  const buy = await executor.build(s, 'buy', 100_000n, 'creator', 0, 'test', false);
+  const sell = await executor.build(s, 'sell', 100_000n, 'creator', 1, 'test', false);
+  assert.equal(buy.pending.signature, 'paper');
+  assert.equal(buy.pending.wire, '');
+  assert.equal(buy.pending.lastValidBlockHeight, 0);
+  assert.equal(buy.quotedOutput, 1_000_000n);
+  assert.equal(buy.quoteTimestamp, s.at);
+  assert.equal(buy.tokenDelta, 970_000n);
+  assert.equal(buy.solDelta, -3_315_000n);
+  assert.equal(sell.pending.signature, 'paper');
+  assert.equal(sell.pending.wire, '');
+  assert.equal(sell.tokenDelta, -100_000n);
+  assert.equal(sell.solDelta, 755_000n);
+  assert.equal(sell.overhead.slippageLamports, '30000');
+  assert.deepEqual(calls, []);
+});
+
+test('legacy Executor exposes no generic Jito send surface; warm and reconciliation remain read-only', async t => {
+  const requests = [];
+  t.mock.method(globalThis, 'fetch', async (_url, init) => {
+    const request = init?.body ? JSON.parse(init.body) : { method: 'TIP_FLOOR_GET' };
+    requests.push(request);
+    if (request.method === 'getTipAccounts') return new Response(JSON.stringify({ result: [address.toBase58()] }));
+    if (request.method === 'TIP_FLOOR_GET') return new Response(JSON.stringify([{ landed_tips_75th_percentile: 0.00001 }]));
+    assert.equal(request.method, 'getInflightBundleStatuses');
+    return new Response(JSON.stringify({ result: { value: [{ bundle_id: 'bundle', status: 'Pending' }] } }));
+  });
+  const observations = [];
+  const endpoints = [{
+    getTransaction: async signature => { observations.push(['transaction', signature]); return null; },
+    getBlockHeight: async commitment => { observations.push(['height', commitment]); return 100; },
+  }];
+  const executor = new Executor(config(), { endpoints }, {}, { publicKey: address });
+  assert.equal(executor.jito, undefined);
+  assert.equal(Object.hasOwn(Object.getPrototypeOf(executor), 'jito'), false);
+  assert.equal(executor.getTipAccounts, undefined);
+  await executor.warm();
+  assert.deepEqual(await executor.reconcile({ signature: 'unknown', lastValidBlockHeight: 200 }, 'bundle'), { status: 'pending' });
+  assert.deepEqual(requests.map(row => row.method), ['getTipAccounts', 'TIP_FLOOR_GET', 'getInflightBundleStatuses']);
+  assert.deepEqual(requests[0].params, []);
+  assert.deepEqual(requests[2].params, [['bundle']]);
+  assert.deepEqual(observations, [['transaction', 'unknown'], ['height', 'finalized']]);
 });

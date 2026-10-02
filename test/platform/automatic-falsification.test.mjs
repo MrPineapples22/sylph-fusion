@@ -62,3 +62,37 @@ test('AutomaticFalsificationAgent: confirms thesis resilience on low insider con
   assert.ok(report.minimumPlausibleBreakCapitalSol > 100);
   assert.match(report.rationale, /Thesis survived/);
 });
+
+test('falsification lineage labels synthetic outputs and keeps heuristic confidence uncalibrated', () => {
+  const input = {
+    mint: 'MINT_LINEAGE', slot: 250_200, poolSolReserve: 30,
+    latentInventoryFraction: 0.40, expectedNetEvBps: 200,
+    alphaHalfLifeMs: 800, maxSlippageBps: 250, washTradingProbability: 0.50,
+  };
+  const unlabelled = AutomaticFalsificationAgent.falsifyOpportunity(input);
+  const labelled = AutomaticFalsificationAgent.falsifyOpportunity({
+    ...input,
+    inputFieldClasses: {
+      poolSolReserve: 'OBSERVED_CHAIN_STATE_WITH_HEURISTIC_FLOOR',
+      latentInventoryFraction: 'HEURISTIC_PROXY',
+      expectedNetEvBps: 'FIXED_ASSUMPTION',
+      alphaHalfLifeMs: 'FIXED_ASSUMPTION',
+      maxSlippageBps: 'CONFIGURED_POLICY_INPUT',
+      washTradingProbability: 'HEURISTIC_PROXY',
+    },
+  });
+
+  assert.equal(labelled.evidenceLineage.artifactClass, 'HEURISTIC_FALSIFICATION_REPORT');
+  assert.equal(labelled.evidenceLineage.provenanceAuthority, 'CALLER_DECLARED');
+  assert.equal(labelled.evidenceLineage.falsificationConfidence.calibrationStatus, 'UNVALIDATED_HEURISTIC_SCORE');
+  assert.equal(labelled.evidenceLineage.falsificationConfidence.isCalibratedProbability, false);
+  assert.equal(labelled.evidenceLineage.inputFieldClasses.latentInventoryFraction, 'HEURISTIC_PROXY');
+  assert.equal(labelled.evidenceLineage.inputFieldClasses.expectedNetEvBps, 'FIXED_ASSUMPTION');
+  assert.ok(labelled.evidenceLineage.modelledOutputFields.includes('isVetoRecommended'));
+  assert.ok(labelled.stressScenariosTested.every(s => s.evidenceClass === 'MODELLED_STRESS_SCENARIO'));
+  // Provenance is descriptive only; it does not change scores, veto recommendation, or scenarios.
+  assert.equal(labelled.isThesisFalsified, unlabelled.isThesisFalsified);
+  assert.equal(labelled.isVetoRecommended, unlabelled.isVetoRecommended);
+  assert.equal(labelled.falsificationConfidence, unlabelled.falsificationConfidence);
+  assert.deepEqual(labelled.stressScenariosTested, unlabelled.stressScenariosTested);
+});

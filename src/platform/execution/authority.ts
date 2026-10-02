@@ -242,9 +242,9 @@ export class LiveExecutionAuthority implements ExecutionAuthority {
     }
 
     // Direct uncoordinated invocation of build() is quarantined to prevent unfenced execution.
-    // Live execution MUST be routed exclusively through CertifiedLiveExecutionCoordinator.
+    // The unfinished coordinator's signing and submission are also quarantined.
     throw new Error(
-      'QUARANTINED_LEGACY_EXECUTION: Direct invocation of LiveExecutionAuthority.build() is quarantined. Live orders must be routed exclusively through CertifiedLiveExecutionCoordinator.'
+      'QUARANTINED_LEGACY_EXECUTION: Direct invocation of LiveExecutionAuthority.build() is quarantined. Live execution is unavailable; CertifiedLiveExecutionCoordinator signing and submission are also quarantined.'
     );
   }
 
@@ -254,7 +254,7 @@ export class LiveExecutionAuthority implements ExecutionAuthority {
     }
     // Direct uncoordinated broadcast is quarantined to prevent unfenced execution.
     throw new Error(
-      'QUARANTINED_LEGACY_BROADCAST: Direct invocation of LiveExecutionAuthority.broadcast() is quarantined. Live submission must be routed exclusively through CertifiedLiveExecutionCoordinator.'
+      'QUARANTINED_LEGACY_BROADCAST: Direct invocation of LiveExecutionAuthority.broadcast() is quarantined. Live submission is unavailable; CertifiedLiveExecutionCoordinator signing and submission are also quarantined.'
     );
   }
 

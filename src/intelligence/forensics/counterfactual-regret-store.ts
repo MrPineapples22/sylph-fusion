@@ -36,6 +36,8 @@ export type CounterfactualScenarioType =
   | 'IMMEDIATE_ABSTAIN';
 
 export interface CounterfactualScenario {
+  /** Scenario returns are model output, even when anchored to a supplied realized outcome. */
+  readonly evidenceClass: 'MODELLED_COUNTERFACTUAL_SCENARIO';
   readonly scenarioType: CounterfactualScenarioType;
   readonly counterfactualPnlBps: number;
   readonly regretDeltaBps: number; // counterfactualPnlBps - actualRealizedPnlBps
@@ -59,7 +61,21 @@ export interface CounterfactualEvaluation {
   readonly scenarios: readonly CounterfactualScenario[];
   readonly primaryFailureSubsystem: 'DISCOVERY' | 'PRICING' | 'EXECUTION' | 'EXIT' | 'NONE';
   readonly actionablePolicyTuning: string;
+  /** Additive metadata; legacy journal rows without it have unknown evidence lineage. */
+  readonly evidenceLineage: {
+    readonly schemaVersion: 1;
+    readonly artifactClass: 'MODELLED_COUNTERFACTUAL_EVALUATION';
+    /** Caller-declared classification, not an independently verified attestation. */
+    readonly provenanceAuthority: 'CALLER_DECLARED';
+    readonly outcomeEvidenceClass: CounterfactualOutcomeEvidenceClass;
+    readonly modelledOutputFields: readonly string[];
+    readonly assumedInputFields: readonly string[];
+  };
 }
+
+export type CounterfactualOutcomeEvidenceClass =
+  | 'PAPER_SIMULATED_FILL'
+  | 'CALLER_SUPPLIED_UNVERIFIED';
 
 export interface RegretAggregationSummary {
   readonly strategyVersion: string;
@@ -96,6 +112,8 @@ export class ExecutionRegretEngine {
     peakObservedPriceBps?: number;
     drawdownObservedPriceBps?: number;
     subsequentSlotPriceDeltasBps?: readonly number[]; // Price move at [slot-1, slot+1, slot+2]
+    /** Descriptive provenance only; it never affects any computed regret value. */
+    outcomeEvidenceClass?: CounterfactualOutcomeEvidenceClass;
   }): CounterfactualEvaluation {
     const {
       decisionId,
@@ -112,6 +130,7 @@ export class ExecutionRegretEngine {
       peakObservedPriceBps = Math.max(realizedPnlBps, expectedNetEvBps),
       drawdownObservedPriceBps = Math.min(realizedPnlBps, -50),
       subsequentSlotPriceDeltasBps = [0, 0, 0],
+      outcomeEvidenceClass = 'CALLER_SUPPLIED_UNVERIFIED',
     } = params;
 
     // 1. Alpha Decomposition
@@ -149,6 +168,7 @@ export class ExecutionRegretEngine {
 
     const oneSlotEarlierPnl = realizedPnlBps + slotEarlierPriceDelta;
     scenarios.push({
+      evidenceClass: 'MODELLED_COUNTERFACTUAL_SCENARIO',
       scenarioType: 'ONE_SLOT_EARLIER',
       counterfactualPnlBps: oneSlotEarlierPnl,
       regretDeltaBps: oneSlotEarlierPnl - realizedPnlBps,
@@ -157,6 +177,7 @@ export class ExecutionRegretEngine {
 
     const oneSlotLaterPnl = realizedPnlBps - slotLaterPriceDelta;
     scenarios.push({
+      evidenceClass: 'MODELLED_COUNTERFACTUAL_SCENARIO',
       scenarioType: 'ONE_SLOT_LATER',
       counterfactualPnlBps: oneSlotLaterPnl,
       regretDeltaBps: oneSlotLaterPnl - realizedPnlBps,
@@ -167,6 +188,7 @@ export class ExecutionRegretEngine {
     // Aggressive Tip (+20 bps cost, -30 bps slippage due to earlier pack positioning)
     const aggressiveTipPnl = realizedPnlBps + (excessSlippageBps > 30 ? 25 : -15);
     scenarios.push({
+      evidenceClass: 'MODELLED_COUNTERFACTUAL_SCENARIO',
       scenarioType: 'AGGRESSIVE_TIP_FAST_LANDING',
       counterfactualPnlBps: aggressiveTipPnl,
       regretDeltaBps: aggressiveTipPnl - realizedPnlBps,
@@ -175,6 +197,7 @@ export class ExecutionRegretEngine {
 
     // Sizing Variations:
     scenarios.push({
+      evidenceClass: 'MODELLED_COUNTERFACTUAL_SCENARIO',
       scenarioType: 'HALF_POSITION_SIZE',
       counterfactualPnlBps: realizedPnlBps > 0 ? Math.round(realizedPnlBps * 0.5) : Math.round(realizedPnlBps * 0.5), // Lower loss or lower win
       regretDeltaBps: (realizedPnlBps < 0) ? Math.abs(Math.round(realizedPnlBps * 0.5)) : -Math.round(realizedPnlBps * 0.5),
@@ -183,6 +206,7 @@ export class ExecutionRegretEngine {
 
     // Peak Exit:
     scenarios.push({
+      evidenceClass: 'MODELLED_COUNTERFACTUAL_SCENARIO',
       scenarioType: 'PERFECT_EXIT_AT_PEAK',
       counterfactualPnlBps: peakObservedPriceBps,
       regretDeltaBps: peakObservedPriceBps - realizedPnlBps,
@@ -191,6 +215,7 @@ export class ExecutionRegretEngine {
 
     // Immediate Abstain:
     scenarios.push({
+      evidenceClass: 'MODELLED_COUNTERFACTUAL_SCENARIO',
       scenarioType: 'IMMEDIATE_ABSTAIN',
       counterfactualPnlBps: 0,
       regretDeltaBps: -realizedPnlBps,
@@ -255,6 +280,20 @@ export class ExecutionRegretEngine {
       scenarios: Object.freeze(scenarios),
       primaryFailureSubsystem,
       actionablePolicyTuning,
+      evidenceLineage: {
+        schemaVersion: 1,
+        artifactClass: 'MODELLED_COUNTERFACTUAL_EVALUATION',
+        provenanceAuthority: 'CALLER_DECLARED',
+        outcomeEvidenceClass,
+        modelledOutputFields: Object.freeze([
+          'bestCounterfactualScenario', 'maxCounterfactualPnlBps', 'overallRegretBps',
+          'alphaDecomposition', 'scenarios', 'primaryFailureSubsystem', 'actionablePolicyTuning',
+        ]),
+        assumedInputFields: Object.freeze([
+          'expectedNetEvBps', 'expectedSlippageBps', 'discoveryLagMs',
+          'subsequentSlotPriceDeltasBps',
+        ]),
+      },
     };
   }
 }

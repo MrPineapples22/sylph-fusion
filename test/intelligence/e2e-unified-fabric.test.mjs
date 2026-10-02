@@ -3,8 +3,25 @@ import assert from 'node:assert/strict';
 
 import { MasterIntelligenceEngine } from '../../dist/intelligence/master-orchestrator.js';
 
-test('Unified Fabric E2E: Full lifecycle from canonical event to OpportunityContract, AssuranceCase, and AetherFluxViewModel', async () => {
+for (const forcePositiveEstimate of [false, true])
+test(`Unified Fabric E2E: paper candidate preserves missing evidence (optimistic estimate=${forcePositiveEstimate})`, async t => {
   const engine = new MasterIntelligenceEngine();
+  for (const key of ['MODE', 'SYLPH_RUNTIME_MODE']) {
+    const previous = process.env[key];
+    process.env[key] = 'paper';
+    t.after(() => { if (previous === undefined) delete process.env[key]; else process.env[key] = previous; });
+  }
+  // No signer invocation is needed to test decision and presentation behavior.
+  t.mock.method(engine.vaultSigner, 'processSignatureRequest', () => ({ success: false, reason: 'TEST_SIGNER_UNAVAILABLE' }));
+  if (forcePositiveEstimate) {
+    const evaluate = engine.executionIntel.evaluateOpportunity.bind(engine.executionIntel);
+    t.mock.method(engine.executionIntel, 'evaluateOpportunity', params => evaluate({ ...params, expectedGrossEdgePct: 100 }));
+    // Recreate the former EXECUTABLE prerequisites without introducing validation evidence.
+    const evaluateProof = engine.approvalCertificates.evaluateProof.bind(engine.approvalCertificates);
+    t.mock.method(engine.approvalCertificates, 'evaluateProof', (...args) => ({
+      ...evaluateProof(...args), proofState: '3/3', isExecutionReady: true,
+    }));
+  }
 
   const canonicalEvent = {
     eventId: 'evt_e2e_verified_001',
@@ -64,6 +81,19 @@ test('Unified Fabric E2E: Full lifecycle from canonical event to OpportunityCont
   assert.ok(typeof opp.expectedExecutableEdgePct === 'number', 'Must compute executable edge');
   assert.ok(opp.pTargetFirst >= 0 && opp.pTargetFirst <= 1, 'Path-dependent probability target first');
   assert.ok(opp.pStopFirst >= 0 && opp.pStopFirst <= 1, 'Path-dependent probability stop first');
+  assert.equal(opp.evidenceState, 'PROVISIONAL');
+  assert.equal(opp.evidenceStatus, 'MISSING');
+  assert.equal(opp.authority, 'ESTIMATE_ONLY');
+  assert.equal(opp.modelConfidence, null);
+  assert.equal(opp.dataConfidence, null);
+  assert.equal(opp.certificate.calibrationBrier, null);
+  assert.equal(opp.certificate.walkForwardStatus, 'UNKNOWN');
+  assert.equal(opp.certificate.purgedValidationStatus, 'UNKNOWN');
+  assert.equal(opp.certificate.shadowStatus, 'UNKNOWN');
+  if (forcePositiveEstimate) {
+    assert.ok(opp.expectedExecutableEdgePct > 0);
+    assert.equal(result.proofReport.isExecutionReady, true);
+  }
 
   // 3. Runtime Assurance Case verification (Parts LXXXIV & LXXXV)
   const assurance = result.assuranceCase;
@@ -100,7 +130,13 @@ test('Unified Fabric E2E: Full lifecycle from canonical event to OpportunityCont
   assert.ok(['P', 'N', 'D'].includes(vm.podState), 'podState must be P, N, or D');
   assert.ok(['HIGH', 'MED', 'LOW'].includes(vm.conf), 'conf must be HIGH, MED, or LOW');
   assert.ok(vm.edge.includes('%'), 'edge must be formatted percentage');
-  assert.ok(['OBSERVE', 'WATCH', 'QUALIFIED', 'EXECUTABLE', 'PROTECTED', 'ABSTAIN', 'REJECTED', 'DUMPING', 'ACTIVE', 'EXIT'].includes(vm.status), `Status '${vm.status}' must be one of the authoritative unified states`);
+  assert.equal(vm.status, 'PAPER_CANDIDATE');
+  assert.equal(vm.tokenUIState.overview.currentStatus, 'PAPER_CANDIDATE');
+  const explanation = vm.scientificTelemetry.unified;
+  assert.match(explanation.whyReport.whyTrade, /Paper candidate only.*validation evidence is missing/);
+  assert.doesNotMatch(explanation.whyReport.whyTrade, /Formal execution permitted|risk verified/);
+  assert.match(explanation.watsonRootCause, /PAPER_CANDIDATE/);
+  assert.doesNotMatch(explanation.watsonRootCause, /Trade executed/);
   assert.ok(vm.links.solscan.includes(canonicalEvent.mint));
 
   // 6. Continuous Connection Auditor verification (Parts XC & CXXXVIII)

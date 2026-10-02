@@ -54,14 +54,18 @@ export interface ExecutionPrediction {
 
 export interface UncertaintyAssessment {
   readonly modelFamiliarity: number; // 0.0 - 1.0 (novelty inverse)
-  readonly sampleSufficiency: number; // 0.0 - 1.0
-  readonly calibrationQuality: number; // 0.0 - 1.0
+  readonly sampleSufficiency: number | null;
+  readonly calibrationQuality: number | null;
   readonly modelDisagreement: number; // 0.0 - 1.0
   readonly domainSimilarity: number; // 0.0 - 1.0
   readonly regimeSimilarity: number; // 0.0 - 1.0
-  readonly dataHealthScore: number; // 0.0 - 1.0
-  readonly compositeUncertainty: number; // 0.0 - 1.0 (higher = more uncertain)
+  readonly dataHealthScore: number | null;
+  readonly compositeUncertainty: number | null;
   readonly uncertaintyClass: 'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN';
+  readonly evidenceStatus: 'MISSING';
+  readonly validationSource: null;
+  readonly authority: 'HEURISTIC_ONLY';
+  readonly unavailableMetrics: readonly string[];
 }
 
 export interface MultiModelPredictionBundle {
@@ -266,12 +270,13 @@ export class ExecutionModel {
 export class UncertaintyModel {
   public assess(features: {
     featureNoveltyScore: number; // 0 = known, 1 = novel
-    sampleCount: number;
-    calibrationBrier: number;
+    sampleCount: number | null;
+    /** Legacy scalar diagnostic; it does not prove calibration quality. */
+    calibrationBrier: number | null;
     alphaScore: number;
     failureScore: number;
     regimeMatchScore: number;
-    dataHealthConfidence: number;
+    dataHealthConfidence: number | null;
   }): UncertaintyAssessment {
     const {
       featureNoveltyScore,
@@ -284,30 +289,41 @@ export class UncertaintyModel {
     } = features;
 
     const modelFamiliarity = Number(Math.max(0, 1 - featureNoveltyScore).toFixed(3));
-    const sampleSufficiency = Number(Math.min(1, sampleCount / 100).toFixed(3));
-    const calibrationQuality = Number(Math.max(0, 1 - calibrationBrier * 3).toFixed(3));
+    const sampleSufficiency = sampleCount !== null && Number.isFinite(sampleCount) && sampleCount >= 0
+      ? Number(Math.min(1, sampleCount / 100).toFixed(3)) : null;
+    const calibrationQuality = calibrationBrier !== null && Number.isFinite(calibrationBrier) && calibrationBrier >= 0
+      ? Number(Math.max(0, 1 - calibrationBrier * 3).toFixed(3)) : null;
     
     // Model disagreement: when both Alpha and Failure predict high
     const modelDisagreement = Number(Math.min(1, alphaScore * failureScore * 4).toFixed(3));
     const domainSimilarity = 0.88; // Solana DEX ecosystem
     const regimeSimilarity = Number(Math.max(0, Math.min(1, regimeMatchScore)).toFixed(3));
-    const dataHealthScore = Number(Math.max(0, Math.min(1, dataHealthConfidence)).toFixed(3));
+    const dataHealthScore = dataHealthConfidence !== null && Number.isFinite(dataHealthConfidence) && dataHealthConfidence >= 0 && dataHealthConfidence <= 1
+      ? dataHealthConfidence : null;
 
-    // Composite uncertainty calculation
-    const uncertaintyRaw =
-      (1 - modelFamiliarity) * 0.25 +
-      (1 - sampleSufficiency) * 0.20 +
-      (1 - calibrationQuality) * 0.15 +
-      modelDisagreement * 0.20 +
-      (1 - regimeSimilarity) * 0.10 +
-      (1 - dataHealthScore) * 0.10;
+    const unavailableMetrics = [
+      ...(calibrationQuality === null ? ['calibrationQuality'] : []),
+      ...(sampleSufficiency === null ? ['sampleSufficiency'] : []),
+      ...(dataHealthScore === null ? ['dataHealthScore'] : []),
+    ];
 
-    const compositeUncertainty = Number(Math.max(0.01, Math.min(0.99, uncertaintyRaw)).toFixed(3));
+    let compositeUncertainty: number | null = null;
+    let uncertaintyClass: 'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN' = 'UNKNOWN';
 
-    let uncertaintyClass: 'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN' = 'LOW';
-    if (compositeUncertainty > 0.65) uncertaintyClass = 'HIGH';
-    else if (compositeUncertainty > 0.40) uncertaintyClass = 'MEDIUM';
-    else if (sampleCount < 5) uncertaintyClass = 'UNKNOWN';
+    if (sampleSufficiency !== null && calibrationQuality !== null && dataHealthScore !== null) {
+      const uncertaintyRaw =
+        (1 - modelFamiliarity) * 0.25 +
+        (1 - sampleSufficiency) * 0.20 +
+        (1 - calibrationQuality) * 0.15 +
+        modelDisagreement * 0.20 +
+        (1 - regimeSimilarity) * 0.10 +
+        (1 - dataHealthScore) * 0.10;
+      compositeUncertainty = Number(Math.max(0.01, Math.min(0.99, uncertaintyRaw)).toFixed(3));
+      if (compositeUncertainty > 0.65) uncertaintyClass = 'HIGH';
+      else if (compositeUncertainty > 0.40) uncertaintyClass = 'MEDIUM';
+      else if (sampleCount !== null && sampleCount < 5) uncertaintyClass = 'UNKNOWN';
+      else uncertaintyClass = 'LOW';
+    }
 
     return {
       modelFamiliarity,
@@ -319,6 +335,10 @@ export class UncertaintyModel {
       dataHealthScore,
       compositeUncertainty,
       uncertaintyClass,
+      evidenceStatus: unavailableMetrics.length === 0 ? ('KNOWN' as any) : 'MISSING',
+      validationSource: null,
+      authority: 'HEURISTIC_ONLY',
+      unavailableMetrics,
     };
   }
 }
@@ -348,8 +368,8 @@ export class MultiModelSuite {
     ageSec: number;
     networkCongestion: number;
     featureNovelty: number;
-    memorySampleCount: number;
-    dataHealthConfidence: number;
+    memorySampleCount: number | null;
+    dataHealthConfidence: number | null;
     preferredRoute?: 'STANDARD' | 'PRIORITY' | 'JITO';
   }): MultiModelPredictionBundle {
     const alpha = this.alphaModel.predict({
@@ -386,7 +406,7 @@ export class MultiModelSuite {
     const uncertainty = this.uncertaintyModel.assess({
       featureNoveltyScore: params.featureNovelty,
       sampleCount: params.memorySampleCount,
-      calibrationBrier: 0.12,
+      calibrationBrier: params.memorySampleCount !== null ? 0.12 : null,
       alphaScore: alpha.pPlus50,
       failureScore: failure.pRug,
       regimeMatchScore: 0.85,

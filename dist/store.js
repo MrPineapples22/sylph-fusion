@@ -1,4 +1,5 @@
 import { Worker } from 'node:worker_threads';
+import { GenerationStorageError, snapshotRegistration, validateGenerationId, storageErrorCodes } from './platform/storage/generation-identity.js';
 export class Store {
     worker;
     seq = 0;
@@ -9,17 +10,27 @@ export class Store {
     constructor(path) {
         this.worker = new Worker(new URL('./db-worker.js', import.meta.url), { workerData: { path } });
         this.worker.on('message', m => {
+            const error = storageErrorCodes.includes(m.code) ? new GenerationStorageError(m.code, Number.isSafeInteger(m.sqliteCode) && m.sqliteCode >= 0 && m.sqliteCode <= 0x7fffffff ? m.sqliteCode : undefined) : new Error(m.error);
+            if (m.fatal) {
+                this.fail(error, true);
+                return;
+            }
             const call = this.calls.get(m.id);
             this.calls.delete(m.id);
             if (m.error)
-                call?.reject(new Error(m.error));
+                call?.reject(error);
             else
                 call?.resolve(m.value);
         });
-        this.worker.on('error', e => { this.failure = e; for (const c of this.calls.values())
-            c.reject(e); this.calls.clear(); });
-        this.worker.on('exit', () => { this.failure = new Error('database worker exited'); for (const c of this.calls.values())
-            c.reject(this.failure); this.calls.clear(); });
+        this.worker.on('error', e => this.fail(e));
+        this.worker.on('exit', () => this.fail(new Error('database worker exited')));
+    }
+    fail(error, knownFailure = false) {
+        this.failure ??= error;
+        for (const c of this.calls.values())
+            c.reject(!knownFailure && c.op === 'register-initial-generation'
+                ? new GenerationStorageError('STORAGE_OUTCOME_UNKNOWN') : this.failure);
+        this.calls.clear();
     }
     call(op, body, event) {
         if (this.closing && op !== 'close')
@@ -31,7 +42,7 @@ export class Store {
             return Promise.reject(new Error('Database request queue full; retry after pending writes complete'));
         return new Promise((resolve, reject) => {
             const id = ++this.seq;
-            this.calls.set(id, { resolve, reject });
+            this.calls.set(id, { op, resolve, reject });
             try {
                 this.worker.postMessage({ id, op, body, event });
             }
@@ -42,6 +53,14 @@ export class Store {
         });
     }
     async load() { const text = await this.call('load'); return text ? JSON.parse(text) : null; }
+    async registerInitialGeneration(input) {
+        const request = snapshotRegistration(input);
+        return JSON.parse((await this.call('register-initial-generation', JSON.stringify(request))));
+    }
+    async readGenerationIdentity(intentId) {
+        validateGenerationId(intentId);
+        return JSON.parse((await this.call('read-generation-identity', intentId)));
+    }
     async save(state, event) { await this.call('save', JSON.stringify(state), event); }
     async prepareSigningIntent(intent) {
         await this.call('prepare-signing', JSON.stringify(intent));

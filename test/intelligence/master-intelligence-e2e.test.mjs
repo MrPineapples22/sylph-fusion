@@ -73,7 +73,7 @@ test('MasterIntelligenceEngine end-to-end: processes synthetic launch, verifies 
 
   // Verify TokenUIState contract (Sections LXIV - LXXVII)
   assert.ok(vm.tokenUIState, 'TokenUIState must be populated for Aether Flux UI inspector');
-  assert.equal(vm.tokenUIState.overview.currentStatus, 'VERIFIED_ENTRY');
+  assert.equal(vm.tokenUIState.overview.currentStatus, 'PAPER_CANDIDATE');
   assert.equal(vm.tokenUIState.overview.rug, 'CLEAN');
   assert.ok(vm.tokenUIState.overview.safetyConfidence >= 90);
   assert.ok(vm.tokenUIState.forecast.pSurvive15m > 0);

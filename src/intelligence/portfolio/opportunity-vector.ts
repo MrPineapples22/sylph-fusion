@@ -22,8 +22,8 @@ export interface OpportunityVector {
   readonly distanceToFailure: number;      // 0.0 - 1.0
   readonly cascadeSusceptibility: number;  // 0.0 - 1.0 (lower is better)
   readonly evidenceCoverage: number;       // 0.0 - 1.0
-  readonly freshnessMs: number;
-  readonly confidence: number;             // 0.0 - 1.0
+  readonly freshnessMs: number | null;
+  readonly confidence: number | null;
   readonly oodRisk: number;                // 0.0 - 1.0 (lower is better)
   readonly opportunityHalfLifeSec: number;
   readonly capitalMigrationScore: number;  // 0 - 100
@@ -72,8 +72,8 @@ export class OpportunityVectorEngine {
     dtf: number;
     cascadeSusceptibility: number;
     coverageRatio: number;
-    freshnessMs: number;
-    confidence: number;
+    freshnessMs: number | null;
+    confidence: number | null;
     oodScore: number;
     halfLifeSec: number;
     migrationScore: number;
@@ -135,6 +135,9 @@ export class OpportunityVectorEngine {
         action = 'SHADOW_ONLY';
         rationale = 'Proof certificates incomplete; candidate routed to shadow execution.';
       }
+    } else if (vec.confidence === null || vec.freshnessMs === null) {
+      action = 'ABSTAIN';
+      rationale = 'Confidence or freshness evidence is unavailable.';
     } else if (vec.oodRisk > 0.4 || vec.confidence < 0.6) {
       action = 'ABSTAIN';
       rationale = 'High out-of-distribution uncertainty or low model confidence.';

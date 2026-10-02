@@ -1,15 +1,16 @@
 -- ============================================================================
--- SYLPH FUSION — POSTGRESQL PRODUCTION CAPITAL & EXECUTION AUTHORITY DDL
+-- SYLPH FUSION — UNCONNECTED POSTGRESQL AUTHORITY SCHEMA SKETCH
 -- Specifications: Sections 37 (Execution Generations), 103 (Invariants 1-10)
 --
--- Enforces:
--- 1. Exactly ONE active live execution generation per economic intent.
--- 2. Exact-base-unit (BIGINT lamports) capital reservations.
--- 3. Two-phase side-effect fencing (DB PREPARE -> external call -> DB RESULT).
--- 4. Replay-resistant settlement certificates.
+-- No runtime adapter or production authority is connected to this schema.
+-- Defines at-most-one matching active generation and BIGINT amount storage.
+-- Transactional capital limits, durable side-effect recovery, verified terminal
+-- transitions and certificate replay protection remain unimplemented.
 -- ============================================================================
 
--- Custom SQLSTATE Error Code Catalog:
+-- Proposed domain error mappings; SY001-SY015 are not implemented SQLSTATEs here.
+-- No function/trigger raises these codes. Native database errors require a
+-- reviewed adapter mapping based on SQLSTATE and exact constraint identity.
 -- SY001: DUPLICATE_ECONOMIC_INTENT
 -- SY002: CAPITAL_RESERVATION_EXCEEDED
 -- SY003: CONCURRENT_LIVE_GENERATION_EXISTS
@@ -64,8 +65,10 @@ CREATE TABLE IF NOT EXISTS execution_generations (
 
 -- ============================================================================
 -- INVARIANT 1: AT MOST ONE ACTIVE EXECUTION GENERATION PER INTENT
--- Partial unique index strictly enforced by database engine:
--- Any attempt to create a second live generation while one is active raises SY003.
+-- When this index is installed as defined, it permits at most one matching row.
+-- It does not require a row or verify terminal transitions out of the predicate.
+-- A uniqueness conflict reports native SQLSTATE 23505 (unique_violation).
+-- Mapping that specific index conflict to domain SY003 is not implemented.
 -- ============================================================================
 CREATE UNIQUE INDEX IF NOT EXISTS idx_one_live_generation_per_intent 
 ON execution_generations (intent_id) 

@@ -26,37 +26,43 @@ export class ExecutionIntelligenceEngine {
         };
     }
     /**
-     * Generates a tamper-evident Edge Certificate
+     * Legacy certificate-shaped estimate report, not a signed or tamper-evident proof.
+     * Scalar claims are retained only for call compatibility and are never evidence.
+     * Promotion requires a future integration with a trusted validation authority;
+     * this engine currently has no path to SUPPORTED or VERIFIED.
      */
     generateEdgeCertificate(params) {
-        const evidenceState = params.evidenceState || (params.sampleCount > 50 && params.netExecutableEdgeBps > 150 ? 'VERIFIED' : 'PROVISIONAL');
         return {
             certificateId: `cert_${params.mint.slice(0, 8)}_${Date.now()}`,
             mint: params.mint,
             timestampMs: Date.now(),
-            predictionQuality: 0.88,
-            calibrationBrier: params.brierScore,
-            sampleSufficiency: Math.min(1.0, params.sampleCount / 50),
-            modelAgreementScore: params.modelAgreement,
-            historicalSimilarity: 0.82,
-            oodStatus: 'IN_DISTRIBUTION',
-            walkForwardStatus: 'PASS',
-            purgedValidationStatus: 'PASS',
-            shadowStatus: 'PASS',
-            executionQualityScore: 88,
-            edgeHalfLifeMs: 1500,
-            liquidityCapacitySol: 25.0,
-            dataHealthConfidence: params.dataConfidence,
-            manipulationRobustness: 'ROBUST',
+            predictionQuality: null,
+            calibrationBrier: null,
+            sampleSufficiency: null,
+            modelAgreementScore: null,
+            historicalSimilarity: null,
+            oodStatus: 'UNKNOWN',
+            walkForwardStatus: 'UNKNOWN',
+            purgedValidationStatus: 'UNKNOWN',
+            shadowStatus: 'UNKNOWN',
+            executionQualityScore: null,
+            edgeHalfLifeMs: null,
+            liquidityCapacitySol: null,
+            dataHealthConfidence: null,
+            manipulationRobustness: 'UNKNOWN',
             netExecutableEdgeBps: params.netExecutableEdgeBps,
-            evidenceState,
+            evidenceState: 'PROVISIONAL',
+            evidenceStatus: 'MISSING',
+            validationSource: null,
+            authority: 'ESTIMATE_ONLY',
+            reason: 'NO_TRUSTED_VALIDATION_EVIDENCE',
         };
     }
     /**
-     * Evaluates an Opportunity Contract and computes true net executable edge.
+     * Computes heuristic opportunity economics, without asserting validation or authority.
      */
     evaluateOpportunity(params) {
-        const { mint, positionSizeSol, targetPct, stopPct, horizonSec, pTargetFirst, pStopFirst, pNeither, expectedGrossEdgePct, poolLiquiditySol, priorityFeeLamports, jitoTipLamports, quoteAgeMs, adverseSelectionPct = 0.35, networkCongestionFactor = 1.0, oodScore = 0.1, regime = 'NORMAL', } = params;
+        const { mint, positionSizeSol, targetPct, stopPct, horizonSec, pTargetFirst, pStopFirst, pNeither, expectedGrossEdgePct, poolLiquiditySol, priorityFeeLamports, jitoTipLamports, quoteAgeMs, adverseSelectionPct = 0.35, networkCongestionFactor = 1.0, oodScore = null, regime = 'UNKNOWN', } = params;
         // Non-linear price impact: impact ~= (size / (liquidity + size)) * 100
         const priceImpactPct = poolLiquiditySol > 0
             ? (positionSizeSol / (poolLiquiditySol + positionSizeSol)) * 100
@@ -84,19 +90,12 @@ export class ExecutionIntelligenceEngine {
             failureCostPct;
         const expectedShortfallPct = Math.abs(stopPct) * 1.2 + slippagePct;
         const isExpiredBeforeLanding = expectedLandingTimeMs > opportunityHalfLifeMs;
-        const executionConfidence = Math.max(0.1, Math.min(0.99, 1.0 - (priceImpactPct / 15 + latencyDecayRatio * 0.3 + (networkCongestionFactor - 1) * 0.2)));
         const contractId = `opp_${mint.slice(0, 8)}_${Date.now()}`;
         const halfLifeProfile = this.computeHalfLifeProfile(opportunityHalfLifeMs);
         const netEdgeBps = Math.round(expectedExecutableEdgePct * 100);
-        const evidenceState = netEdgeBps > 200 && poolLiquiditySol > 25 ? 'VERIFIED' : netEdgeBps > 50 ? 'SUPPORTED' : 'PROVISIONAL';
         const certificate = this.generateEdgeCertificate({
             mint,
             netExecutableEdgeBps: netEdgeBps,
-            sampleCount: 65,
-            brierScore: 0.12,
-            modelAgreement: 0.88,
-            dataConfidence: 0.95,
-            evidenceState,
         });
         return {
             contractId,
@@ -123,14 +122,19 @@ export class ExecutionIntelligenceEngine {
             expectedShortfallPct: Number(expectedShortfallPct.toFixed(2)),
             expectedMfePct: targetPct * 1.2,
             expectedMaePct: -expectedShortfallPct,
-            executionConfidence: Number(executionConfidence.toFixed(3)),
-            modelConfidence: Number((pTargetFirst * 1.1).toFixed(3)),
-            dataConfidence: 0.95,
+            executionConfidence: null,
+            modelConfidence: null,
+            dataConfidence: null,
             opportunityHalfLifeMs,
             expectedLandingTimeMs,
             isExpiredBeforeLanding,
             halfLifeProfile,
-            evidenceState,
+            evidenceState: certificate.evidenceState,
+            evidenceStatus: certificate.evidenceStatus,
+            validationSource: certificate.validationSource,
+            authority: certificate.authority,
+            reason: certificate.reason,
+            estimateMethod: 'OPPORTUNITY_HEURISTIC_V1',
             certificate,
             oodScore,
             regime,

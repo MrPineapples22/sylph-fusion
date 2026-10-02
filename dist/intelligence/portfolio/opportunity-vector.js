@@ -65,6 +65,10 @@ export class OpportunityVectorEngine {
                 rationale = 'Proof certificates incomplete; candidate routed to shadow execution.';
             }
         }
+        else if (vec.confidence === null || vec.freshnessMs === null) {
+            action = 'ABSTAIN';
+            rationale = 'Confidence or freshness evidence is unavailable.';
+        }
         else if (vec.oodRisk > 0.4 || vec.confidence < 0.6) {
             action = 'ABSTAIN';
             rationale = 'High out-of-distribution uncertainty or low model confidence.';

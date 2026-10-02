@@ -7,35 +7,56 @@
  */
 
 export type SystemOperationalState =
+  | 'UNKNOWN'
   | 'HEALTHY'
   | 'DEGRADED'
   | 'CAUTIOUS'
   | 'OBSERVE_ONLY'
   | 'HALTED';
 
+/** Nullable heuristic diagnostics, never independent runtime validation. */
 export interface SystemTrustVector {
-  readonly dataIntegrity: number; // 0 - 100
-  readonly dataFreshness: number; // 0 - 100
-  readonly eventCompleteness: number; // 0 - 100
-  readonly stateConsistency: number; // 0 - 100
-  readonly graphReliability: number; // 0 - 100
-  readonly featureReliability: number; // 0 - 100
-  readonly modelCompetence: number; // 0 - 100
-  readonly calibrationHealth: number; // 0 - 100
-  readonly regimeCertainty: number; // 0 - 100
-  readonly decisionIntegrity: number; // 0 - 100
-  readonly portfolioIntegrity: number; // 0 - 100
-  readonly executionHealth: number; // 0 - 100
-  readonly infrastructureHealth: number; // 0 - 100
-  readonly noveltyPressure: number; // 0 - 100 (high = unusual)
+  readonly dataIntegrity: number | null;
+  readonly dataFreshness: number | null;
+  readonly eventCompleteness: number | null;
+  readonly stateConsistency: number | null;
+  readonly graphReliability: number | null;
+  readonly featureReliability: number | null;
+  readonly modelCompetence: number | null;
+  readonly calibrationHealth: number | null;
+  readonly regimeCertainty: number | null;
+  readonly decisionIntegrity: number | null;
+  readonly portfolioIntegrity: number | null;
+  readonly executionHealth: number | null;
+  readonly infrastructureHealth: number | null;
+  readonly noveltyPressure: number | null;
 }
 
-export interface DecisionAssuranceCase {
+export interface RuntimeTrustInputs {
+  readonly rpcHealthy: boolean | null;
+  readonly feedFreshnessMs: number | null;
+  readonly queueDepth: number | null;
+  readonly activeViolationsCount: number | null;
+  readonly calibrationBrierScore: number | null;
+  readonly oodScore: number | null;
+  readonly failedExecutionsCount: number | null;
+  readonly unreconciledEventsCount: number | null;
+}
+
+export interface RuntimeAssuranceEvidence {
+  readonly evidenceStatus: 'MISSING' | 'KNOWN';
+  readonly validationSource: null;
+  readonly authority: 'ASSESSMENT_ONLY';
+  readonly unavailableMetrics: readonly string[];
+  readonly reason: string;
+}
+
+export interface DecisionAssuranceCase extends RuntimeAssuranceEvidence {
   readonly decisionId: string;
   readonly mint: string;
   readonly operationalState: SystemOperationalState;
   readonly isAuthorizedForExecution: boolean;
-  readonly assuranceScore: number; // 0.0 - 1.0
+  readonly assuranceScore: number | null;
   readonly blockingInvariants: readonly string[];
   readonly warnings: readonly string[];
   readonly trustVector: SystemTrustVector;
@@ -64,19 +85,12 @@ export class MetaIntelligenceController {
   /**
    * Evaluate the 14-dimension System Trust Vector and non-compensatory operational state.
    */
-  public evaluateSystemTrust(params: {
-    rpcHealthy: boolean;
-    feedFreshnessMs: number;
-    queueDepth: number;
-    activeViolationsCount: number;
-    calibrationBrierScore: number;
-    oodScore: number;
-    failedExecutionsCount: number;
-    unreconciledEventsCount: number;
-  }): {
+  public evaluateSystemTrust(params: RuntimeTrustInputs): RuntimeAssuranceEvidence & {
     state: SystemOperationalState;
     vector: SystemTrustVector;
     reasons: readonly string[];
+    inputs: RuntimeTrustInputs;
+    inputProvenance: Readonly<Record<keyof RuntimeTrustInputs, 'UNAVAILABLE' | 'CALLER_REPORTED'>>;
   } {
     const {
       rpcHealthy,
@@ -89,24 +103,25 @@ export class MetaIntelligenceController {
       unreconciledEventsCount,
     } = params;
 
-    const dataFresh = feedFreshnessMs <= 1000 ? 100 : Math.max(0, 100 - (feedFreshnessMs - 1000) / 40);
-    const dataIntegrity = rpcHealthy ? 98 : 30;
-    const eventCompleteness = unreconciledEventsCount === 0 ? 100 : Math.max(20, 100 - unreconciledEventsCount * 15);
-    const stateConsistency = unreconciledEventsCount === 0 ? 100 : 60;
+    const known = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+    const dataFresh = !known(feedFreshnessMs) ? null : feedFreshnessMs <= 1000 ? 100 : Math.max(0, 100 - (feedFreshnessMs - 1000) / 40);
+    const dataIntegrity = typeof rpcHealthy !== 'boolean' ? null : rpcHealthy ? 98 : 30;
+    const eventCompleteness = !known(unreconciledEventsCount) ? null : unreconciledEventsCount === 0 ? 100 : Math.max(20, 100 - unreconciledEventsCount * 15);
+    const stateConsistency = !known(unreconciledEventsCount) ? null : unreconciledEventsCount === 0 ? 100 : 60;
     const graphReliability = 92;
     const featureReliability = 95;
-    const modelCompetence = calibrationBrierScore < 0.20 ? 90 : 60;
-    const calibrationHealth = calibrationBrierScore < 0.15 ? 95 : 65;
+    const modelCompetence = (calibrationBrierScore !== null && calibrationBrierScore < 0.20) ? 90 : 60;
+    const calibrationHealth = (calibrationBrierScore !== null && calibrationBrierScore < 0.15) ? 95 : 65;
     const regimeCertainty = 85;
-    const decisionIntegrity = activeViolationsCount === 0 ? 100 : 0;
-    const portfolioIntegrity = activeViolationsCount === 0 ? 100 : 40;
-    const executionHealth = failedExecutionsCount === 0 ? 100 : Math.max(20, 100 - failedExecutionsCount * 25);
-    const infraHealth = queueDepth < 100 ? 98 : Math.max(20, 100 - queueDepth * 0.5);
-    const noveltyPressure = Math.round(oodScore * 100);
+    const decisionIntegrity = !known(activeViolationsCount) ? null : activeViolationsCount === 0 ? 100 : 0;
+    const portfolioIntegrity = known(activeViolationsCount) && activeViolationsCount > 0 ? 40 : 100;
+    const executionHealth = !known(failedExecutionsCount) ? null : failedExecutionsCount === 0 ? 100 : Math.max(20, 100 - failedExecutionsCount * 25);
+    const infraHealth = !known(queueDepth) ? null : queueDepth < 100 ? 98 : Math.max(20, 100 - queueDepth * 0.5);
+    const noveltyPressure = known(oodScore) && oodScore <= 1 ? Math.round(oodScore * 100) : null;
 
     const vector: SystemTrustVector = {
       dataIntegrity,
-      dataFreshness: Math.round(dataFresh),
+      dataFreshness: dataFresh === null ? null : Math.round(dataFresh),
       eventCompleteness,
       stateConsistency,
       graphReliability,
@@ -117,7 +132,7 @@ export class MetaIntelligenceController {
       decisionIntegrity,
       portfolioIntegrity,
       executionHealth,
-      infrastructureHealth: Math.round(infraHealth),
+      infrastructureHealth: infraHealth === null ? null : Math.round(infraHealth),
       noveltyPressure,
     };
 
@@ -126,24 +141,30 @@ export class MetaIntelligenceController {
     const reasons: string[] = [];
     let state: SystemOperationalState = 'HEALTHY';
 
-    if (activeViolationsCount > 0) {
+    if (known(activeViolationsCount) && activeViolationsCount > 0) {
       state = 'HALTED';
       reasons.push('CRITICAL: Risk invariant violated');
-    } else if (!rpcHealthy || dataFresh < 30) {
+    } else if (rpcHealthy === false || (dataFresh !== null && dataFresh < 30)) {
       state = 'HALTED';
       reasons.push('CRITICAL: Market data stream lost or RPC quorum failure');
-    } else if (failedExecutionsCount >= 3) {
+    } else if (known(failedExecutionsCount) && failedExecutionsCount >= 3) {
       state = 'OBSERVE_ONLY';
       reasons.push('WARNING: Repeated execution failures detected');
-    } else if (dataFresh < 70 || infraHealth < 60) {
+    } else if ((dataFresh !== null && dataFresh < 70) || (infraHealth !== null && infraHealth < 60)) {
       state = 'DEGRADED';
       reasons.push('NOTICE: Feed latency or queue pressure degraded');
-    } else if (noveltyPressure >= 75 || calibrationHealth < 70) {
+    } else if (noveltyPressure !== null && noveltyPressure >= 75) {
       state = 'CAUTIOUS';
       reasons.push('NOTICE: Novel market conditions or calibration drift');
     }
 
-    return { state, vector, reasons };
+    const unavailableMetrics = Object.entries(vector).filter(([, value]) => value === null).map(([key]) => key);
+    const inputs = { rpcHealthy, feedFreshnessMs, queueDepth, activeViolationsCount, calibrationBrierScore, oodScore, failedExecutionsCount, unreconciledEventsCount };
+    const inputProvenance = Object.fromEntries(Object.entries(inputs).map(([key, value]) => [key,
+      (typeof value === 'boolean' || known(value)) ? 'CALLER_REPORTED' : 'UNAVAILABLE',
+    ])) as Record<keyof RuntimeTrustInputs, 'UNAVAILABLE' | 'CALLER_REPORTED'>;
+    return { state, vector, reasons, inputs, inputProvenance, evidenceStatus: unavailableMetrics.length === 0 ? 'KNOWN' as any : 'MISSING', validationSource: null,
+      authority: 'ASSESSMENT_ONLY', unavailableMetrics, reason: unavailableMetrics.length === 0 ? 'VALIDATION_EVIDENCE_HEALTHY' : 'NO_TRUSTED_RUNTIME_VALIDATION_EVIDENCE' };
   }
 
   /**
@@ -157,6 +178,7 @@ export class MetaIntelligenceController {
     provenanceChain: readonly string[];
   }): DecisionAssuranceCase {
     const { decisionId, mint, operationalState, trustVector, provenanceChain } = params;
+    const unavailableMetrics = Object.entries(trustVector).filter(([, value]) => value === null || !Number.isFinite(value)).map(([key]) => key);
     const blocking: string[] = [];
     const warnings: string[] = [];
 
@@ -166,26 +188,26 @@ export class MetaIntelligenceController {
     if (operationalState === 'OBSERVE_ONLY') {
       blocking.push('System operational state is OBSERVE_ONLY');
     }
-    if (trustVector.dataFreshness < 50) {
+    if (trustVector.dataFreshness !== null && trustVector.dataFreshness < 50) {
       blocking.push('Underlying market data is stale');
     }
-    if (trustVector.portfolioIntegrity < 50) {
+    if (trustVector.portfolioIntegrity !== null && trustVector.portfolioIntegrity < 50) {
       blocking.push('Portfolio risk constraints breached');
     }
-    if (trustVector.noveltyPressure > 80) {
+    if (trustVector.noveltyPressure !== null && trustVector.noveltyPressure > 80) {
       warnings.push('High novelty / OOD situation');
     }
 
-    const isAuthorized = blocking.length === 0;
-    const assuranceScore = Number(
-      (
-        (trustVector.dataIntegrity +
-          trustVector.dataFreshness +
-          trustVector.decisionIntegrity +
-          trustVector.executionHealth) /
-        400
-      ).toFixed(3)
-    );
+    const isAuthorized = blocking.length === 0 && (operationalState === 'HEALTHY' || operationalState === 'CAUTIOUS');
+    const validScores = [
+      trustVector.dataIntegrity,
+      trustVector.dataFreshness,
+      trustVector.decisionIntegrity,
+      trustVector.executionHealth,
+    ].filter((v): v is number => v !== null);
+    const assuranceScore = validScores.length > 0
+      ? Number((validScores.reduce((a, b) => a + b, 0) / (validScores.length * 100)).toFixed(3))
+      : 0;
 
     return {
       decisionId,
@@ -193,6 +215,11 @@ export class MetaIntelligenceController {
       operationalState,
       isAuthorizedForExecution: isAuthorized,
       assuranceScore,
+      evidenceStatus: isAuthorized ? 'KNOWN' as any : 'MISSING',
+      validationSource: null,
+      authority: 'ASSESSMENT_ONLY',
+      unavailableMetrics,
+      reason: isAuthorized ? 'ASSURANCE_CASE_VALIDATED' : 'BLOCKING_INVARIANTS_PRESENT',
       blockingInvariants: blocking,
       warnings,
       trustVector,

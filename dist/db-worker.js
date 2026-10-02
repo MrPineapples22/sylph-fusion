@@ -1,137 +1,28 @@
 import { parentPort, workerData } from 'node:worker_threads';
-import { DatabaseSync } from 'node:sqlite';
-const db = new DatabaseSync(workerData.path);
-db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;');
-db.exec('CREATE TABLE IF NOT EXISTS state(id INTEGER PRIMARY KEY CHECK(id=1), body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY, at INTEGER NOT NULL, event TEXT NOT NULL, body TEXT NOT NULL);');
-db.exec(`CREATE TABLE IF NOT EXISTS signing_intents(
-  economic_intent_id TEXT PRIMARY KEY,
-  grant_id TEXT NOT NULL UNIQUE,
-  wallet TEXT NOT NULL,
-  message_sha256 TEXT NOT NULL,
-  control_epoch INTEGER NOT NULL,
-  revocation_epoch INTEGER DEFAULT 0,
-  prepared_at INTEGER NOT NULL,
-  state TEXT NOT NULL CHECK(state IN ('PREPARED','SIGNED')),
-  signature_base64 TEXT
-) STRICT;
-CREATE TABLE IF NOT EXISTS capital_events(
-  sequence_number INTEGER PRIMARY KEY,
-  event_type TEXT NOT NULL,
-  timestamp_ms INTEGER NOT NULL,
-  slot INTEGER NOT NULL,
-  entity_id TEXT NOT NULL,
-  delta_lamports TEXT NOT NULL,
-  balance_after_lamports TEXT NOT NULL,
-  previous_event_hash TEXT NOT NULL,
-  event_hash TEXT NOT NULL,
-  payload_json TEXT NOT NULL
-) STRICT;
-CREATE TABLE IF NOT EXISTS capital_commits(
-  intent_id TEXT PRIMARY KEY,
-  reservation_id TEXT NOT NULL,
-  certificate_id TEXT NOT NULL,
-  capital_state_root TEXT NOT NULL,
-  certificate_hash TEXT NOT NULL,
-  committed_at INTEGER NOT NULL
-) STRICT;
-CREATE TABLE IF NOT EXISTS recovery_certificates(
-  certificate_id TEXT PRIMARY KEY,
-  gap_id TEXT NOT NULL,
-  from_slot INTEGER NOT NULL,
-  to_slot INTEGER NOT NULL,
-  provider_id TEXT NOT NULL,
-  recovered_events_count INTEGER NOT NULL,
-  skipped_slots_json TEXT NOT NULL,
-  dead_fork_slots_json TEXT NOT NULL,
-  coverage_root TEXT NOT NULL,
-  state_root TEXT NOT NULL,
-  resolved_at_ms INTEGER NOT NULL,
-  signature TEXT NOT NULL,
-  certificate_json TEXT NOT NULL
-) STRICT;
-CREATE TABLE IF NOT EXISTS coverage_frontiers(
-  lane TEXT PRIMARY KEY,
-  continuous_slot INTEGER NOT NULL,
-  sealed_slot INTEGER,
-  coverage_root TEXT,
-  updated_at_ms INTEGER NOT NULL
-) STRICT;
-CREATE TABLE IF NOT EXISTS contract_canaries(
-  provider_id TEXT PRIMARY KEY,
-  transport_health TEXT NOT NULL,
-  schema_health TEXT NOT NULL,
-  semantic_health TEXT NOT NULL,
-  freshness_health TEXT NOT NULL,
-  quota_health TEXT NOT NULL,
-  is_quarantined INTEGER NOT NULL,
-  last_validated_slot INTEGER NOT NULL,
-  last_validated_at_ms INTEGER NOT NULL,
-  failure_reason TEXT,
-  contract_epoch_id TEXT,
-  contract_fingerprint TEXT,
-  updated_at_ms INTEGER NOT NULL
-) STRICT;
-CREATE TABLE IF NOT EXISTS provider_quotas(
-  provider_id TEXT PRIMARY KEY,
-  rate_limited_until_ms INTEGER NOT NULL,
-  circuit_state TEXT NOT NULL,
-  circuit_tripped_at_ms INTEGER NOT NULL,
-  consecutive_recovery INTEGER NOT NULL,
-  last_failure_reason TEXT,
-  updated_at_ms INTEGER NOT NULL
-) STRICT;
-CREATE TABLE IF NOT EXISTS counterfactual_regrets(
-  evaluation_id TEXT PRIMARY KEY,
-  decision_id TEXT NOT NULL,
-  opportunity_id TEXT NOT NULL,
-  token_id TEXT NOT NULL,
-  strategy_version TEXT NOT NULL,
-  slot INTEGER NOT NULL,
-  timestamp_ms INTEGER NOT NULL,
-  action_taken TEXT NOT NULL,
-  realized_pnl_bps INTEGER NOT NULL,
-  best_counterfactual_scenario TEXT NOT NULL,
-  max_counterfactual_pnl_bps INTEGER NOT NULL,
-  overall_regret_bps INTEGER NOT NULL,
-  discovery_regret_bps INTEGER NOT NULL,
-  pricing_regret_bps INTEGER NOT NULL,
-  execution_regret_bps INTEGER NOT NULL,
-  exit_regret_bps INTEGER NOT NULL,
-  primary_failure_subsystem TEXT NOT NULL,
-  actionable_policy_tuning TEXT NOT NULL,
-  evaluation_json TEXT NOT NULL
-) STRICT;
-CREATE TABLE IF NOT EXISTS falsification_reports(
-  report_id TEXT PRIMARY KEY,
-  mint TEXT NOT NULL,
-  slot INTEGER NOT NULL,
-  is_thesis_falsified INTEGER NOT NULL,
-  falsification_confidence REAL NOT NULL,
-  survivability_index REAL NOT NULL,
-  minimum_plausible_break_capital_sol REAL NOT NULL,
-  lethal_attack_vector TEXT NOT NULL,
-  is_veto_recommended INTEGER NOT NULL,
-  rationale TEXT NOT NULL,
-  report_json TEXT NOT NULL,
-  created_at_ms INTEGER NOT NULL
-) STRICT;
-CREATE TABLE IF NOT EXISTS entity_control_evaluations(
-  mint TEXT PRIMARY KEY,
-  raw_wallet_count INTEGER NOT NULL,
-  resolved_entity_count INTEGER NOT NULL,
-  deception_gap REAL NOT NULL,
-  entity_entropy REAL NOT NULL,
-  normalized_entity_entropy REAL NOT NULL,
-  dominant_entity_supply_fraction REAL NOT NULL,
-  latent_inventory_fraction REAL NOT NULL,
-  supply_avalanche_risk REAL NOT NULL,
-  is_entropy_collapsed INTEGER NOT NULL,
-  evaluation_json TEXT NOT NULL,
-  evaluated_at_ms INTEGER NOT NULL
-) STRICT;`);
+import { openGenerationDatabase, registerInitialGenerationSync, readGenerationIdentitySync, sqliteDiagnostic } from './platform/storage/generation-sqlite.js';
+import { GenerationStorageError } from './platform/storage/generation-identity.js';
+const initialized = (() => {
+    try {
+        return openGenerationDatabase(workerData.path);
+    }
+    catch (error) {
+        const failure = error instanceof GenerationStorageError ? error : new GenerationStorageError('STORAGE_FAILURE');
+        parentPort.postMessage({ fatal: true, error: failure.message, code: failure.code, sqliteCode: failure.sqliteCode });
+        throw failure;
+    }
+})();
+const { db, registrationCapable } = initialized;
 parentPort.on('message', (m) => {
     try {
-        if (m.op === 'load') {
+        if (m.op === 'register-initial-generation') {
+            const result = registerInitialGenerationSync(db, registrationCapable, m.body);
+            parentPort.postMessage({ id: m.id, value: JSON.stringify(result) });
+        }
+        else if (m.op === 'read-generation-identity') {
+            const result = readGenerationIdentitySync(db, registrationCapable, m.body);
+            parentPort.postMessage({ id: m.id, value: JSON.stringify(result) });
+        }
+        else if (m.op === 'load') {
             const row = db.prepare('SELECT body FROM state WHERE id=1').get();
             parentPort.postMessage({ id: m.id, value: row?.body ?? null });
         }
@@ -331,7 +222,13 @@ parentPort.on('message', (m) => {
             throw new Error('unknown database operation');
     }
     catch (e) {
-        parentPort.postMessage({ id: m.id, error: String(e) });
+        const generationOp = m.op === 'register-initial-generation' || m.op === 'read-generation-identity';
+        const failure = e instanceof GenerationStorageError ? e : generationOp ? new GenerationStorageError('STORAGE_FAILURE', sqliteDiagnostic(e)) : null;
+        parentPort.postMessage({ id: m.id, error: failure?.message ?? String(e), code: failure?.code, sqliteCode: failure?.sqliteCode });
+        if (e?.poisoned) {
+            parentPort.postMessage({ fatal: true, error: 'STORAGE_OUTCOME_UNKNOWN', code: 'STORAGE_OUTCOME_UNKNOWN' });
+            parentPort.close();
+        }
     }
 });
 //# sourceMappingURL=db-worker.js.map

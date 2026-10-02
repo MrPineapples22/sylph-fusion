@@ -1,13 +1,14 @@
 /**
- * SYLPH FUSION — TWO-PHASE SIDE-EFFECT FENCE
+ * SYLPH FUSION — PROCESS-LOCAL SIDE-EFFECT FENCE PROTOTYPE
  * Specifications: Sections 37 (Execution Generations), 103 (Invariants 1-5).
  *
- * Implements strict two-phase commit protocol for irreversible external side effects:
- * 1. DB PREPARE COMMIT: Durably records intention, external call ID, and payload hash.
- * 2. External Call: Dispatches to KMS hardware signer or network RPC / Jito relay.
- * 3. DB RESULT COMMIT: Durably seals outcome before releasing execution or updating generation.
+ * Stores prepare/commit records in volatile Maps. It performs no database commit,
+ * external dispatch, durable recovery or cross-process exclusion. Result digests
+ * do not preserve recoverable result bytes; callers own external invocation.
  *
- * Invariant: Never retry or duplicate an external side-effect on PostgreSQL 40001 serialization failure.
+ * Intended future adapter contract: durable claim -> external call -> durable result.
+ * External calls must stay outside PostgreSQL 40001 transaction-retry closures;
+ * this helper does not implement or verify that database contract.
  */
 
 import { createHash, randomUUID } from 'node:crypto';
@@ -33,8 +34,9 @@ export class TwoPhaseSideEffectFence {
   private readonly phaseIndex = new Map<string, string>(); // `${intentId}:${generation}:${phase}` -> fenceId
 
   /**
-   * Prepares an irreversible external side-effect.
-   * Throws if an identical or conflicting phase is already in flight or committed.
+   * Records a process-local phase or reports a same-payload existing phase.
+   * Committed phases and conflicting payloads throw. A resumed phase is not
+   * evidence of non-dispatch and must not itself authorize an external retry.
    */
   public prepare(params: {
     intentId: string;
@@ -89,7 +91,8 @@ export class TwoPhaseSideEffectFence {
   }
 
   /**
-   * Seals and commits the result of the external side-effect.
+   * Marks the in-memory record committed and optionally keeps a result digest.
+   * This is not a durable commit or recoverable artifact store.
    */
   public commit(fenceId: string, resultPayload?: Uint8Array | string): SideEffectRecord {
     const record = this.records.get(fenceId);
@@ -119,7 +122,8 @@ export class TwoPhaseSideEffectFence {
   }
 
   /**
-   * Marks side effect as failed only if failure was verified before external side effect took hold.
+   * Marks an uncommitted in-memory record failed. This method does not verify
+   * non-dispatch evidence or preserve the supplied reason.
    */
   public markFailed(fenceId: string, reason: string): void {
     const record = this.records.get(fenceId);

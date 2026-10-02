@@ -169,6 +169,31 @@ export class Engine {
   ) {
     this.feed = new Feed(cfg, rpc.connection, e => this.onEvent(e));
   }
+  private persistResearchJournal(
+    method: 'saveCounterfactualEvaluation' | 'saveFalsificationReport',
+    record: Record<string, unknown>,
+    recordId: string
+  ): void {
+    // Research evidence is useful but cannot change a paper fill or exit.
+    // Older injected Store implementations may have only the core state API.
+    const failed = (reason: 'method_unavailable' | 'write_rejected') => {
+      try {
+        this.sessionLogger?.writeEvent('research_journal_persist_failed', { journal: method, recordId, reason });
+      } catch {
+        // A broken telemetry sink cannot become a trading decision gate either.
+      }
+    };
+    const save = this.store?.[method];
+    if (typeof save !== 'function') {
+      failed('method_unavailable');
+      return;
+    }
+    try {
+      void Promise.resolve(save.call(this.store, record)).catch(() => failed('write_rejected'));
+    } catch {
+      failed('write_rejected');
+    }
+  }
   snapshotCandidate(
     candidate: Candidate,
     disposition: EvaluationDisposition,
@@ -425,9 +450,7 @@ export class Engine {
           peakObservedPriceBps: Math.max(0, shadowPnlBps),
           drawdownObservedPriceBps: Math.min(0, shadowPnlBps),
         });
-        if (this.store) {
-          void this.store.saveCounterfactualEvaluation(omissionRegret as unknown as Record<string, unknown>);
-        }
+        this.persistResearchJournal('saveCounterfactualEvaluation', omissionRegret as unknown as Record<string, unknown>, omissionRegret.evaluationId);
       }
     } catch {
       this.sessionLogger?.writeEvent('paper_shadow_market_observation_unavailable', {
@@ -955,11 +978,17 @@ export class Engine {
         alphaHalfLifeMs: 2500,
         maxSlippageBps: this.cfg.SLIPPAGE_BPS,
         washTradingProbability: candidate.buyers.size < 4 ? 0.35 : 0.05,
+        inputFieldClasses: {
+          poolSolReserve: 'OBSERVED_CHAIN_STATE_WITH_HEURISTIC_FLOOR',
+          latentInventoryFraction: 'HEURISTIC_PROXY',
+          expectedNetEvBps: 'FIXED_ASSUMPTION',
+          alphaHalfLifeMs: 'FIXED_ASSUMPTION',
+          maxSlippageBps: 'CONFIGURED_POLICY_INPUT',
+          washTradingProbability: 'HEURISTIC_PROXY',
+        },
       });
       this.sessionLogger?.writeEvent('automatic_falsification_report', falsificationReport as unknown as Record<string, unknown>);
-      if (this.store) {
-        void this.store.saveFalsificationReport(falsificationReport as unknown as Record<string, unknown>);
-      }
+      this.persistResearchJournal('saveFalsificationReport', falsificationReport as unknown as Record<string, unknown>, falsificationReport.reportId);
 
       this.sessionLogger?.writeEvent('entry_curve_mode', {
         candidateId: deterministicCandidateId(candidate.mint, candidate.slot, candidate.eventSignature || `eval-${candidate.mint}-${candidate.slot}`),
@@ -1062,11 +1091,10 @@ export class Engine {
           discoveryLagMs: 120,
           peakObservedPriceBps: posBefore?.mfePct ? Math.round(posBefore.mfePct * 100) : Math.max(realizedPnlBps, 0),
           drawdownObservedPriceBps: posBefore?.maePct ? Math.round(posBefore.maePct * 100) : Math.min(realizedPnlBps, 0),
+          outcomeEvidenceClass: 'PAPER_SIMULATED_FILL',
         });
         this.sessionLogger?.writeEvent('trade_counterfactual_regret', regretEvaluation as unknown as Record<string, unknown>);
-        if (this.store) {
-          void this.store.saveCounterfactualEvaluation(regretEvaluation as unknown as Record<string, unknown>);
-        }
+        this.persistResearchJournal('saveCounterfactualEvaluation', regretEvaluation as unknown as Record<string, unknown>, regretEvaluation.evaluationId);
       }
       await this.store.save(this.state, `paper-fill:${built.pending.id}`);
       const quoteAgeMs = Date.now() - (built.quoteTimestamp ?? Date.now());

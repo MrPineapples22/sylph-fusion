@@ -314,3 +314,77 @@ test('Engine records rejection taxonomy and emits periodic soak checkpoint', asy
   assert.equal(checkpoint.openPositionsCount, 0);
   assert.equal(checkpoint.blockedExitsCount, 0);
 });
+
+test('optional paper research journal failures remain visible without blocking a settled exit', async () => {
+  for (const failure of ['method_unavailable', 'write_rejected']) {
+    const cfg = baseCfg({ MODE: 'paper' });
+    const mint = mintPub.toBase58();
+    const events = [];
+    const saved = [];
+    const unhandled = [];
+    const onUnhandled = error => unhandled.push(error);
+    const state = {
+      version: 1,
+      wallet: key.publicKey.toBase58(),
+      mode: 'paper',
+      positions: {
+        [mint]: {
+          mint, creator: creatorPub.toBase58(), tokenProgram: TOKEN_PROGRAM_ID.toBase58(),
+          qty: '1000000', initialQty: '1000000', cost: '10000000', originalCost: '10000000',
+          peak: '10000000', stage: 0, opened: Date.now() - 1000, reserve: '1000000000',
+          panic: false, creatorTokens: '0',
+        },
+      },
+      pending: null,
+      cash: '900000000',
+      day: new Date().toISOString().slice(0, 10),
+      dayPnl: '0',
+      closed: {},
+      halted: false,
+    };
+    const store = { save: async (_state, event) => saved.push(event) };
+    if (failure === 'write_rejected') {
+      store.saveCounterfactualEvaluation = async () => { throw new Error('research disk unavailable'); };
+      store.saveFalsificationReport = async () => { throw new Error('research disk unavailable'); };
+    }
+    const executor = {
+      build: async () => ({
+        pending: {
+          id: `paper-sell-${failure}`, mint, side: 'sell', signature: 'paper-only',
+          created: Date.now(), requested: '1000000', creator: creatorPub.toBase58(),
+          tokenProgram: TOKEN_PROGRAM_ID.toBase58(), stage: 1, reserve: '1000000000',
+        },
+        tokenDelta: -1_000_000n,
+        solDelta: 12_000_000n,
+        quotedOutput: 12_000_000n,
+        quoteTimestamp: Date.now(),
+        overhead: { slippageBps: 100, tipLamports: '0', priorityLamports: '0', rentLamports: '0' },
+      }),
+    };
+    const logger = {
+      writeEvent: (event, fields) => events.push({ event, ...fields }),
+      writeOutcomeLabel: () => {},
+      writeFill: () => {},
+    };
+    const engine = new Engine(cfg, { connection: {} }, {}, executor, store, state, logger);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      await engine.trade(dummySnapshot(), 'sell', 1_000_000n, creatorPub.toBase58(), 1, 'take-profit', false);
+      engine.persistResearchJournal('saveFalsificationReport', { reportId: 'optional-report' }, 'optional-report');
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal(state.positions[mint], undefined, 'paper exit should settle despite research journal failure');
+      assert.equal(state.cash, '912000000');
+      assert.deepEqual(saved, [`paper-fill:paper-sell-${failure}`]);
+      assert.equal(events.filter(e => e.event === 'trade_counterfactual_regret').length, 1);
+      const journalFailures = events.filter(e => e.event === 'research_journal_persist_failed');
+      assert.deepEqual(journalFailures.map(e => [e.journal, e.reason]), [
+        ['saveCounterfactualEvaluation', failure],
+        ['saveFalsificationReport', failure],
+      ]);
+      assert.ok(journalFailures.every(e => typeof e.recordId === 'string' && e.recordId.length > 0));
+      assert.deepEqual(unhandled, [], 'journal rejection must be observed');
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+  }
+});

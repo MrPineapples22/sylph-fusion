@@ -22,7 +22,7 @@ export class ExecutionRegretEngine {
      * and runs counterfactual perturbations.
      */
     static evaluateDecisionRegret(params) {
-        const { decisionId, opportunityId, tokenId, strategyVersion = 'sylph_momentum_v1.0', slot, actionTaken, expectedNetEvBps, expectedSlippageBps, realizedPnlBps, realizedSlippageBps, discoveryLagMs, peakObservedPriceBps = Math.max(realizedPnlBps, expectedNetEvBps), drawdownObservedPriceBps = Math.min(realizedPnlBps, -50), subsequentSlotPriceDeltasBps = [0, 0, 0], } = params;
+        const { decisionId, opportunityId, tokenId, strategyVersion = 'sylph_momentum_v1.0', slot, actionTaken, expectedNetEvBps, expectedSlippageBps, realizedPnlBps, realizedSlippageBps, discoveryLagMs, peakObservedPriceBps = Math.max(realizedPnlBps, expectedNetEvBps), drawdownObservedPriceBps = Math.min(realizedPnlBps, -50), subsequentSlotPriceDeltasBps = [0, 0, 0], outcomeEvidenceClass = 'CALLER_SUPPLIED_UNVERIFIED', } = params;
         // 1. Alpha Decomposition
         // Discovery Regret: If discovery lag > 200ms, burned edge = lag * 0.5 bps/ms
         const discoveryRegretBps = Math.max(0, Math.round((discoveryLagMs - 150) * 0.4));
@@ -50,6 +50,7 @@ export class ExecutionRegretEngine {
         const slotLaterPriceDelta = subsequentSlotPriceDeltasBps[1] ?? 0;
         const oneSlotEarlierPnl = realizedPnlBps + slotEarlierPriceDelta;
         scenarios.push({
+            evidenceClass: 'MODELLED_COUNTERFACTUAL_SCENARIO',
             scenarioType: 'ONE_SLOT_EARLIER',
             counterfactualPnlBps: oneSlotEarlierPnl,
             regretDeltaBps: oneSlotEarlierPnl - realizedPnlBps,
@@ -57,6 +58,7 @@ export class ExecutionRegretEngine {
         });
         const oneSlotLaterPnl = realizedPnlBps - slotLaterPriceDelta;
         scenarios.push({
+            evidenceClass: 'MODELLED_COUNTERFACTUAL_SCENARIO',
             scenarioType: 'ONE_SLOT_LATER',
             counterfactualPnlBps: oneSlotLaterPnl,
             regretDeltaBps: oneSlotLaterPnl - realizedPnlBps,
@@ -66,6 +68,7 @@ export class ExecutionRegretEngine {
         // Aggressive Tip (+20 bps cost, -30 bps slippage due to earlier pack positioning)
         const aggressiveTipPnl = realizedPnlBps + (excessSlippageBps > 30 ? 25 : -15);
         scenarios.push({
+            evidenceClass: 'MODELLED_COUNTERFACTUAL_SCENARIO',
             scenarioType: 'AGGRESSIVE_TIP_FAST_LANDING',
             counterfactualPnlBps: aggressiveTipPnl,
             regretDeltaBps: aggressiveTipPnl - realizedPnlBps,
@@ -73,6 +76,7 @@ export class ExecutionRegretEngine {
         });
         // Sizing Variations:
         scenarios.push({
+            evidenceClass: 'MODELLED_COUNTERFACTUAL_SCENARIO',
             scenarioType: 'HALF_POSITION_SIZE',
             counterfactualPnlBps: realizedPnlBps > 0 ? Math.round(realizedPnlBps * 0.5) : Math.round(realizedPnlBps * 0.5), // Lower loss or lower win
             regretDeltaBps: (realizedPnlBps < 0) ? Math.abs(Math.round(realizedPnlBps * 0.5)) : -Math.round(realizedPnlBps * 0.5),
@@ -80,6 +84,7 @@ export class ExecutionRegretEngine {
         });
         // Peak Exit:
         scenarios.push({
+            evidenceClass: 'MODELLED_COUNTERFACTUAL_SCENARIO',
             scenarioType: 'PERFECT_EXIT_AT_PEAK',
             counterfactualPnlBps: peakObservedPriceBps,
             regretDeltaBps: peakObservedPriceBps - realizedPnlBps,
@@ -87,6 +92,7 @@ export class ExecutionRegretEngine {
         });
         // Immediate Abstain:
         scenarios.push({
+            evidenceClass: 'MODELLED_COUNTERFACTUAL_SCENARIO',
             scenarioType: 'IMMEDIATE_ABSTAIN',
             counterfactualPnlBps: 0,
             regretDeltaBps: -realizedPnlBps,
@@ -146,6 +152,20 @@ export class ExecutionRegretEngine {
             scenarios: Object.freeze(scenarios),
             primaryFailureSubsystem,
             actionablePolicyTuning,
+            evidenceLineage: {
+                schemaVersion: 1,
+                artifactClass: 'MODELLED_COUNTERFACTUAL_EVALUATION',
+                provenanceAuthority: 'CALLER_DECLARED',
+                outcomeEvidenceClass,
+                modelledOutputFields: Object.freeze([
+                    'bestCounterfactualScenario', 'maxCounterfactualPnlBps', 'overallRegretBps',
+                    'alphaDecomposition', 'scenarios', 'primaryFailureSubsystem', 'actionablePolicyTuning',
+                ]),
+                assumedInputFields: Object.freeze([
+                    'expectedNetEvBps', 'expectedSlippageBps', 'discoveryLagMs',
+                    'subsequentSlotPriceDeltasBps',
+                ]),
+            },
         };
     }
 }

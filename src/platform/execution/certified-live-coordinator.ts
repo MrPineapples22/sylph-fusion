@@ -3,8 +3,12 @@
  * Specifications: Sections 37 (Execution Generations), 103 (Invariants 1-10)
  *
  * Incomplete coordinator prototype; production live composition remains blocked.
+ * Public signing and submission are unconditionally quarantined. Offline roots
+ * and byte-identity checks cannot authorize either action.
  * Byte identity checks do not grant economic authority. Durable recovery,
  * enforced evidence transitions and reconciliation remain incomplete.
+ * The labels below describe intended adapter stages, not current guarantees.
+ * Defaults use Map reservations/fences and a separate JSON generation registry.
  * Intended (not yet fully implemented) execution chain:
  * 1.  validateEconomicIntent
  * 2.  verifyTransactionCapability
@@ -15,9 +19,9 @@
  * 7.  simulateFinalTransaction
  * 8.  revalidateState (freshness & curve)
  * 9.  sealExecutionAuthorizationRoot (cryptographic digest)
- * 10. prepareDurableSigning (TwoPhaseSideEffectFence DB PREPARE)
+ * 10. prepareDurableSigning (future durable claim; current fence uses Maps)
  * 11. invokeIsolatedSigner (ExecutionSignerGateway / KMS)
- * 12. recordDurableSignedGeneration (TwoPhaseSideEffectFence DB RESULT)
+ * 12. recordDurableSignedGeneration (future durable result; currently process-local)
  * 13. submitExactBytes (Exact-byte submission without alteration)
  * 14. reconcileFinalChainOutcome -> FinalizedSettlementCertificate | NoLandCertificate
  */
@@ -41,7 +45,7 @@ import {
 import { SigningFirewall } from '../signing/signing-firewall.js';
 import type { ExecutionSignerGateway } from '../../execution.js';
 import type { ProcessingIntent } from '../ingestion/types.js';
-import { assembleVerifiedTransaction, decodeSingleSignerMessage, transactionHash, type SignedTransactionArtifact } from './transaction-artifact.js';
+import { decodeSingleSignerMessage } from './transaction-artifact.js';
 
 export interface DecisionAuthorityEnvelope {
   readonly decisionId: string;
@@ -94,9 +98,6 @@ export class CertifiedLiveExecutionCoordinator {
   private readonly sideEffectFence: TwoPhaseSideEffectFence;
   private readonly reservationEngine: HierarchicalReservationEngine;
   private readonly signingFirewall: SigningFirewall;
-  // Process-local identity bindings only; not a durable execution authority.
-  private readonly sealedMessages = new WeakMap<ExecutionAuthorizationRoot, { messageBase64: string; signer: string }>();
-  private readonly signedArtifacts = new Map<string, SignedTransactionArtifact>();
 
   constructor(
     private readonly cfg: Config,
@@ -171,7 +172,8 @@ export class CertifiedLiveExecutionCoordinator {
   }
 
   /**
-   * Step 4: Acquire Durable Reservation (Exact bigint lamports)
+   * Step 4 prototype: register a process-local reservation with bigint accounting.
+   * The method name describes intended durability, which is not implemented here.
    */
   public acquireDurableReservation(
     intent: CertifiedEconomicIntent,
@@ -212,7 +214,8 @@ export class CertifiedLiveExecutionCoordinator {
   }
 
   /**
-   * Step 5: Allocate Execution Generation (Starts at Generation 1)
+   * Step 5 prototype: register generation 1 through the injected JSON registry.
+   * This is not a transactional PostgreSQL generation allocation.
    */
   public async allocateExecutionGeneration(
     intentId: string,
@@ -228,7 +231,8 @@ export class CertifiedLiveExecutionCoordinator {
   }
 
   /**
-   * Step 9: Seal Execution Authorization Root
+   * Step 9 prototype: snapshot exact message identity for offline diagnostics.
+   * Caller-supplied authority fields are not verified economic authorization.
    */
   public sealExecutionAuthorizationRoot(params: {
     intentId: string;
@@ -271,47 +275,23 @@ export class CertifiedLiveExecutionCoordinator {
       sealedAt: Date.now(),
       authorityEnvelope: params.authorityEnvelope ? Object.freeze({ ...params.authorityEnvelope }) : undefined,
     });
-    this.sealedMessages.set(root, { messageBase64, signer: this.signerGateway.publicKey.toBase58() });
     return root;
   }
 
   /**
-   * Steps 10-12: Two-Phase Isolated Signer Invocation
+   * Steps 10-12 are unavailable until the authoritative evidence pipeline and
+   * durable signing claim/result recovery are implemented and independently reviewed.
+   * Reject before inspecting caller input or invoking any dependency.
    */
   public async invokeCertifiedSigning(
     authRoot: ExecutionAuthorizationRoot
   ): Promise<Uint8Array> {
-    const sealed = this.sealedMessages.get(authRoot);
-    if (!sealed) throw new Error('SIGNING_ROOT_NOT_ISSUED_BY_COORDINATOR');
-    const expectedSigner = new PublicKey(sealed.signer);
-    if (!this.signerGateway.publicKey.equals(expectedSigner)) throw new Error('SIGNING_GATEWAY_IDENTITY_CHANGED');
-    const messageBytes = Uint8Array.from(Buffer.from(sealed.messageBase64, 'base64'));
-    const externalCallId = `kms_sign_${authRoot.intentId}_gen${authRoot.generation}_${authRoot.authRootHash.slice(0, 16)}`;
-
-    // Step 10: DB PREPARE SIGNING
-    const { fenceId, isResumed } = this.sideEffectFence.prepare({
-      intentId: authRoot.intentId,
-      generation: authRoot.generation,
-      phase: 'SIGNING',
-      externalCallId,
-      payload: messageBytes,
-    });
-    if (isResumed) throw new Error('SIGNING_OUTCOME_UNKNOWN: Reconciliation required before resumption');
-
-    // Step 11: Call Isolated Signer Gateway
-    const signatureBytes = await this.signerGateway.signTransactionMessage(Uint8Array.from(messageBytes));
-    const artifact = assembleVerifiedTransaction(messageBytes, signatureBytes, expectedSigner);
-    const signedBytes = Uint8Array.from(Buffer.from(artifact.wireBase64, 'base64'));
-
-    // Step 12: DB RESULT COMMIT
-    this.sideEffectFence.commit(fenceId, signedBytes);
-    this.signedArtifacts.set(JSON.stringify([authRoot.intentId, authRoot.generation]), artifact);
-
-    return signedBytes;
+    throw new Error('QUARANTINED_COORDINATOR_SIGNING: Live signing is unavailable until authoritative evidence, durable recovery, and independent release verification are complete.');
   }
 
   /**
-   * Step 13: Submit Exact Bytes (No Mutation)
+   * Step 13 is unavailable: byte identity alone is not submission authority.
+   * Reject before inspecting caller input or creating any side-effect claim.
    */
   public async submitExactBytes(
     intentId: string,
@@ -319,34 +299,7 @@ export class CertifiedLiveExecutionCoordinator {
     signedWire: Uint8Array,
     signature: string
   ): Promise<string> {
-    const artifact = this.signedArtifacts.get(JSON.stringify([intentId, generation]));
-    const wireCopy = Uint8Array.from(signedWire);
-    if (!artifact || transactionHash(wireCopy) !== artifact.wireHash || signature !== artifact.signature) {
-      throw new Error('SUBMISSION_SIGNED_ARTIFACT_MISMATCH');
-    }
-    const externalCallId = `submit_${intentId}_gen${generation}_${signature}`;
-
-    // DB PREPARE SUBMISSION
-    const { fenceId, isResumed } = this.sideEffectFence.prepare({
-      intentId,
-      generation,
-      phase: 'SUBMISSION',
-      externalCallId,
-      payload: wireCopy,
-    });
-    if (isResumed) throw new Error('SUBMISSION_OUTCOME_UNKNOWN: Reconciliation required before resumption');
-
-    // Dispatches exact bytes through confirmed RPC pool
-    const rpcSignature = await this.rpc.connection.sendRawTransaction(wireCopy, {
-      skipPreflight: false,
-      preflightCommitment: 'confirmed',
-    });
-    if (rpcSignature !== artifact.signature) throw new Error('SUBMISSION_RPC_SIGNATURE_MISMATCH');
-
-    // DB RESULT COMMIT
-    this.sideEffectFence.commit(fenceId, signature);
-
-    return signature;
+    throw new Error('QUARANTINED_COORDINATOR_SUBMISSION: Live submission is unavailable until authoritative evidence, durable recovery, and independent release verification are complete.');
   }
 
   /**

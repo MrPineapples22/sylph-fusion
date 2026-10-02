@@ -38,6 +38,8 @@ test('Store: persists and retrieves CounterfactualEvaluations via SQLite WAL', a
     assert.equal(loaded.evaluationId, regretEval.evaluationId);
     assert.equal(loaded.tokenId, 'token_durable_A');
     assert.equal(loaded.realizedPnlBps, -100);
+    assert.deepEqual(loaded.evidenceLineage, regretEval.evidenceLineage);
+    assert.ok(loaded.scenarios.every(s => s.evidenceClass === 'MODELLED_COUNTERFACTUAL_SCENARIO'));
 
     const tokenList = await store.getCounterfactualEvaluationsForToken('token_durable_A');
     assert.equal(tokenList.length, 1);
@@ -70,6 +72,8 @@ test('Store: persists and retrieves FalsificationReport via SQLite WAL', async (
     assert.equal(loaded.reportId, report.reportId);
     assert.equal(loaded.mint, 'MINT_STORE_FALSIFY');
     assert.equal(loaded.isThesisFalsified, report.isThesisFalsified);
+    assert.deepEqual(loaded.evidenceLineage, report.evidenceLineage);
+    assert.ok(loaded.stressScenariosTested.every(s => s.evidenceClass === 'MODELLED_STRESS_SCENARIO'));
   } finally {
     await store.close();
   }

@@ -25,6 +25,8 @@ export type AttackVectorType =
   | 'SYBIL_ORGANIC_EVAPORATION';
 
 export interface StressScenarioResult {
+  /** These values are deterministic stress-test outputs, not observed market outcomes. */
+  readonly evidenceClass: 'MODELLED_STRESS_SCENARIO';
   readonly attackVector: AttackVectorType;
   readonly attackCapitalSol: number;
   readonly simulatedPostShockPriceDeltaBps: number;
@@ -45,7 +47,35 @@ export interface FalsificationReport {
   readonly stressScenariosTested: readonly StressScenarioResult[];
   readonly isVetoRecommended: boolean;
   readonly rationale: string;
+  /** Additive, versioned metadata. Missing on legacy journal rows means provenance is unknown. */
+  readonly evidenceLineage: {
+    readonly schemaVersion: 1;
+    readonly artifactClass: 'HEURISTIC_FALSIFICATION_REPORT';
+    /** Caller-declared classifications, not independently verified attestations. */
+    readonly provenanceAuthority: 'CALLER_DECLARED';
+    readonly inputFieldClasses: Readonly<Record<string, FalsificationInputEvidenceClass>>;
+    readonly modelledOutputFields: readonly string[];
+    readonly falsificationConfidence: {
+      readonly calibrationStatus: 'UNVALIDATED_HEURISTIC_SCORE';
+      readonly isCalibratedProbability: false;
+    };
+  };
 }
+
+export type FalsificationInputEvidenceClass =
+  | 'OBSERVED_CHAIN_STATE_WITH_HEURISTIC_FLOOR'
+  | 'HEURISTIC_PROXY'
+  | 'FIXED_ASSUMPTION'
+  | 'CONFIGURED_POLICY_INPUT'
+  | 'CALLER_SUPPLIED_UNVERIFIED';
+
+type FalsificationInputField =
+  | 'poolSolReserve'
+  | 'latentInventoryFraction'
+  | 'expectedNetEvBps'
+  | 'alphaHalfLifeMs'
+  | 'maxSlippageBps'
+  | 'washTradingProbability';
 
 export class AdversarialScenarioGenerator {
   /**
@@ -76,6 +106,7 @@ export class AdversarialScenarioGenerator {
     const dumpPriceImpactBps = -Math.round((latentInventoryFraction / (1.0 + latentInventoryFraction)) * 10_000);
     const dumpLethal = Math.abs(dumpPriceImpactBps) > 1500; // Breaches 15% structural stop
     results.push({
+      evidenceClass: 'MODELLED_STRESS_SCENARIO',
       attackVector: 'CREATOR_STEALTH_DUMP',
       attackCapitalSol: Number(dumpCapitalSol.toFixed(2)),
       simulatedPostShockPriceDeltaBps: dumpPriceImpactBps,
@@ -89,6 +120,7 @@ export class AdversarialScenarioGenerator {
     const sandwichExtractionBps = -maxSlippageBps;
     const sandwichLethal = maxSlippageBps >= expectedNetEvBps;
     results.push({
+      evidenceClass: 'MODELLED_STRESS_SCENARIO',
       attackVector: 'JITO_BUNDLE_SANDWICH',
       attackCapitalSol: Number(Math.min(50, poolSolReserve * 0.20).toFixed(2)),
       simulatedPostShockPriceDeltaBps: sandwichExtractionBps,
@@ -104,6 +136,7 @@ export class AdversarialScenarioGenerator {
     const drainImpactBps = -Math.round((drainFraction / (1.0 - drainFraction)) * 5000);
     const drainLethal = Math.abs(drainImpactBps) > 1800;
     results.push({
+      evidenceClass: 'MODELLED_STRESS_SCENARIO',
       attackVector: 'LIQUIDITY_CLIFF_DRAIN',
       attackCapitalSol: Number(drainCapitalSol.toFixed(2)),
       simulatedPostShockPriceDeltaBps: drainImpactBps,
@@ -119,6 +152,7 @@ export class AdversarialScenarioGenerator {
     const starvationPriceImpactBps = -Math.round(expectedNetEvBps * (1.0 - edgeRemainingFraction));
     const starvationLethal = edgeRemainingFraction < 0.25;
     results.push({
+      evidenceClass: 'MODELLED_STRESS_SCENARIO',
       attackVector: 'SCHEDULER_LOCK_STARVATION',
       attackCapitalSol: 0.05, // Negligible tip war spam cost
       simulatedPostShockPriceDeltaBps: starvationPriceImpactBps,
@@ -132,6 +166,7 @@ export class AdversarialScenarioGenerator {
     const washImpactBps = -Math.round(washTradingProbability * 2500);
     const washLethal = washTradingProbability > 0.45;
     results.push({
+      evidenceClass: 'MODELLED_STRESS_SCENARIO',
       attackVector: 'SYBIL_ORGANIC_EVAPORATION',
       attackCapitalSol: 0,
       simulatedPostShockPriceDeltaBps: washImpactBps,
@@ -157,6 +192,8 @@ export class AutomaticFalsificationAgent {
     alphaHalfLifeMs: number;
     maxSlippageBps: number;
     washTradingProbability: number;
+    /** Descriptive provenance only; it never affects stress calculations or caller policy. */
+    inputFieldClasses?: Partial<Record<FalsificationInputField, FalsificationInputEvidenceClass>>;
   }): FalsificationReport {
     const { mint, slot, poolSolReserve } = params;
 
@@ -213,6 +250,27 @@ export class AutomaticFalsificationAgent {
       stressScenariosTested: scenarios,
       isVetoRecommended,
       rationale,
+      evidenceLineage: {
+        schemaVersion: 1,
+        artifactClass: 'HEURISTIC_FALSIFICATION_REPORT',
+        provenanceAuthority: 'CALLER_DECLARED',
+        inputFieldClasses: Object.freeze({
+          poolSolReserve: params.inputFieldClasses?.poolSolReserve ?? 'CALLER_SUPPLIED_UNVERIFIED',
+          latentInventoryFraction: params.inputFieldClasses?.latentInventoryFraction ?? 'CALLER_SUPPLIED_UNVERIFIED',
+          expectedNetEvBps: params.inputFieldClasses?.expectedNetEvBps ?? 'CALLER_SUPPLIED_UNVERIFIED',
+          alphaHalfLifeMs: params.inputFieldClasses?.alphaHalfLifeMs ?? 'CALLER_SUPPLIED_UNVERIFIED',
+          maxSlippageBps: params.inputFieldClasses?.maxSlippageBps ?? 'CALLER_SUPPLIED_UNVERIFIED',
+          washTradingProbability: params.inputFieldClasses?.washTradingProbability ?? 'CALLER_SUPPLIED_UNVERIFIED',
+        }),
+        modelledOutputFields: Object.freeze([
+          'isThesisFalsified', 'falsificationConfidence', 'survivabilityIndex', 'minimumPlausibleBreakCapitalSol',
+          'lethalAttackVector', 'stressScenariosTested', 'isVetoRecommended', 'rationale',
+        ]),
+        falsificationConfidence: {
+          calibrationStatus: 'UNVALIDATED_HEURISTIC_SCORE',
+          isCalibratedProbability: false,
+        },
+      },
     };
   }
 }

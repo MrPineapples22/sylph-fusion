@@ -54,6 +54,30 @@ test('ExecutionRegretEngine: detects discovery regret on high lag', () => {
   assert.match(evalResult.actionablePolicyTuning, /Yellowstone/);
 });
 
+test('counterfactual lineage separates caller-supplied outcome from modelled scenarios without changing regret', () => {
+  const input = {
+    decisionId: 'dec-lineage', opportunityId: 'opp-lineage', tokenId: 'mint-lineage',
+    slot: 10, actionTaken: 'BUY_ENTER', expectedNetEvBps: 200, expectedSlippageBps: 40,
+    realizedPnlBps: -80, realizedSlippageBps: 60, realizedTipLamports: 1_000n,
+    discoveryLagMs: 120, peakObservedPriceBps: 20,
+  };
+  const unknown = ExecutionRegretEngine.evaluateDecisionRegret(input);
+  const paper = ExecutionRegretEngine.evaluateDecisionRegret({
+    ...input, outcomeEvidenceClass: 'PAPER_SIMULATED_FILL',
+  });
+
+  assert.equal(paper.evidenceLineage.artifactClass, 'MODELLED_COUNTERFACTUAL_EVALUATION');
+  assert.equal(paper.evidenceLineage.provenanceAuthority, 'CALLER_DECLARED');
+  assert.equal(paper.evidenceLineage.outcomeEvidenceClass, 'PAPER_SIMULATED_FILL');
+  assert.equal(unknown.evidenceLineage.outcomeEvidenceClass, 'CALLER_SUPPLIED_UNVERIFIED');
+  assert.ok(!paper.evidenceLineage.assumedInputFields.includes('realizedTipLamports'));
+  assert.ok(paper.evidenceLineage.modelledOutputFields.includes('overallRegretBps'));
+  assert.ok(paper.scenarios.every(s => s.evidenceClass === 'MODELLED_COUNTERFACTUAL_SCENARIO'));
+  assert.equal(paper.realizedPnlBps, unknown.realizedPnlBps);
+  assert.equal(paper.overallRegretBps, unknown.overallRegretBps);
+  assert.deepEqual(paper.scenarios, unknown.scenarios);
+});
+
 test('CounterfactualRegretStore: records evaluations and computes rolling aggregate report', () => {
   const store = new CounterfactualRegretStore(50);
 

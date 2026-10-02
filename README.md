@@ -1,20 +1,20 @@
 # SYLPH Fusion
 
-An executable TypeScript fusion of the two reviewed Python designs. It includes working ingestion, entry filters, local pump.fun V2 transaction construction, Jito submission, confirmation recovery, position management, paper accounting, and tests. Start at `src/fusion.ts`; the other source files implement its adapters and persistent state.
+This repository contains a TypeScript implementation candidate assembled from two Python research designs. It includes source for market ingestion, entry filters, transaction building and submission adapters, confirmation recovery, position management, paper accounting, and tests. These components are not all composed into one production execution path. Start at `src/fusion.ts` and use the current-state and architecture documents below to distinguish connected runtime behavior from research components.
 
 **Release status: tested implementation candidate, not a certified production deployment.** No real wallet was loaded and no transaction was broadcast during development. Live endpoint behavior, landed execution quality, profitability, and unattended operation have not been established. See `REVIEW.md` and `VALIDATION.md` for the evidence and remaining limitations.
 
-## Institutional System Architecture & Formal Certification
+## Architecture and evidence status
 
-SYLPH FUSION has undergone a full-system engineering mission, establishing deterministic connectivity across all 10 intelligence pillars, double-entry capital conservation, isolated custody signing, and multi-truth consensus reconciliation.
+The repository contains many safety, intelligence, execution, and reconciliation modules, along with design and audit documents. Their presence and passing unit tests do not prove that every component is connected to the primary runtime or that the system is production-certified. The current release state remains blocked for live capital; see [`CURRENT_STATE.md`](CURRENT_STATE.md), [`CURRENT_SYSTEM_MAP.md`](CURRENT_SYSTEM_MAP.md), [`ARCHITECTURE_GAPS.md`](ARCHITECTURE_GAPS.md), and [`RELEASE_CERTIFICATION.md`](RELEASE_CERTIFICATION.md).
 
 ### Architecture & Governance Specifications
 
 | Artifact | Purpose & Coverage |
 | :--- | :--- |
-| [`SYSTEM_MAP.md`](SYSTEM_MAP.md) | Exhaustive topological component map: Ingestion, Memory, Prediction, Survival, Capital, Vault, Reconciliation |
-| [`CONNECTIVITY_MATRIX.md`](CONNECTIVITY_MATRIX.md) | Exhaustive directional wiring matrix across all internal engines and external providers |
-| [`STATE_OWNERSHIP.md`](STATE_OWNERSHIP.md) | Strict state boundaries, mutable singletons, append-only WAL ledgers, and zero-lookahead timelines |
+| [`SYSTEM_MAP.md`](SYSTEM_MAP.md) | Intended component map for ingestion, memory, prediction, survival, capital, vault, and reconciliation |
+| [`CONNECTIVITY_MATRIX.md`](CONNECTIVITY_MATRIX.md) | Proposed and observed connections across internal engines and external providers |
+| [`STATE_OWNERSHIP.md`](STATE_OWNERSHIP.md) | State ownership requirements and the implementations reviewed for them |
 | [`INVARIANT_REGISTRY.md`](INVARIANT_REGISTRY.md) | 20 formal system invariants across Capital, Execution, Signing, and Temporal boundaries |
 | [`AUTHORITY_MODEL.md`](AUTHORITY_MODEL.md) | Capability-based hierarchical access control, cryptographic proof leases, and 5-epoch control model |
 | [`RECOVERY_MODEL.md`](RECOVERY_MODEL.md) | Deterministic crash recovery, replay verification, WAL reconciliation, and Haven survival mode |
@@ -23,11 +23,11 @@ SYLPH FUSION has undergone a full-system engineering mission, establishing deter
 | [`RECONCILIATION_MODEL.md`](RECONCILIATION_MODEL.md) | JANUS multi-truth reconciliation, Consensus Mirroring, and ghost transaction resolution |
 | [`LOGIC_AUDIT.md`](LOGIC_AUDIT.md) | Remediation audit of 10 structural failure modes (TOCTOU, phantom spikes, liquidity pollution) |
 | [`RELEASE_GATES.md`](RELEASE_GATES.md) | 20 automated release-blocking governance gates with pass/fail criteria |
-| [`CERTIFICATION_REPORT.md`](CERTIFICATION_REPORT.md) | Final institutional sign-off, mathematical proofs, and release-blocking gate verification |
+| [`CERTIFICATION_REPORT.md`](CERTIFICATION_REPORT.md) | Certification findings and evidence limits; it does not grant live-release approval |
 
-### 20 Release-Blocking Governance Gates
+### Local governance regression scenarios
 
-All 20 release-blocking governance gates are implemented and continuously verified in [`test/intelligence/release-blocking-governance.test.mjs`](test/intelligence/release-blocking-governance.test.mjs):
+[`test/intelligence/release-blocking-governance.test.mjs`](test/intelligence/release-blocking-governance.test.mjs) contains regression scenarios for the properties below. Passing these tests verifies only the checked code paths in that checkout. It does not establish that the production runtime reaches each path, that the scenarios form an independently operated release gate, or that live-capital certification has passed.
 1. **Position Capacity Ceiling:** Rejects next OPEN without permanently poisoning capital authority.
 2. **Dynamic Capacity Recovery:** Closing a position immediately frees capacity.
 3. **Zero Portfolio Exposure Leak:** Token evaluation alone never creates exposure.
@@ -49,11 +49,11 @@ All 20 release-blocking governance gates are implemented and continuously verifi
 19. **Settlement Attributions:** Learning records reference real settlement and outcomes.
 20. **Unified Decision Supremacy:** Competing sub-engines cannot bypass Unified Decision Authority.
 
-### High-Leverage Operational Bridges
+### Research and test components
 
-* **Yellowstone gRPC Live Ingestion:** [`src/platform/ingestion/yellowstone-truth-bridge.ts`](src/platform/ingestion/yellowstone-truth-bridge.ts) streams sub-50ms Geyser transaction logs directly into `ChainTruthEngine` with rolling $p50/p95/p99$ latency tracking and event deduplication.
-* **AWS KMS Hardware Signature Gate:** [`src/intelligence/vault/vault-signer.ts`](src/intelligence/vault/vault-signer.ts) & [`src/platform/signing/aws-kms-ed25519.ts`](src/platform/signing/aws-kms-ed25519.ts) bind raw signing to hardware enclaves via `processSignatureRequestAsync` with 15 pre-sign assertion checks and fail-closed safety.
-* **Continuous Mainnet Soak Orchestrator:** [`scripts/mainnet-soak-orchestrator.mjs`](scripts/mainnet-soak-orchestrator.mjs) executes multi-day shadow monitoring on mainnet with automated 5-minute telemetry checkpoints to `sessions/soak-live-<timestamp>/soak-telemetry.jsonl` tracking empirical slippage, model drift, and invariant conservation.
+* **Yellowstone ingestion adapter:** [`src/platform/ingestion/yellowstone-truth-bridge.ts`](src/platform/ingestion/yellowstone-truth-bridge.ts) implements a Geyser event bridge. A local implementation or latency metric is not evidence of production provider availability or measured end-to-end latency.
+* **Signing foundations:** [`src/intelligence/vault/vault-signer.ts`](src/intelligence/vault/vault-signer.ts) and [`src/platform/signing/aws-kms-ed25519.ts`](src/platform/signing/aws-kms-ed25519.ts) contain signing-related code. This repository does not include a deployed isolated signer service, and the existence of these modules does not establish production signing authority.
+* **Soak harness:** [`scripts/mainnet-soak-orchestrator.mjs`](scripts/mainnet-soak-orchestrator.mjs) creates timed telemetry sessions under a paper-only guard. Its current shadow-tick path uses a random price and fixed reserves, so those derived outcomes are synthetic scenarios, not empirical price, slippage, landing, or profitability evidence.
 
 ## What was retained
 

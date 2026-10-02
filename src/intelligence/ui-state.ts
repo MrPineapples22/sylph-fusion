@@ -22,7 +22,7 @@ export interface TokenUIState {
     readonly timestamp: number;
   };
   readonly overview: {
-    readonly currentStatus: string;
+    readonly currentStatus: 'PAPER_CANDIDATE' | 'AUTHORIZED_SELL' | 'CHALLENGED_ABSTAIN' | 'SAFETY_LOCKED' | 'RISK_REJECTED';
     readonly hsi: number; // 0 - 100
     readonly pumpScore: number; // 0 - 100
     readonly pod: number; // 0 - 100
