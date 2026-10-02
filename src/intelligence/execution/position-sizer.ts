@@ -8,6 +8,8 @@
  * 4. Portfolio Capacity Allocation across maximum concurrent positions ceiling (e.g. 2 positions)
  */
 
+import { LiquidityFractureDetector, LiquidityFractureEvaluation } from '../risk/liquidity-fracture.js';
+
 export interface TokenSizingProfile {
   mint?: string;
   pair?: string;
@@ -44,6 +46,7 @@ export interface PositionSizerOptions {
   minOrderFloorUsd?: number;
   maxOrderCapUsd?: number;
   maxPriceImpactBps?: number;
+  enforceStressedExitCeiling?: boolean; // Roadmap #260: Cap size to stressed exit capacity
 }
 
 export interface DynamicPositionSizingResult {
@@ -55,6 +58,7 @@ export interface DynamicPositionSizingResult {
   convictionMultiplier: number;
   estimatedPriceImpactPct: number;
   liquidityCapUsd: number;
+  fractureEvaluation?: LiquidityFractureEvaluation;
   rationale: string;
   confidenceGrade: 'PRIME_AGGRESSIVE' | 'HIGH_CONVICTION' | 'BALANCED_BREAKOUT' | 'DEFENSIVE_PROBE' | 'CAPITAL_CONSTRAINED' | 'BLOCKED_RESERVE';
 }
@@ -120,7 +124,23 @@ export function calculateOptimalBuyPositionValue(
     }
   }
 
-  const liquidityCapUsd = poolLiquidityUsd * (maxPriceImpactBps / 10000);
+  const fractureEvaluation = LiquidityFractureDetector.evaluatePool(
+    {
+      solReserve: poolLiquidityUsd * 0.5 / (solPriceUsd ?? 150),
+      tokenReserve: 1_000_000,
+      solPriceUsd: solPriceUsd ?? 150,
+      poolLiquidityUsd,
+    },
+    {
+      maxPriceImpactBps,
+      minOrderFloorUsd: options.minOrderFloorUsd ?? 5.0,
+    }
+  );
+
+  let liquidityCapUsd = poolLiquidityUsd * (maxPriceImpactBps / 10000);
+  if (options.enforceStressedExitCeiling && fractureEvaluation.hardPositionCeilingUsd > 0) {
+    liquidityCapUsd = Math.min(liquidityCapUsd, fractureEvaluation.hardPositionCeilingUsd);
+  }
 
   // 4. Alpha Conviction & Half-Kelly Sizing Multiplier (f*)
   const hsi = Number(token.highSignalIndex ?? 75);
@@ -237,6 +257,7 @@ export function calculateOptimalBuyPositionValue(
     convictionMultiplier: Number(convictionMultiplier.toFixed(2)),
     estimatedPriceImpactPct,
     liquidityCapUsd: Math.round(liquidityCapUsd * 100) / 100,
+    fractureEvaluation,
     rationale,
     confidenceGrade,
   };

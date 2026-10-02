@@ -7,6 +7,7 @@
  * 3. Alpha Conviction & Half-Kelly Sizing Multiplier (HSI, Tier, Pod momentum, Risk penalties)
  * 4. Portfolio Capacity Allocation across maximum concurrent positions ceiling (e.g. 2 positions)
  */
+import { LiquidityFractureDetector } from '../risk/liquidity-fracture.js';
 function clamp(val, min, max) {
     return Math.max(min, Math.min(max, val));
 }
@@ -59,7 +60,19 @@ export function calculateOptimalBuyPositionValue(token = {}, options = {}) {
             };
         }
     }
-    const liquidityCapUsd = poolLiquidityUsd * (maxPriceImpactBps / 10000);
+    const fractureEvaluation = LiquidityFractureDetector.evaluatePool({
+        solReserve: poolLiquidityUsd * 0.5 / (solPriceUsd ?? 150),
+        tokenReserve: 1_000_000,
+        solPriceUsd: solPriceUsd ?? 150,
+        poolLiquidityUsd,
+    }, {
+        maxPriceImpactBps,
+        minOrderFloorUsd: options.minOrderFloorUsd ?? 5.0,
+    });
+    let liquidityCapUsd = poolLiquidityUsd * (maxPriceImpactBps / 10000);
+    if (options.enforceStressedExitCeiling && fractureEvaluation.hardPositionCeilingUsd > 0) {
+        liquidityCapUsd = Math.min(liquidityCapUsd, fractureEvaluation.hardPositionCeilingUsd);
+    }
     // 4. Alpha Conviction & Half-Kelly Sizing Multiplier (f*)
     const hsi = Number(token.highSignalIndex ?? 75);
     let fHsi = 1.0;
@@ -171,6 +184,7 @@ export function calculateOptimalBuyPositionValue(token = {}, options = {}) {
         convictionMultiplier: Number(convictionMultiplier.toFixed(2)),
         estimatedPriceImpactPct,
         liquidityCapUsd: Math.round(liquidityCapUsd * 100) / 100,
+        fractureEvaluation,
         rationale,
         confidenceGrade,
     };

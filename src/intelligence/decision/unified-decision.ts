@@ -10,6 +10,8 @@
 import { SpieAction, SpieEvaluation, SpieFactors, OpportunityStage } from '../spie/spie-engine.js';
 import { MarketRegimeType } from '../spie/kelly-allocator.js';
 import { createHash } from 'node:crypto';
+import { AlphaHalfLifeEngine, AlphaHalfLifeEstimate, OpportunityStage as AlphaOpportunityStage } from '../timing/alpha-half-life.js';
+import { ValueOfInformationEngine, VoiEvaluation } from './value-of-information.js';
 
 export interface UnifiedOpportunityDecision {
   readonly decisionId: string;                     // Canonical decision_id
@@ -42,7 +44,7 @@ export interface UnifiedOpportunityDecision {
   readonly expectedSlippageBps: number;            // Model-estimated slippage for order size
   readonly expectedTransactionCostLamports: bigint;// Combined base fee + priority fee + Jito tip
   readonly marketRegime: MarketRegimeType;
-  readonly opportunityWindowMs: number;            // Valid execution half-life (default 4000ms)
+  readonly opportunityWindowMs: number;            // Valid execution half-life (dynamically predicted)
   readonly invalidationCondition: string;          // Explicit criteria that revokes this decision
   readonly recommendedMaxRiskUsd: number;          // Capital allocation budget for this trade
   readonly riskEvidence: readonly string[];        // Specific risk evidence observations
@@ -52,9 +54,13 @@ export interface UnifiedOpportunityDecision {
   readonly reasonsForAcceptance: readonly string[];// Evidence justifying acceptance
   readonly reasonsForRejection: readonly string[]; // Blocking criteria or risk vetoes
   readonly stage: OpportunityStage;
-  readonly actionRecommendation: SpieAction;
+  readonly actionRecommendation: SpieAction | 'WAIT';
   readonly dominantFactor: string;
   readonly limitingConstraint: string;
+  readonly alphaHalfLifeMs?: number;               // Predicted edge half-life (Roadmap #1, #201)
+  readonly alphaBurnRateBpsPerMs?: number;         // Instantaneous burn rate (Roadmap #2)
+  readonly economicEventHorizonMs?: number;        // Time after which net edge drops to zero (Roadmap #10)
+  readonly voiEvaluation?: VoiEvaluation;          // Value of Information evaluation (Roadmap #203, #204)
 }
 
 export interface ReconcileDecisionInputs {
@@ -93,6 +99,10 @@ export interface ReconcileDecisionInputs {
   readonly freshnessMs?: number;
   readonly strategyVersion?: string;
   readonly featureVersion?: string;
+  readonly opportunityStage?: AlphaOpportunityStage;
+  readonly competitorDensity?: number;
+  readonly opportunityJerk?: number;
+  readonly elapsedMs?: number;
 }
 
 export class UnifiedDecisionEngine {
@@ -168,7 +178,45 @@ export class UnifiedDecisionEngine {
       actionRecommendation = 'ABSTAIN';
     }
 
-    if (actionRecommendation === 'FAST_BUY' || actionRecommendation === 'BREAKOUT_ENTER') {
+    // 5b. Dynamic Alpha Half-Life & Value-of-Information (VOI) Policy
+    const alphaStage = input.opportunityStage ?? (
+      input.spieEvaluation?.opportunityStage === 'DEVELOPING' ? 'BONDING_CURVE_MID' :
+      input.spieEvaluation?.opportunityStage === 'WATCH' ? 'BONDING_CURVE_EARLY' :
+      input.spieEvaluation?.opportunityStage === 'READY' ? 'POST_MIGRATION_AMM' :
+      'BONDING_CURVE_MID'
+    );
+    const halfLifeEstimate = AlphaHalfLifeEngine.estimateHalfLife({
+      stage: alphaStage,
+      initialEdgeBps: spie?.grossAlphaBps ?? Math.max(0, netEvBps + 120),
+      hurdleBps: 100,
+      competitorDensity: input.competitorDensity ?? 0.3,
+      opportunityJerk: input.opportunityJerk ?? 0.0,
+      frictionBps: spie?.executionFrictionBps ?? 120,
+    });
+
+    const uncertainty = Number((1.0 - (Math.abs(confidence - 0.5) * 2)).toFixed(2));
+    let finalAction: SpieAction | 'WAIT' = actionRecommendation;
+    let voiEvaluation: VoiEvaluation | undefined = undefined;
+
+    if (actionRecommendation !== 'ABSTAIN') {
+      voiEvaluation = ValueOfInformationEngine.evaluatePolicy({
+        confidence,
+        uncertainty,
+        netEvBps,
+        elapsedMs: input.elapsedMs ?? 50,
+        halfLifeEstimate,
+      });
+
+      if (voiEvaluation.action === 'WAIT') {
+        finalAction = 'WAIT';
+        reasonsForRejection.push(`VOI_WAIT: ${voiEvaluation.rationale}`);
+      } else if (voiEvaluation.action === 'ABSTAIN') {
+        finalAction = 'ABSTAIN';
+        reasonsForRejection.push(`VOI_ABSTAIN: ${voiEvaluation.rationale}`);
+      }
+    }
+
+    if (finalAction === 'FAST_BUY' || finalAction === 'BREAKOUT_ENTER') {
       reasonsForAcceptance.push(`Positive Net EV (+${netEvBps} bps) exceeds hurdle`);
       reasonsForAcceptance.push(`Strong dominant factor: ${spie?.dominantPositiveFactor ?? 'momentum'}`);
     } else if (reasonsForRejection.length === 0) {
@@ -188,7 +236,7 @@ export class UnifiedDecisionEngine {
         graphEvidenceIds,
         vetoEvidence,
         riskEvidence,
-        actionRecommendation,
+        actionRecommendation: finalAction,
       }))
       .digest('hex');
 
@@ -209,7 +257,7 @@ export class UnifiedDecisionEngine {
       expectedValue: (netEvBps / 10_000) * (input.riskEvaluation?.maxRiskUsd ?? 100),
       expectedNetEvBps: netEvBps,
       confidence,
-      uncertainty: 0.15,
+      uncertainty,
       expectedUpside: (spie?.grossExpectedUpsideBps ?? 2000) / 10_000,
       expectedDownside: (spie?.modeledDownsideBps ?? 1200) / 10_000,
       liquidityQuality: spie?.factors?.liquidityDepth ?? 0.8,
@@ -223,7 +271,7 @@ export class UnifiedDecisionEngine {
       expectedSlippageBps: 120,
       expectedTransactionCostLamports: 150_000n,
       marketRegime: 'TRENDING',
-      opportunityWindowMs: 4000,
+      opportunityWindowMs: halfLifeEstimate.halfLifeMs,
       invalidationCondition: 'Price drops below micro-support or creator dumps supply',
       recommendedMaxRiskUsd: input.riskEvaluation?.maxRiskUsd ?? 100,
       riskEvidence: Object.freeze(riskEvidence),
@@ -232,10 +280,14 @@ export class UnifiedDecisionEngine {
       provenance,
       reasonsForAcceptance: Object.freeze(reasonsForAcceptance),
       reasonsForRejection: Object.freeze(reasonsForRejection),
-      stage: actionRecommendation === 'ABSTAIN' ? 'INVALIDATED' : 'READY',
-      actionRecommendation,
-      dominantFactor: spie?.dominantPositiveFactor ?? (actionRecommendation === 'ABSTAIN' ? 'none' : 'momentum'),
+      stage: finalAction === 'ABSTAIN' ? 'INVALIDATED' : (finalAction === 'WAIT' ? 'WATCH' : 'READY'),
+      actionRecommendation: finalAction,
+      dominantFactor: spie?.dominantPositiveFactor ?? (finalAction === 'ABSTAIN' ? 'none' : 'momentum'),
       limitingConstraint: spie?.dominantNegativeConstraint ?? (reasonsForRejection[0] || 'none'),
+      alphaHalfLifeMs: halfLifeEstimate.halfLifeMs,
+      alphaBurnRateBpsPerMs: halfLifeEstimate.burnRateBpsPerMs,
+      economicEventHorizonMs: halfLifeEstimate.economicEventHorizonMs,
+      voiEvaluation,
     };
 
     this.decisions.set(decisionId, decision);
