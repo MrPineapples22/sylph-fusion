@@ -1136,13 +1136,13 @@ const astraFeed=createAstraFeed(readLive);
 globalCommandGateway.setPaperEntryEvidenceProvider(async (mint, poolAddress) => {
   let basket = null;
   try { basket = await astraFeed(); } catch {}
-  let pair = basket?.pairs?.find(candidate => candidate.mint === mint && (candidate.pair === poolAddress || candidate.mint === poolAddress));
+  let pair = basket?.pairs?.find(candidate => (candidate.mint === mint || candidate.pair === poolAddress || candidate.mint === poolAddress));
   let sol = basket?.pairs?.find(candidate => candidate.mint === 'So11111111111111111111111111111111111111112' && Number.isFinite(candidate.price));
 
   const snapTokens = hub.snapshot().tokens || [];
   const now = Date.now();
   if (!pair) {
-    const snapToken = snapTokens.find(candidate => candidate.mint === mint && (candidate.pair === poolAddress || candidate.poolAddress === poolAddress || candidate.mint === poolAddress || !poolAddress));
+    const snapToken = snapTokens.find(candidate => (candidate.mint === mint || candidate.pair === poolAddress || candidate.poolAddress === poolAddress || candidate.mint === poolAddress));
     if (snapToken && Number.isFinite(snapToken.price) && snapToken.price > 0) {
       const liq = Number.isFinite(snapToken.liquidity) && snapToken.liquidity > 0
         ? snapToken.liquidity
