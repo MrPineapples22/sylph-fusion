@@ -9,6 +9,7 @@
  * 4. AI agents may draft high-risk commands, but CANNOT self-approve them.
  * 5. Durable pre-execution journaling and post-execution CommandResult recording.
  */
+import { createHmac } from 'node:crypto';
 export class TribunalAuthority {
     executedNonces = new Set();
     commandJournal = new Map();
@@ -24,6 +25,10 @@ export class TribunalAuthority {
     }
     getCurrentStateRoot() {
         return this.currentStateRoot;
+    }
+    registeredKeys = new Map();
+    registerKey(entityId, secretOrKey) {
+        this.registeredKeys.set(entityId, secretOrKey);
     }
     /**
      * Pre-execution authorization & durability journaling.
@@ -51,7 +56,58 @@ export class TribunalAuthority {
                 reason: `STATE_RACE_CONDITION: Expected root ${envelope.expectedPreviousStateRoot} != current root ${this.currentStateRoot}`
             };
         }
-        // 5. HIGH_RISK Multi-Party Approval Policy & AI self-approval prohibition
+        // 5. Issuer signature presence and cryptographic validation
+        if (!envelope.issuerSignature || envelope.issuerSignature.trim().length === 0) {
+            return {
+                isAuthorized: false,
+                reason: `MISSING_ISSUER_SIGNATURE: Issuer ${envelope.issuerId} has not signed the command envelope`
+            };
+        }
+        const issuerKey = this.registeredKeys.get(envelope.issuerId);
+        if (issuerKey) {
+            const expectedIssuerSig = createHmac('sha256', issuerKey).update(envelope.digest).digest('hex');
+            if (expectedIssuerSig !== envelope.issuerSignature) {
+                return {
+                    isAuthorized: false,
+                    reason: `INVALID_ISSUER_SIGNATURE: Cryptographic verification failed for issuer ${envelope.issuerId}`
+                };
+            }
+        }
+        // 6. Approval validation: role binding, timestamp, and signature validation
+        const allowedRoles = new Set(['SUPERVISOR', 'RISK_OFFICER', 'EXTERNAL_AUTHORITY']);
+        for (const approval of envelope.approvals) {
+            if (!approval.signature || approval.signature.trim().length === 0) {
+                return {
+                    isAuthorized: false,
+                    reason: `INVALID_APPROVAL_SIGNATURE: Approver ${approval.approverId} signature is empty`
+                };
+            }
+            if (!allowedRoles.has(approval.approverRole)) {
+                return {
+                    isAuthorized: false,
+                    reason: `INVALID_ROLE_BINDING: Approver ${approval.approverId} role ${approval.approverRole} is not an authorized approval role`
+                };
+            }
+            if (approval.approvedAtMs > nowMs + 10_000 || approval.approvedAtMs < envelope.issuedAtMs - 10_000) {
+                return {
+                    isAuthorized: false,
+                    reason: `INVALID_APPROVAL_TIMESTAMP: Approver ${approval.approverId} timestamp ${approval.approvedAtMs} out of valid temporal window`
+                };
+            }
+            const approverKey = this.registeredKeys.get(approval.approverId);
+            if (approverKey) {
+                const expectedSig = createHmac('sha256', approverKey)
+                    .update(`${envelope.digest}:${approval.approverRole}:${approval.approvedAtMs}`)
+                    .digest('hex');
+                if (expectedSig !== approval.signature) {
+                    return {
+                        isAuthorized: false,
+                        reason: `INVALID_APPROVER_SIGNATURE: Cryptographic signature mismatch for approver ${approval.approverId}`
+                    };
+                }
+            }
+        }
+        // 7. HIGH_RISK Multi-Party Approval Policy & AI self-approval prohibition
         if (envelope.riskTier === 'HIGH_RISK') {
             if (envelope.isAiGenerated) {
                 // AI drafted: must be approved by human supervisor/risk officer

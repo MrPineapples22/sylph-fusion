@@ -4,12 +4,14 @@
  * neither a signer nor a network client.
  */
 import type { RuntimeConfigSnapshot } from './runtime-context.js';
+import type { UnifiedPipelineUnit } from './platform/pipeline/unified-unit.js';
 
 export interface RuntimeComposition<TMarket, TExecution, TReconciliation> {
   readonly context: RuntimeConfigSnapshot;
   readonly market: TMarket;
   readonly execution: TExecution;
   readonly reconciliation: TReconciliation;
+  readonly unit?: UnifiedPipelineUnit;
 }
 
 export function composePaperRuntime<TMarket, TExecution, TReconciliation>(parts: RuntimeComposition<TMarket, TExecution, TReconciliation>): RuntimeComposition<TMarket, TExecution, TReconciliation> {

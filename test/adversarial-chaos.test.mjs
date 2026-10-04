@@ -30,13 +30,43 @@ test('CHAOS-001: Anti-Sniper Baseline blocks tokens at age < 10s with < 3 unique
   assert.equal(result1.allowed, false);
   assert.match(result1.reason, /ANTI_SNIPER_BASELINE_NOT_MET/);
 
-  // Mature token or >= 3 buyers passes anti-sniper baseline
+  // Three verified buyers pass the buyer floor after the minimum age.
   const result2 = checkAntiSniperAndDexAsymmetry({ ageMs: 12000, uniqueBuyers: 4, isDex: false });
   assert.equal(result2.allowed, true);
 
-  // Mature DEX token bypasses the buyer count check (asymmetry rule)
+  // The written TOKEN-007 age floor applies even if buyer count is high.
+  for (const ageMs of [0, 9_999]) {
+    assert.equal(checkAntiSniperAndDexAsymmetry({ ageMs, uniqueBuyers: 4, isDex: true }).allowed, false);
+  }
+  assert.equal(checkAntiSniperAndDexAsymmetry({ ageMs: 10_000, uniqueBuyers: 3, isDex: true }).allowed, true);
+
+  // A young DEX pool does not bypass the anti-sniper window.
   const result3 = checkAntiSniperAndDexAsymmetry({ ageMs: 3000, uniqueBuyers: 1, isDex: true });
-  assert.equal(result3.allowed, true);
+  assert.equal(result3.allowed, false);
+
+  // Age and venue never substitute for a measured distinct-buyer count.
+  const result4 = checkAntiSniperAndDexAsymmetry({ ageMs: 12_000, uniqueBuyers: null, isDex: true });
+  assert.equal(result4.allowed, false);
+  assert.match(result4.reason, /UNVERIFIED_UNIQUE_BUYER_COUNT/);
+
+  // Transaction count cannot be used as a proxy for distinct buyers.
+  const result5 = checkAntiSniperAndDexAsymmetry({ ageMs: 12_000, uniqueBuyers: null, isDex: false, txs: 100 });
+  assert.equal(result5.allowed, false);
+  assert.match(result5.reason, /UNVERIFIED_UNIQUE_BUYER_COUNT/);
+
+  // Mature DEX with fewer than three buyers remains blocked by TOKEN-007.
+  const result6 = checkAntiSniperAndDexAsymmetry({ ageMs: 12_000, uniqueBuyers: 1, isDex: true });
+  assert.equal(result6.allowed, false);
+  assert.match(result6.reason, /INSUFFICIENT_BUYER_ACCUMULATION/);
+
+  for (const ageMs of [null, undefined, -1, NaN, Infinity]) {
+    const invalidAge = checkAntiSniperAndDexAsymmetry({ ageMs, uniqueBuyers: 4, isDex: true });
+    assert.equal(invalidAge.allowed, false);
+    assert.match(invalidAge.reason, /UNVERIFIED_TOKEN_AGE/);
+  }
+  for (const uniqueBuyers of [null, undefined, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.equal(checkAntiSniperAndDexAsymmetry({ ageMs: 20_000, uniqueBuyers, isDex: true }).allowed, false);
+  }
 });
 
 test('CHAOS-002: DexScreener Multi-Pair Liquidity Priority prioritizes active DEX over defunct bonding curve', () => {

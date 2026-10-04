@@ -66,7 +66,7 @@ export class PortfolioEvacuationEngine {
      * Plans the next bounded evacuation tranche for a position (Parts XXXV, XXXVI, XXXVIII).
      * Enforces Evacuation Safety Envelope: WorstCaseRisk(after) <= WorstCaseRisk(before) + cost.
      */
-    planNextTranche(mint, currentSlot) {
+    planNextTranche(mint, currentSlot, options) {
         const pos = this.positions.get(mint);
         if (!pos)
             return { can_evacuate: false, reason: 'Position not found' };
@@ -78,10 +78,12 @@ export class PortfolioEvacuationEngine {
         if (remainingPct <= 0) {
             return { can_evacuate: false, reason: 'POSITION_FULLY_EVACUATED' };
         }
-        // Adaptive tranche sizing: 25% increments (Part XXXVI)
-        const tranchePct = Math.min(25, remainingPct);
+        // Dynamic tranche sizing (Section XXVII): Default to 25% or caller target
+        const targetPct = options?.targetTranchePct ?? 25;
+        const tranchePct = Math.min(targetPct, remainingPct);
         const trancheSol = (pos.size_sol * tranchePct) / 100;
-        const impactBps = Math.min(500, Math.round((trancheSol / pos.pool_liquidity_sol) * 10000));
+        // Section XXVII: Remove 500-bps clipping! Record true unclipped modeled impact
+        const impactBps = Math.round((trancheSol / Math.max(0.001, pos.pool_liquidity_sol)) * 10000);
         const maxCostSol = trancheSol * (impactBps / 10000) + 0.0002;
         const preRisk = (remainingPct / 100) * pos.size_sol;
         const postRisk = ((remainingPct - tranchePct) / 100) * pos.size_sol + maxCostSol;

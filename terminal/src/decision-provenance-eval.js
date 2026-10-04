@@ -68,11 +68,11 @@ export function evaluateDecisionProvenance({
 
   // Microstructure telemetry
   const micro = {
-    buyerCount5m: snapshot?.microstructure?.buyerCount5m ?? (candidate?.buyers ? candidate.buyers.size : 0),
-    buyTransactionCount: snapshot?.microstructure?.buyTransactionCount ?? 0,
-    sellTransactionCount: snapshot?.microstructure?.sellTransactionCount ?? 0,
-    buySellRatio: snapshot?.microstructure?.buySellRatio ?? 1.0,
-    buyerArrivalVelocityPerSec: snapshot?.microstructure?.buyerArrivalVelocityPerSec ?? 0,
+    buyerCount5m: snapshot?.microstructure?.buyerCount5m ?? (Number.isSafeInteger(candidate?.buyers?.size) ? candidate.buyers.size : null),
+    buyTransactionCount: snapshot?.microstructure?.buyTransactionCount ?? null,
+    sellTransactionCount: snapshot?.microstructure?.sellTransactionCount ?? null,
+    buySellRatio: snapshot?.microstructure?.buySellRatio ?? null,
+    buyerArrivalVelocityPerSec: snapshot?.microstructure?.buyerArrivalVelocityPerSec ?? null,
     creatorWalletHashed: snapshot?.microstructure?.creatorWalletHashed || 'hash_unavailable',
     topHoldersHashed: snapshot?.microstructure?.topHoldersHashed || [],
     creatorInitialSupplyPct: snapshot?.microstructure?.creatorInitialSupplyPct ?? 0,

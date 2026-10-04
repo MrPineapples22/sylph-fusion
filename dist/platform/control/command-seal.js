@@ -67,9 +67,28 @@ export class ControlRootKernel {
     }
     /**
      * Authoritative Command Envelope Verification & Anti-Replay Validation
+     * Specifications: Section LVIII (Command Seal Fix)
      */
     verifyAndAuthorizeCommand(envelope, currentStateRoot, nowMs) {
-        // 1. Verify Operator Identity
+        // 1. Recompute payloadHash
+        const recomputedPayloadHash = createHash('sha256').update(JSON.stringify(envelope.payload)).digest('hex');
+        if (envelope.payloadHash !== recomputedPayloadHash) {
+            return {
+                authorized: false,
+                reason: `PAYLOAD_HASH_MISMATCH: Embedded payloadHash ${envelope.payloadHash} does not match computed ${recomputedPayloadHash}`
+            };
+        }
+        // 2. Reconstruct canonical envelope digest
+        const digestPayload = `${envelope.commandId}:${envelope.operatorId}:${envelope.role}:${envelope.action}:${recomputedPayloadHash}:${envelope.issuedAtMs}:${envelope.expiresAtMs}:${envelope.nonce}:${envelope.controlEpoch}:${envelope.fenceEpoch}:${envelope.releaseRoot}:${envelope.configRoot}:${envelope.expectedStateRoot}`;
+        const reconstructedDigest = createHash('sha256').update(digestPayload).digest('hex');
+        // 3. Ensure reconstructed digest equals embedded digest
+        if (reconstructedDigest !== envelope.envelopeDigest) {
+            return {
+                authorized: false,
+                reason: `ENVELOPE_DIGEST_MISMATCH: Embedded digest ${envelope.envelopeDigest} does not match reconstructed ${reconstructedDigest}`
+            };
+        }
+        // 4. Verify Operator Identity & Role
         const operator = this.registeredOperators.get(envelope.operatorId);
         if (!operator) {
             return { authorized: false, reason: `Unknown operatorId: ${envelope.operatorId}` };
@@ -77,30 +96,32 @@ export class ControlRootKernel {
         if (operator.role !== envelope.role) {
             return { authorized: false, reason: `Operator role mismatch: expected ${operator.role}, received ${envelope.role}` };
         }
-        // 2. Anti-Replay Nonce Check
+        // 5. Verify Digital Signature against Reconstructed Digest (never against caller-supplied digest alone)
+        const expectedSig = createHmac('sha256', operator.secretOrKey).update(reconstructedDigest).digest('hex');
+        if (expectedSig !== envelope.signature) {
+            return { authorized: false, reason: 'INVALID_SIGNATURE: Command cryptographic envelope signature verification failed' };
+        }
+        // 6. Anti-Replay Nonce Check
         if (this.seenNonces.has(envelope.nonce)) {
             return { authorized: false, reason: `ANTI-REPLAY VIOLATION: Nonce ${envelope.nonce} has already been executed` };
         }
-        // 3. Expiration Check
+        // 7. Expiration Check
         if (nowMs > envelope.expiresAtMs) {
             return { authorized: false, reason: `Command expired: current time ${nowMs} > expiry ${envelope.expiresAtMs}` };
         }
-        // 4. Fence Epoch Validation (Section 42 & Invariant 4)
+        // 8. Epochs & Roots Validation (Section 42 & Invariant 4)
         if (envelope.fenceEpoch !== this.currentFenceEpoch) {
             return {
                 authorized: false,
                 reason: `STALE FENCE REJECTION: Command fence epoch ${envelope.fenceEpoch} does not match active epoch ${this.currentFenceEpoch}`
             };
         }
-        // 5. Release Root Validation
         if (envelope.releaseRoot !== this.currentReleaseRoot) {
             return {
                 authorized: false,
                 reason: `RELEASE ROOT MISMATCH: Command built against ${envelope.releaseRoot}, current release is ${this.currentReleaseRoot}`
             };
         }
-        // 6. Config Root Validation (Section 46)
-        // Risk-increasing commands under stale config are strictly invalidated
         const isRiskIncreasing = envelope.action.startsWith('OPEN') || envelope.action.startsWith('INCREASE');
         if (isRiskIncreasing && envelope.configRoot !== this.activeConfigSeal.bundleHash) {
             return {
@@ -108,17 +129,11 @@ export class ControlRootKernel {
                 reason: `CONFIG STALENESS VIOLATION: Risk-increasing command was authorized under obsolete config root ${envelope.configRoot}`
             };
         }
-        // 7. Expected State Root Validation (CAS semantics)
         if (envelope.expectedStateRoot !== currentStateRoot) {
             return {
                 authorized: false,
                 reason: `STATE CONFLICT: Expected state root ${envelope.expectedStateRoot}, actual state root ${currentStateRoot}`
             };
-        }
-        // 8. Cryptographic Signature Verification
-        const expectedSig = createHmac('sha256', operator.secretOrKey).update(envelope.envelopeDigest).digest('hex');
-        if (expectedSig !== envelope.signature) {
-            return { authorized: false, reason: 'INVALID_SIGNATURE: Command cryptographic envelope signature verification failed' };
         }
         // Mark nonce as executed
         this.seenNonces.add(envelope.nonce);

@@ -51,7 +51,7 @@ export interface KernelVerificationReport {
 }
 
 export class CapitalKernel {
-  private authorityMode: AuthorityMode = 'A5_NORMAL';
+  private authorityMode: AuthorityMode;
   private readonly maxOpenPositions: number;
   private readonly maxUnknownCapitalSol: number;
   private readonly maxUnresolvedIntents: number;
@@ -60,7 +60,10 @@ export class CapitalKernel {
     maxOpenPositions?: number;
     maxUnknownCapitalSol?: number;
     maxUnresolvedIntents?: number;
+    initialAuthority?: AuthorityMode;
   }) {
+    // Invariant: Bootstrap authority is strictly A0_OBSERVE_ONLY (Master Blueprint Section XXXVIII, LXVII #1)
+    this.authorityMode = options?.initialAuthority ?? 'A0_OBSERVE_ONLY';
     this.maxOpenPositions = options?.maxOpenPositions ?? 5;
     this.maxUnknownCapitalSol = options?.maxUnknownCapitalSol ?? 10.0;
     this.maxUnresolvedIntents = options?.maxUnresolvedIntents ?? 3;
@@ -106,15 +109,17 @@ export class CapitalKernel {
   /**
    * Verified recovery machine using cryptographic RecoveryCertificate (Part XI).
    * Restores authority only when explicit evidence proves the underlying fault is resolved.
+   * Invariant INV_AUTH_012: No authority-bearing decision depends on descriptive caller booleans (cert.verification_result removed).
    */
   public restoreAuthorityWithCertificate(cert: RecoveryCertificate): boolean {
-    if (!cert.verification_result) return false;
+    if (!cert.recovery_id || cert.recovery_id.length < 8) return false;
     if (cert.provider_status !== 'HEALTHY') return false;
     if (cert.settlement_state !== 'CLEAN') return false;
     if (cert.signer_state !== 'READY') return false;
     if (cert.market_freshness_ms > 30_000 || cert.market_freshness_ms < 0) return false;
     if (!cert.capital_state_root || cert.capital_state_root.length < 16) return false;
     if (!cert.position_reconciliation_hash || cert.position_reconciliation_hash.length < 8) return false;
+    if (!cert.evidence_hashes || cert.evidence_hashes.length === 0) return false;
 
     // Validate upward progression step in recovery lattice
     const rank = (m: AuthorityMode) => {
@@ -242,13 +247,13 @@ export class CapitalKernel {
       });
     }
 
-    // Inv 9: revoked_proof -> cannot authorize new signature
-    const proofPass = !params.is_proof_revoked && params.is_lease_valid;
+    // Inv 9: revoked_proof -> cannot authorize new exposure increase (Invariant 6 & INV_AUTH_011: REDUCE/CLOSE/CANCEL dominate)
+    const proofPass = params.action_type !== 'INCREASE_EXPOSURE' || (!params.is_proof_revoked && params.is_lease_valid);
     results.push({
       invariant_id: 'INV_9_PROOF_NOT_REVOKED',
       is_passed: proofPass,
       severity: 'FATAL',
-      message: proofPass ? 'Proof lease valid' : 'Proof is revoked or proof lease has expired',
+      message: proofPass ? 'Proof lease valid or action is risk-reducing' : 'Proof is revoked or proof lease has expired for exposure increase',
     });
 
     // Inv 10: Unknown capital limits (Part XLII)

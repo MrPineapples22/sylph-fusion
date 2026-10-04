@@ -9,7 +9,7 @@ import {isLocalRequest, readCommand} from './local-request.mjs';
 import {globalProviderHealthTracker} from '../dist/platform/ingestion/provider-health.js';
 import {discoverySnapshot} from '../dist/discovery.js';
 import {MarketHub, validMint} from '../dist/market-hub.js';
-import {scanToken} from '../dist/risk.js';
+import {scanToken, checkAntiSniperAndDexAsymmetry} from '../dist/risk.js';
 import {MasterIntelligenceEngine} from '../dist/intelligence/master-orchestrator.js';
 import {globalCommandGateway} from '../dist/command-gateway.js';
 import {globalTradeLearningService} from '../dist/intelligence/attribution/trade-learning-service.js';
@@ -23,6 +23,7 @@ import {OperatorReadModel} from '../dist/operator-read-model.js';
 import {createRuntimeContext} from '../dist/runtime-context.js';
 import {serveStaticRequest} from './static-files.mjs';
 import {createDiscoveryRiskCache} from './discovery-risk-cache.mjs';
+import {isBasketEntryAuthorized, resolvePaperMarketEvidence} from './paper-market-evidence.mjs';
 import {serveNexusResearchUnavailable} from './nexus-research-response.mjs';
 import {
   HardRuleRegistry,
@@ -64,6 +65,7 @@ try {
   // If .env is missing, unreadable, or already loaded, proceed with process.env
 }
 const port=Number(process.env.TERMINAL_PORT||8793);
+globalCommandGateway.setEmergencyStopPersistence(emergencyStopStore);
 const restoredEmergencyStop = await emergencyStopStore.load();
 if (restoredEmergencyStop) {
   globalCommandGateway.restoreEmergencyStop(restoredEmergencyStop);
@@ -142,7 +144,14 @@ const guardianInterval = setInterval(async () => {
             const now = Date.now();
             for (const exit of exits) {
               if (exit && exit.mint) {
-                serverTradeCooldowns.set(exit.mint, now);
+                const prev = serverTradeCooldowns.get(exit.mint);
+                const isLoss = exit.action === 'STOP_LOSS' || exit.action === 'EMERGENCY_UNWIND' || exit.action === 'FALSE_BREAKOUT';
+                const consecutiveLosses = isLoss ? ((prev?.consecutiveLosses || 0) + 1) : 0;
+                serverTradeCooldowns.set(exit.mint, {
+                  timestamp: now,
+                  action: exit.action,
+                  consecutiveLosses,
+                });
               }
             }
           }
@@ -172,15 +181,38 @@ const guardianInterval = setInterval(async () => {
         for (const t of unheldTokens) {
           const sym = (t.symbol || '').toUpperCase().trim(); const pNum = Number(t.price || t.priceUsd || 0); if (pNum > 1.0 || t.mint.startsWith('So111111') || sym === 'SOL' || sym === 'WSOL' || sym === 'USDC' || sym === 'USDT' || sym === 'USDH' || t.mint.startsWith('EPjFW') || t.mint.startsWith('Es9v')) continue;
           const sig = discoverySignals.get(t.mint);
-          let risk = discoveryRisks.get(t.mint);
-          if (!risk && !marketConfigured) {
-            risk = { mint: t.mint, at: Date.now(), safe: true, rugged: false, score: 15, providers: { rugcheck: 'live', rpc: 'live' } };
-            discoveryRisks.set(t.mint, risk);
-          }
+          const risk = discoveryRisks.get(t.mint);
           const riskNow = Date.now();
           if (!risk || risk.mint !== t.mint || !Number.isFinite(risk.at) || risk.at > riskNow || riskNow - risk.at > 45_000 ||
-              risk.safe !== true || risk.rugged !== false || !Number.isFinite(risk.score) || risk.score >= 55 ||
+              risk.safe !== true || risk.rugged !== false || !Number.isFinite(risk.score) || risk.score >= 50 ||
               risk.providers?.rugcheck !== 'live' || risk.providers?.rpc !== 'live') continue;
+
+          // Strict Anti-Honeypot & Whale Concentration Protections:
+          if (risk.holders?.top10Status === 'over-limit' || (risk.holders?.top10Bps && risk.holders.top10Bps > 4500)) continue;
+          if (Array.isArray(risk.risks) && risk.risks.some(r => /danger|critical/i.test(r.level || ''))) continue;
+
+          // Strict Order Flow & Momentum Validation:
+          const change5m = t.change5m !== null && t.change5m !== undefined ? Number(t.change5m) : null;
+          if (change5m !== null && change5m < -1.0) continue;
+          const buys5m = Number(t.buys5m || 0);
+          const sells5m = Number(t.sells5m || 0);
+          if (sells5m > 10 && buys5m > 0 && sells5m > buys5m * 1.4) continue;
+
+          // Liquidity Depth Floor to prevent single-order slippage wipeouts:
+          const liq = Number(t.liquidity || 0);
+          if (liq < 12_000) continue;
+
+          // Anti-Sniper Baseline Protection:
+          const pairAgeMs = Number.isSafeInteger(t.pairCreatedAt) && t.pairCreatedAt > 0
+            ? Date.now() - t.pairCreatedAt
+            : null;
+          const antiSniper = checkAntiSniperAndDexAsymmetry({
+            ageMs: pairAgeMs,
+            // Aggregated transaction counts do not identify distinct buyers.
+            uniqueBuyers: null,
+            isDex: Boolean(t.complete || t.migrated || (t.dex && t.dex !== 'pumpfun')),
+          });
+          if (!antiSniper.allowed) continue;
 
           const hsi = sig?.highSignalIndex ?? 0;
           const pod = sig?.pod ?? 'FLAT';
@@ -190,8 +222,13 @@ const guardianInterval = setInterval(async () => {
 
           const curHurdle = globalTradeLearningService.getSnapshot()?.adaptiveCalibration?.adaptiveHsiHurdle ?? 80;
           if (hsi >= curHurdle && isUp) {
-            const lastTrade = serverTradeCooldowns.get(t.mint) || 0;
-            if (Date.now() - lastTrade < 180_000) continue;
+            const lastTradeInfo = serverTradeCooldowns.get(t.mint);
+            if (lastTradeInfo) {
+              const timeSinceLast = Date.now() - (typeof lastTradeInfo === 'number' ? lastTradeInfo : lastTradeInfo.timestamp);
+              const consecutiveLosses = typeof lastTradeInfo === 'object' ? (lastTradeInfo.consecutiveLosses || 0) : 0;
+              const requiredCooldownMs = consecutiveLosses >= 2 ? 3_600_000 : consecutiveLosses === 1 ? 900_000 : 300_000;
+              if (timeSinceLast < requiredCooldownMs) continue;
+            }
 
             const sizing = calculateOptimalBuyPositionValue(
               {
@@ -233,7 +270,7 @@ const guardianInterval = setInterval(async () => {
           const topCandidate = scored[0];
           const candToken = topCandidate.token;
           const optimalBuyUsd = topCandidate.sizing.optimalUsd;
-          serverTradeCooldowns.set(candToken.mint, Date.now());
+          serverTradeCooldowns.set(candToken.mint, { timestamp: Date.now(), action: 'BUY', consecutiveLosses: 0 });
 
           const poolAddress = candToken.pair || candToken.mint;
           const priceUsd = topCandidate.price;
@@ -283,9 +320,19 @@ function publishObservedMarketSignal(token, now) {
   const highSignalIndex = complete ? Math.min(100, Math.max(10, Math.round(liqScore + txScore))) : 0;
   
   const change = Number(token.change || 0);
-  const isPositiveMomentum = change >= 1.0;
-  const isSevereDowntrend = change < -1.0;
-  const pod = (isPositiveMomentum && liquidity >= 10000) ? 'UP' : (isSevereDowntrend ? 'DOWN' : 'FLAT');
+  const change5m = token.change5m !== null && token.change5m !== undefined ? Number(token.change5m) : null;
+  const change1h = token.change1h !== null && token.change1h !== undefined ? Number(token.change1h) : null;
+  const buys5m = token.buys5m !== null && token.buys5m !== undefined ? Number(token.buys5m) : null;
+  const sells5m = token.sells5m !== null && token.sells5m !== undefined ? Number(token.sells5m) : null;
+
+  // Active dumping in recent 5 minutes: price dropped > 1% or sells dominate buys by > 1.5x
+  const isDumping5m = (change5m !== null && change5m < -1.0) ||
+                      (sells5m !== null && buys5m !== null && sells5m > 10 && sells5m > buys5m * 1.5);
+  const isSevereDowntrend = change < -1.0 || isDumping5m || (change1h !== null && change1h < -5.0);
+
+  // Positive momentum requires overall positive change, no active 5m dump, and positive 5m price change if available
+  const isPositiveMomentum = change >= 1.0 && !isDumping5m && (change5m === null || change5m >= 0.0);
+  const pod = (isPositiveMomentum && liquidity >= 12000) ? 'UP' : (isSevereDowntrend ? 'DOWN' : 'FLAT');
   const confidence = complete ? Number(Math.min(0.95, Math.max(0.2, (highSignalIndex / 100))).toFixed(2)) : 0;
 
   discoverySignals.set(token.mint, {
@@ -908,7 +955,7 @@ async function handleRequest(req,res){
       const parsed = await readCommand(req);
       if (parsed.type === 'SET_AUTOMATION' && parsed.payload.enabled) {
         const basket = await astraFeed();
-        if (false && (basket?.verified !== true || basket?.entryAllowed !== true)) {
+        if (!isBasketEntryAuthorized(basket, 'ASTRA_FEED')) {
           res.writeHead(409, {'Content-Type': 'application/json'});
           res.end(JSON.stringify({ok:false,error:'AUTOMATION_BLOCKED: Verified market basket and required signals are unavailable.'}));
           return;
@@ -927,7 +974,7 @@ async function handleRequest(req,res){
             return;
           }
           const basket = await astraFeed();
-          if (false && (basket?.verified !== true || basket?.entryAllowed !== true)) {
+          if (!isBasketEntryAuthorized(basket, 'ASTRA_FEED')) {
             res.writeHead(409, {'Content-Type': 'application/json'});
             res.end(JSON.stringify({ok:false,error:'ENTRY_BLOCKED: Verified market basket and required signals are unavailable.'}));
             return;
@@ -967,27 +1014,7 @@ async function handleRequest(req,res){
         }
       }
       const result = await globalCommandGateway.executeCommand(parsed);
-      let stopPersistence = null;
-      if (result.success && parsed.type === 'CLEAR_EMERGENCY_STOP') {
-        try {
-          await emergencyStopStore.clear();
-          stopPersistence = 'CLEARED';
-        } catch (error) {
-          console.error('[Safety] Cleared emergency stop in memory but could not delete store file:', error?.message || error);
-          stopPersistence = 'CLEAR_FAILED';
-        }
-      } else if (result.success && (parsed.type === 'EMERGENCY_STOP' || parsed.type === 'PANIC_CLOSE_ALL')) {
-        const stop = globalCommandGateway.getSnapshot().emergencyStop;
-        if (stop) {
-          try {
-            await emergencyStopStore.save(stop);
-            stopPersistence = 'PERSISTED';
-          } catch (error) {
-            console.error('[Safety] Paper emergency stop is latched in memory but could not be durably recorded:', error?.message || error);
-            stopPersistence = 'PERSISTENCE_FAILED';
-          }
-        }
-      }
+      const stopPersistence = result.emergencyStopPersistence;
       res.writeHead(result.success ? 200 : 409, {'Content-Type': 'application/json'});
       res.end(JSON.stringify({ok: result.success, result, ...(stopPersistence ? {emergencyStopPersistence: stopPersistence} : {})}, (_, v) => typeof v === 'bigint' ? v.toString() : v));
     } catch (e) {
@@ -1133,60 +1160,13 @@ async function handleRequest(req,res){
   await serveStaticRequest({req, res, root, project});
 }
 const astraFeed=createAstraFeed(readLive);
-globalCommandGateway.setPaperEntryEvidenceProvider(async (mint, poolAddress) => {
-  let basket = null;
-  try { basket = await astraFeed(); } catch {}
-  let pair = basket?.pairs?.find(candidate => (candidate.mint === mint || candidate.pair === poolAddress || candidate.mint === poolAddress));
-  let sol = basket?.pairs?.find(candidate => candidate.mint === 'So11111111111111111111111111111111111111112' && Number.isFinite(candidate.price));
-
-  const snapTokens = hub.snapshot().tokens || [];
-  const now = Date.now();
-  if (!pair) {
-    const snapToken = snapTokens.find(candidate => (candidate.mint === mint || candidate.pair === poolAddress || candidate.poolAddress === poolAddress || candidate.mint === poolAddress));
-    if (snapToken && Number.isFinite(snapToken.price) && snapToken.price > 0) {
-      const liq = Number.isFinite(snapToken.liquidity) && snapToken.liquidity > 0
-        ? snapToken.liquidity
-        : (Number.isFinite(snapToken.liquidityUsd) && snapToken.liquidityUsd > 0 ? snapToken.liquidityUsd : 20000);
-      pair = {
-        mint: snapToken.mint,
-        pair: snapToken.pair || poolAddress || snapToken.mint,
-        price: snapToken.price,
-        liquidity: liq,
-        at: snapToken.at && (now - snapToken.at <= 5000) ? snapToken.at : now,
-      };
-    }
-  }
-  if (!sol) {
-    const snapSol = snapTokens.find(candidate => candidate.mint === 'So11111111111111111111111111111111111111112' || candidate.symbol === 'SOL');
-    if (snapSol && Number.isFinite(snapSol.price) && snapSol.price > 0) {
-      sol = {
-        price: snapSol.price,
-        at: snapSol.at && (now - snapSol.at <= 5000) ? snapSol.at : now,
-      };
-    } else {
-      const gatewaySol = globalCommandGateway.getSnapshot().solPriceUsd;
-      if (Number.isFinite(gatewaySol) && gatewaySol > 0) {
-        sol = {
-          price: gatewaySol,
-          at: now,
-        };
-      }
-    }
-  }
-
-  if (!pair || !sol) return null;
-  return {
-    mint: pair.mint,
-    poolAddress: pair.pair,
-    priceUsd: pair.price,
-    liquidityUsd: pair.liquidity,
-    observedAt: pair.at && (now - pair.at <= 5000) ? pair.at : now,
-    solPriceUsd: sol.price,
-    solObservedAt: sol.at && (now - sol.at <= 5000) ? sol.at : now,
-    verified: true,
-    entryAllowed: true,
-  };
-});
+globalCommandGateway.setPaperEntryEvidenceProvider((mint, poolAddress) => resolvePaperMarketEvidence({
+  mint,
+  poolAddress,
+  getBasket: () => astraFeed(),
+  getHubSnapshot: () => hub.snapshot(),
+  marketDexUrl,
+}));
 server.requestTimeout = 15_000;
 server.headersTimeout = 10_000;
 // The terminal exposes operator commands. Keep it private to this machine until

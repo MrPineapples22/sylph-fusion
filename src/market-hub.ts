@@ -13,6 +13,8 @@ export type TokenRow = {
   name: string;
   price: number | null;
   change: number | null;
+  change5m?: number | null;
+  change1h?: number | null;
   liquidity: number | null;
   volume: number | null;
   volume1h: number | null;
@@ -27,6 +29,11 @@ export type TokenRow = {
   confidenceScore?: number;
   txs?: number;
   txCount?: number;
+  buys5m?: number | null;
+  sells5m?: number | null;
+  buys1h?: number | null;
+  sells1h?: number | null;
+  pairCreatedAt?: number | null;
 };
 const numeric = (n: unknown): number | null => n !== null && n !== undefined && n !== '' && Number.isFinite(Number(n)) ? Number(n) : null;
 export function validMint(mint: unknown): mint is string { try { return typeof mint === 'string' && new PublicKey(mint).toBase58() === mint; } catch { return false; } }
@@ -47,6 +54,8 @@ export function normalizePairs(rows: any[], at = Date.now()): TokenRow[] {
       name: String(p.baseToken.name || 'Unknown token').slice(0,80),
       price: numeric(p.priceUsd),
       change: numeric(p.priceChange?.h24),
+      change5m: numeric(p.priceChange?.m5),
+      change1h: numeric(p.priceChange?.h1),
       liquidity: numeric(p.liquidity?.usd),
       volume: numeric(p.volume?.h24),
       volume1h: numeric(p.volume?.h1),
@@ -59,6 +68,11 @@ export function normalizePairs(rows: any[], at = Date.now()): TokenRow[] {
       at,
       txs: txCount ?? undefined,
       txCount: txCount ?? undefined,
+      buys5m: numeric(p.txns?.m5?.buys),
+      sells5m: numeric(p.txns?.m5?.sells),
+      buys1h: numeric(p.txns?.h1?.buys),
+      sells1h: numeric(p.txns?.h1?.sells),
+      pairCreatedAt: numeric(p.pairCreatedAt),
     };
     // Multi-Pair Liquidity Priority: strictly choose pair with highest real USD liquidity (> 0)
     // Prevents defunct bonding curve pairs (liquidity: null/0) from polluting active DEX pool prices

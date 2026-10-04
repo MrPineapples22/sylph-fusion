@@ -12,9 +12,20 @@ export class ExecutionAuthorityEngine {
     currentAuthority = 'SIMULATE';
     executionRealities = [];
     constructor(initialAuthority = 'SIMULATE') {
-        this.currentAuthority = initialAuthority;
+        // Invariant: Live execution authority cannot be set generically. Default to SIMULATE.
+        this.currentAuthority = initialAuthority === 'EXECUTE' ? 'SIMULATE' : initialAuthority;
     }
+    /**
+     * @deprecated Generic setAuthority is prohibited in production (Master Blueprint Sections XLII, LXVII #2).
+     * Live execution authority is derived state requiring verified ActionProofBundle and AuthorityToken.
+     */
     setAuthority(authority) {
+        if (authority === 'EXECUTE') {
+            // Invariant INV_AUTH_002: No generic authority setter can authorize live trades.
+            console.warn('ExecutionAuthorityEngine.setAuthority: Direct escalation to EXECUTE rejected; authority must be derived.');
+            this.currentAuthority = 'SIMULATE';
+            return;
+        }
         this.currentAuthority = authority;
     }
     getAuthority() {
@@ -76,4 +87,5 @@ export class PositionReconciler {
         return results;
     }
 }
+export const ExecutionIntentFactory = ExecutionAuthorityEngine;
 //# sourceMappingURL=execution-authority.js.map

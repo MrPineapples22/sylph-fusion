@@ -138,6 +138,24 @@ test('evaluateDecisionProvenance handles model timeout as fail-closed modelUnava
   assert.match(modelGate.summary, /ml_inference_timeout_exceeded_10ms/);
 });
 
+test('missing buyer observations stay unavailable instead of becoming zero or neutral ratio', () => {
+  const result = evaluateDecisionProvenance({candidate: {mint: 'MintMissingBuyers111111111111111111111111'}});
+  assert.equal(result.microstructure.buyerCount5m, null);
+  assert.equal(result.microstructure.buyTransactionCount, null);
+  assert.equal(result.microstructure.sellTransactionCount, null);
+  assert.equal(result.microstructure.buySellRatio, null);
+  assert.equal(result.microstructure.buyerArrivalVelocityPerSec, null);
+  assert.notEqual(result.gates.find(gate => gate.id === 'buyers_microstructure').status, 'passed');
+});
+
+test('an observed candidate buyer set remains countable when its snapshot lacks that feature', () => {
+  const result = evaluateDecisionProvenance({
+    candidate: {mint: 'MintObservedBuyers111111111111111111111111', buyers: new Set(['a', 'b', 'c'])},
+    snapshot: {microstructure: {buyerCount5m: null}},
+  });
+  assert.equal(result.microstructure.buyerCount5m, 3);
+});
+
 test('evaluateDecisionProvenance extracts Streamflow vesting and macro yield hurdle', () => {
   const candidate = {
     mint: 'MintStreamflow111111111111111111111111111111',

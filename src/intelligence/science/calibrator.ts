@@ -23,6 +23,7 @@ export interface CalibrationReport {
   readonly logLoss: number;
   readonly expectedCalibrationErrorBps: number;
   readonly isWellCalibrated: boolean;
+  readonly evidenceState: 'CALIBRATED' | 'INSUFFICIENT_EVIDENCE';
   readonly bins: readonly ReliabilityBin[];
   readonly conformalCoveragePct: number; // e.g. 91.2% for 90% nominal interval
   readonly conformalFailureDetected: boolean;
@@ -52,13 +53,15 @@ export class ProbabilityCalibrator {
 
   public generateReliabilityReport(): CalibrationReport {
     if (this.observationHistory.length === 0) {
+      // Invariant 1 & Section XIX: Never fabricate good Brier (0.15), good ECE, or isWellCalibrated from zero samples
       return {
-        brierScore: 0.15,
-        logLoss: 0.45,
-        expectedCalibrationErrorBps: 250,
-        isWellCalibrated: true,
+        brierScore: 0,
+        logLoss: 0,
+        expectedCalibrationErrorBps: 0,
+        isWellCalibrated: false,
+        evidenceState: 'INSUFFICIENT_EVIDENCE',
         bins: [],
-        conformalCoveragePct: 90.0,
+        conformalCoveragePct: 0,
         conformalFailureDetected: false,
       };
     }
@@ -126,6 +129,7 @@ export class ProbabilityCalibrator {
       bins,
       conformalCoveragePct: Number(coveragePct.toFixed(1)),
       conformalFailureDetected: conformalFailure,
+      evidenceState: 'CALIBRATED',
     };
   }
 }

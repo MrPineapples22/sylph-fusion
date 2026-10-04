@@ -84,14 +84,48 @@ export const ConfigSchema = z.object({
 
 export type SystemConfig = z.infer<typeof ConfigSchema>;
 
+export const PROTECTED_CONFIG_KEYS = new Set<string>([
+  'environment',
+  'maxPositions',
+  'maxExposureLamports',
+  'maxDailyLossLamports',
+  'maxSpeculativeRiskBps',
+  'rollingDrawdownBps',
+  'reserveLamports',
+  'stopBps',
+  'trailingStopBps',
+  'failureHaltCount',
+  'failureWindowMs',
+  'buyLamports',
+  'slippageBps',
+  'panicSlippageBps',
+  'maxImpactBps',
+  'maxFeeBps',
+  'minTipLamports',
+  'maxTipLamports',
+  'maxPriorityLamports',
+]);
+
+export interface ConfigChangeProposal {
+  readonly proposalId: string;
+  readonly proposerId: string;
+  readonly patch: Partial<SystemConfig>;
+  readonly rationale: string;
+  readonly epoch: number;
+  readonly tribunalApprovalDigest?: string;
+  readonly tribunalSignature?: string;
+}
+
 export class ConfigAuthority {
   private static instance: ConfigAuthority | null = null;
   private currentConfig: SystemConfig;
   private currentHash: string;
+  private currentEpoch: number = 1;
 
-  private constructor(initialConfig?: Partial<SystemConfig>) {
+  private constructor(initialConfig?: Partial<SystemConfig>, initialEpoch: number = 1) {
     this.currentConfig = ConfigSchema.parse(initialConfig || {});
     this.currentHash = this.computeHash(this.currentConfig);
+    this.currentEpoch = initialEpoch;
   }
 
   public static getInstance(initialConfig?: Partial<SystemConfig>): ConfigAuthority {
@@ -101,8 +135,16 @@ export class ConfigAuthority {
     return ConfigAuthority.instance;
   }
 
-  public static resetInstance(newConfig?: Partial<SystemConfig>): ConfigAuthority {
-    ConfigAuthority.instance = new ConfigAuthority(newConfig);
+  public static resetInstance(newConfig?: Partial<SystemConfig>, proposal?: ConfigChangeProposal): ConfigAuthority {
+    if (ConfigAuthority.instance && newConfig) {
+      const keys = Object.keys(newConfig);
+      const modifiesProtected = keys.some(k => PROTECTED_CONFIG_KEYS.has(k));
+      if (modifiesProtected && (!proposal || !proposal.tribunalSignature)) {
+        throw new Error('CONFIG_GOVERNANCE_VIOLATION: Cannot reset authority-sensitive config without signed Tribunal proposal');
+      }
+    }
+    const nextEpoch = ConfigAuthority.instance ? ConfigAuthority.instance.currentEpoch + 1 : 1;
+    ConfigAuthority.instance = new ConfigAuthority(newConfig, nextEpoch);
     return ConfigAuthority.instance;
   }
 
@@ -114,12 +156,39 @@ export class ConfigAuthority {
     return this.currentHash;
   }
 
-  public updateConfig(patch: Partial<SystemConfig>): { previousHash: string; newHash: string } {
+  public getConfigRoot(): string {
+    return this.currentHash;
+  }
+
+  public getConfigEpoch(): number {
+    return this.currentEpoch;
+  }
+
+  public updateConfig(
+    patch: Partial<SystemConfig>,
+    proposal?: ConfigChangeProposal
+  ): { previousHash: string; newHash: string; epoch: number } {
+    const keys = Object.keys(patch);
+    const modifiesProtected = keys.some(k => PROTECTED_CONFIG_KEYS.has(k));
+
+    if (modifiesProtected) {
+      if (!proposal) {
+        throw new Error('CONFIG_GOVERNANCE_VIOLATION: Mutation of protected keys requires a signed ConfigChangeProposal approved by Tribunal');
+      }
+      if (!proposal.tribunalSignature || proposal.tribunalSignature.length === 0) {
+        throw new Error('CONFIG_GOVERNANCE_VIOLATION: ConfigChangeProposal missing valid Tribunal approval signature');
+      }
+      if (proposal.epoch !== this.currentEpoch) {
+        throw new Error(`CONFIG_GOVERNANCE_VIOLATION: Stale config proposal epoch ${proposal.epoch} != current epoch ${this.currentEpoch}`);
+      }
+    }
+
     const previousHash = this.currentHash;
     const merged = { ...this.currentConfig, ...patch };
     this.currentConfig = ConfigSchema.parse(merged);
     this.currentHash = this.computeHash(this.currentConfig);
-    return { previousHash, newHash: this.currentHash };
+    this.currentEpoch += 1;
+    return { previousHash, newHash: this.currentHash, epoch: this.currentEpoch };
   }
 
   private computeHash(cfg: SystemConfig): string {
@@ -133,3 +202,4 @@ export class ConfigAuthority {
 }
 
 export const globalConfigAuthority = ConfigAuthority.getInstance();
+

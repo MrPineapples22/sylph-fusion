@@ -92,6 +92,91 @@ export class StartSealAuthority {
         this.advancePhase('FENCE_ACQUIRE', `Acquired FenceEpoch: ${epoch}`);
     }
     /**
+     * Stage 2: Evidence-driven Release Verification (Section LXIII)
+     */
+    completeReleaseVerify(cert) {
+        this.verifyRelease(cert.releaseRootSha256, cert.expectedHash);
+    }
+    /**
+     * Stage 3: Evidence-driven Fence Acquisition (Section LXIII)
+     */
+    completeFenceAcquire(cert) {
+        if (!cert.fenceAuthority || cert.fenceAuthority.length < 4) {
+            throw new Error('STARTSEAL_FENCE_ACQUISITION_FAILED: invalid fenceAuthority');
+        }
+        this.acquireFence(cert.fenceEpoch);
+    }
+    /**
+     * Stage 4: Evidence-driven Provider Sync (Section LXIII)
+     */
+    completeProviderSync(cert) {
+        if (!cert.isSynchronized || cert.slotLag > 5) {
+            this.auditHistory.push({
+                phase: 'PROVIDER_SYNC',
+                completedAtMs: Date.now(),
+                status: 'FAIL',
+                details: `Provider sync failed: lag ${cert.slotLag} slots`,
+            });
+            throw new Error(`STARTSEAL_PROVIDER_SYNC_FAILED: slot lag ${cert.slotLag} exceeds ceiling`);
+        }
+        this.advancePhase('PROVIDER_SYNC', `RPC (${cert.rpcSlot}) and stream (${cert.streamSlot}) synchronized`);
+    }
+    /**
+     * Stage 5: Evidence-driven Journal Recovery (Section LXIII)
+     */
+    completeJournalRecovery(cert) {
+        if (!cert.isCleanRecovery || !cert.journalHeadHash || cert.journalHeadHash.length < 16) {
+            throw new Error('STARTSEAL_JOURNAL_RECOVERY_FAILED: invalid journalHeadHash or unclean recovery');
+        }
+        this.advancePhase('JOURNAL_RECOVERY', `Recovered ${cert.recoveredEventsCount} events, head ${cert.journalHeadHash.slice(0, 16)}...`);
+    }
+    /**
+     * Stage 6: Evidence-driven Pending TX Reconciliation (Section LXIII)
+     */
+    completePendingReconciliation(cert) {
+        if (!cert.isFullyReconciled || cert.pendingTxCount !== cert.reconciledCount) {
+            throw new Error(`STARTSEAL_RECONCILIATION_FAILED: ${cert.pendingTxCount - cert.reconciledCount} unresolved transactions`);
+        }
+        this.advancePhase('PENDING_TX_RECONCILIATION', `Reconciled ${cert.reconciledCount} pending transactions`);
+    }
+    /**
+     * Stage 7: Evidence-driven Wallet Census (Section LXIII)
+     */
+    completeWalletCensus(cert) {
+        if (this.currentPhase !== 'PENDING_TX_RECONCILIATION') {
+            throw new Error('STARTSEAL_CENSUS_PHASE_INVALID: pending tx reconciliation must precede wallet census');
+        }
+        this.inventoryCensus = [...cert.items];
+        this.advancePhase('FULL_WALLET_INVENTORY_CENSUS', `Census complete. Evaluated ${cert.items.length} assets with ${cert.discrepancyCount} discrepancies.`);
+    }
+    /**
+     * Stage 8: Evidence-driven Capital Conservation (Section LXIII)
+     */
+    completeCapitalConservation(cert) {
+        if (!cert.isConserved) {
+            throw new Error('STARTSEAL_CAPITAL_CONSERVATION_FAILED: balance violation detected across ledger accounts');
+        }
+        this.advancePhase('CAPITAL_CONSERVATION', `Conserved ledger postings. Equity: ${cert.totalEquityLamports} lamports`);
+    }
+    /**
+     * Stage 9: Evidence-driven Token Semantics Refresh (Section LXIII)
+     */
+    completeSemanticsRefresh(cert) {
+        if (!cert.isRefreshed || !cert.semanticRootHash || cert.semanticRootHash.length < 16) {
+            throw new Error('STARTSEAL_SEMANTICS_REFRESH_FAILED: invalid semantic root hash');
+        }
+        this.advancePhase('TOKEN_SEMANTICS_REFRESH', `Refreshed ${cert.refreshedMintsCount} active mint certificates`);
+    }
+    /**
+     * Stage 10: Evidence-driven Event Catchup (Section LXIII)
+     */
+    completeEventCatchup(cert) {
+        if (!cert.isCaughtUp || cert.headSlot - cert.catchupSlot > 2) {
+            throw new Error(`STARTSEAL_EVENT_CATCHUP_FAILED: lag ${cert.headSlot - cert.catchupSlot} exceeds maximum allowed 2 slots`);
+        }
+        this.advancePhase('EVENT_CATCHUP', `Catchup stream up to date at slot ${cert.catchupSlot}`);
+    }
+    /**
      * Stage 7: Conduct Full Wallet Inventory Census across SOL, SPL, and Token-2022.
      */
     executeWalletCensus(params) {

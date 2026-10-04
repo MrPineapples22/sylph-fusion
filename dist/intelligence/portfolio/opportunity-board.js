@@ -87,7 +87,7 @@ export class CapitalGate {
 }
 export class CorrelatedRiskGraph {
     evaluateOverlaps(candidates, existingPositions) {
-        const activeClusters = new Set(existingPositions.map((p) => p.clusterId));
+        const activeClusters = new Set(existingPositions.map((p) => p.clusterId || p.fundingClusterId || '').filter(Boolean));
         const activeCreators = new Set(existingPositions.map((p) => p.creatorAddress).filter(Boolean));
         const warnings = [];
         let correlatedCount = 0;
@@ -163,7 +163,7 @@ export class PortfolioOpportunityEngine {
     /**
      * Ranks candidates and evaluates joint tail risk, capacity curves, and 10 invariants.
      */
-    evaluateBoard(candidates, availableCashSol, currentExposureSol, openPositionsCount, regimeMultiplier = 1.0, systemConfidence = 'NORMAL') {
+    evaluateBoard(candidates, availableCashSol, currentExposureSol = 0, openPositionsCount = 0, regimeMultiplier = 1.0, systemConfidence = 'NORMAL', currentPortfolio = [], solPriceUsd, evidenceContext) {
         const violations = [];
         // Check invariants
         if (this.currentState === 'RISK_FREEZE') {
@@ -178,8 +178,8 @@ export class PortfolioOpportunityEngine {
         if (openPositionsCount >= this.limits.maxOpenPositions) {
             violations.push(`MAX_OPEN_POSITIONS_REACHED: Open count (${openPositionsCount}) >= max (${this.limits.maxOpenPositions})`);
         }
-        // Correlated risk graph evaluation
-        const correlationReport = this.correlatedRiskGraph.evaluateOverlaps(candidates, []);
+        // Section XXXI: Pass actual current portfolio into overlap analysis (never dummy empty array)
+        const correlationReport = this.correlatedRiskGraph.evaluateOverlaps(candidates, currentPortfolio);
         // 1. If violations or no candidates, hold cash
         if (candidates.length === 0 || violations.length > 0) {
             return {
@@ -214,21 +214,22 @@ export class PortfolioOpportunityEngine {
         const es90 = Math.round(meanDrawdown * 1.2);
         const es95 = Math.round(meanDrawdown * 1.5);
         const es99 = Math.round(worstCaseDrawdown * 1.1);
-        // 4. Size curves per candidate
+        // 4. Size curves per candidate using dynamic SOL/USD market valuation (Section XXXI)
+        const activeSolUsd = solPriceUsd && solPriceUsd > 0 ? solPriceUsd : 150;
         const curves = {};
         for (const s of scored.slice(0, 3)) {
-            curves[s.candidate.mint] = this.evaluateSizeCurves(s.candidate.liquiditySol * 150, s.candidate.expectedReturnBps / 100, 1.0 - s.candidate.collapseProbability);
+            curves[s.candidate.mint] = this.evaluateSizeCurves(s.candidate.liquiditySol * activeSolUsd, s.candidate.expectedReturnBps / 100, 1.0 - s.candidate.collapseProbability);
         }
-        // 5. Cash Preference & Capital Gate
+        // 5. Cash Preference & Capital Gate with certificate-derived values (Section XXXI)
         const best = scored[0];
         const exitScore = best.candidate.exitability ? best.candidate.exitability.exitabilityScore : best.candidate.exitFeasibilityScore;
         const capitalGatePermission = this.capitalGate.determinePermission({
             systemConfidence,
-            dataHealthConfidence: 0.95,
-            evidenceState: 'VERIFIED',
+            dataHealthConfidence: evidenceContext?.dataHealthConfidence ?? (systemConfidence === 'DEGRADED' ? 0.40 : 0.85),
+            evidenceState: evidenceContext?.evidenceState ?? (systemConfidence === 'DEGRADED' ? 'INSUFFICIENT_EVIDENCE' : 'SUPPORTED'),
             exitabilityScore: exitScore,
             portfolioState: this.currentState,
-            contradictionDetected: false,
+            contradictionDetected: evidenceContext?.contradictionDetected ?? false,
         });
         const preferCash = best.score < 100 || capitalGatePermission === 'ABSTAIN' || capitalGatePermission === 'SHADOW_ONLY';
         const cashReason = preferCash

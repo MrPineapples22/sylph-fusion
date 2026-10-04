@@ -98,7 +98,11 @@ export class ExitabilityEngine {
     const kBase = poolSolReserve * poolTokenReserve;
 
     for (const frac of fractions) {
-      const tokensToSell = (Number(intendedPositionTokensRaw) * frac);
+      // BigInt fraction cross-multiplication prevents precision loss on large raw SPL balances (Section LXVII #15)
+      const fracBps = BigInt(Math.round(frac * 10000));
+      const tokensToSellRaw = (intendedPositionTokensRaw * fracBps) / 10000n;
+      const tokensToSell = Number(tokensToSellRaw);
+
       // Constant product AMM / bonding curve impact:
       // delta_sol = sol - (k / (token + delta_token))
       const newTokens = poolTokenReserve + tokensToSell;
@@ -134,7 +138,9 @@ export class ExitabilityEngine {
     const fullExit = unwindSchedule[unwindSchedule.length - 1];
     const minimumRecoverableValueSol = fullExit.stressed50PctDropProceedsSol;
 
-    const fracturePointTokensRaw = BigInt(Math.floor(poolTokenReserve * 0.12));
+    const fracturePointTokensRaw = typeof poolTokenReserve === 'bigint'
+      ? (poolTokenReserve * 12n) / 100n
+      : BigInt(Math.floor(Math.min(Number.MAX_SAFE_INTEGER, poolTokenReserve * 0.12)));
 
     let verdict: 'PERMITTED' | 'SIZING_REDUCED' | 'DENIED_EXIT_COLLAPSE';
     let isApprovedForExecution = false;

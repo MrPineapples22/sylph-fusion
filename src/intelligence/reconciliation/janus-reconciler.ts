@@ -126,6 +126,8 @@ export class JanusReconciler {
     signature: string;
     current_slot: number;
     rpc_status: 'CONFIRMED' | 'NOT_FOUND' | 'FAILED' | 'TIMEOUT';
+    search_history_covered?: boolean;
+    finalized_head_exceeded?: boolean;
   }): JanusReconciliationResult {
     const tracked = this.trackedTransactions.get(params.signature);
     const intentId = tracked?.intent_id ?? 'unknown_intent';
@@ -144,10 +146,10 @@ export class JanusReconciler {
     }
 
     if (params.rpc_status === 'TIMEOUT' || params.rpc_status === 'NOT_FOUND') {
-      // If blockhash not expired yet: MUST NOT send a new transaction!
       const isExpired = tracked ? params.current_slot > tracked.expiration_slot : false;
 
       if (!isExpired) {
+        // Blockhash not expired yet: MUST NOT release reservation or send new transaction!
         return {
           intent_id: intentId,
           signature: params.signature,
@@ -159,17 +161,34 @@ export class JanusReconciler {
           reconciliation_notes: 'Transaction not found or timed out but blockhash valid. Re-broadcasting same signature.',
         };
       } else {
-        // Blockhash expired and not found: safe to declare dropped
-        return {
-          intent_id: intentId,
-          signature: params.signature,
-          consensus_status: 'EXPIRED',
-          branch_resolved: 'FAILED',
-          should_retain_reservation: false,
-          should_resend_exact_signature: false,
-          should_rebuild_new_transaction: true,
-          reconciliation_notes: 'Blockhash expired with zero on-chain record. Reservation may be released.',
-        };
+        // Section XLVII & Invariant 4: NoLand requires coverage-backed proof:
+        // lastValidBlockHeight exceeded + authoritative finalized head + searchTransactionHistory coverage.
+        // Never infer no-land from transport failure, RPC timeout, or single NOT_FOUND alone.
+        const isCoverageCertified = Boolean(params.search_history_covered && params.finalized_head_exceeded);
+
+        if (isCoverageCertified) {
+          return {
+            intent_id: intentId,
+            signature: params.signature,
+            consensus_status: 'EXPIRED',
+            branch_resolved: 'FAILED',
+            should_retain_reservation: false,
+            should_resend_exact_signature: false,
+            should_rebuild_new_transaction: true,
+            reconciliation_notes: 'Blockhash expired with authoritative coverage proof proving zero landing. Reservation released.',
+          };
+        } else {
+          return {
+            intent_id: intentId,
+            signature: params.signature,
+            consensus_status: 'UNKNOWN',
+            branch_resolved: 'STILL_PENDING',
+            should_retain_reservation: true, // Unknown execution consumes risk!
+            should_resend_exact_signature: false,
+            should_rebuild_new_transaction: false,
+            reconciliation_notes: 'Blockhash slot elapsed but missing searchTransactionHistory coverage or finalized head proof. Capital remains reserved (Section XLVII).',
+          };
+        }
       }
     }
 

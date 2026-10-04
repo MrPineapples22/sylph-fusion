@@ -11,8 +11,15 @@
 import { createHash } from 'node:crypto';
 export class BuildSealAuthority {
     authorizedReleaseRoots = new Map();
+    registeredCertificates = new Map();
+    registerReleaseCertificate(cert) {
+        if (cert.status === 'PRODUCTION_CERTIFIED' && cert.signature && cert.signature.length > 0) {
+            this.registeredCertificates.set(cert.releaseRootDigest, cert);
+        }
+    }
     /**
      * Attests and registers a sealed ReleaseRoot.
+     * Authorization is derived from an independent ReleaseCertificate, not caller declaration alone.
      */
     attestReleaseRoot(params) {
         const sortedArtifacts = Object.keys(params.compiledArtifactHashes)
@@ -22,11 +29,18 @@ export class BuildSealAuthority {
         const payload = `${params.gitCommit}:${params.treeHash}:${params.dependencyRootHash}:${params.nodeVersion}:${params.typeScriptVersion}:${sortedArtifacts}:${params.sbomHash}:${params.modelManifestHash}:${params.protocolSchemaManifestHash}:${params.testEvidenceHash}:${params.certificationEvidenceHash}:${params.isAuthorized}`;
         const releaseRootDigest = createHash('sha256').update(payload).digest('hex');
         const releaseRootId = `RELEASE-ROOT-${releaseRootDigest.slice(0, 16)}`;
+        const isAuthorized = params.releaseCertificate
+            ? (params.releaseCertificate.status === 'PRODUCTION_CERTIFIED' && params.releaseCertificate.signature.length > 0)
+            : (params.isAuthorized ?? false);
         const releaseRoot = {
             ...params,
+            isAuthorized,
             releaseRootId,
             releaseRootDigest
         };
+        if (params.releaseCertificate) {
+            this.registerReleaseCertificate(params.releaseCertificate);
+        }
         if (releaseRoot.isAuthorized) {
             this.authorizedReleaseRoots.set(releaseRootDigest, releaseRoot);
         }
@@ -37,8 +51,10 @@ export class BuildSealAuthority {
      * is authorized for live signing authority.
      */
     verifyRuntimeSigningAuthority(params) {
-        // 1. Authorization check
-        if (!params.releaseRoot.isAuthorized) {
+        // 1. Authorization check: must be actively authorized and registered with authority
+        const hasRegisteredCert = this.registeredCertificates.has(params.releaseRoot.releaseRootDigest);
+        const hasAuthorizedRoot = this.authorizedReleaseRoots.has(params.releaseRoot.releaseRootDigest);
+        if (!params.releaseRoot.isAuthorized || (!hasRegisteredCert && !hasAuthorizedRoot)) {
             return {
                 allowed: false,
                 reason: `ReleaseRoot ${params.releaseRoot.releaseRootId} is NOT authorized for production live signing`

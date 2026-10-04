@@ -8,7 +8,7 @@
  * Invariant: Illegal state transitions are impossible; approvals expire automatically.
  */
 export class VonNeumannExecutionStateMachine {
-    static VERSION = '1.0.0';
+    static VERSION = '2.0.0';
     static VALID_TRANSITIONS = {
         OBSERVE: ['ANALYZE', 'ABORTED'],
         ANALYZE: ['PROPOSE', 'ABORTED'],
@@ -18,8 +18,12 @@ export class VonNeumannExecutionStateMachine {
         SIMULATED: ['AUTHORIZED', 'ABORTED'],
         AUTHORIZED: ['SIGNED', 'ABORTED'],
         SIGNED: ['SUBMITTED', 'ABORTED'],
-        SUBMITTED: ['CONFIRMED', 'ABORTED'],
-        CONFIRMED: ['RECONCILED', 'ABORTED'],
+        SUBMITTED: ['CONFIRMED', 'FINALIZED_SUCCESS', 'FINALIZED_INSTRUCTION_FAILURE', 'EXPIRED_NO_LAND_QUORUM', 'ABORTED'],
+        // Invariant 5: CONFIRMED cannot mutate finalized economic state or reconcile directly. Must reach terminal finality.
+        CONFIRMED: ['FINALIZED_SUCCESS', 'FINALIZED_INSTRUCTION_FAILURE', 'EXPIRED_NO_LAND_QUORUM', 'ABORTED'],
+        FINALIZED_SUCCESS: ['RECONCILED', 'ABORTED'],
+        FINALIZED_INSTRUCTION_FAILURE: ['RECONCILED', 'ABORTED'],
+        EXPIRED_NO_LAND_QUORUM: ['RECONCILED', 'ABORTED'],
         RECONCILED: [],
         ABORTED: []
     };

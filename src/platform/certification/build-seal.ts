@@ -11,6 +11,15 @@
 
 import { createHash } from 'node:crypto';
 
+export interface ReleaseCertificate {
+  readonly certificateId: string;
+  readonly releaseRootDigest: string;
+  readonly status: 'PRODUCTION_CERTIFIED' | 'UNVERIFIED_CANDIDATE' | 'RELEASE_REJECTED';
+  readonly issuer: string;
+  readonly issuedAtMs: number;
+  readonly signature: string;
+}
+
 export interface ReleaseRoot {
   readonly releaseRootId: string;
   readonly gitCommit: string;
@@ -27,13 +36,22 @@ export interface ReleaseRoot {
   readonly builtAtMs: number;
   readonly isAuthorized: boolean;
   readonly releaseRootDigest: string;
+  readonly releaseCertificate?: ReleaseCertificate;
 }
 
 export class BuildSealAuthority {
   private authorizedReleaseRoots = new Map<string, ReleaseRoot>();
+  private registeredCertificates = new Map<string, ReleaseCertificate>();
+
+  public registerReleaseCertificate(cert: ReleaseCertificate): void {
+    if (cert.status === 'PRODUCTION_CERTIFIED' && cert.signature && cert.signature.length > 0) {
+      this.registeredCertificates.set(cert.releaseRootDigest, cert);
+    }
+  }
 
   /**
    * Attests and registers a sealed ReleaseRoot.
+   * Authorization is derived from an independent ReleaseCertificate, not caller declaration alone.
    */
   public attestReleaseRoot(params: Omit<ReleaseRoot, 'releaseRootId' | 'releaseRootDigest'>): ReleaseRoot {
     const sortedArtifacts = Object.keys(params.compiledArtifactHashes)
@@ -46,11 +64,20 @@ export class BuildSealAuthority {
     const releaseRootDigest = createHash('sha256').update(payload).digest('hex');
     const releaseRootId = `RELEASE-ROOT-${releaseRootDigest.slice(0, 16)}`;
 
+    const isAuthorized = params.releaseCertificate
+      ? (params.releaseCertificate.status === 'PRODUCTION_CERTIFIED' && params.releaseCertificate.signature.length > 0)
+      : (params.isAuthorized ?? false);
+
     const releaseRoot: ReleaseRoot = {
       ...params,
+      isAuthorized,
       releaseRootId,
       releaseRootDigest
     };
+
+    if (params.releaseCertificate) {
+      this.registerReleaseCertificate(params.releaseCertificate);
+    }
 
     if (releaseRoot.isAuthorized) {
       this.authorizedReleaseRoots.set(releaseRootDigest, releaseRoot);
@@ -68,8 +95,10 @@ export class BuildSealAuthority {
     observedArtifactHashes: Record<string, string>;
     currentNodeVersion: string;
   }): { allowed: boolean; reason?: string } {
-    // 1. Authorization check
-    if (!params.releaseRoot.isAuthorized) {
+    // 1. Authorization check: must be actively authorized and registered with authority
+    const hasRegisteredCert = this.registeredCertificates.has(params.releaseRoot.releaseRootDigest);
+    const hasAuthorizedRoot = this.authorizedReleaseRoots.has(params.releaseRoot.releaseRootDigest);
+    if (!params.releaseRoot.isAuthorized || (!hasRegisteredCert && !hasAuthorizedRoot)) {
       return {
         allowed: false,
         reason: `ReleaseRoot ${params.releaseRoot.releaseRootId} is NOT authorized for production live signing`

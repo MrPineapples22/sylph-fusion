@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {CommandGateway} from '../dist/command-gateway.js';
 import {globalLifecycle} from '../dist/lifecycle/system-lifecycle.js';
 const command=(id,payload)=>({commandId:id,type:'SUBMIT_ORDER',timestamp:Date.now(),initiator:'test',payload:{mint:'mint',poolAddress:'pool',side:'BUY',usdAmount:100,...payload}});
-const authorizeEvidence=gateway=>gateway.setPaperEntryEvidenceProvider(async(mint,poolAddress)=>({mint,poolAddress,priceUsd:1,liquidityUsd:1_000_000,observedAt:Date.now(),solPriceUsd:150,solObservedAt:Date.now(),verified:true,entryAllowed:true}));
+const authorizeEvidence=gateway=>gateway.setPaperEntryEvidenceProvider(async(mint,poolAddress)=>({mint,poolAddress,priceUsd:1,liquidityUsd:1_000_000,observedAt:Date.now(),solPriceUsd:150,solObservedAt:Date.now(),marketObservationValid:true,source:'TEST',entryAllowed:true}));
 test('retry without explicit order id cannot create a second economic effect',async()=>{
  globalLifecycle.bootstrapToHealthy();const gateway=CommandGateway.resetInstance();authorizeEvidence(gateway);const cmd=command('retry-identity');
  const a=await gateway.executeCommand(cmd),balance=gateway.getSnapshot().cashUsd;

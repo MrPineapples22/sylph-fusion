@@ -18,7 +18,7 @@ test('terminal command gateway produces paper effects without chain identity or 
   gateway.setPaperEntryEvidenceProvider(async (mint, poolAddress) => ({
     mint, poolAddress, priceUsd: 1, liquidityUsd: 1_000_000,
     observedAt: Date.now(), solPriceUsd: 150, solObservedAt: Date.now(),
-    verified: true, entryAllowed: true,
+    marketObservationValid: true, source: 'TEST', entryAllowed: true,
   }));
   const result = await gateway.executeCommand(buy);
 

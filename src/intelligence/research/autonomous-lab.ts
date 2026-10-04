@@ -20,12 +20,22 @@ export interface ResearchHypothesis {
   readonly keywords: readonly string[];
 }
 
+export interface PromotionEvidenceBundle {
+  readonly bundleId: string;
+  readonly walkForwardSharpe: number;
+  readonly falsificationPassed: boolean;
+  readonly outOfSampleSamplesCount: number;
+  readonly incrementalInformationGain: number;
+  readonly evidenceHash: string;
+}
+
 export interface ResearchProposal {
   readonly proposalId: string;
   readonly hypothesis: ResearchHypothesis;
   readonly ladderTierAchieved: EvidenceLadderLevel;
   readonly isApprovedForLiveDeployment: false; // Invariant: Research Lab cannot directly authorize live capital!
   readonly experimentalBacktestSharpe: number;
+  readonly evidenceVerified: boolean;
   readonly requiredHumanGovernanceApproval: boolean;
   readonly generatedAtMs: number;
 }
@@ -86,12 +96,14 @@ export class AutonomousResearchLab {
     }
 
     // 3. Generate proposal (always read-only proposal, never live change)
+    // Invariant LIII & Section LXVII #16: Hypotheses begin UNTESTED / 0_OBSERVED, never fabricated Sharpe 1.85
     const proposal: ResearchProposal = {
       proposalId: `prop_${hypothesis.hypothesisId}_${Date.now()}`,
       hypothesis,
-      ladderTierAchieved: '3_INCREMENTALLY_PREDICTIVE',
+      ladderTierAchieved: '0_OBSERVED',
       isApprovedForLiveDeployment: false, // Critical invariant: NEVER live change directly
-      experimentalBacktestSharpe: 1.85,
+      experimentalBacktestSharpe: 0.0,
+      evidenceVerified: false,
       requiredHumanGovernanceApproval: true,
       generatedAtMs: Date.now(),
     };
@@ -99,6 +111,27 @@ export class AutonomousResearchLab {
     return {
       acceptedForResearch: true,
       proposal,
+    };
+  }
+
+  /**
+   * Promotes a proposal through the Evidence Ladder ONLY with verified empirical evidence (Section LIV, LXVII #17).
+   */
+  public promoteProposal(
+    proposal: ResearchProposal,
+    evidence: PromotionEvidenceBundle,
+    targetTier: EvidenceLadderLevel
+  ): ResearchProposal {
+    if (!evidence.falsificationPassed || evidence.outOfSampleSamplesCount < 100) {
+      throw new Error(`PROMOTION_REJECTED: Evidence failed falsification or insufficient sample count (${evidence.outOfSampleSamplesCount} < 100)`);
+    }
+
+    return {
+      ...proposal,
+      ladderTierAchieved: targetTier,
+      experimentalBacktestSharpe: evidence.walkForwardSharpe,
+      evidenceVerified: true,
+      generatedAtMs: Date.now(),
     };
   }
 }

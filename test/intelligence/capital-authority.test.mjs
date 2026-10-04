@@ -123,7 +123,10 @@ test('Capital authorities reject invalid reservation and settlement amounts with
 });
 
 test('Capital Kernel: Formal Invariants & Authority Lattice Enforcement', () => {
-  const kernel = new CapitalKernel({ maxOpenPositions: 3, maxUnknownCapitalSol: 5.0 });
+  const defaultKernel = new CapitalKernel();
+  assert.equal(defaultKernel.getAuthorityMode(), 'A0_OBSERVE_ONLY', 'Default CapitalKernel must boot at A0_OBSERVE_ONLY');
+
+  const kernel = new CapitalKernel({ maxOpenPositions: 3, maxUnknownCapitalSol: 5.0, initialAuthority: 'A5_NORMAL' });
 
   // Initial state: A5 NORMAL
   assert.equal(kernel.getAuthorityMode(), 'A5_NORMAL');

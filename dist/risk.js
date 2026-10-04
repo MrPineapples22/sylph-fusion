@@ -126,23 +126,35 @@ export async function scanToken(mint, rpcUrl, rugUrl, trackerKey = '') {
 /**
  * Hard Filtration & Anti-Sniper Baseline Guard (AGENTS.md)
  * 1. Tokens at age < 10s must establish >= 3 unique buyers to avoid 0-second dev dumps (>80% probability).
- * 2. DEX vs Bonding Curve Asymmetry: len(traders) < 3 check must be bypassed for mature DEX tokens (isDex || txs >= 10).
+ * 2. All venues require verified distinct-buyer evidence; venue and age do not substitute for it.
  */
 export function checkAntiSniperAndDexAsymmetry(params) {
-    const { ageMs, uniqueBuyers, isDex, txs } = params;
-    const isMatureDex = Boolean(isDex || (typeof txs === 'number' && txs >= 10));
-    // Anti-sniper baseline: Tokens < 10s must have at least 3 unique buyers
-    if (!isMatureDex && ageMs < 10_000 && uniqueBuyers < 3) {
+    const { ageMs, uniqueBuyers, isDex } = params;
+    const ageKnown = typeof ageMs === 'number' && Number.isFinite(ageMs) && ageMs >= 0;
+    if (!ageKnown) {
         return {
             allowed: false,
-            reason: 'ANTI_SNIPER_BASELINE_NOT_MET: Token age < 10s requires >= 3 unique buyers before entry',
+            reason: 'UNVERIFIED_TOKEN_AGE: Token age evidence is unavailable',
         };
     }
-    // Bonding curve illiquidity check: If not mature DEX, require >= 3 unique buyers
-    if (!isMatureDex && uniqueBuyers < 3) {
+    if (ageMs < 10_000) {
         return {
             allowed: false,
-            reason: 'INSUFFICIENT_BUYER_ACCUMULATION: Bonding curve requires >= 3 unique buyers',
+            reason: 'ANTI_SNIPER_BASELINE_NOT_MET: Token age < 10s requires waiting before entry',
+        };
+    }
+    // Raw trade counts cannot substitute for a unique economic buyer count.
+    if (!Number.isSafeInteger(uniqueBuyers) || uniqueBuyers < 0) {
+        return {
+            allowed: false,
+            reason: 'UNVERIFIED_UNIQUE_BUYER_COUNT: Distinct buyer evidence is unavailable',
+        };
+    }
+    // Young launches and bonding curves need three independently observed buyers.
+    if (uniqueBuyers < 3) {
+        return {
+            allowed: false,
+            reason: 'INSUFFICIENT_BUYER_ACCUMULATION: At least 3 unique buyers are required',
         };
     }
     return { allowed: true };

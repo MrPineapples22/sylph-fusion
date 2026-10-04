@@ -91,6 +91,29 @@ test('a mark that expires while another position closes cannot authorize the nex
   assert.equal(second.lastMarkAt, observedAt);
 });
 
+test('a fresh protective quote received during the awaited refresh is evaluated in the same tick', async t => {
+  const f = fixture(t);
+  const staleAt = f.now() - f.maxAge - 1;
+  f.position.lastMark = 100;
+  f.position.lastMarkAt = staleAt;
+  f.gateway.setPaperEntryEvidenceProvider(async (mint, poolAddress) => {
+    f.advance(1);
+    const observedAt = f.now();
+    return {
+      mint, poolAddress, priceUsd: 80, liquidityUsd: 1_000_000,
+      observedAt, solPriceUsd: 160, solObservedAt: observedAt,
+      marketObservationValid: true, source: 'TEST', entryAllowed: false,
+    };
+  });
+
+  const exits = await f.gateway.tickAutonomousExits([]);
+
+  assert.equal(exits[0].action, 'STOP_LOSS');
+  assert.equal(f.closes.length, 1);
+  assert.equal(f.closes[0].payload.priceUsd, 80);
+  assert.equal(f.position.lastMarkAt, f.now());
+});
+
 function executionFixture(t, verifiedPrice) {
   const f = fixture(t);
   f.gateway.handleClosePosition.mock.restore();
@@ -101,7 +124,7 @@ function executionFixture(t, verifiedPrice) {
   f.gateway.setPaperEntryEvidenceProvider(async (mint, poolAddress) => ({
     mint, poolAddress, priceUsd: verifiedPrice, liquidityUsd: 1_000_000,
     observedAt: f.now(), solPriceUsd: 160, solObservedAt: f.now(),
-    verified: true, entryAllowed: false,
+    marketObservationValid: true, source: 'TEST', entryAllowed: false,
   }));
   t.mock.method(f.gateway.executionEngine, 'pushState', (...args) => seeded.push(args));
   t.mock.method(globalTradeLearningService, 'recordClosedTrade', () => {});

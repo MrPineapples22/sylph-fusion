@@ -10,6 +10,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { PavlovOutcomeAttributionEngine, type DecisionSoundness, type PavlovAttributionRecord } from './pavlov-attribution.js';
+import {
+  OutcomeMaturityGate,
+  type OutcomeMaturityInput,
+  type OutcomeMaturityCertificate,
+} from '../../platform/pipeline/conservation-proofs.js';
 
 export interface ClosedTradeReport {
   readonly tradeId: string;
@@ -52,6 +57,13 @@ export type ProcessAssessmentResolver = (report: ProcessAssessmentContext) => Ve
 
 export interface TradeAutopsyRecord extends ClosedTradeReport {
   readonly attribution: PavlovAttributionRecord;
+  readonly maturityCertificate?: OutcomeMaturityCertificate;
+}
+
+export interface TradeLearningServiceOptions {
+  readonly requireOutcomeMaturity?: boolean;
+  readonly minMaturityDelayMs?: number;
+  readonly minMaturitySlotDelta?: bigint;
 }
 
 export interface AdaptiveLearningSnapshot {
@@ -113,6 +125,10 @@ export class TradeLearningService {
   private static instance: TradeLearningService;
   private readonly pavlov = new PavlovOutcomeAttributionEngine();
   private readonly autopsies: TradeAutopsyRecord[] = [];
+  private readonly maturityGate: OutcomeMaturityGate;
+  private requireOutcomeMaturity: boolean = false;
+  private minMaturityDelayMs: number = 60_000;
+  private minMaturitySlotDelta: bigint = 100n;
   private csvPath: string = '';
   private lastLoadedMtimeMs: number = 0;
   private totalCsvRecordsLoaded: number = 0;
@@ -147,9 +163,37 @@ export class TradeLearningService {
     return TradeLearningService.instance;
   }
 
-  public constructor(private readonly resolveProcessAssessment?: ProcessAssessmentResolver) {
+  public constructor(
+    private resolveProcessAssessment?: ProcessAssessmentResolver,
+    maturityGate?: OutcomeMaturityGate,
+    options?: TradeLearningServiceOptions
+  ) {
+    this.maturityGate = maturityGate ?? new OutcomeMaturityGate();
+    if (options?.requireOutcomeMaturity !== undefined) {
+      this.requireOutcomeMaturity = options.requireOutcomeMaturity;
+    }
+    if (options?.minMaturityDelayMs !== undefined) {
+      this.minMaturityDelayMs = options.minMaturityDelayMs;
+    }
+    if (options?.minMaturitySlotDelta !== undefined) {
+      this.minMaturitySlotDelta = options.minMaturitySlotDelta;
+    }
     // Tests start with an isolated in-memory instance (0 records).
     // Servers call .loadFromCsv() to ingest validated but unverified research telemetry.
+  }
+
+  public setOutcomeMaturityRequired(required: boolean, minDelayMs?: number, minSlotDelta?: bigint): void {
+    this.requireOutcomeMaturity = required;
+    if (minDelayMs !== undefined) this.minMaturityDelayMs = minDelayMs;
+    if (minSlotDelta !== undefined) this.minMaturitySlotDelta = minSlotDelta;
+  }
+
+  public getOutcomeMaturityGate(): OutcomeMaturityGate {
+    return this.maturityGate;
+  }
+
+  public setProcessAssessmentResolver(resolver: ProcessAssessmentResolver): void {
+    this.resolveProcessAssessment = resolver;
   }
 
   private assessProcess(report: ClosedTradeReport): ClosedTradeReport {
@@ -228,6 +272,32 @@ export class TradeLearningService {
         };
         const reason = this.rejectionReason(rawReport);
         if (reason) { reject(reason); continue; }
+
+        let maturityCert: OutcomeMaturityCertificate | undefined;
+        if (this.requireOutcomeMaturity) {
+          const nowMs = Date.now();
+          const settledMs = rawReport.closedAt;
+          maturityCert = this.maturityGate.evaluateMaturity({
+            tradeId: rawReport.tradeId,
+            economicFactId: `fact_${rawReport.tradeId}`,
+            accountMode: 'paper',
+            settledSlot: 0n,
+            currentSlot: BigInt(Math.max(0, Math.floor((nowMs - settledMs) / 400))),
+            settledAtMs: settledMs,
+            currentAtMs: nowMs,
+            minMaturityDelayMs: this.minMaturityDelayMs,
+            minMaturitySlotDelta: this.minMaturitySlotDelta,
+            mfePct: rawReport.mfePct ?? 0,
+            maePct: rawReport.maePct ?? 0,
+            realizedNetPnLLamports: BigInt(Math.round(rawReport.realizedPnlUsd * 1_000_000_000)),
+          }, new Date(nowMs).toISOString());
+
+          if (!maturityCert.isMature || !maturityCert.learningReady) {
+            reject('IMMATURE_OUTCOME');
+            continue;
+          }
+        }
+
         const report = this.assessProcess(rawReport);
         if (seen.has(report.tradeId)) { reject('DUPLICATE_TRADE_ID'); continue; }
         seen.add(report.tradeId);
@@ -235,7 +305,11 @@ export class TradeLearningService {
           token_mint: report.tokenMint, action_taken: 'PAPER_EXIT_' + report.exitTrigger,
           was_decision_sound: report.wasDecisionSound, realized_pnl_pct: report.realizedPnlPct,
         });
-        const autopsy: TradeAutopsyRecord = { ...report, attribution: { ...attribution, attribution_id: report.tradeId, timestamp_ms: report.closedAt } };
+        const autopsy: TradeAutopsyRecord = {
+          ...report,
+          attribution: { ...attribution, attribution_id: report.tradeId, timestamp_ms: report.closedAt },
+          maturityCertificate: maturityCert,
+        };
         parsedAutopsies.push(autopsy);
       }
 
@@ -279,7 +353,17 @@ export class TradeLearningService {
     return false;
   }
 
-  public recordClosedTrade(report: Omit<ClosedTradeReport, 'tradeId' | 'closedAt'>): TradeAutopsyRecord {
+  public recordClosedTrade(
+    report: Omit<ClosedTradeReport, 'tradeId' | 'closedAt'>,
+    maturityContext?: {
+      economicFactId?: string;
+      accountMode?: 'paper' | 'live';
+      settledSlot?: bigint;
+      currentSlot?: bigint;
+      settledAtMs?: number;
+      currentAtMs?: number;
+    }
+  ): TradeAutopsyRecord {
     const closedAt = Date.now();
     const tradeId = 'trd_' + closedAt + '_' + Math.floor(Math.random() * 1000);
 
@@ -292,6 +376,34 @@ export class TradeLearningService {
     const maePct = report.maePct ?? (report.entryPriceUsd > 0 ? Number((((maePrice - report.entryPriceUsd) / report.entryPriceUsd) * 100).toFixed(2)) : 0);
     const profitCaptureRatio = report.profitCaptureRatio ?? (mfePct > 0 ? Number(Math.max(0, Math.min(1, report.realizedPnlPct / mfePct)).toFixed(4)) : (report.realizedPnlPct >= 0 ? 1 : 0));
     const exitEfficiency = report.exitEfficiency ?? ((mfePrice > maePrice) ? Number(Math.max(0, Math.min(1, (report.exitPriceUsd - maePrice) / (mfePrice - maePrice))).toFixed(4)) : 1);
+
+    // Evaluate Outcome Maturity if required or context is provided
+    let maturityCert: OutcomeMaturityCertificate | undefined;
+    if (this.requireOutcomeMaturity || maturityContext) {
+      const nowMs = maturityContext?.currentAtMs ?? closedAt;
+      const settledMs = maturityContext?.settledAtMs ?? closedAt;
+      const settledSlot = maturityContext?.settledSlot ?? 0n;
+      const currentSlot = maturityContext?.currentSlot ?? (settledSlot + BigInt(Math.max(0, Math.floor((nowMs - settledMs) / 400))));
+
+      maturityCert = this.maturityGate.evaluateMaturity({
+        tradeId,
+        economicFactId: maturityContext?.economicFactId ?? `fact_${tradeId}`,
+        accountMode: maturityContext?.accountMode ?? 'paper',
+        settledSlot,
+        currentSlot,
+        settledAtMs: settledMs,
+        currentAtMs: nowMs,
+        minMaturityDelayMs: this.minMaturityDelayMs,
+        minMaturitySlotDelta: this.minMaturitySlotDelta,
+        mfePct,
+        maePct,
+        realizedNetPnLLamports: BigInt(Math.round(report.realizedPnlUsd * 1_000_000_000)),
+      }, new Date(nowMs).toISOString());
+
+      if (this.requireOutcomeMaturity && (!maturityCert.isMature || !maturityCert.learningReady)) {
+        throw new Error(`Rejected learning report: IMMATURE_OUTCOME (${maturityCert.rejectionReason})`);
+      }
+    }
 
     const envelopeData = report.tokenMint + ':' + report.entryPriceUsd + ':' + report.exitPriceUsd + ':' + report.realizedPnlPct + ':' + report.exitTrigger + ':' + closedAt;
     let hash = 0;
@@ -334,6 +446,7 @@ export class TradeLearningService {
     const autopsy: TradeAutopsyRecord = {
       ...fullReport,
       attribution,
+      maturityCertificate: maturityCert,
     };
 
     this.autopsies.unshift(autopsy);

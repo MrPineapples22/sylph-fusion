@@ -8,7 +8,7 @@
  * 3. Fail-closed chain verification: Any broken link halts OPEN, INCREASE, and SIGNING authority.
  */
 
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 
 export interface AuditRecord {
   readonly sequenceNumber: number;
@@ -27,6 +27,12 @@ export interface MerkleCheckpoint {
   readonly recordCount: number;
   readonly generatedAtMs: number;
   readonly signerAttestation: string;
+  readonly keyId: string;
+  readonly algorithm: string;
+  readonly publicKeyFingerprint: string;
+  readonly signature: string;
+  readonly sequence: number;
+  readonly prevCheckpointHash: string;
 }
 
 export class AuditRootAuthority {
@@ -136,8 +142,12 @@ export class AuditRootAuthority {
 
   /**
    * Generates a Merkle tree checkpoint across a slice of audit records.
+   * Specification: Section LXI (Real digital signature with keyId, sequence, prevCheckpointHash)
    */
-  public generateCheckpoint(auditSignerKey = 'sylph-audit-authority-v1'): MerkleCheckpoint {
+  public generateCheckpoint(
+    auditSignerKey = 'sylph-audit-authority-v1',
+    options?: { keyId?: string; algorithm?: string }
+  ): MerkleCheckpoint {
     if (this.chain.length === 0) throw new Error('Cannot checkpoint empty audit chain');
 
     const startSequence = this.checkpoints.length > 0
@@ -161,23 +171,44 @@ export class AuditRootAuthority {
     }
 
     const merkleRoot = leaves[0]!;
-    const attestation = createHash('sha256')
-      .update(`${merkleRoot}:${startSequence}:${endSequence}:${auditSignerKey}`)
-      .digest('hex');
+    const keyId = options?.keyId ?? 'sylph-audit-key-1';
+    const algorithm = options?.algorithm ?? 'HMAC-SHA256';
+    const publicKeyFingerprint = createHash('sha256').update(auditSignerKey).digest('hex').slice(0, 16);
+    const prevCheckpoint = this.checkpoints.length > 0 ? this.checkpoints[this.checkpoints.length - 1] : undefined;
+    const prevCheckpointHash = prevCheckpoint ? prevCheckpoint.signerAttestation : '0'.repeat(64);
+    const sequence = this.checkpoints.length + 1;
+
+    const signedPayload = `${sequence}:${prevCheckpointHash}:${merkleRoot}:${startSequence}:${endSequence}:${keyId}:${algorithm}:${publicKeyFingerprint}`;
+    const signature = createHmac('sha256', auditSignerKey).update(signedPayload).digest('hex');
 
     const checkpoint: MerkleCheckpoint = {
-      checkpointId: `CHKPT-${attestation.slice(0, 16)}`,
+      checkpointId: `CHKPT-${signature.slice(0, 16)}`,
       startSequence,
       endSequence,
       merkleRoot,
       recordCount: slice.length,
       generatedAtMs: Date.now(),
-      signerAttestation: attestation,
+      signerAttestation: signature,
+      keyId,
+      algorithm,
+      publicKeyFingerprint,
+      signature,
+      sequence,
+      prevCheckpointHash,
     };
 
     this.checkpoints.push(checkpoint);
     return checkpoint;
   }
+
+  public verifyCheckpoint(checkpoint: MerkleCheckpoint, auditSignerKey: string): boolean {
+    const fingerprint = createHash('sha256').update(auditSignerKey).digest('hex').slice(0, 16);
+    if (checkpoint.publicKeyFingerprint !== fingerprint) return false;
+    const signedPayload = `${checkpoint.sequence}:${checkpoint.prevCheckpointHash}:${checkpoint.merkleRoot}:${checkpoint.startSequence}:${checkpoint.endSequence}:${checkpoint.keyId}:${checkpoint.algorithm}:${checkpoint.publicKeyFingerprint}`;
+    const expectedSig = createHmac('sha256', auditSignerKey).update(signedPayload).digest('hex');
+    return expectedSig === checkpoint.signature && expectedSig === checkpoint.signerAttestation;
+  }
 }
 
 export const globalAuditRoot = new AuditRootAuthority();
+

@@ -69,7 +69,7 @@ export class VetoTotalityEngine {
     let coverageState: 'COMPLETE' | 'INCOMPLETE' | 'CONFLICTED' = 'COMPLETE';
     if (hasConflict) {
       coverageState = 'CONFLICTED';
-    } else if (hasIncomplete || missingRuleIds.length > 0) {
+    } else if (hasIncomplete || missingRuleIds.length > 0 || applicableRules.length === 0) {
       coverageState = 'INCOMPLETE';
     }
 

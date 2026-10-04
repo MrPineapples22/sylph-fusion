@@ -25,6 +25,46 @@ export class CommandGateway {
     automationEnabled = false;
     entriesHalted = false;
     emergencyStop = null;
+    emergencyStopPersistence = null;
+    stopStorageTail = Promise.resolve();
+    pendingStopClears = 0;
+    stopEpoch = 0;
+    panicClosesInProgress = 0;
+    /** Startup wiring only; an attached store cannot be detached or replaced. */
+    setEmergencyStopPersistence(persistence) {
+        if (this.emergencyStopPersistence || this.stateVersion !== 1 || this.stopEpoch !== 0 || this.pendingStopClears !== 0) {
+            throw new Error('EMERGENCY_STOP_PERSISTENCE_ALREADY_INITIALIZED');
+        }
+        if (!persistence || typeof persistence.save !== 'function' || typeof persistence.clearSync !== 'function') {
+            throw new Error('EMERGENCY_STOP_PERSISTENCE_INVALID_ADAPTER');
+        }
+        this.emergencyStopPersistence = Object.freeze({
+            save: persistence.save.bind(persistence),
+            clearSync: persistence.clearSync.bind(persistence),
+        });
+    }
+    entryHalted() {
+        return this.entriesHalted || this.pendingStopClears > 0;
+    }
+    queueStopStorage(operation) {
+        const result = this.stopStorageTail.then(operation);
+        // A failed operation must not poison recovery attempts behind it.
+        this.stopStorageTail = result.then(() => undefined, () => undefined);
+        return result;
+    }
+    persistEmergencyStop() {
+        const record = this.emergencyStop;
+        return this.queueStopStorage(async () => {
+            try {
+                if (!this.emergencyStopPersistence)
+                    throw new Error('NO_STORE');
+                await this.emergencyStopPersistence.save(record);
+            }
+            catch {
+                throw new Error(`EMERGENCY_STOP_PERSISTENCE_FAILED: ${this.emergencyStopPersistence ? 'Storage was not confirmed' : 'NO_STORE'}; entries remain halted.`);
+            }
+        });
+    }
     cashUsd = Number(process.env.SIMULATED_CAPITAL_USD) > 0 ? Number(process.env.SIMULATED_CAPITAL_USD) : 10_000.0;
     initialPaperCapitalUsd = this.cashUsd;
     solPriceUsd = 150.0;
@@ -68,14 +108,15 @@ export class CommandGateway {
         }
         const evidence = await this.paperEntryEvidenceProvider(mint, poolAddress);
         const now = Date.now();
-        if (!evidence || evidence.verified !== true || (requireEntryAuthorization && evidence.entryAllowed !== true) ||
+        if (!evidence || evidence.marketObservationValid !== true || !evidence.source?.trim() ||
+            (requireEntryAuthorization && evidence.entryAllowed !== true) ||
             evidence.mint !== mint || evidence.poolAddress !== poolAddress ||
             !Number.isFinite(evidence.priceUsd) || evidence.priceUsd <= 0 ||
             !Number.isFinite(evidence.liquidityUsd) || evidence.liquidityUsd <= 0 ||
             !Number.isFinite(evidence.solPriceUsd) || evidence.solPriceUsd <= 0 ||
             !Number.isSafeInteger(evidence.observedAt) || evidence.observedAt > now || now - evidence.observedAt > 5_000 ||
             !Number.isSafeInteger(evidence.solObservedAt) || evidence.solObservedAt > now || now - evidence.solObservedAt > 5_000) {
-            throw new Error(`${requireEntryAuthorization ? 'ENTRY_BLOCKED' : 'EXIT_BLOCKED'}: Fresh verified price, liquidity, and SOL/USD evidence are required${requireEntryAuthorization ? ' with basket authorization' : ''}.`);
+            throw new Error(`${requireEntryAuthorization ? 'ENTRY_BLOCKED' : 'EXIT_BLOCKED'}: Fresh, identity-matched market price, liquidity, and SOL/USD observations are required${requireEntryAuthorization ? ' with basket authorization' : ''}.`);
         }
         if (updateSolPrice)
             this.updateSolPriceUsd(evidence.solPriceUsd);
@@ -113,7 +154,7 @@ export class CommandGateway {
     }
     getSnapshot() {
         return {
-            entriesHalted: this.entriesHalted,
+            entriesHalted: this.entryHalted(),
             emergencyStop: this.emergencyStop,
             mode: this.mode,
             automationEnabled: this.automationEnabled,
@@ -138,6 +179,7 @@ export class CommandGateway {
     restoreEmergencyStop(record) {
         if (this.entriesHalted)
             return;
+        this.stopEpoch++;
         this.emergencyStop = Object.freeze({ ...record });
         this.entriesHalted = true;
         this.automationEnabled = false;
@@ -218,10 +260,28 @@ export class CommandGateway {
             // Mark updates retain the provider timestamp and reject older evidence.
             // Read the cached price and timestamp together, including on fallback.
             let currentPrice = pos.lastMark;
-            const markAt = pos.lastMarkAt;
+            let markAt = pos.lastMarkAt;
             if (typeof currentPrice !== 'number' || !Number.isFinite(currentPrice) || currentPrice <= 0)
                 continue;
             // A previous position's awaited close may have consumed this mark's remaining lifetime.
+            const refreshRequestedAt = Date.now();
+            if (!Number.isSafeInteger(markAt) || markAt > refreshRequestedAt || refreshRequestedAt - markAt > globalConfigAuthority.getConfig().feedStaleMs) {
+                if (this.paperEntryEvidenceProvider) {
+                    try {
+                        const fresh = await this.requireFreshMarketEvidence(pos.mint, poolAddress, false, false);
+                        if (Number.isFinite(fresh.priceUsd) && fresh.priceUsd > 0) {
+                            currentPrice = fresh.priceUsd;
+                            markAt = fresh.observedAt;
+                            pos.lastMark = fresh.priceUsd;
+                            pos.lastMarkAt = fresh.observedAt;
+                        }
+                    }
+                    catch { }
+                }
+            }
+            // A quote can arrive while the evidence provider is awaited. Validate
+            // and evaluate it against the post-fetch clock so it is not rejected as
+            // future-dated relative to a timestamp captured before the request.
             const now = Date.now();
             if (!Number.isSafeInteger(markAt) || markAt > now || now - markAt > globalConfigAuthority.getConfig().feedStaleMs)
                 continue;
@@ -317,11 +377,17 @@ export class CommandGateway {
                 case 'SET_AUTOMATION':
                     return this.handleSetAutomation(command);
                 case 'EMERGENCY_STOP':
-                    return this.handleEmergencyStop(command);
+                    return await this.handleEmergencyStop(command);
                 case 'CLEAR_EMERGENCY_STOP':
-                    return this.handleClearEmergencyStop(command);
+                    return await this.handleClearEmergencyStop(command);
                 case 'PANIC_CLOSE_ALL':
-                    return await this.handlePanicCloseAll(command);
+                    this.panicClosesInProgress++;
+                    try {
+                        return await this.handlePanicCloseAll(command);
+                    }
+                    finally {
+                        this.panicClosesInProgress--;
+                    }
                 case 'SET_PAPER_CAPITAL':
                     return this.handleSetPaperCapital(command);
                 default:
@@ -340,6 +406,9 @@ export class CommandGateway {
                 commandId: command.commandId,
                 timestamp: now,
                 error: err.message || 'Internal command execution failure',
+                ...(String(err.message).startsWith('EMERGENCY_STOP_PERSISTENCE_FAILED') ? { emergencyStopPersistence: 'PERSISTENCE_FAILED' } : {}),
+                ...(String(err.message).startsWith('EMERGENCY_STOP_CLEAR_FAILED') ? { emergencyStopPersistence: 'CLEAR_FAILED' } : {}),
+                ...(String(err.message).startsWith('EMERGENCY_STOP_CLEAR_SUPERSEDED') ? { emergencyStopPersistence: 'CLEAR_SUPERSEDED' } : {}),
                 stateVersion: this.stateVersion,
             };
         }
@@ -360,11 +429,15 @@ export class CommandGateway {
             throw new Error('INVALID_ORDER: Amounts must be positive and decimals valid.');
         }
         const isBuy = payload.side === 'BUY';
-        if (isBuy && this.entriesHalted) {
+        const entryStopEpoch = this.stopEpoch;
+        if (isBuy && (this.entryHalted() || entryStopEpoch !== this.stopEpoch)) {
             throw new Error('ENTRY_BLOCKED: Paper emergency stop is latched.');
         }
         const entryEvidence = isBuy ? await this.requireFreshEntryEvidence(payload.mint, payload.poolAddress) : null;
         const exitEvidence = (!isBuy && this.paperEntryEvidenceProvider) ? await this.requireFreshMarketEvidence(payload.mint, payload.poolAddress, false, !autonomousExit) : null;
+        if (isBuy && (this.entryHalted() || entryStopEpoch !== this.stopEpoch)) {
+            throw new Error('ENTRY_BLOCKED: Emergency stop changed during entry authorization.');
+        }
         // 1. Idempotency check (Section 27)
         if (this.executedIntentIds.has(orderId)) {
             throw new Error(`DUPLICATE_INTENT: Order ${orderId} has already been executed or is in flight.`);
@@ -509,12 +582,12 @@ export class CommandGateway {
             try {
                 // Cancellation can race a simulator completion. No paper entry may be
                 // committed after the operator's stop, even if the adapter reports a fill.
-                if (isBuy && this.entriesHalted) {
+                if (isBuy && (this.entryHalted() || entryStopEpoch !== this.stopEpoch)) {
                     throw new Error('ENTRY_BLOCKED: Paper emergency stop occurred during execution.');
                 }
                 if (isBuy) {
                     const fillEvidence = await this.requireFreshEntryEvidence(payload.mint, payload.poolAddress);
-                    if (this.entriesHalted) {
+                    if (this.entryHalted() || entryStopEpoch !== this.stopEpoch) {
                         throw new Error('ENTRY_BLOCKED: Paper emergency stop occurred during fill authorization.');
                     }
                     const driftBps = Math.abs(fillEvidence.priceUsd / entryEvidence.priceUsd - 1) * 10_000;
@@ -585,7 +658,6 @@ export class CommandGateway {
                             const exitPriceUsd = soldQty > 0 ? grossProceedUsd / soldQty : pos.entry;
                             // Pavlov Attribution: record closed trade and update decision credit & adaptive hurdles
                             try {
-                                // No persisted, linked preflight assessment is available for this position.
                                 globalTradeLearningService.recordClosedTrade({
                                     tokenMint: pos.mint,
                                     symbol: pos.symbol || (pos.asset ? pos.asset.slice(0, 8) : 'UNKNOWN'),
@@ -598,7 +670,7 @@ export class CommandGateway {
                                     holdDurationMs,
                                     exitTrigger,
                                     wasDecisionSound: 'UNKNOWN',
-                                    decisionSoundnessReason: 'MISSING_VERIFIED_PROCESS_EVIDENCE',
+                                    decisionSoundnessReason: 'NO_DURABLE_VERIFIED_PROCESS_EVIDENCE',
                                     mfePriceUsd: pos.peak,
                                     maePriceUsd: pos.trough,
                                 });
@@ -692,7 +764,7 @@ export class CommandGateway {
         if (typeof cmd.payload.enabled !== 'boolean') {
             throw new Error('INVALID_AUTOMATION: enabled must be a boolean.');
         }
-        if (cmd.payload.enabled && (this.entriesHalted || !globalLifecycle.isEntryPermitted())) {
+        if (cmd.payload.enabled && (this.entryHalted() || !globalLifecycle.isEntryPermitted())) {
             throw new Error('ENTRY_BLOCKED: Automation requires entry readiness and a clear emergency stop.');
         }
         // Automation here controls only the simulator; live mode is rejected by the gateway.
@@ -706,10 +778,11 @@ export class CommandGateway {
             stateVersion: this.stateVersion,
         };
     }
-    handleEmergencyStop(cmd) {
+    async handleEmergencyStop(cmd) {
         // The local stop must succeed even when the shared lifecycle is already
         // stopped or cannot transition (for example during shutdown).
-        if (!this.entriesHalted) {
+        this.stopEpoch++;
+        if (!this.emergencyStop) {
             this.emergencyStop = Object.freeze({
                 commandId: cmd.commandId,
                 initiator: cmd.initiator || 'unknown',
@@ -730,12 +803,14 @@ export class CommandGateway {
             }
         }
         catch { /* The independently latched paper stop remains authoritative. */ }
+        await this.persistEmergencyStop();
         return {
+            ...(this.emergencyStopPersistence ? { emergencyStopPersistence: 'PERSISTED' } : {}),
             success: true,
             commandId: cmd.commandId,
             timestamp: Date.now(),
             data: {
-                entriesHalted: this.entriesHalted,
+                entriesHalted: this.entryHalted(),
                 lifecycleState: globalLifecycle.getState(),
                 automationEnabled: this.automationEnabled,
                 reason: cmd.payload.reason,
@@ -743,33 +818,66 @@ export class CommandGateway {
             stateVersion: this.stateVersion,
         };
     }
-    handleClearEmergencyStop(cmd) {
-        if (!cmd.payload?.confirmClear) {
+    async handleClearEmergencyStop(cmd) {
+        if (cmd.payload?.confirmClear !== true) {
             throw new Error('CONFIRMATION_REQUIRED: confirmClear must be true to clear emergency stop.');
         }
-        this.entriesHalted = false;
-        this.emergencyStop = null;
-        this.stateVersion++;
+        if (this.panicClosesInProgress > 0) {
+            throw new Error('EMERGENCY_STOP_CLEAR_SUPERSEDED: Panic reductions are still in progress.');
+        }
+        if (!this.emergencyStopPersistence) {
+            throw new Error('EMERGENCY_STOP_CLEAR_FAILED: NO_STORE; entries remain halted.');
+        }
+        const expectedEpoch = this.stopEpoch;
+        const expectedRecord = this.emergencyStop;
+        this.pendingStopClears++;
         try {
-            if (globalLifecycle.getState() === 'REDUCE_ONLY') {
-                globalLifecycle.transition('HEALTHY', `Emergency Stop Cleared: ${cmd.payload.reason || 'Operator cleared stop'}`);
-            }
+            return await this.queueStopStorage(async () => {
+                if (expectedEpoch !== this.stopEpoch) {
+                    throw new Error('EMERGENCY_STOP_CLEAR_SUPERSEDED: A newer stop requires a new clear command.');
+                }
+                // A duplicate clear for the same epoch is idempotent. It must not
+                // issue a second deletion or invent an unrecorded latch on failure.
+                if (this.emergencyStop !== null || this.entriesHalted) {
+                    if (!expectedRecord || this.emergencyStop !== expectedRecord) {
+                        throw new Error('EMERGENCY_STOP_CLEAR_SUPERSEDED: The stop identity changed.');
+                    }
+                    try {
+                        // No await from identity revalidation through disk commit and
+                        // memory release: a new JS stop cannot enter a deletion window.
+                        this.emergencyStopPersistence.clearSync(expectedRecord);
+                    }
+                    catch {
+                        throw new Error('EMERGENCY_STOP_CLEAR_FAILED: Entries remain halted; stop deletion was not confirmed.');
+                    }
+                }
+                this.entriesHalted = false;
+                this.emergencyStop = null;
+                this.stateVersion++;
+                try {
+                    if (globalLifecycle.getState() === 'REDUCE_ONLY') {
+                        globalLifecycle.transition('HEALTHY', `Emergency Stop Cleared: ${cmd.payload.reason || 'Operator cleared stop'}`);
+                    }
+                }
+                catch { /* The independent paper-entry latch owns admission. */ }
+                return {
+                    success: true,
+                    commandId: cmd.commandId,
+                    timestamp: Date.now(),
+                    ...(this.emergencyStopPersistence ? { emergencyStopPersistence: 'CLEARED' } : {}),
+                    data: {
+                        entriesHalted: false,
+                        lifecycleState: globalLifecycle.getState(),
+                        automationEnabled: this.automationEnabled,
+                        reason: cmd.payload.reason,
+                    },
+                    stateVersion: this.stateVersion,
+                };
+            });
         }
-        catch {
-            // The independent paper-entry latch remains authoritative if lifecycle cannot transition.
+        finally {
+            this.pendingStopClears--;
         }
-        return {
-            success: true,
-            commandId: cmd.commandId,
-            timestamp: Date.now(),
-            data: {
-                entriesHalted: this.entriesHalted,
-                lifecycleState: globalLifecycle.getState(),
-                automationEnabled: this.automationEnabled,
-                reason: cmd.payload.reason,
-            },
-            stateVersion: this.stateVersion,
-        };
     }
     handleSetPaperCapital(cmd) {
         const { capitalUsd, resetPositions } = cmd.payload;
@@ -805,7 +913,8 @@ export class CommandGateway {
      * emergency sell orders for 100% of all held positions.
      */
     async handlePanicCloseAll(cmd) {
-        if (!this.entriesHalted) {
+        this.stopEpoch++;
+        if (!this.emergencyStop) {
             this.emergencyStop = Object.freeze({
                 commandId: cmd.commandId,
                 initiator: cmd.initiator || 'unknown',
@@ -827,6 +936,8 @@ export class CommandGateway {
             }
         }
         catch { /* Independently latched paper stop remains authoritative */ }
+        // Begin saving before reductions; failed storage must not prevent exits.
+        const persistence = this.persistEmergencyStop().then(() => null, error => error);
         const closedResults = [];
         const openPositions = [...this.positions.values()];
         for (const pos of openPositions) {
@@ -853,8 +964,11 @@ export class CommandGateway {
                 closedResults.push({ mint: pos.mint, poolAddress: pos.asset, success: false, error: err.message });
             }
         }
+        const persistenceError = await persistence;
         return {
-            success: true,
+            success: persistenceError === null,
+            ...(persistenceError ? { error: persistenceError.message, emergencyStopPersistence: 'PERSISTENCE_FAILED' }
+                : this.emergencyStopPersistence ? { emergencyStopPersistence: 'PERSISTED' } : {}),
             commandId: cmd.commandId,
             timestamp: Date.now(),
             data: {

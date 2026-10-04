@@ -24,3 +24,5 @@ work/
 
 .github/
 data/paper-emergency-stop.json
+target/
+authority-kernel/target/

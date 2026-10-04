@@ -14,7 +14,7 @@ import { evaluateTokenDecision } from '../../terminal/src/token-decision-eval.js
 import { selectSystemStrip } from '../../terminal/src/operator-status-strip-state.js';
 
 test('1. Reach maximum open positions: reject next OPEN without permanently poisoning authority', () => {
-  const kernel = new CapitalKernel({ maxOpenPositions: 3, maxUnknownCapitalSol: 5.0 });
+  const kernel = new CapitalKernel({ maxOpenPositions: 3, maxUnknownCapitalSol: 5.0, initialAuthority: 'A5_NORMAL' });
   assert.equal(kernel.getAuthorityMode(), 'A5_NORMAL');
 
   // Verify that reaching capacity rejects the action locally
@@ -47,7 +47,7 @@ test('1. Reach maximum open positions: reject next OPEN without permanently pois
 });
 
 test('2. Close one position: capacity becomes available again', () => {
-  const kernel = new CapitalKernel({ maxOpenPositions: 3, maxUnknownCapitalSol: 5.0 });
+  const kernel = new CapitalKernel({ maxOpenPositions: 3, maxUnknownCapitalSol: 5.0, initialAuthority: 'A5_NORMAL' });
   assert.equal(kernel.getAuthorityMode(), 'A5_NORMAL');
 
   // When positions count is 2 (after a close), capacity is available and passes
@@ -326,8 +326,8 @@ test('8. Capital authorization fails if reservation/commitment/lease evidence is
 });
 
 test('9. Recovery from reduce-only requires verified recovery evidence', () => {
-  const kernel = new CapitalKernel({ maxOpenPositions: 3, maxUnknownCapitalSol: 5.0 });
-  kernel.downgradeAuthority('A2_REDUCE_ONLY');
+  const kernel = new CapitalKernel({ maxOpenPositions: 3, maxUnknownCapitalSol: 5.0, initialAuthority: 'A5_NORMAL' });
+  kernel.downgradeAuthority('A2_REDUCE_ONLY', 'Test reduce-only');
   assert.equal(kernel.getAuthorityMode(), 'A2_REDUCE_ONLY');
 
   // Attempt recovery with invalid evidence (unhealthy provider)

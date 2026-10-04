@@ -52,18 +52,35 @@ export class AutonomousResearchLab {
             };
         }
         // 3. Generate proposal (always read-only proposal, never live change)
+        // Invariant LIII & Section LXVII #16: Hypotheses begin UNTESTED / 0_OBSERVED, never fabricated Sharpe 1.85
         const proposal = {
             proposalId: `prop_${hypothesis.hypothesisId}_${Date.now()}`,
             hypothesis,
-            ladderTierAchieved: '3_INCREMENTALLY_PREDICTIVE',
+            ladderTierAchieved: '0_OBSERVED',
             isApprovedForLiveDeployment: false, // Critical invariant: NEVER live change directly
-            experimentalBacktestSharpe: 1.85,
+            experimentalBacktestSharpe: 0.0,
+            evidenceVerified: false,
             requiredHumanGovernanceApproval: true,
             generatedAtMs: Date.now(),
         };
         return {
             acceptedForResearch: true,
             proposal,
+        };
+    }
+    /**
+     * Promotes a proposal through the Evidence Ladder ONLY with verified empirical evidence (Section LIV, LXVII #17).
+     */
+    promoteProposal(proposal, evidence, targetTier) {
+        if (!evidence.falsificationPassed || evidence.outOfSampleSamplesCount < 100) {
+            throw new Error(`PROMOTION_REJECTED: Evidence failed falsification or insufficient sample count (${evidence.outOfSampleSamplesCount} < 100)`);
+        }
+        return {
+            ...proposal,
+            ladderTierAchieved: targetTier,
+            experimentalBacktestSharpe: evidence.walkForwardSharpe,
+            evidenceVerified: true,
+            generatedAtMs: Date.now(),
         };
     }
 }

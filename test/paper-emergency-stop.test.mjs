@@ -3,6 +3,12 @@ import assert from 'node:assert/strict';
 import {CommandGateway} from '../dist/command-gateway.js';
 import {globalLifecycle} from '../dist/lifecycle/system-lifecycle.js';
 
+const resetTestGateway = () => {
+  const gateway = CommandGateway.resetInstance();
+  gateway.setEmergencyStopPersistence({save: async () => {}, clearSync: () => {}});
+  return gateway;
+};
+
 const command = (commandId, type, payload) => ({
   commandId,
   type,
@@ -31,7 +37,8 @@ const authorizeTestEntry = gateway => gateway.setPaperEntryEvidenceProvider(asyn
   observedAt: Date.now(),
   solPriceUsd: 150,
   solObservedAt: Date.now(),
-  verified: true,
+  marketObservationValid: true,
+  source: 'TEST',
   entryAllowed: true,
 }));
 
@@ -47,7 +54,7 @@ beforeEach(() => {
 });
 
 test('repeated emergency stop is idempotent and keeps paper entries halted', async () => {
-  const gateway = CommandGateway.resetInstance();
+  const gateway = resetTestGateway();
 
   const first = await gateway.executeCommand(stop('stop-once'));
   const firstRecord = gateway.getSnapshot().emergencyStop;
@@ -64,7 +71,7 @@ test('repeated emergency stop is idempotent and keeps paper entries halted', asy
 });
 
 test('an invalid lifecycle transition cannot prevent the local emergency latch', async () => {
-  const gateway = CommandGateway.resetInstance();
+  const gateway = resetTestGateway();
   globalLifecycle.transition('SHUTTING_DOWN', 'simulate concurrent shutdown');
 
   await gateway.executeCommand(stop('stop-during-shutdown'));
@@ -74,7 +81,7 @@ test('an invalid lifecycle transition cannot prevent the local emergency latch',
 });
 
 test('panic close records its trigger and reason before attempting position reductions', async () => {
-  const gateway = CommandGateway.resetInstance();
+  const gateway = resetTestGateway();
   const result = await gateway.executeCommand(command('panic-with-cause', 'PANIC_CLOSE_ALL', {reason: 'Operator requested account safety'}));
   assert.equal(result.success, true);
   assert.deepEqual(gateway.getSnapshot().emergencyStop, {
@@ -87,7 +94,7 @@ test('panic close records its trigger and reason before attempting position redu
 });
 
 test('restoring a durable stop retains the latch and forces reduce-only mode', () => {
-  const gateway = CommandGateway.resetInstance();
+  const gateway = resetTestGateway();
   const record = Object.freeze({commandId:'restore-stop',initiator:'operator',triggeredAt:Date.now(),
     triggerType:'LEGACY_UNKNOWN',reason:'Cause not recorded by the prior runtime.'});
   gateway.restoreEmergencyStop(record);
@@ -98,7 +105,7 @@ test('restoring a durable stop retains the latch and forces reduce-only mode', (
 });
 
 test('changing paper mode cannot clear an emergency halt', async () => {
-  const gateway = CommandGateway.resetInstance();
+  const gateway = resetTestGateway();
   assert.equal((await gateway.executeCommand(stop('stop-before-mode-change'))).success, true);
 
   const changed = await gateway.executeCommand(command('change-to-shadow', 'CHANGE_MODE', {mode: 'shadow'}));
@@ -109,7 +116,7 @@ test('changing paper mode cannot clear an emergency halt', async () => {
 });
 
 test('a buy fill racing an emergency stop cannot commit paper exposure', async () => {
-  const gateway = CommandGateway.resetInstance();
+  const gateway = resetTestGateway();
   authorizeTestEntry(gateway);
   let releaseFill;
   let executionStarted;
@@ -155,10 +162,10 @@ test('a buy fill racing an emergency stop cannot commit paper exposure', async (
 });
 
 test('emergency halt preserves position-reducing exits', async () => {
-  const gateway = CommandGateway.resetInstance();
+  const gateway = resetTestGateway();
   gateway.setPaperEntryEvidenceProvider(async (mint, poolAddress) => ({mint, poolAddress,
     priceUsd: 1, liquidityUsd: 100_000, observedAt: Date.now(), solPriceUsd: 150,
-    solObservedAt: Date.now(), verified: true, entryAllowed: false}));
+    solObservedAt: Date.now(), marketObservationValid: true, source: 'TEST', entryAllowed: false}));
   gateway.positions.set('exit-pool', {
     asset: 'exit-pool',
     mint: 'exit-mint',
@@ -200,7 +207,7 @@ test('emergency halt preserves position-reducing exits', async () => {
 });
 
 test('automation cannot be enabled after an emergency halt', async () => {
-  const gateway = CommandGateway.resetInstance();
+  const gateway = resetTestGateway();
   assert.equal((await gateway.executeCommand(stop('stop-before-automation'))).success, true);
 
   const result = await gateway.executeCommand(command('enable-after-stop', 'SET_AUTOMATION', {enabled: true}));
@@ -211,7 +218,7 @@ test('automation cannot be enabled after an emergency halt', async () => {
 });
 
 test('clearing emergency stop requires confirmation and restores entry capability', async () => {
-  const gateway = CommandGateway.resetInstance();
+  const gateway = resetTestGateway();
   authorizeTestEntry(gateway);
 
   // Trigger stop

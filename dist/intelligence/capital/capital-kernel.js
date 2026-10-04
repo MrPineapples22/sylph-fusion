@@ -7,11 +7,13 @@
  * It enforces hard safety boundaries, authority modes, and branch-aware accounting.
  */
 export class CapitalKernel {
-    authorityMode = 'A5_NORMAL';
+    authorityMode;
     maxOpenPositions;
     maxUnknownCapitalSol;
     maxUnresolvedIntents;
     constructor(options) {
+        // Invariant: Bootstrap authority is strictly A0_OBSERVE_ONLY (Master Blueprint Section XXXVIII, LXVII #1)
+        this.authorityMode = options?.initialAuthority ?? 'A0_OBSERVE_ONLY';
         this.maxOpenPositions = options?.maxOpenPositions ?? 5;
         this.maxUnknownCapitalSol = options?.maxUnknownCapitalSol ?? 10.0;
         this.maxUnresolvedIntents = options?.maxUnresolvedIntents ?? 3;
@@ -52,9 +54,10 @@ export class CapitalKernel {
     /**
      * Verified recovery machine using cryptographic RecoveryCertificate (Part XI).
      * Restores authority only when explicit evidence proves the underlying fault is resolved.
+     * Invariant INV_AUTH_012: No authority-bearing decision depends on descriptive caller booleans (cert.verification_result removed).
      */
     restoreAuthorityWithCertificate(cert) {
-        if (!cert.verification_result)
+        if (!cert.recovery_id || cert.recovery_id.length < 8)
             return false;
         if (cert.provider_status !== 'HEALTHY')
             return false;
@@ -67,6 +70,8 @@ export class CapitalKernel {
         if (!cert.capital_state_root || cert.capital_state_root.length < 16)
             return false;
         if (!cert.position_reconciliation_hash || cert.position_reconciliation_hash.length < 8)
+            return false;
+        if (!cert.evidence_hashes || cert.evidence_hashes.length === 0)
             return false;
         // Validate upward progression step in recovery lattice
         const rank = (m) => {
@@ -164,13 +169,13 @@ export class CapitalKernel {
                 message: modePass ? 'Authority mode permits action' : `Exposure increase strictly prohibited in mode ${this.authorityMode}`,
             });
         }
-        // Inv 9: revoked_proof -> cannot authorize new signature
-        const proofPass = !params.is_proof_revoked && params.is_lease_valid;
+        // Inv 9: revoked_proof -> cannot authorize new exposure increase (Invariant 6 & INV_AUTH_011: REDUCE/CLOSE/CANCEL dominate)
+        const proofPass = params.action_type !== 'INCREASE_EXPOSURE' || (!params.is_proof_revoked && params.is_lease_valid);
         results.push({
             invariant_id: 'INV_9_PROOF_NOT_REVOKED',
             is_passed: proofPass,
             severity: 'FATAL',
-            message: proofPass ? 'Proof lease valid' : 'Proof is revoked or proof lease has expired',
+            message: proofPass ? 'Proof lease valid or action is risk-reducing' : 'Proof is revoked or proof lease has expired for exposure increase',
         });
         // Inv 10: Unknown capital limits (Part XLII)
         const unknownPass = params.unknown_capital_sol <= this.maxUnknownCapitalSol;

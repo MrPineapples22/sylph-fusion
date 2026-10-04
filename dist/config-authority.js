@@ -70,13 +70,36 @@ export const ConfigSchema = z.object({
     // Default Market Reference
     solPriceUsdDefault: z.number().default(150.0),
 });
+export const PROTECTED_CONFIG_KEYS = new Set([
+    'environment',
+    'maxPositions',
+    'maxExposureLamports',
+    'maxDailyLossLamports',
+    'maxSpeculativeRiskBps',
+    'rollingDrawdownBps',
+    'reserveLamports',
+    'stopBps',
+    'trailingStopBps',
+    'failureHaltCount',
+    'failureWindowMs',
+    'buyLamports',
+    'slippageBps',
+    'panicSlippageBps',
+    'maxImpactBps',
+    'maxFeeBps',
+    'minTipLamports',
+    'maxTipLamports',
+    'maxPriorityLamports',
+]);
 export class ConfigAuthority {
     static instance = null;
     currentConfig;
     currentHash;
-    constructor(initialConfig) {
+    currentEpoch = 1;
+    constructor(initialConfig, initialEpoch = 1) {
         this.currentConfig = ConfigSchema.parse(initialConfig || {});
         this.currentHash = this.computeHash(this.currentConfig);
+        this.currentEpoch = initialEpoch;
     }
     static getInstance(initialConfig) {
         if (!ConfigAuthority.instance) {
@@ -84,8 +107,16 @@ export class ConfigAuthority {
         }
         return ConfigAuthority.instance;
     }
-    static resetInstance(newConfig) {
-        ConfigAuthority.instance = new ConfigAuthority(newConfig);
+    static resetInstance(newConfig, proposal) {
+        if (ConfigAuthority.instance && newConfig) {
+            const keys = Object.keys(newConfig);
+            const modifiesProtected = keys.some(k => PROTECTED_CONFIG_KEYS.has(k));
+            if (modifiesProtected && (!proposal || !proposal.tribunalSignature)) {
+                throw new Error('CONFIG_GOVERNANCE_VIOLATION: Cannot reset authority-sensitive config without signed Tribunal proposal');
+            }
+        }
+        const nextEpoch = ConfigAuthority.instance ? ConfigAuthority.instance.currentEpoch + 1 : 1;
+        ConfigAuthority.instance = new ConfigAuthority(newConfig, nextEpoch);
         return ConfigAuthority.instance;
     }
     getConfig() {
@@ -94,12 +125,32 @@ export class ConfigAuthority {
     getConfigHash() {
         return this.currentHash;
     }
-    updateConfig(patch) {
+    getConfigRoot() {
+        return this.currentHash;
+    }
+    getConfigEpoch() {
+        return this.currentEpoch;
+    }
+    updateConfig(patch, proposal) {
+        const keys = Object.keys(patch);
+        const modifiesProtected = keys.some(k => PROTECTED_CONFIG_KEYS.has(k));
+        if (modifiesProtected) {
+            if (!proposal) {
+                throw new Error('CONFIG_GOVERNANCE_VIOLATION: Mutation of protected keys requires a signed ConfigChangeProposal approved by Tribunal');
+            }
+            if (!proposal.tribunalSignature || proposal.tribunalSignature.length === 0) {
+                throw new Error('CONFIG_GOVERNANCE_VIOLATION: ConfigChangeProposal missing valid Tribunal approval signature');
+            }
+            if (proposal.epoch !== this.currentEpoch) {
+                throw new Error(`CONFIG_GOVERNANCE_VIOLATION: Stale config proposal epoch ${proposal.epoch} != current epoch ${this.currentEpoch}`);
+            }
+        }
         const previousHash = this.currentHash;
         const merged = { ...this.currentConfig, ...patch };
         this.currentConfig = ConfigSchema.parse(merged);
         this.currentHash = this.computeHash(this.currentConfig);
-        return { previousHash, newHash: this.currentHash };
+        this.currentEpoch += 1;
+        return { previousHash, newHash: this.currentHash, epoch: this.currentEpoch };
     }
     computeHash(cfg) {
         const normalized = {};

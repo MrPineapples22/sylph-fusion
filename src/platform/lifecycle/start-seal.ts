@@ -67,6 +67,70 @@ export interface StartSealCertificate {
   readonly reason: string;
 }
 
+// --- Certificate-Consuming Startup Transition Interfaces (Section LXIII) ---
+
+export interface ReleaseVerificationCertificate {
+  readonly releaseRootSha256: string;
+  readonly expectedHash: string;
+  readonly verifiedAtMs: number;
+}
+
+export interface FenceAcquisitionCertificate {
+  readonly fenceEpoch: number;
+  readonly fenceAuthority: string;
+  readonly acquiredAtMs: number;
+}
+
+export interface ProviderSyncCertificate {
+  readonly rpcSlot: number;
+  readonly streamSlot: number;
+  readonly slotLag: number;
+  readonly isSynchronized: boolean;
+  readonly syncedAtMs: number;
+}
+
+export interface JournalRecoveryCertificate {
+  readonly recoveredEventsCount: number;
+  readonly journalHeadHash: string;
+  readonly isCleanRecovery: boolean;
+  readonly recoveredAtMs: number;
+}
+
+export interface PendingReconciliationCertificate {
+  readonly pendingTxCount: number;
+  readonly reconciledCount: number;
+  readonly isFullyReconciled: boolean;
+  readonly reconciledAtMs: number;
+}
+
+export interface WalletCensusCertificate {
+  readonly items: readonly WalletInventoryItem[];
+  readonly discrepancyCount: number;
+  readonly censusAtMs: number;
+}
+
+export interface CapitalConservationCertificate {
+  readonly tradingCashLamports: bigint;
+  readonly reservedCashLamports: bigint;
+  readonly totalEquityLamports: bigint;
+  readonly isConserved: boolean;
+  readonly verifiedAtMs: number;
+}
+
+export interface SemanticsRefreshCertificate {
+  readonly refreshedMintsCount: number;
+  readonly semanticRootHash: string;
+  readonly isRefreshed: boolean;
+  readonly refreshedAtMs: number;
+}
+
+export interface EventCatchupCertificate {
+  readonly catchupSlot: number;
+  readonly headSlot: number;
+  readonly isCaughtUp: boolean;
+  readonly caughtUpAtMs: number;
+}
+
 export class StartSealAuthority {
   private currentPhase: StartSealPhase = 'BOOT';
   private auditHistory: StartSealAuditRecord[] = [];
@@ -155,6 +219,103 @@ export class StartSealAuthority {
     }
     this.fenceEpoch = epoch;
     this.advancePhase('FENCE_ACQUIRE', `Acquired FenceEpoch: ${epoch}`);
+  }
+
+  /**
+   * Stage 2: Evidence-driven Release Verification (Section LXIII)
+   */
+  public completeReleaseVerify(cert: ReleaseVerificationCertificate): void {
+    this.verifyRelease(cert.releaseRootSha256, cert.expectedHash);
+  }
+
+  /**
+   * Stage 3: Evidence-driven Fence Acquisition (Section LXIII)
+   */
+  public completeFenceAcquire(cert: FenceAcquisitionCertificate): void {
+    if (!cert.fenceAuthority || cert.fenceAuthority.length < 4) {
+      throw new Error('STARTSEAL_FENCE_ACQUISITION_FAILED: invalid fenceAuthority');
+    }
+    this.acquireFence(cert.fenceEpoch);
+  }
+
+  /**
+   * Stage 4: Evidence-driven Provider Sync (Section LXIII)
+   */
+  public completeProviderSync(cert: ProviderSyncCertificate): void {
+    if (!cert.isSynchronized || cert.slotLag > 5) {
+      this.auditHistory.push({
+        phase: 'PROVIDER_SYNC',
+        completedAtMs: Date.now(),
+        status: 'FAIL',
+        details: `Provider sync failed: lag ${cert.slotLag} slots`,
+      });
+      throw new Error(`STARTSEAL_PROVIDER_SYNC_FAILED: slot lag ${cert.slotLag} exceeds ceiling`);
+    }
+    this.advancePhase('PROVIDER_SYNC', `RPC (${cert.rpcSlot}) and stream (${cert.streamSlot}) synchronized`);
+  }
+
+  /**
+   * Stage 5: Evidence-driven Journal Recovery (Section LXIII)
+   */
+  public completeJournalRecovery(cert: JournalRecoveryCertificate): void {
+    if (!cert.isCleanRecovery || !cert.journalHeadHash || cert.journalHeadHash.length < 16) {
+      throw new Error('STARTSEAL_JOURNAL_RECOVERY_FAILED: invalid journalHeadHash or unclean recovery');
+    }
+    this.advancePhase('JOURNAL_RECOVERY', `Recovered ${cert.recoveredEventsCount} events, head ${cert.journalHeadHash.slice(0, 16)}...`);
+  }
+
+  /**
+   * Stage 6: Evidence-driven Pending TX Reconciliation (Section LXIII)
+   */
+  public completePendingReconciliation(cert: PendingReconciliationCertificate): void {
+    if (!cert.isFullyReconciled || cert.pendingTxCount !== cert.reconciledCount) {
+      throw new Error(`STARTSEAL_RECONCILIATION_FAILED: ${cert.pendingTxCount - cert.reconciledCount} unresolved transactions`);
+    }
+    this.advancePhase('PENDING_TX_RECONCILIATION', `Reconciled ${cert.reconciledCount} pending transactions`);
+  }
+
+  /**
+   * Stage 7: Evidence-driven Wallet Census (Section LXIII)
+   */
+  public completeWalletCensus(cert: WalletCensusCertificate): void {
+    if (this.currentPhase !== 'PENDING_TX_RECONCILIATION') {
+      throw new Error('STARTSEAL_CENSUS_PHASE_INVALID: pending tx reconciliation must precede wallet census');
+    }
+    this.inventoryCensus = [...cert.items];
+    this.advancePhase(
+      'FULL_WALLET_INVENTORY_CENSUS',
+      `Census complete. Evaluated ${cert.items.length} assets with ${cert.discrepancyCount} discrepancies.`
+    );
+  }
+
+  /**
+   * Stage 8: Evidence-driven Capital Conservation (Section LXIII)
+   */
+  public completeCapitalConservation(cert: CapitalConservationCertificate): void {
+    if (!cert.isConserved) {
+      throw new Error('STARTSEAL_CAPITAL_CONSERVATION_FAILED: balance violation detected across ledger accounts');
+    }
+    this.advancePhase('CAPITAL_CONSERVATION', `Conserved ledger postings. Equity: ${cert.totalEquityLamports} lamports`);
+  }
+
+  /**
+   * Stage 9: Evidence-driven Token Semantics Refresh (Section LXIII)
+   */
+  public completeSemanticsRefresh(cert: SemanticsRefreshCertificate): void {
+    if (!cert.isRefreshed || !cert.semanticRootHash || cert.semanticRootHash.length < 16) {
+      throw new Error('STARTSEAL_SEMANTICS_REFRESH_FAILED: invalid semantic root hash');
+    }
+    this.advancePhase('TOKEN_SEMANTICS_REFRESH', `Refreshed ${cert.refreshedMintsCount} active mint certificates`);
+  }
+
+  /**
+   * Stage 10: Evidence-driven Event Catchup (Section LXIII)
+   */
+  public completeEventCatchup(cert: EventCatchupCertificate): void {
+    if (!cert.isCaughtUp || cert.headSlot - cert.catchupSlot > 2) {
+      throw new Error(`STARTSEAL_EVENT_CATCHUP_FAILED: lag ${cert.headSlot - cert.catchupSlot} exceeds maximum allowed 2 slots`);
+    }
+    this.advancePhase('EVENT_CATCHUP', `Catchup stream up to date at slot ${cert.catchupSlot}`);
   }
 
   /**

@@ -9,6 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { PavlovOutcomeAttributionEngine } from './pavlov-attribution.js';
+import { OutcomeMaturityGate, } from '../../platform/pipeline/conservation-proofs.js';
 function parseCsvLine(line) {
     const result = [];
     let current = '';
@@ -40,6 +41,10 @@ export class TradeLearningService {
     static instance;
     pavlov = new PavlovOutcomeAttributionEngine();
     autopsies = [];
+    maturityGate;
+    requireOutcomeMaturity = false;
+    minMaturityDelayMs = 60_000;
+    minMaturitySlotDelta = 100n;
     csvPath = '';
     lastLoadedMtimeMs = 0;
     totalCsvRecordsLoaded = 0;
@@ -79,10 +84,33 @@ export class TradeLearningService {
         }
         return TradeLearningService.instance;
     }
-    constructor(resolveProcessAssessment) {
+    constructor(resolveProcessAssessment, maturityGate, options) {
         this.resolveProcessAssessment = resolveProcessAssessment;
+        this.maturityGate = maturityGate ?? new OutcomeMaturityGate();
+        if (options?.requireOutcomeMaturity !== undefined) {
+            this.requireOutcomeMaturity = options.requireOutcomeMaturity;
+        }
+        if (options?.minMaturityDelayMs !== undefined) {
+            this.minMaturityDelayMs = options.minMaturityDelayMs;
+        }
+        if (options?.minMaturitySlotDelta !== undefined) {
+            this.minMaturitySlotDelta = options.minMaturitySlotDelta;
+        }
         // Tests start with an isolated in-memory instance (0 records).
         // Servers call .loadFromCsv() to ingest validated but unverified research telemetry.
+    }
+    setOutcomeMaturityRequired(required, minDelayMs, minSlotDelta) {
+        this.requireOutcomeMaturity = required;
+        if (minDelayMs !== undefined)
+            this.minMaturityDelayMs = minDelayMs;
+        if (minSlotDelta !== undefined)
+            this.minMaturitySlotDelta = minSlotDelta;
+    }
+    getOutcomeMaturityGate() {
+        return this.maturityGate;
+    }
+    setProcessAssessmentResolver(resolver) {
+        this.resolveProcessAssessment = resolver;
     }
     assessProcess(report) {
         // Labels in the report/CSV are claims, never evidence. Fail closed if verification fails.
@@ -159,6 +187,29 @@ export class TradeLearningService {
                     reject(reason);
                     continue;
                 }
+                let maturityCert;
+                if (this.requireOutcomeMaturity) {
+                    const nowMs = Date.now();
+                    const settledMs = rawReport.closedAt;
+                    maturityCert = this.maturityGate.evaluateMaturity({
+                        tradeId: rawReport.tradeId,
+                        economicFactId: `fact_${rawReport.tradeId}`,
+                        accountMode: 'paper',
+                        settledSlot: 0n,
+                        currentSlot: BigInt(Math.max(0, Math.floor((nowMs - settledMs) / 400))),
+                        settledAtMs: settledMs,
+                        currentAtMs: nowMs,
+                        minMaturityDelayMs: this.minMaturityDelayMs,
+                        minMaturitySlotDelta: this.minMaturitySlotDelta,
+                        mfePct: rawReport.mfePct ?? 0,
+                        maePct: rawReport.maePct ?? 0,
+                        realizedNetPnLLamports: BigInt(Math.round(rawReport.realizedPnlUsd * 1_000_000_000)),
+                    }, new Date(nowMs).toISOString());
+                    if (!maturityCert.isMature || !maturityCert.learningReady) {
+                        reject('IMMATURE_OUTCOME');
+                        continue;
+                    }
+                }
                 const report = this.assessProcess(rawReport);
                 if (seen.has(report.tradeId)) {
                     reject('DUPLICATE_TRADE_ID');
@@ -169,7 +220,11 @@ export class TradeLearningService {
                     token_mint: report.tokenMint, action_taken: 'PAPER_EXIT_' + report.exitTrigger,
                     was_decision_sound: report.wasDecisionSound, realized_pnl_pct: report.realizedPnlPct,
                 });
-                const autopsy = { ...report, attribution: { ...attribution, attribution_id: report.tradeId, timestamp_ms: report.closedAt } };
+                const autopsy = {
+                    ...report,
+                    attribution: { ...attribution, attribution_id: report.tradeId, timestamp_ms: report.closedAt },
+                    maturityCertificate: maturityCert,
+                };
                 parsedAutopsies.push(autopsy);
             }
             // Sort reverse-chronologically so autopsies[0] is the most recent closed trade
@@ -210,7 +265,7 @@ export class TradeLearningService {
         }
         return false;
     }
-    recordClosedTrade(report) {
+    recordClosedTrade(report, maturityContext) {
         const closedAt = Date.now();
         const tradeId = 'trd_' + closedAt + '_' + Math.floor(Math.random() * 1000);
         const reason = this.rejectionReason({ ...report, tradeId, closedAt });
@@ -222,6 +277,31 @@ export class TradeLearningService {
         const maePct = report.maePct ?? (report.entryPriceUsd > 0 ? Number((((maePrice - report.entryPriceUsd) / report.entryPriceUsd) * 100).toFixed(2)) : 0);
         const profitCaptureRatio = report.profitCaptureRatio ?? (mfePct > 0 ? Number(Math.max(0, Math.min(1, report.realizedPnlPct / mfePct)).toFixed(4)) : (report.realizedPnlPct >= 0 ? 1 : 0));
         const exitEfficiency = report.exitEfficiency ?? ((mfePrice > maePrice) ? Number(Math.max(0, Math.min(1, (report.exitPriceUsd - maePrice) / (mfePrice - maePrice))).toFixed(4)) : 1);
+        // Evaluate Outcome Maturity if required or context is provided
+        let maturityCert;
+        if (this.requireOutcomeMaturity || maturityContext) {
+            const nowMs = maturityContext?.currentAtMs ?? closedAt;
+            const settledMs = maturityContext?.settledAtMs ?? closedAt;
+            const settledSlot = maturityContext?.settledSlot ?? 0n;
+            const currentSlot = maturityContext?.currentSlot ?? (settledSlot + BigInt(Math.max(0, Math.floor((nowMs - settledMs) / 400))));
+            maturityCert = this.maturityGate.evaluateMaturity({
+                tradeId,
+                economicFactId: maturityContext?.economicFactId ?? `fact_${tradeId}`,
+                accountMode: maturityContext?.accountMode ?? 'paper',
+                settledSlot,
+                currentSlot,
+                settledAtMs: settledMs,
+                currentAtMs: nowMs,
+                minMaturityDelayMs: this.minMaturityDelayMs,
+                minMaturitySlotDelta: this.minMaturitySlotDelta,
+                mfePct,
+                maePct,
+                realizedNetPnLLamports: BigInt(Math.round(report.realizedPnlUsd * 1_000_000_000)),
+            }, new Date(nowMs).toISOString());
+            if (this.requireOutcomeMaturity && (!maturityCert.isMature || !maturityCert.learningReady)) {
+                throw new Error(`Rejected learning report: IMMATURE_OUTCOME (${maturityCert.rejectionReason})`);
+            }
+        }
         const envelopeData = report.tokenMint + ':' + report.entryPriceUsd + ':' + report.exitPriceUsd + ':' + report.realizedPnlPct + ':' + report.exitTrigger + ':' + closedAt;
         let hash = 0;
         for (let i = 0; i < envelopeData.length; i++) {
@@ -264,6 +344,7 @@ export class TradeLearningService {
         const autopsy = {
             ...fullReport,
             attribution,
+            maturityCertificate: maturityCert,
         };
         this.autopsies.unshift(autopsy);
         // Append validated research telemetry; this is not proof of executed trades or profitability.

@@ -282,15 +282,15 @@ export function DecisionProvenanceDrawer({
                 <span className="card-subhead">MICROSTRUCTURE SNAPSHOT</span>
                 <div className="telemetry-row">
                   <span className="text-muted">Unique Buyers (5m):</span>
-                  <b>{provenance.microstructure.buyerCount5m}</b>
+                  <b>{Number.isSafeInteger(provenance.microstructure.buyerCount5m) ? provenance.microstructure.buyerCount5m : 'Unavailable'}</b>
                 </div>
                 <div className="telemetry-row">
                   <span className="text-muted">Buy/Sell Tx Ratio:</span>
-                  <b>{provenance.microstructure.buySellRatio}x</b>
+                  <b>{Number.isFinite(provenance.microstructure.buySellRatio) ? `${provenance.microstructure.buySellRatio}x` : 'Unavailable'}</b>
                 </div>
                 <div className="telemetry-row">
                   <span className="text-muted">Buyer Arrival Velocity:</span>
-                  <b>{provenance.microstructure.buyerArrivalVelocityPerSec}/s</b>
+                  <b>{Number.isFinite(provenance.microstructure.buyerArrivalVelocityPerSec) ? `${provenance.microstructure.buyerArrivalVelocityPerSec}/s` : 'Unavailable'}</b>
                 </div>
                 <div className="telemetry-row">
                   <span className="text-muted">Creator Wallet:</span>

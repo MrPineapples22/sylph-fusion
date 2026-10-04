@@ -39,7 +39,7 @@ test('Nemesis 2: Duplicate economic intent fails closed and cannot execute twice
   gateway.setPaperEntryEvidenceProvider(async (mint, poolAddress) => ({
     mint, poolAddress, priceUsd: 1, liquidityUsd: 1_000_000,
     observedAt: Date.now(), solPriceUsd: 150, solObservedAt: Date.now(),
-    verified: true, entryAllowed: true,
+    marketObservationValid: true, source: 'TEST', entryAllowed: true,
   }));
   const cmd = {
     commandId: 'cmd_nemesis_dup',

@@ -13,83 +13,142 @@
 export class ApprovalCertificateEngine {
     issueStructuralCertificate(params) {
         const failureReasons = [];
-        if (params.hasFreezeAuthority)
+        // Invariant 1: Missing evidence must never become favorable evidence
+        if (params.hasFreezeAuthority === undefined)
+            failureReasons.push('UNKNOWN_FREEZE_AUTHORITY');
+        else if (params.hasFreezeAuthority)
             failureReasons.push('ACTIVE_FREEZE_AUTHORITY');
-        if (params.hasPermanentDelegate)
+        if (params.hasPermanentDelegate === undefined)
+            failureReasons.push('UNKNOWN_PERMANENT_DELEGATE');
+        else if (params.hasPermanentDelegate)
             failureReasons.push('PERMANENT_DELEGATE_BACKDOOR');
-        if (params.isNonTransferable)
+        if (params.isNonTransferable === undefined)
+            failureReasons.push('UNKNOWN_TRANSFERABILITY');
+        else if (params.isNonTransferable)
             failureReasons.push('NON_TRANSFERABLE_TOKEN');
-        if ((params.transferFeeBps ?? 0) > 500)
-            failureReasons.push(`EXCESSIVE_TRANSFER_FEE_${params.transferFeeBps}BPS`);
-        if ((params.unverifiedExtensionsCount ?? 0) > 0)
+        const fee = params.transferFeeBps ?? 0;
+        if (fee > 500)
+            failureReasons.push(`EXCESSIVE_TRANSFER_FEE_${fee}BPS`);
+        const unverifiedExt = params.unverifiedExtensionsCount ?? 0;
+        if (unverifiedExt > 0)
             failureReasons.push('UNVERIFIED_EXTENSIONS');
+        const hasUnknown = failureReasons.some(r => r.startsWith('UNKNOWN_'));
+        const evidenceState = hasUnknown
+            ? 'UNKNOWN'
+            : failureReasons.length === 0
+                ? 'PROVEN_TRUE'
+                : 'PROVEN_FALSE';
         return {
             mint: params.mint,
             valid: failureReasons.length === 0,
+            evidenceState,
             evaluatedAtMs: Date.now(),
             programOwner: params.programOwner ?? 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
             hasFreezeAuthority: Boolean(params.hasFreezeAuthority),
             hasMintAuthority: Boolean(params.hasMintAuthority),
             hasPermanentDelegate: Boolean(params.hasPermanentDelegate),
             isNonTransferable: Boolean(params.isNonTransferable),
-            transferFeeBps: params.transferFeeBps ?? 0,
-            unverifiedExtensionsCount: params.unverifiedExtensionsCount ?? 0,
+            transferFeeBps: fee,
+            unverifiedExtensionsCount: unverifiedExt,
             failureReasons,
         };
     }
     issueMarketCertificate(params) {
         const failureReasons = [];
-        const actors = params.independentActorsCount ?? 1;
-        const authScore = params.marketAuthenticityScore ?? 0.8;
-        const washRatio = params.washVolumeRatio ?? 0.0;
-        const conc = params.topClusterConcentrationPct ?? 15;
-        if (actors < 3)
+        // Invariant 1 & Section XI: No favorable defaults (never washRatio ?? 0 or actors ?? 1)
+        if (params.independentActorsCount === undefined) {
+            failureReasons.push('INSUFFICIENT_EVIDENCE_INDEPENDENT_ACTORS');
+        }
+        else if (params.independentActorsCount < 3) {
             failureReasons.push('INSUFFICIENT_INDEPENDENT_ACTORS');
-        if (authScore < 0.4)
+        }
+        if (params.marketAuthenticityScore === undefined) {
+            failureReasons.push('INSUFFICIENT_EVIDENCE_MARKET_AUTHENTICITY');
+        }
+        else if (params.marketAuthenticityScore < 0.4) {
             failureReasons.push('LOW_MARKET_AUTHENTICITY');
-        if (washRatio > 0.4)
+        }
+        if (params.washVolumeRatio === undefined) {
+            failureReasons.push('INSUFFICIENT_EVIDENCE_WASH_VOLUME');
+        }
+        else if (params.washVolumeRatio > 0.4) {
             failureReasons.push('HIGH_WASH_TRADING_VOLUME');
-        if (conc > 50)
+        }
+        if (params.topClusterConcentrationPct === undefined) {
+            failureReasons.push('INSUFFICIENT_EVIDENCE_CLUSTER_CONCENTRATION');
+        }
+        else if (params.topClusterConcentrationPct > 50) {
             failureReasons.push('EXTREME_CLUSTER_CONCENTRATION');
+        }
+        const hasMissing = failureReasons.some(r => r.startsWith('INSUFFICIENT_EVIDENCE_'));
+        const evidenceState = hasMissing
+            ? 'INSUFFICIENT_EVIDENCE'
+            : failureReasons.length === 0
+                ? 'PROVEN_TRUE'
+                : 'PROVEN_FALSE';
         return {
             mint: params.mint,
             valid: failureReasons.length === 0,
+            evidenceState,
             evaluatedAtMs: Date.now(),
-            independentActorsCount: actors,
-            marketAuthenticityScore: authScore,
-            capitalNoveltyRatio: params.capitalNoveltyRatio ?? 0.7,
-            washVolumeRatio: washRatio,
-            topClusterConcentrationPct: conc,
+            independentActorsCount: params.independentActorsCount ?? null,
+            marketAuthenticityScore: params.marketAuthenticityScore ?? null,
+            capitalNoveltyRatio: params.capitalNoveltyRatio ?? null,
+            washVolumeRatio: params.washVolumeRatio ?? null,
+            topClusterConcentrationPct: params.topClusterConcentrationPct ?? null,
             failureReasons,
         };
     }
     issueExecutionCertificate(params) {
         const failureReasons = [];
-        const buyValid = params.buyPathValid ?? true;
-        const sellValid = params.sellPathValid ?? true;
-        const impact = params.roundTripImpactBps ?? 80;
-        const capacity = params.robustExitCapacitySol ?? 5.0;
-        const age = params.quoteAgeMs ?? 100;
-        if (!buyValid)
+        // Invariant 1 & Section XI: Never default buyPathValid ?? true or sellPathValid ?? true
+        if (params.buyPathValid === undefined) {
+            failureReasons.push('BUY_ROUTE_UNKNOWN');
+        }
+        else if (!params.buyPathValid) {
             failureReasons.push('BUY_ROUTE_UNAVAILABLE');
-        if (!sellValid)
+        }
+        if (params.sellPathValid === undefined) {
+            failureReasons.push('SELL_ROUTE_UNKNOWN_HONEYPOT_RISK');
+        }
+        else if (!params.sellPathValid) {
             failureReasons.push('SELL_ROUTE_UNAVAILABLE_HONEYPOT_RISK');
-        if (impact > 500)
+        }
+        if (params.roundTripImpactBps === undefined) {
+            failureReasons.push('ROUND_TRIP_IMPACT_UNKNOWN');
+        }
+        else if (params.roundTripImpactBps > 500) {
             failureReasons.push('EXCESSIVE_ROUND_TRIP_IMPACT');
-        if (capacity < 0.5)
+        }
+        if (params.robustExitCapacitySol === undefined) {
+            failureReasons.push('ROBUST_EXIT_CAPACITY_UNKNOWN');
+        }
+        else if (params.robustExitCapacitySol < 0.5) {
             failureReasons.push('INSUFFICIENT_ROBUST_EXIT_CAPACITY');
-        if (age > 10000)
+        }
+        if (params.quoteAgeMs === undefined) {
+            failureReasons.push('QUOTE_AGE_UNKNOWN');
+        }
+        else if (params.quoteAgeMs > 10000) {
             failureReasons.push('QUOTE_CRITICALLY_STALE');
+        }
+        const hasUnknown = failureReasons.some(r => r.includes('_UNKNOWN'));
+        const evidenceState = hasUnknown
+            ? 'UNKNOWN'
+            : failureReasons.length === 0
+                ? 'PROVEN_TRUE'
+                : 'PROVEN_FALSE';
         return {
             mint: params.mint,
             valid: failureReasons.length === 0,
+            evidenceState,
             evaluatedAtMs: Date.now(),
-            buyPathValid: buyValid,
-            sellPathValid: sellValid,
-            roundTripImpactBps: impact,
-            robustExitCapacitySol: capacity,
-            routeRedundancyCount: params.routeRedundancyCount ?? 1,
-            quoteAgeMs: age,
+            buyPathValid: params.buyPathValid ?? null,
+            sellPathValid: params.sellPathValid ?? null,
+            roundTripImpactBps: params.roundTripImpactBps ?? null,
+            robustExitCapacitySol: params.robustExitCapacitySol ?? null,
+            routeRedundancyCount: params.routeRedundancyCount ?? null,
+            quoteAgeMs: params.quoteAgeMs ?? null,
             failureReasons,
         };
     }
@@ -101,8 +160,16 @@ export class ApprovalCertificateEngine {
             validCount++;
         if (execution.valid)
             validCount++;
-        let proofState = '3/3';
-        if (validCount === 3) {
+        const anyUnknown = structural.evidenceState === 'UNKNOWN' ||
+            market.evidenceState === 'UNKNOWN' ||
+            market.evidenceState === 'INSUFFICIENT_EVIDENCE' ||
+            execution.evidenceState === 'UNKNOWN';
+        let proofState = 'FAIL';
+        if (anyUnknown) {
+            // Missing mandatory evidence prevents 3/3 approval (Section XI)
+            proofState = 'UNKNOWN';
+        }
+        else if (validCount === 3) {
             proofState = '3/3';
         }
         else if (validCount === 2) {
@@ -119,6 +186,9 @@ export class ApprovalCertificateEngine {
         let summary = `Proof State ${proofState}: `;
         if (proofState === '3/3') {
             summary += 'All 3 certificates validated (Structural + Market + Execution).';
+        }
+        else if (proofState === 'UNKNOWN') {
+            summary += 'Approval blocked due to missing/unobserved mandatory evidence.';
         }
         else {
             const fails = [];

@@ -61,12 +61,13 @@ export interface ExecutionObservationRecord {
 export interface StratifiedCalibrationSummary {
   readonly dex: string;
   readonly sampleCount: number;
-  readonly medianRealizedSlippageBps: number;
-  readonly p95RealizedSlippageBps: number;
-  readonly meanCuError: number;
-  readonly medianLandingDriftSlots: number;
-  readonly recommendedSlippageSafetyMarginBps: number;
-  readonly recommendedCuHeadroomFraction: number;
+  readonly evidenceState: 'CALIBRATED' | 'INSUFFICIENT_EVIDENCE';
+  readonly medianRealizedSlippageBps: number | null;
+  readonly p95RealizedSlippageBps: number | null;
+  readonly meanCuError: number | null;
+  readonly medianLandingDriftSlots: number | null;
+  readonly recommendedSlippageSafetyMarginBps: number | null;
+  readonly recommendedCuHeadroomFraction: number | null;
 }
 
 export class ExecutionCalibrationDataset {
@@ -170,15 +171,17 @@ export class ExecutionCalibrationDataset {
   public getCalibrationSummary(dex: string = 'PUMP_BONDING_CURVE'): StratifiedCalibrationSummary {
     const matched = this.records.filter(r => r.dex === dex);
     if (matched.length === 0) {
+      // Invariant 1 & Section XIX: Never fabricate 80 bps median from zero samples
       return {
         dex,
         sampleCount: 0,
-        medianRealizedSlippageBps: 80,
-        p95RealizedSlippageBps: 180,
-        meanCuError: 5000,
-        medianLandingDriftSlots: 1,
-        recommendedSlippageSafetyMarginBps: 120,
-        recommendedCuHeadroomFraction: 0.20,
+        evidenceState: 'INSUFFICIENT_EVIDENCE',
+        medianRealizedSlippageBps: null,
+        p95RealizedSlippageBps: null,
+        meanCuError: null,
+        medianLandingDriftSlots: null,
+        recommendedSlippageSafetyMarginBps: null,
+        recommendedCuHeadroomFraction: null,
       };
     }
 
@@ -206,6 +209,7 @@ export class ExecutionCalibrationDataset {
       medianLandingDriftSlots,
       recommendedSlippageSafetyMarginBps,
       recommendedCuHeadroomFraction,
+      evidenceState: 'CALIBRATED',
     };
   }
 }

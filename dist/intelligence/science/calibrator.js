@@ -29,13 +29,15 @@ export class ProbabilityCalibrator {
     }
     generateReliabilityReport() {
         if (this.observationHistory.length === 0) {
+            // Invariant 1 & Section XIX: Never fabricate good Brier (0.15), good ECE, or isWellCalibrated from zero samples
             return {
-                brierScore: 0.15,
-                logLoss: 0.45,
-                expectedCalibrationErrorBps: 250,
-                isWellCalibrated: true,
+                brierScore: 0,
+                logLoss: 0,
+                expectedCalibrationErrorBps: 0,
+                isWellCalibrated: false,
+                evidenceState: 'INSUFFICIENT_EVIDENCE',
                 bins: [],
-                conformalCoveragePct: 90.0,
+                conformalCoveragePct: 0,
                 conformalFailureDetected: false,
             };
         }
@@ -92,6 +94,7 @@ export class ProbabilityCalibrator {
             bins,
             conformalCoveragePct: Number(coveragePct.toFixed(1)),
             conformalFailureDetected: conformalFailure,
+            evidenceState: 'CALIBRATED',
         };
     }
 }

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { readFileSync, unlinkSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 export class EmergencyStopStore {
     filePath;
@@ -19,6 +20,9 @@ export class EmergencyStopStore {
                 return null;
             throw new Error('EMERGENCY_STOP_STORE_READ_FAILED');
         }
+        return this.decode(contents);
+    }
+    decode(contents) {
         let value;
         try {
             value = JSON.parse(contents);
@@ -57,9 +61,29 @@ export class EmergencyStopStore {
             throw new Error('EMERGENCY_STOP_STORE_WRITE_FAILED');
         }
     }
-    async clear() {
+    /**
+     * Commit a confirmed clear without yielding the event loop. The gateway must
+     * revalidate its stop epoch immediately before this call and release memory
+     * immediately after it. An asynchronous destructive adapter is not supported.
+     * This is process-crash ordering, not a power-loss or cross-process guarantee.
+     */
+    clearSync(expected) {
+        let existing;
         try {
-            await rm(this.filePath, { force: true });
+            existing = this.decode(readFileSync(this.filePath, 'utf8'));
+        }
+        catch (error) {
+            // A stop whose save failed may exist only in memory. Explicit operator
+            // clear can release it after confirming that the durable file is absent.
+            if (error.code === 'ENOENT')
+                return;
+            throw new Error('EMERGENCY_STOP_STORE_CLEAR_FAILED');
+        }
+        if (JSON.stringify(existing) !== JSON.stringify(expected)) {
+            throw new Error('EMERGENCY_STOP_STORE_CONFLICT');
+        }
+        try {
+            unlinkSync(this.filePath);
         }
         catch {
             throw new Error('EMERGENCY_STOP_STORE_CLEAR_FAILED');

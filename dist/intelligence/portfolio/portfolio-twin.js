@@ -33,12 +33,16 @@ export class PortfolioDigitalTwinEngine {
             }
         }
         const totalExposure = confirmed + pending + reserved;
-        // HHI structural concentration across positions
+        // HHI structural concentration across positions (Section LXVII #14)
         let hhi = 0;
         if (totalExposure > 0) {
             for (const p of currentPositions) {
                 const share = (p.confirmedSol + p.pendingSol + p.reservedSol) / totalExposure;
                 hhi += share * share;
+            }
+            if (prospectiveOrder && prospectiveOrder.sizeSol > 0) {
+                const prospectiveShare = prospectiveOrder.sizeSol / totalExposure;
+                hhi += prospectiveShare * prospectiveShare;
             }
         }
         // Shared whale exposure

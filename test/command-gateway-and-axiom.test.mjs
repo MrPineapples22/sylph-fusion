@@ -83,7 +83,7 @@ test('CommandGateway: enforces AXIOM verification, idempotency, and lifecycle ru
   gateway.setPaperEntryEvidenceProvider(async (mint, poolAddress) => ({
     mint, poolAddress, priceUsd: 1, liquidityUsd: 1_000_000,
     observedAt: Date.now(), solPriceUsd: 150, solObservedAt: Date.now(),
-    verified: true, entryAllowed: true,
+    marketObservationValid: true, source: 'TEST', entryAllowed: true,
   }));
   const initialSnap = gateway.getSnapshot();
   assert.equal(initialSnap.positions.length, 0);
@@ -139,9 +139,43 @@ test('CommandGateway: enforces AXIOM verification, idempotency, and lifecycle ru
   assert.ok(afterCloseSnap.cashUsd > 9900.0);
 });
 
+test('CommandGateway rejects stale observations and unapproved baskets before paper execution', async () => {
+  globalLifecycle.bootstrapToHealthy();
+  const gateway = CommandGateway.resetInstance();
+  const buy = {
+    commandId: 'cmd_stale_observation', type: 'SUBMIT_ORDER', timestamp: Date.now(), initiator: 'test',
+    payload: {orderId: 'stale-observation', mint: 'MintStale111111111111111111111111111111',
+      poolAddress: 'PoolStale111111111111111111111111111111', side: 'BUY', usdAmount: 25},
+  };
+  gateway.setPaperEntryEvidenceProvider(async (mint, poolAddress) => ({
+    mint, poolAddress, priceUsd: 1, liquidityUsd: 10_000,
+    observedAt: Date.now() - 5_001, solPriceUsd: 150, solObservedAt: Date.now(),
+    marketObservationValid: true, source: 'TEST', entryAllowed: true,
+  }));
+  const before = gateway.getSnapshot();
+  const stale = await gateway.executeCommand(buy);
+  assert.equal(stale.success, false);
+  assert.match(stale.error, /Fresh, identity-matched market price/);
+  assert.equal(gateway.getSnapshot().cashUsd, before.cashUsd);
+  assert.equal(gateway.getSnapshot().positions.length, 0);
+
+  gateway.setPaperEntryEvidenceProvider(async (mint, poolAddress) => ({
+    mint, poolAddress, priceUsd: 1, liquidityUsd: 10_000,
+    observedAt: Date.now(), solPriceUsd: 150, solObservedAt: Date.now(),
+    marketObservationValid: true, source: 'TEST', entryAllowed: false,
+  }));
+  const unauthorized = await gateway.executeCommand({...buy, commandId: 'cmd_unapproved_basket', payload: {...buy.payload, orderId: 'unapproved-basket'}});
+  assert.equal(unauthorized.success, false);
+  assert.match(unauthorized.error, /basket authorization/);
+  assert.equal(gateway.getSnapshot().cashUsd, before.cashUsd);
+  assert.equal(gateway.getSnapshot().positions.length, 0);
+});
+
 test('CommandGateway: Emergency Stop halts new entries and cancels in-flight buys', async () => {
   globalLifecycle.bootstrapToHealthy();
   const gateway = CommandGateway.resetInstance();
+
+  gateway.setEmergencyStopPersistence({save: async () => {}, clearSync: () => {}});
 
   const stopCmd = {
     commandId: 'cmd_stop_999',

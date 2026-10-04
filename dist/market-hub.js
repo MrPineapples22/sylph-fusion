@@ -31,6 +31,8 @@ export function normalizePairs(rows, at = Date.now()) {
             name: String(p.baseToken.name || 'Unknown token').slice(0, 80),
             price: numeric(p.priceUsd),
             change: numeric(p.priceChange?.h24),
+            change5m: numeric(p.priceChange?.m5),
+            change1h: numeric(p.priceChange?.h1),
             liquidity: numeric(p.liquidity?.usd),
             volume: numeric(p.volume?.h24),
             volume1h: numeric(p.volume?.h1),
@@ -43,6 +45,11 @@ export function normalizePairs(rows, at = Date.now()) {
             at,
             txs: txCount ?? undefined,
             txCount: txCount ?? undefined,
+            buys5m: numeric(p.txns?.m5?.buys),
+            sells5m: numeric(p.txns?.m5?.sells),
+            buys1h: numeric(p.txns?.h1?.buys),
+            sells1h: numeric(p.txns?.h1?.sells),
+            pairCreatedAt: numeric(p.pairCreatedAt),
         };
         // Multi-Pair Liquidity Priority: strictly choose pair with highest real USD liquidity (> 0)
         // Prevents defunct bonding curve pairs (liquidity: null/0) from polluting active DEX pool prices

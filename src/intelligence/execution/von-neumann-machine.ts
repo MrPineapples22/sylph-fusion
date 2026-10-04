@@ -19,6 +19,9 @@ export type ExecutionState =
   | 'SIGNED'
   | 'SUBMITTED'
   | 'CONFIRMED'
+  | 'FINALIZED_SUCCESS'
+  | 'FINALIZED_INSTRUCTION_FAILURE'
+  | 'EXPIRED_NO_LAND_QUORUM'
   | 'RECONCILED'
   | 'ABORTED';
 
@@ -39,7 +42,7 @@ export interface FormalExecutionIntent {
 }
 
 export class VonNeumannExecutionStateMachine {
-  public static readonly VERSION = '1.0.0';
+  public static readonly VERSION = '2.0.0';
   public static readonly VALID_TRANSITIONS: Record<ExecutionState, readonly ExecutionState[]> = {
     OBSERVE: ['ANALYZE', 'ABORTED'],
     ANALYZE: ['PROPOSE', 'ABORTED'],
@@ -49,8 +52,12 @@ export class VonNeumannExecutionStateMachine {
     SIMULATED: ['AUTHORIZED', 'ABORTED'],
     AUTHORIZED: ['SIGNED', 'ABORTED'],
     SIGNED: ['SUBMITTED', 'ABORTED'],
-    SUBMITTED: ['CONFIRMED', 'ABORTED'],
-    CONFIRMED: ['RECONCILED', 'ABORTED'],
+    SUBMITTED: ['CONFIRMED', 'FINALIZED_SUCCESS', 'FINALIZED_INSTRUCTION_FAILURE', 'EXPIRED_NO_LAND_QUORUM', 'ABORTED'],
+    // Invariant 5: CONFIRMED cannot mutate finalized economic state or reconcile directly. Must reach terminal finality.
+    CONFIRMED: ['FINALIZED_SUCCESS', 'FINALIZED_INSTRUCTION_FAILURE', 'EXPIRED_NO_LAND_QUORUM', 'ABORTED'],
+    FINALIZED_SUCCESS: ['RECONCILED', 'ABORTED'],
+    FINALIZED_INSTRUCTION_FAILURE: ['RECONCILED', 'ABORTED'],
+    EXPIRED_NO_LAND_QUORUM: ['RECONCILED', 'ABORTED'],
     RECONCILED: [],
     ABORTED: []
   };

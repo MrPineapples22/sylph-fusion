@@ -620,7 +620,9 @@ export class MasterIntelligenceEngine {
     this.pavlovAttribution = new PavlovOutcomeAttributionEngine();
 
     this.capitalTruth = new CapitalTruthEngine();
-    this.capitalKernel = new CapitalKernel();
+    this.capitalKernel = new CapitalKernel({
+      initialAuthority: (process.env.SYLPH_RUNTIME_MODE === 'live' || process.env.MODE === 'live') ? 'A0_OBSERVE_ONLY' : 'A5_NORMAL'
+    });
     this.reservationEngine = new HierarchicalReservationEngine();
     this.veritasDecoder = new VeritasTransactionDecoder();
     this.vaultSigner = new VaultSigner();
