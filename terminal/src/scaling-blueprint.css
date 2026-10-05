@@ -410,3 +410,135 @@
   height: 10px;
   border-radius: 2px;
 }
+
+/* 8. Adversarial Dialectic Council & Resource Admission */
+.sb-dialectic-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 1.25rem;
+}
+
+.sb-prover-card {
+  background: linear-gradient(135deg, rgba(20, 241, 149, 0.05) 0%, rgba(13, 25, 23, 0.4) 100%);
+  border: 1px solid rgba(20, 241, 149, 0.25);
+  border-radius: var(--radius-card, 8px);
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.sb-skeptic-card {
+  background: linear-gradient(135deg, rgba(255, 59, 105, 0.05) 0%, rgba(28, 14, 20, 0.4) 100%);
+  border: 1px solid rgba(255, 59, 105, 0.25);
+  border-radius: var(--radius-card, 8px);
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.sb-probe-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sb-probe-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 0.85rem;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  gap: 0.5rem;
+}
+
+.sb-probe-item.failed {
+  border-color: rgba(255, 59, 105, 0.4);
+  background: rgba(255, 59, 105, 0.08);
+}
+
+.sb-probe-item.passed {
+  border-color: rgba(20, 241, 149, 0.2);
+}
+
+.sb-capacity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.75rem;
+}
+
+.sb-capacity-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+/* 9. Conservation Proofs & Outcome Maturity Gate */
+.sb-conservation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.sb-conservation-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.sb-math-equation {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  overflow-x: auto;
+}
+
+.sb-math-token {
+  font-weight: 700;
+  color: #14F195;
+}
+
+.sb-math-equals {
+  color: #9bcbff;
+  font-weight: bold;
+  padding: 0 4px;
+}
+
+.sb-maturity-meter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.sb-maturity-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.sb-maturity-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: #14F195;
+  transition: width 0.3s ease;
+}
+

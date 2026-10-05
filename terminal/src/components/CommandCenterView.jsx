@@ -18,6 +18,8 @@ export function CommandCenterView({
   onOpenFlightRecorder,
   onOpenDivergence,
   onOpenCapsule,
+  onOpenCouncil,
+  onOpenConservation,
 }) {
   const sourceRows = projection?.rows ?? projection?.tokens;
   const rows = Array.isArray(sourceRows) ? sourceRows.filter(Boolean) : null;
@@ -62,12 +64,14 @@ export function CommandCenterView({
         <div>
           <div className="op-command-kicker"><Lock size={16} aria-hidden="true"/> Real-World Scaling &amp; Execution Telemetry</div>
           <h3>Performance &amp; Scaling Verification Architecture</h3>
-          <p className="op-muted">Step 4.1 Shadow Parity · Hot-Path Proof Capsules · 15-Stage Flight Recorder</p>
+          <p className="op-muted">Step 4.1 Shadow Parity · Hot-Path Proof Capsules · 15-Stage Flight Recorder · Dialectic Council · Conservation</p>
         </div>
-        <div style={{display:'flex',gap:'8px'}}>
+        <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
           {onOpenFlightRecorder && <button type="button" className="op-button" onClick={onOpenFlightRecorder}>Flight Recorder <ArrowUpRight size={14} aria-hidden="true"/></button>}
           {onOpenCapsule && <button type="button" className="op-button" onClick={onOpenCapsule}>Proof Capsule <ArrowUpRight size={14} aria-hidden="true"/></button>}
           {onOpenDivergence && <button type="button" className="op-button" onClick={onOpenDivergence}>Shadow Parity <ArrowUpRight size={14} aria-hidden="true"/></button>}
+          {onOpenCouncil && <button type="button" className="op-button" onClick={onOpenCouncil}>Council <ArrowUpRight size={14} aria-hidden="true"/></button>}
+          {onOpenConservation && <button type="button" className="op-button" onClick={onOpenConservation}>Conservation <ArrowUpRight size={14} aria-hidden="true"/></button>}
         </div>
       </div>
       <div className="op-command-capability-grid">
@@ -98,6 +102,20 @@ export function CommandCenterView({
             <Status value="UNKNOWN" />
           </div>
           <p className="op-muted">Configured reserve arithmetic does not establish executable exit liquidity.</p>
+        </article>
+        <article className="op-command-capability" style={{cursor: onOpenCouncil ? 'pointer' : 'default'}} onClick={onOpenCouncil}>
+          <div className="op-command-capability-heading">
+            <h4>Dialectic Council</h4>
+            <Status value="UNKNOWN" />
+          </div>
+          <p className="op-muted">Prover affirmative claims vs Skeptic falsification checks and resource admission queue.</p>
+        </article>
+        <article className="op-command-capability" style={{cursor: onOpenConservation ? 'pointer' : 'default'}} onClick={onOpenConservation}>
+          <div className="op-command-capability-heading">
+            <h4>Conservation Proofs</h4>
+            <Status value="UNKNOWN" />
+          </div>
+          <p className="op-muted">Exact lot token &amp; basis integer conservation plus post-trade outcome maturity gate.</p>
         </article>
       </div>
     </section>

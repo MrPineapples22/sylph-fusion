@@ -17,27 +17,13 @@ import {
   Filter
 } from 'lucide-react';
 import { formatMoney, formatNumber, formatPrice } from '../design-system/format.js';
+import { FLIGHT_RECORDER_STAGES, latestFlightRecords, revisionsForFlight } from './flight-recorder-history.js';
 
-export const FLIGHT_RECORDER_STAGES = [
-  { id: 'DISCOVERY', label: '1. Discovery', icon: Activity, desc: 'Initial pool & token discovery' },
-  { id: 'PREFLIGHT_QUALITY', label: '2. Preflight Quality', icon: ShieldCheck, desc: 'RugCheck & metadata verification' },
-  { id: 'VETO_EVALUATION', label: '3. Hard Veto', icon: ShieldCheck, desc: 'Safety microkernel rule checks' },
-  { id: 'CANDIDATE_FILTER', label: '4. Candidate Filter', icon: Filter, desc: 'HSI & volume hurdle evaluation' },
-  { id: 'POSITION_SIZING', label: '5. Dynamic Sizing', icon: Zap, desc: 'Fractional Kelly with impact model' },
-  { id: 'OPERATING_ENVELOPE', label: '6. Operating Envelope', icon: ShieldCheck, desc: 'Capital & capacity constraints' },
-  { id: 'PROOF_CAPSULE_ASSEMBLY', label: '7. Proof Capsule', icon: Database, desc: 'Hot-path lease bundle assembled' },
-  { id: 'EXECUTABLE_QUOTE_BINDING', label: '8. Quote Binding', icon: Clock, desc: 'Pool quote bound with 1.2s TTL' },
-  { id: 'BLOCKHASH_LEASE_VERIFICATION', label: '9. Blockhash Lease', icon: Clock, desc: 'Fresh blockhash validity check' },
-  { id: 'TRANSACTION_BUILD', label: '10. Tx Build', icon: Zap, desc: 'Instructions & CU budget optimize' },
-  { id: 'JITO_TIP_COMPUTATION', label: '11. Jito Tip', icon: Zap, desc: 'Dynamic tip for landing assurance' },
-  { id: 'ROUTING_BROADCAST', label: '12. Routing Broadcast', icon: Activity, desc: 'Jito bundle / leader broadcast' },
-  { id: 'INCLUSION_LANDING', label: '13. Inclusion Landing', icon: CheckCircle2, desc: 'On-chain block inclusion verified' },
-  { id: 'POST_FILL_ACCOUNTING', label: '14. Post-Fill Accounting', icon: Database, desc: 'Exact lamport lot settlement' },
-  { id: 'ATTRIBUTION_AUTOPSY', label: '15. Attribution Autopsy', icon: CheckCircle2, desc: 'Causal edge breakdown & autopsy' },
-];
+export { FLIGHT_RECORDER_STAGES };
 
 export function EconomicFlightRecorderDrawer({ isOpen, onClose, selectedAttemptId = null }) {
   const [attempts, setAttempts] = useState([]);
+  const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selectedAttempt, setSelectedAttempt] = useState(null);
   const [search, setSearch] = useState('');
@@ -50,12 +36,15 @@ export function EconomicFlightRecorderDrawer({ isOpen, onClose, selectedAttemptI
       const res = await fetch('/api/flight-recorder/attempts');
       if (res.ok) {
         const data = await res.json();
-        setAttempts(data.attempts || []);
-        if (data.attempts?.length > 0) {
+        const revisions = data.attempts || [];
+        const latest = latestFlightRecords(revisions);
+        setHistory(revisions);
+        setAttempts(latest);
+        if (latest.length > 0) {
           const match = selectedAttemptId
-            ? data.attempts.find(a => a.attemptId === selectedAttemptId || a.economicFactId === selectedAttemptId)
-            : data.attempts[0];
-          setSelectedAttempt(match || data.attempts[0]);
+            ? latest.find(a => a.attemptId === selectedAttemptId || a.economicFactId === selectedAttemptId)
+            : latest[0];
+          setSelectedAttempt(match || latest[0]);
         }
       }
     } catch {
@@ -84,15 +73,7 @@ export function EconomicFlightRecorderDrawer({ isOpen, onClose, selectedAttemptI
     setTimeout(() => setCopiedHash(false), 2000);
   };
 
-  // Determine stage progression status
-  const getStageStatus = (stageId, currentStage) => {
-    if (!currentStage) return 'pending';
-    const stageIndex = FLIGHT_RECORDER_STAGES.findIndex(s => s.id === stageId);
-    const currentIndex = FLIGHT_RECORDER_STAGES.findIndex(s => s.id === currentStage);
-    if (stageIndex < currentIndex) return 'completed';
-    if (stageIndex === currentIndex) return 'active';
-    return 'pending';
-  };
+  const selectedHistory = revisionsForFlight(history, currentAttempt);
 
   const filteredAttempts = attempts.filter(a =>
     !search ||
@@ -114,7 +95,7 @@ export function EconomicFlightRecorderDrawer({ isOpen, onClose, selectedAttemptI
         <header className="sb-drawer-header">
           <div className="sb-drawer-header-title">
             <span className="font-mono text-xs text-muted" style={{ color: '#14F195', fontWeight: 600 }}>
-              DURABLE APPEND-ONLY SQLite WAL (15-STAGE LIFECYCLE)
+              DURABLE APPEND-ONLY SQLite WAL · RECORDED REVISIONS
             </span>
             <h2 id="sb-flight-recorder-title">
               <Database size={20} style={{ color: '#14F195' }} />
@@ -176,9 +157,9 @@ export function EconomicFlightRecorderDrawer({ isOpen, onClose, selectedAttemptI
             {attempts.length > 0 && (
               <select
                 aria-label="Select execution attempt"
-                value={currentAttempt?.economicFactId || ''}
+              value={currentAttempt ? `${currentAttempt.economicFactId}:${currentAttempt.executionGenerationId}` : ''}
                 onChange={e => {
-                  const match = attempts.find(a => a.economicFactId === e.target.value);
+                  const match = attempts.find(a => `${a.economicFactId}:${a.executionGenerationId}` === e.target.value);
                   if (match) setSelectedAttempt(match);
                 }}
                 style={{
@@ -193,7 +174,7 @@ export function EconomicFlightRecorderDrawer({ isOpen, onClose, selectedAttemptI
                 }}
               >
                 {filteredAttempts.map(a => (
-                  <option key={a.economicFactId} value={a.economicFactId}>
+                  <option key={`${a.economicFactId}:${a.executionGenerationId}`} value={`${a.economicFactId}:${a.executionGenerationId}`}>
                     {a.symbol || a.mint.slice(0, 6)} ({a.stage}) · Rev {a.revision}
                   </option>
                 ))}
@@ -292,49 +273,26 @@ export function EconomicFlightRecorderDrawer({ isOpen, onClose, selectedAttemptI
                 </div>
               ) : (
                 <>
-                  {/* 15-Stage Lifecycle Timeline */}
+            {/* Display only persisted revisions; unrecorded stages are never inferred. */}
                   <div className="sb-glass-card">
                     <h4 style={{ margin: '0 0 10px 0', fontSize: '0.85rem', color: '#f0f4f8', display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <Activity size={15} color="#14F195" />
-                      15-Stage Real-World Lifecycle Progression
+                      Recorded lifecycle revisions ({selectedHistory.length})
                     </h4>
+                    <p style={{ margin: '0 0 10px', color: '#98aabd', fontSize: '0.75rem' }}>
+                      Ordered by stored revision number. Stage transition timestamps are not stored.
+                    </p>
                     <div className="sb-stages-track">
-                      {FLIGHT_RECORDER_STAGES.map((stg, idx) => {
-                        const status = getStageStatus(stg.id, currentAttempt.stage);
-                        const isCurrent = currentAttempt.stage === stg.id;
-                        const isDone = status === 'completed';
-                        const isFailed = currentAttempt.terminalOutcome !== 'NONE' && isCurrent && currentAttempt.terminalOutcome !== 'LANDED_SUCCESS';
-
-                        return (
-                          <div
-                            key={stg.id}
-                            className={`sb-stage-node ${isFailed ? 'failed' : isDone ? 'completed' : isCurrent ? 'pending' : 'bypassed'}`}
-                          >
-                            <span className="sb-stage-number">STAGE {String(idx + 1).padStart(2, '0')}</span>
-                            <span className="sb-stage-title" title={stg.desc}>{stg.label.split('. ')[1]}</span>
-                            <div className="sb-stage-status">
-                              {isDone ? (
-                                <span style={{ color: '#14F195', display: 'flex', alignItems: 'center', gap: '2px' }}>
-                                  <CheckCircle2 size={11} /> DONE
-                                </span>
-                              ) : isFailed ? (
-                                <span style={{ color: '#FF3B69', display: 'flex', alignItems: 'center', gap: '2px' }}>
-                                  <AlertTriangle size={11} /> FAILED
-                                </span>
-                              ) : isCurrent ? (
-                                <span style={{ color: '#F59E0B', display: 'flex', alignItems: 'center', gap: '2px' }}>
-                                  <Clock size={11} /> ACTIVE
-                                </span>
-                              ) : (
-                                <span style={{ color: '#73869a' }}>PENDING</span>
-                              )}
-                            </div>
-                            <span className="sb-stage-duration">
-                              {isDone ? '< 4ms' : isCurrent ? 'in-flight' : '—'}
-                            </span>
+                      {selectedHistory.map(record => (
+                        <div key={`${record.executionGenerationId}:${record.revision}`} className={`sb-stage-node ${record.revision === currentAttempt.revision ? 'pending' : 'completed'}`}>
+                          <span className="sb-stage-number">REVISION {String(record.revision).padStart(2, '0')}</span>
+                          <span className="sb-stage-title">{record.stage}</span>
+                          <div className="sb-stage-status">
+                            {record.revision === currentAttempt.revision ? <span style={{ color: '#F59E0B' }}>CURRENT RECORD</span> : <span style={{ color: '#14F195' }}><CheckCircle2 size={11} /> SUPERSEDED RECORD</span>}
                           </div>
-                        );
-                      })}
+                          <span className="sb-stage-duration">Transition time unavailable</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
 

@@ -13,10 +13,13 @@ const temp = mkdtempSync(join(tmpdir(), 'sylph-scaling-test-'));
 
 const files = [
   'components/EconomicFlightRecorderDrawer.jsx',
+  'components/flight-recorder-history.js',
   'components/RuntimeDivergenceInspector.jsx',
   'components/HotPathProofCapsuleMonitor.jsx',
   'components/RealizedEdgeBreakdownPanel.jsx',
   'components/DynamicReserveGauge.jsx',
+  'components/AdversarialCouncilDrawer.jsx',
+  'components/ConservationProofsDrawer.jsx',
   'design-system/format.js',
   'design-system/primitives.jsx',
 ];
@@ -51,6 +54,7 @@ const {
   EconomicFlightRecorderDrawer,
   FLIGHT_RECORDER_STAGES,
 } = require(output('components/EconomicFlightRecorderDrawer.jsx'));
+const {latestFlightRecords, revisionsForFlight} = require(output('components/flight-recorder-history.js'));
 const {
   RuntimeDivergenceInspector,
 } = require(output('components/RuntimeDivergenceInspector.jsx'));
@@ -64,31 +68,37 @@ const {
 const {
   DynamicReserveGauge,
 } = require(output('components/DynamicReserveGauge.jsx'));
+const {
+  AdversarialCouncilDrawer,
+} = require(output('components/AdversarialCouncilDrawer.jsx'));
+const {
+  ConservationProofsDrawer,
+} = require(output('components/ConservationProofsDrawer.jsx'));
 
 after(() => rmSync(temp, {recursive: true, force: true}));
 
-test('EconomicFlightRecorderDrawer: defines all 15 stages of the real-world execution lifecycle', () => {
-  assert.equal(FLIGHT_RECORDER_STAGES.length, 15);
-  const expectedStageIds = [
-    'DISCOVERY',
-    'PREFLIGHT_QUALITY',
-    'VETO_EVALUATION',
-    'CANDIDATE_FILTER',
-    'POSITION_SIZING',
-    'OPERATING_ENVELOPE',
-    'PROOF_CAPSULE_ASSEMBLY',
-    'EXECUTABLE_QUOTE_BINDING',
-    'BLOCKHASH_LEASE_VERIFICATION',
-    'TRANSACTION_BUILD',
-    'JITO_TIP_COMPUTATION',
-    'ROUTING_BROADCAST',
-    'INCLUSION_LANDING',
-    'POST_FILL_ACCOUNTING',
-    'ATTRIBUTION_AUTOPSY',
+test('EconomicFlightRecorderDrawer: stage vocabulary matches the persisted recorder lifecycle', () => {
+  assert.deepEqual(FLIGHT_RECORDER_STAGES, [
+    'DISCOVERED', 'FILTER_EVALUATED', 'DECISION_CREATED', 'QUOTE_CAPTURED',
+    'BUILD_STARTED', 'BUILD_COMPLETED', 'SIMULATED', 'AUTHORIZED', 'SIGNED',
+    'SUBMITTED', 'ACKNOWLEDGED', 'UNKNOWN', 'LANDED_SUCCESS', 'LANDED_FAILURE',
+    'NOLAND', 'FINALIZED', 'SETTLED', 'OUTCOME_MATURE',
+  ]);
+  const recorderSource = readFileSync(resolve(directory, '..', 'src/intelligence/execution-adaptation/economic-flight-recorder.ts'), 'utf8');
+  const stageUnion = recorderSource.match(/export type FlightLifecycleStage =([\s\S]*?);/)?.[1] || '';
+  assert.deepEqual([...stageUnion.matchAll(/'([A-Z_]+)'/g)].map(match => match[1]), FLIGHT_RECORDER_STAGES);
+});
+
+test('flight recorder history selects latest revision per generation and preserves branch history', () => {
+  const rows = [
+    {economicFactId: 'fact-a', executionGenerationId: 'gen-1', revision: 3, stage: 'UNKNOWN'},
+    {economicFactId: 'fact-a', executionGenerationId: 'gen-1', revision: 2, stage: 'SUBMITTED'},
+    {economicFactId: 'fact-a', executionGenerationId: 'gen-1', revision: 1, stage: 'DISCOVERED'},
+    {economicFactId: 'fact-a', executionGenerationId: 'gen-2', revision: 1, stage: 'DISCOVERED'},
   ];
-  for (const id of expectedStageIds) {
-    assert.ok(FLIGHT_RECORDER_STAGES.some(s => s.id === id), `Missing stage ${id}`);
-  }
+  const latest = latestFlightRecords(rows);
+  assert.deepEqual(latest.map(row => [row.executionGenerationId, row.revision]), [['gen-1', 3], ['gen-2', 1]]);
+  assert.deepEqual(revisionsForFlight(rows, latest[0]).map(row => row.stage), ['DISCOVERED', 'SUBMITTED', 'UNKNOWN']);
 });
 
 test('EconomicFlightRecorderDrawer: renders drawer markup and empty state when open', () => {
@@ -101,7 +111,9 @@ test('EconomicFlightRecorderDrawer: renders drawer markup and empty state when o
 
   assert.match(html, /Economic Flight Recorder/);
   assert.match(html, /DURABLE APPEND-ONLY SQLite WAL/);
-  assert.match(html, /15-STAGE LIFECYCLE/);
+  assert.match(html, /RECORDED REVISIONS/);
+  const drawerSource = readFileSync(join(directory, 'src', 'components', 'EconomicFlightRecorderDrawer.jsx'), 'utf8');
+  assert.match(drawerSource, /Stage transition timestamps are not stored/);
 });
 
 test('RuntimeDivergenceInspector: renders side-by-side comparison and parity status', () => {
@@ -245,3 +257,125 @@ test('DynamicReserveGauge: correctly computes dynamic reserve floor for $250 ban
   assert.match(populatedHtml, /\$50\.00/);
   assert.match(populatedHtml, /\$250\.00/);
 });
+
+test('AdversarialCouncilDrawer: renders Prover vs Skeptic dialectic cards and resource admission capacity', () => {
+  const emptyHtml = renderToStaticMarkup(
+    React.createElement(AdversarialCouncilDrawer, {
+      isOpen: true,
+      onClose: () => {},
+    })
+  );
+
+  assert.match(emptyHtml, /Adversarial Evidence Council/);
+  assert.match(emptyHtml, /UNKNOWN/);
+  assert.match(emptyHtml, /Section 30 Epistemic Rules/);
+
+  const populatedHtml = renderToStaticMarkup(
+    React.createElement(AdversarialCouncilDrawer, {
+      isOpen: true,
+      onClose: () => {},
+      selectedFactId: 'fact-sample-88',
+      initialData: {
+        latestVerdict: {
+          economicFactId: 'fact-sample-88',
+          status: 'SUFFICIENT',
+          approved: true,
+          councilVerdictHash: '0123456789abcdef0123456789abcdef',
+          evaluatedAt: '2026-10-05T01:00:00Z',
+          prover: {
+            opportunityId: 'opp-alpha-99',
+            tokenMint: 'So11111111111111111111111111111111111111112',
+            quotePriceLamports: 450000000n,
+            liquidityLamports: 125000000000n,
+            authenticityScore: 92,
+            temporalValidityVerified: true,
+          },
+          skepticChecks: [
+            { checkName: 'TRANSFER_HOOK_WHITELIST', passed: true, severity: 'FATAL_VETO' },
+            { checkName: 'PRICE_DRIFT_TOLERANCE', passed: true, severity: 'HIGH_UNCERTAINTY' },
+          ],
+        },
+        capacity: {
+          rpcCapacityAvailablePct: 88,
+          streamFeedHealthy: true,
+          archiveQuorumAvailable: true,
+          verificationQueueDepth: 3,
+          currentLiabilitiesUsd: 450,
+          activeLiabilitiesCeilingUsd: 5000,
+          memoryPressurePct: 35,
+          activeWorkloadPermitId: 'permit-dialectic-101',
+        },
+      },
+    })
+  );
+
+  assert.match(populatedHtml, /DIALECTIC COUNCIL VERDICT/);
+  assert.match(populatedHtml, /SUFFICIENT/);
+  assert.match(populatedHtml, /RISK ADMITTED/);
+  assert.match(populatedHtml, /Prover Affirmative Evidence/);
+  assert.match(populatedHtml, /TEMPORAL VALID/);
+  assert.match(populatedHtml, /Skeptic Falsification Probes/);
+  assert.match(populatedHtml, /TRANSFER_HOOK_WHITELIST/);
+  assert.match(populatedHtml, /Resource Admission &amp; Operational Capacity/);
+  assert.match(populatedHtml, /Active Liabilities/);
+  assert.match(populatedHtml, /35%/);
+});
+
+test('ConservationProofsDrawer: renders exact integer lot conservation and outcome maturity gate', () => {
+  const emptyHtml = renderToStaticMarkup(
+    React.createElement(ConservationProofsDrawer, {
+      isOpen: true,
+      onClose: () => {},
+    })
+  );
+
+  assert.match(emptyHtml, /Conservation Proofs &amp; Outcome Gate/);
+  assert.match(emptyHtml, /CONSERVATION VIOLATION/);
+  assert.match(emptyHtml, /Section 43 &amp; 44 Invariants/);
+
+  const populatedHtml = renderToStaticMarkup(
+    React.createElement(ConservationProofsDrawer, {
+      isOpen: true,
+      onClose: () => {},
+      selectedLotId: 'lot-sol-404',
+      solPriceUsd: 150,
+      initialData: {
+        latestProof: {
+          lotId: 'lot-sol-404',
+          tokenMint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+          isConserved: true,
+          tokensAcquired: 1000000000n,
+          tokensDisposed: 600000000n,
+          tokensRemaining: 400000000n,
+          openingBasisLamports: 5000000000n,
+          realizedBasisRelievedLamports: 3000000000n,
+          remainingBasisLamports: 2000000000n,
+          realizedGrossProceedsLamports: 4200000000n,
+          irreversibleExitCostsLamports: 50000000n,
+          accountingPnLLamports: 1150000000n,
+          certificateHash: 'fedcba9876543210fedcba9876543210',
+          certifiedAt: '2026-10-05T01:00:00Z',
+        },
+        maturity: {
+          stage: 'OUTCOME_MATURE',
+          isMature: true,
+          learningReady: true,
+          maturitySlotDelta: 680,
+          observationWindowMs: 210000,
+          labelDatasetTag: 'MAINNET_TRUTH',
+          canonicalOutcomeSignature: 'sig-mature-888',
+        },
+      },
+    })
+  );
+
+  assert.match(populatedHtml, /MATHEMATICAL CONSERVATION STATE/);
+  assert.match(populatedHtml, /EXACT INTEGER CONSERVATION SEALED/);
+  assert.match(populatedHtml, /INVARIANT 1: TOKEN LOT CONSERVATION/);
+  assert.match(populatedHtml, /INVARIANT 2: COST BASIS CONSERVATION/);
+  assert.match(populatedHtml, /INVARIANT 3: ACCOUNTING P&amp;L BALANCE/);
+  assert.match(populatedHtml, /Outcome Maturity Gate \(Section 44\)/);
+  assert.match(populatedHtml, /LEARNING_READY: CERTIFIED/);
+  assert.match(populatedHtml, /MAINNET_TRUTH/);
+});
+
