@@ -11,6 +11,7 @@
 import { hashCanonical } from './canonical-hashing.js';
 export class RuntimeDivergenceAuditor {
     certificates = [];
+    evaluations = [];
     /**
      * Compares the authoritative legacy runtime decision against the UnifiedPipelineUnit shadow decision.
      * If any component diverges, creates and archives a RuntimeDivergenceCertificate.
@@ -55,6 +56,7 @@ export class RuntimeDivergenceAuditor {
             divergenceReasons: Object.freeze([...divergenceReasons]),
             certificateHash,
         });
+        this.evaluations.push(certificate);
         if (hasDivergence) {
             this.certificates.push(certificate);
         }
@@ -65,6 +67,9 @@ export class RuntimeDivergenceAuditor {
     }
     getAllDivergences() {
         return Object.freeze([...this.certificates]);
+    }
+    getAllEvaluations() {
+        return Object.freeze([...this.evaluations]);
     }
     getByMint(mint) {
         return Object.freeze(this.certificates.filter((c) => c.mint === mint));

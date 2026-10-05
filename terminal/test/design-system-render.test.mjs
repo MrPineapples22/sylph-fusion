@@ -9,7 +9,7 @@ const directory=resolve(fileURLToPath(new URL('..',import.meta.url)));
 const require=createRequire(new URL('../package.json',import.meta.url));
 const ts=require('typescript');
 const temp=mkdtempSync(join(tmpdir(),'sylph-render-'));
-const files=['components/CapitalCommandView.jsx','components/IncidentCommandView.jsx','components/AetherFlux.jsx','design-system/primitives.jsx','design-system/format.js','components/CommandCenterView.jsx','components/discovery-view.js','components/TokenClassification.jsx','position-sizer.js'];
+const files=['components/CapitalCommandView.jsx','components/IncidentCommandView.jsx','components/AetherFlux.jsx','design-system/primitives.jsx','design-system/format.js','components/CommandCenterView.jsx','components/discovery-view.js','components/TokenClassification.jsx','components/DynamicReserveGauge.jsx','components/RealizedEdgeBreakdownPanel.jsx','position-sizer.js'];
 const output=path=>join(temp,path.replaceAll('/','_').replace(/\.(jsx|js)$/,'')+'.cjs');
 for(const file of files){
  let source=readFileSync(join(directory,'src',file),'utf8');

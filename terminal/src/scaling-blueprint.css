@@ -1,0 +1,412 @@
+/* SYLPH FUSION — Real-World Performance & Scaling Blueprint UI/UX Styles */
+
+/* 1. Common Card & Modal Elements */
+.sb-glass-card {
+  background: linear-gradient(135deg, rgba(16, 24, 33, 0.85) 0%, rgba(12, 17, 23, 0.95) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-card, 8px);
+  padding: 1.25rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.sb-glass-card:hover {
+  border-color: rgba(20, 241, 149, 0.25);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45), 0 0 15px rgba(20, 241, 149, 0.05);
+}
+
+.sb-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 8, 14, 0.8);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 1000;
+  display: flex;
+  justify-content: flex-end;
+  animation: sbFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sb-drawer-content {
+  width: min(92vw, 920px);
+  height: 100vh;
+  background: #0d121a;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: -16px 0 48px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: sbSlideLeft 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes sbFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes sbSlideLeft {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.sb-drawer-header {
+  padding: 1.25rem 1.5rem;
+  background: rgba(21, 31, 42, 0.7);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.sb-drawer-header-title {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.sb-drawer-header-title h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #f0f4f8;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sb-drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* 2. Economic Flight Recorder 15-Stage Timeline */
+.sb-stages-track {
+  display: flex;
+  overflow-x: auto;
+  gap: 0.5rem;
+  padding: 0.75rem 0.25rem 1rem;
+  scrollbar-width: thin;
+}
+
+.sb-stage-node {
+  flex: 0 0 160px;
+  background: rgba(21, 31, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  position: relative;
+  transition: all 0.15s ease;
+}
+
+.sb-stage-node.completed {
+  border-color: rgba(20, 241, 149, 0.4);
+  background: rgba(20, 241, 149, 0.04);
+}
+
+.sb-stage-node.failed {
+  border-color: rgba(255, 59, 105, 0.5);
+  background: rgba(255, 59, 105, 0.06);
+}
+
+.sb-stage-node.pending {
+  border-color: rgba(245, 158, 11, 0.4);
+  background: rgba(245, 158, 11, 0.05);
+}
+
+.sb-stage-node.bypassed {
+  opacity: 0.5;
+  border-style: dashed;
+}
+
+.sb-stage-number {
+  font-size: 0.65rem;
+  font-family: var(--font-mono, monospace);
+  font-weight: 700;
+  color: var(--text-tertiary, #98aabd);
+}
+
+.sb-stage-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #f0f4f8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sb-stage-status {
+  font-size: 0.65rem;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.sb-stage-duration {
+  font-size: 0.65rem;
+  color: var(--text-tertiary, #98aabd);
+  font-family: var(--font-mono, monospace);
+}
+
+/* 3. Microstructure & Friction Grid */
+.sb-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+}
+
+.sb-metric-box {
+  background: rgba(16, 24, 33, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.sb-metric-box-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-tertiary, #98aabd);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.sb-metric-box-val {
+  font-size: 1.15rem;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+  color: #f0f4f8;
+}
+
+.sb-metric-box-sub {
+  font-size: 0.7rem;
+  color: var(--text-secondary, #becad6);
+}
+
+/* 4. Runtime Divergence Inspector */
+.sb-divergence-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: rgba(20, 241, 149, 0.05);
+  border: 1px solid rgba(20, 241, 149, 0.2);
+  border-radius: 6px;
+  padding: 1rem;
+}
+
+.sb-divergence-score {
+  font-size: 2.25rem;
+  font-weight: 800;
+  font-family: var(--font-mono, monospace);
+  color: #14f195;
+  line-height: 1;
+}
+
+.sb-divergence-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+
+@media (max-width: 768px) {
+  .sb-divergence-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+.sb-decision-card {
+  background: rgba(16, 24, 33, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.sb-decision-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sb-decision-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  font-size: 0.8rem;
+}
+
+.sb-decision-row:last-child {
+  border-bottom: none;
+}
+
+/* 5. Hot-Path Proof Capsule Leases */
+.sb-lease-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 0.85rem;
+}
+
+.sb-lease-card {
+  background: rgba(18, 26, 36, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.sb-lease-card.valid {
+  border-left: 3px solid #14f195;
+}
+
+.sb-lease-card.expiring {
+  border-left: 3px solid #f59e0b;
+}
+
+.sb-lease-card.expired {
+  border-left: 3px solid #ff3b69;
+}
+
+.sb-lease-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sb-lease-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #f0f4f8;
+}
+
+.sb-lease-progress {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.sb-lease-bar {
+  height: 100%;
+  transition: width 0.3s linear;
+}
+
+.sb-lease-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.65rem;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-tertiary, #98aabd);
+}
+
+/* 6. Realized Edge Breakdown Waterfall */
+.sb-waterfall-row {
+  display: grid;
+  grid-template-columns: 200px 1fr 100px 80px;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  transition: background 0.15s ease;
+}
+
+.sb-waterfall-row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.sb-waterfall-label {
+  font-weight: 600;
+  color: #f0f4f8;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sb-waterfall-bar-track {
+  height: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.sb-waterfall-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+}
+
+.sb-waterfall-val {
+  font-family: var(--font-mono, monospace);
+  font-weight: 700;
+  text-align: right;
+}
+
+/* 7. Dynamic Reserve Gauge ($250 Starting Bankroll) */
+.sb-reserve-gauge {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.sb-reserve-stacked-bar {
+  display: flex;
+  height: 24px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+.sb-reserve-segment {
+  height: 100%;
+  transition: width 0.3s ease;
+  position: relative;
+}
+
+.sb-reserve-legend {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+}
+
+.sb-reserve-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+}
+
+.sb-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}

@@ -32,6 +32,7 @@ export interface RuntimeDivergenceCertificate {
 
 export class RuntimeDivergenceAuditor {
   private readonly certificates: RuntimeDivergenceCertificate[] = [];
+  private readonly evaluations: RuntimeDivergenceCertificate[] = [];
 
   /**
    * Compares the authoritative legacy runtime decision against the UnifiedPipelineUnit shadow decision.
@@ -100,6 +101,8 @@ export class RuntimeDivergenceAuditor {
       certificateHash,
     });
 
+    this.evaluations.push(certificate);
+
     if (hasDivergence) {
       this.certificates.push(certificate);
     }
@@ -113,6 +116,10 @@ export class RuntimeDivergenceAuditor {
 
   public getAllDivergences(): readonly RuntimeDivergenceCertificate[] {
     return Object.freeze([...this.certificates]);
+  }
+
+  public getAllEvaluations(): readonly RuntimeDivergenceCertificate[] {
+    return Object.freeze([...this.evaluations]);
   }
 
   public getByMint(mint: string): readonly RuntimeDivergenceCertificate[] {

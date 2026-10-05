@@ -10,6 +10,9 @@ import {CapitalCommandView} from './components/CapitalCommandView.jsx';
 import {IncidentCommandView} from './components/IncidentCommandView.jsx';
 import {CommandCenterView} from './components/CommandCenterView.jsx';
 import {VetoProofInspectorDrawer} from './components/VetoProofInspectorDrawer.jsx';
+import {EconomicFlightRecorderDrawer} from './components/EconomicFlightRecorderDrawer.jsx';
+import {RuntimeDivergenceInspector} from './components/RuntimeDivergenceInspector.jsx';
+import {HotPathProofCapsuleMonitor} from './components/HotPathProofCapsuleMonitor.jsx';
 import {HostedJevControl} from './components/HostedJevControl.jsx';
 import {LayoutDashboard, Activity, Search, ArrowUpRight, Layers, TriangleAlert, Settings2, Info, Command, Menu, X} from 'lucide-react';
 import {Status, Dialog} from './design-system/primitives.jsx';
@@ -18,6 +21,7 @@ import {formatPrice} from './design-system/format.js';
 import './design-system/tokens.css';
 import './operator-terminal.css';
 import './command-center.css';
+import './scaling-blueprint.css';
 
 const pages=WORKSPACES;
 const icons=[LayoutDashboard,Activity,Search,ArrowUpRight,Layers,TriangleAlert,Settings2,Info];
@@ -34,6 +38,9 @@ export default function OperatorTerminal(){
  const order=useRef([]),selected=useRef(route.current.mint),scanId=useRef(0),scanController=useRef(null),origin=useRef(null),latestProjection=useRef(null),latestConnection=useRef('CONNECTING'),shell=useRef(null),root=useRef(null),returnContext=useRef(null);
  const [more,setMore]=useState(false);
  const [vetoInspectorOpen,setVetoInspectorOpen]=useState(false);
+ const [flightRecorderOpen,setFlightRecorderOpen]=useState(false);
+ const [divergenceOpen,setDivergenceOpen]=useState(false);
+ const [capsuleOpen,setCapsuleOpen]=useState(false);
  const [discoveryPage,setDiscoveryPage]=useState(route.current.page);
  const heading=useRef(null),navigationFocus=useRef(false);
  function navigate(page){
@@ -320,7 +327,7 @@ export default function OperatorTerminal(){
  return <div ref={root} className="op-terminal sylph">
   <a className="op-skip" href="#op-workspace" onClick={event=>{event.preventDefault();document.getElementById('op-workspace')?.focus();}}>Skip to workspace</a>
   <header ref={shell} className="op-shell" aria-label="Permanent safety and truth shell">
-   <div className="op-shell-top"><a className="op-brand" href="/"><span className="op-brand-mark" aria-hidden="true">S</span>SYLPH<span className="op-brand-subtitle">FUSION / OPERATIONS</span></a><b className="op-mode">{projection?.environment.mode||'UNKNOWN'}</b><button type="button" className={`op-button ${autoTradePrime ? 'op-primary' : ''}`} style={autoTradePrime ? {background:'rgba(20,241,149,0.15)',borderColor:'#14F195',color:'#14F195',fontWeight:700,fontSize:'12px',padding:'2px 8px'} : {fontSize:'12px',padding:'2px 8px'}} onClick={()=>setAutoTradePrime(prev => !prev)} title="Toggle automatic paper trading for qualified Prime candidates">🤖 Auto-Trade Prime: {autoTradePrime ? 'ON' : 'OFF'}</button><div className="op-system-health"><span>System <Status value={current?projection.system.state:connection==='CONNECTING'?'CONNECTING':'REVALIDATING'}/></span><span>Data <Status value={current?projection.marketData.state:'UNKNOWN'}/></span></div><button className="op-incident-link" aria-label={`${projection?.incidents.length??'Unknown number of'} capability blockers`} onClick={()=>navigate('Incidents')}><TriangleAlert size={16} aria-hidden="true"/>{projection?.incidents.length??'?'}<span> blockers</span></button></div>
+   <div className="op-shell-top"><a className="op-brand" href="/"><span className="op-brand-mark" aria-hidden="true">S</span>SYLPH<span className="op-brand-subtitle">FUSION / OPERATIONS</span></a><b className="op-mode">{projection?.environment.mode||'UNKNOWN'}</b><button type="button" className={`op-button ${autoTradePrime ? 'op-primary' : ''}`} style={autoTradePrime ? {background:'rgba(20,241,149,0.15)',borderColor:'#14F195',color:'#14F195',fontWeight:700,fontSize:'12px',padding:'2px 8px'} : {fontSize:'12px',padding:'2px 8px'}} onClick={()=>setAutoTradePrime(prev => !prev)} title="Toggle automatic paper trading for qualified Prime candidates">🤖 Auto-Trade Prime: {autoTradePrime ? 'ON' : 'OFF'}</button><button type="button" className="op-button" style={{color:'#14F195',borderColor:'rgba(20,241,149,0.3)',background:'rgba(20,241,149,0.08)',fontSize:'12px',padding:'2px 8px'}} onClick={()=>setFlightRecorderOpen(true)} title="Inspect 15-stage execution flight records">🔬 Flight Recorder</button><button type="button" className="op-button" style={{color:'#9bcbff',borderColor:'rgba(155,203,255,0.3)',background:'rgba(155,203,255,0.08)',fontSize:'12px',padding:'2px 8px'}} onClick={()=>setDivergenceOpen(true)} title="Inspect legacy vs unified runtime parity">⚖️ Parity</button><button type="button" className="op-button" style={{color:'#F59E0B',borderColor:'rgba(245,158,11,0.3)',background:'rgba(245,158,11,0.08)',fontSize:'12px',padding:'2px 8px'}} onClick={()=>setCapsuleOpen(true)} title="Inspect hot-path evidence leases & TTLs">⚡ Leases</button><div className="op-system-health"><span>System <Status value={current?projection.system.state:connection==='CONNECTING'?'CONNECTING':'REVALIDATING'}/></span><span>Data <Status value={current?projection.marketData.state:'UNKNOWN'}/></span></div><button className="op-incident-link" aria-label={`${projection?.incidents.length??'Unknown number of'} capability blockers`} onClick={()=>navigate('Incidents')}><TriangleAlert size={16} aria-hidden="true"/>{projection?.incidents.length??'?'}<span> blockers</span></button></div>
    <div className="op-capability-strip" aria-label="Action capabilities">{['open','increase','reduce','close'].map(name=><details key={name} className="op-capability"><summary><span>{name}</span><Status value={capability(name)}/></summary><div className="op-capability-reason">{current?projection?.capabilities[name]?.reasonCodes.map(reason).join(' · '):'Current capability is unknown while backend evidence is revalidated.'}</div></details>)}<span className="op-scope-note">{projection?.environment?.mode==='SIMULATION'?'Paper ledger · Live capital unverified':'Ledger scope unverified'}</span></div>
   </header>
   {!current&&<div className="op-connection" role="status">{projection?'Connection or projection validity interrupted. Displayed observations are historical; current capability is unknown.':'Connecting to backend evidence. Operational capability is unknown.'}</div>}
@@ -349,7 +356,19 @@ export default function OperatorTerminal(){
       onCompare={mint=>dispatch({type:'COMPARE',mint})}
       onRefreshRanking={()=>{order.current=stableTokenOrder([],tokens);setNotice('Ranking refreshed. Subsequent numerical updates preserve row order.');}}
     />}
-    {ui.workspace==='Command'&&<CommandCenterView projection={projection} current={current} loading={!projection&&connection==='CONNECTING'} onNavigate={navigate} onInvestigate={investigate} onPaperBuy={openPaperPosition} autoTradePrime={autoTradePrime} onToggleAutoTradePrime={()=>setAutoTradePrime(prev => !prev)} />}
+    {ui.workspace==='Command'&&<CommandCenterView
+      projection={projection}
+      current={current}
+      loading={!projection&&connection==='CONNECTING'}
+      onNavigate={navigate}
+      onInvestigate={investigate}
+      onPaperBuy={openPaperPosition}
+      autoTradePrime={autoTradePrime}
+      onToggleAutoTradePrime={()=>setAutoTradePrime(prev => !prev)}
+      onOpenFlightRecorder={()=>setFlightRecorderOpen(true)}
+      onOpenDivergence={()=>setDivergenceOpen(true)}
+      onOpenCapsule={()=>setCapsuleOpen(true)}
+    />}
     {ui.workspace==='Token Intelligence'&&(chosen?<><button className="op-back" onClick={back}>← Return to {returnContext.current?.workspace||'Aether Flux'}</button><section className="op-section"><div className="op-eyebrow">INVESTIGATION CONTEXT · {chosen.venueState?.replaceAll('_',' ')||'VENUE UNKNOWN'}</div><h2>{chosen.symbol||'Token'} <Status value={current?chosen.tier:'UNKNOWN'} label={current?undefined:`Historical tier · ${(chosen.tier||'unknown').toLowerCase()}`}/></h2><p className="op-mint">{chosen.mint}</p><div className="op-evidence-columns"><section><h3>Why this token?</h3><dl className="op-evidence-facts"><dt>Observed price</dt><dd>{formatPrice(chosen.price)}</dd><dt>Liquidity</dt><dd>{money(chosen.liquidity)}</dd><dt>High signal index</dt><dd>{chosen.highSignalIndex??'Unknown'}</dd></dl></section><section><h3>What argues against it?</h3>{chosen.qualityVetoes?.length?chosen.qualityVetoes.map(x=><p key={x} className="danger">{reason(x)}</p>):chosen.vetoes?.length?chosen.vetoes.map(x=><p key={x} className="danger">{reason(x)}</p>):<p>No veto is reported. This is not proof of safety.</p>}</section><section><h3>What is unknown?</h3>{chosen.pending?.map(x=><p key={x}>{reason(x)}</p>)}<p>Executable quote, portfolio impact and execution permit</p></section></div></section><TokenClassification token={chosen} current={current}/>{(chosen.decisionTrace||chosen.decision?.trace)&&<section className="op-section"><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}}><h2>Deterministic Decision &amp; Veto Trace (13 Stages)</h2><button type="button" className="op-button" style={{color:'#14F195',borderColor:'rgba(20,241,149,0.3)',background:'rgba(20,241,149,0.08)'}} onClick={()=>setVetoInspectorOpen(true)}>🔬 Inspect Cryptographic Proof</button></div><div className="op-table-scroll" role="region" aria-label="Selected token decision trace" tabIndex={0}><table><thead><tr><th scope="col">Stage</th><th scope="col">Status</th><th scope="col">Observed</th><th scope="col">Requirement</th><th scope="col">Meaning</th></tr></thead><tbody>{(chosen.decisionTrace||chosen.decision?.trace||[]).map((step,idx)=>{const isPass=step.status==='PASS',isFail=step.status==='FAIL',isBlock=step.status==='BLOCKED',color=isPass?'#14F195':isFail?'#FF3B69':isBlock?'#FF7595':'#F59E0B';return <tr key={idx}><td><b>{step.label||step.stage}</b></td><td><span className="font-mono text-xs" style={{color,fontWeight:700,padding:'2px 6px',background:isPass?'rgba(20,241,149,0.1)':isFail?'rgba(255,59,105,0.1)':'rgba(245,158,11,0.1)',borderRadius:'3px'}}>{step.status}</span></td><td className="font-mono">{step.observed??'—'}</td><td className="op-muted">{step.requirement??'—'}</td><td>{step.meaning}</td></tr>;})}</tbody></table></div></section>}<section className="op-section"><h2>Now · changed · next</h2><p>NOW · {current?'Backend observation':'Historical observation'} · {age(projection.generatedAt-chosen.at)} at projection</p><p>CHANGED · {chosenHistory.length>1?`${chosenHistory.length-1} decision/evidence change${chosenHistory.length===2?'':'s'} recorded in this tab.`:'No decision or evidence transition has been observed in this tab yet.'}</p>{chosenHistory.length>1&&<ol className="op-transition-list" aria-label="Session-local token evidence history">{chosenHistory.slice(1,6).map(entry=><li key={entry.id} className="op-transition-row"><span className="op-mono op-muted">{new Date(entry.at).toLocaleTimeString()}</span><span>{entry.tier} · safety {entry.safety} · {entry.pending.length} pending · {entry.vetoes.length} findings</span></li>)}</ol>}<p>NEXT · Complete missing evidence; execution remains blocked.</p><p className="op-muted">History is session-local, read-only, and records accepted backend projection changes. Model output is advisory; calibration, model version and out-of-distribution evidence are unavailable.</p><button className="op-primary" aria-busy={scanning} disabled={!current||scanning} onClick={scan}>{scanning?'Scanning evidence…':'Refresh safety evidence'}</button><button type="button" className="op-button" style={{marginLeft:'8px'}} onClick={()=>setVetoInspectorOpen(true)}>🔬 Inspect Cryptographic Proof</button>{(()=>{
   const chosenSizing = chosen ? calculateOptimalBuyPositionValue(chosen, { capital: projection?.capital, activePositionsCount: (projection?.positions || []).length }) : null;
   const bestUsd = chosenSizing ? chosenSizing.optimalUsd : 50;
@@ -381,5 +400,8 @@ export default function OperatorTerminal(){
   <footer className="op-tray"><span>Observed ≠ safe</span><span>Backend projection {projection?.projectionVersion??'unknown'}</span><span>Verification · Unverified</span></footer>
   <OperationsSearch open={palette} onDismiss={()=>setPalette(false)} tokens={tokens} current={current} onNavigate={navigate} onInvestigate={investigate}/>
   <VetoProofInspectorDrawer isOpen={vetoInspectorOpen} onClose={()=>setVetoInspectorOpen(false)} token={chosen} />
+  <EconomicFlightRecorderDrawer isOpen={flightRecorderOpen} onClose={()=>setFlightRecorderOpen(false)} selectedAttemptId={ui.investigation} />
+  <RuntimeDivergenceInspector isOpen={divergenceOpen} onClose={()=>setDivergenceOpen(false)} />
+  <HotPathProofCapsuleMonitor isOpen={capsuleOpen} onClose={()=>setCapsuleOpen(false)} selectedMint={ui.investigation} />
  </div>;
 }

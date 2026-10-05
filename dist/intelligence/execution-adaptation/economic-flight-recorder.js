@@ -4,18 +4,38 @@
  *
  * Epistemic Invariants:
  * 1. Record EVERY candidate BEFORE knowing its result (zero survivorship/selection bias).
- * 2. Strict 15-stage lifecycle from DISCOVERED to OUTCOME_MATURE.
- * 3. Durable, WAL-backed SQLite persistence with strictly enforced append-only semantics.
+ * 2. Guarded lifecycle from DISCOVERED to OUTCOME_MATURE.
+ * 3. File-backed WAL persistence when the caller explicitly supplies a database path.
  * 4. Composite uniqueness: UNIQUE(economicFactId, executionGenerationId, revision).
  * 5. Immutable history: No deletions, no overwrites; corrections/state advances append a new revision.
  * 6. Captures all 45+ economic and microstructure quantities required to reconstruct P&L.
  */
 import { DatabaseSync } from 'node:sqlite';
 import { hashCanonical } from '../../platform/pipeline/canonical-hashing.js';
+const ALLOWED_STAGE_TRANSITIONS = {
+    DISCOVERED: ['FILTER_EVALUATED'],
+    FILTER_EVALUATED: ['DECISION_CREATED'],
+    DECISION_CREATED: ['QUOTE_CAPTURED'],
+    QUOTE_CAPTURED: ['BUILD_STARTED'],
+    BUILD_STARTED: ['BUILD_COMPLETED'],
+    BUILD_COMPLETED: ['SIMULATED'],
+    SIMULATED: ['AUTHORIZED'],
+    AUTHORIZED: ['SIGNED'],
+    SIGNED: ['SUBMITTED'],
+    SUBMITTED: ['ACKNOWLEDGED', 'UNKNOWN'],
+    ACKNOWLEDGED: ['UNKNOWN', 'LANDED_SUCCESS', 'LANDED_FAILURE'],
+    UNKNOWN: ['ACKNOWLEDGED', 'LANDED_SUCCESS', 'LANDED_FAILURE', 'NOLAND'],
+    LANDED_SUCCESS: ['FINALIZED'],
+    LANDED_FAILURE: ['FINALIZED'],
+    NOLAND: ['FINALIZED'],
+    FINALIZED: ['SETTLED'],
+    SETTLED: ['OUTCOME_MATURE'],
+    OUTCOME_MATURE: [],
+};
 export class SQLiteExecutionAttemptStore {
     db;
     inMemory;
-    constructor(dbPath = ':memory:') {
+    constructor(dbPath) {
         this.inMemory = dbPath === ':memory:';
         this.db = new DatabaseSync(dbPath);
         this.initializeSchema();
@@ -24,10 +44,11 @@ export class SQLiteExecutionAttemptStore {
         if (!this.inMemory) {
             try {
                 this.db.exec('PRAGMA journal_mode = WAL;');
-                this.db.exec('PRAGMA synchronous = NORMAL;');
+                // FULL sync preserves committed WAL transactions across power loss/hard reboot.
+                this.db.exec('PRAGMA synchronous = FULL;');
             }
             catch {
-                // In-memory or restricted environments ignore journal mode pragmas
+                // In-memory or restricted environments ignore journal mode pragmas.
             }
         }
         this.db.exec(`
@@ -95,13 +116,46 @@ export class SQLiteExecutionAttemptStore {
       CREATE INDEX IF NOT EXISTS idx_flight_attempt_id ON flight_records (attempt_id);
       CREATE INDEX IF NOT EXISTS idx_flight_fact_gen ON flight_records (economic_fact_id, execution_generation_id);
       CREATE INDEX IF NOT EXISTS idx_flight_stage ON flight_records (stage);
+
+      CREATE TRIGGER IF NOT EXISTS flight_records_no_update
+      BEFORE UPDATE ON flight_records
+      BEGIN SELECT RAISE(ABORT, 'FLIGHT_RECORDER_UPDATE_FORBIDDEN'); END;
+
+      CREATE TRIGGER IF NOT EXISTS flight_records_no_delete
+      BEFORE DELETE ON flight_records
+      BEGIN SELECT RAISE(ABORT, 'FLIGHT_RECORDER_DELETE_FORBIDDEN'); END;
     `);
     }
     append(record) {
+        if (!Number.isSafeInteger(record.revision) || record.revision < 0) {
+            throw new Error('FLIGHT_RECORDER_INVALID_REVISION');
+        }
+        const expectedHash = hashCanonical({ ...record, recordHash: '' });
+        if (record.recordHash !== expectedHash) {
+            throw new Error('FLIGHT_RECORDER_RECORD_HASH_MISMATCH');
+        }
         // Enforce immutable append-only invariant
         const existing = this.db.prepare('SELECT flight_id FROM flight_records WHERE economic_fact_id = ? AND execution_generation_id = ? AND revision = ?').get(record.economicFactId, record.executionGenerationId, record.revision);
         if (existing) {
             throw new Error(`FLIGHT_RECORDER_IMMUTABLE_OVERWRITE_BLOCKED: Attempted to overwrite existing revision ${record.revision} for fact ${record.economicFactId} gen ${record.executionGenerationId}`);
+        }
+        const latest = this.getLatest(record.economicFactId, record.executionGenerationId);
+        if (!latest) {
+            if (record.revision !== 0 || record.stage !== 'DISCOVERED') {
+                throw new Error('FLIGHT_RECORDER_INVALID_INITIAL_REVISION');
+            }
+        }
+        else {
+            if (record.revision !== latest.revision + 1) {
+                throw new Error('FLIGHT_RECORDER_REVISION_GAP');
+            }
+            if (record.mint !== latest.mint || record.economicIntentId !== latest.economicIntentId
+                || record.attemptId !== latest.attemptId) {
+                throw new Error('FLIGHT_RECORDER_IDENTITY_MUTATION');
+            }
+            if (!ALLOWED_STAGE_TRANSITIONS[latest.stage].includes(record.stage)) {
+                throw new Error(`FLIGHT_RECORDER_ILLEGAL_STAGE_TRANSITION: ${latest.stage} -> ${record.stage}`);
+            }
         }
         const stmt = this.db.prepare(`
       INSERT INTO flight_records (
@@ -147,6 +201,10 @@ export class SQLiteExecutionAttemptStore {
     getRevisions(economicFactId, executionGenerationId) {
         const rows = this.db.prepare('SELECT * FROM flight_records WHERE economic_fact_id = ? AND execution_generation_id = ? ORDER BY revision ASC').all(economicFactId, executionGenerationId);
         return Object.freeze(rows.map((r) => this.deserializeRow(r)));
+    }
+    getAllHistory() {
+        const rows = this.db.prepare('SELECT * FROM flight_records ORDER BY discovered_at ASC, economic_fact_id ASC, execution_generation_id ASC, revision ASC').all();
+        return Object.freeze(rows.map((row) => this.deserializeRow(row)));
     }
     getByStage(stage) {
         const rows = this.db.prepare('SELECT * FROM flight_records WHERE stage = ? ORDER BY revision ASC').all(stage);
@@ -224,7 +282,7 @@ export class SQLiteExecutionAttemptStore {
 export class EconomicFlightRecorder {
     store;
     constructor(store) {
-        this.store = store ?? new SQLiteExecutionAttemptStore(':memory:');
+        this.store = store;
     }
     getStore() {
         return this.store;
@@ -313,7 +371,7 @@ export class EconomicFlightRecorder {
         }
         const nextRevision = current.revision + 1;
         const flightId = `flight_${economicFactId}_r${nextRevision}`;
-        const attemptId = updates.attemptId ?? `att_${economicFactId}_r${nextRevision}`;
+        const attemptId = updates.attemptId ?? current.attemptId;
         const draftRecord = Object.freeze({
             ...current,
             ...updates,

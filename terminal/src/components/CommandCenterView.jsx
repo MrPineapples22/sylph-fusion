@@ -6,7 +6,19 @@ import { formatMoney, formatNumber, formatPrice } from '../design-system/format.
 
 const readable = value => value ? String(value).replaceAll('_', ' ').toLowerCase() : 'Unknown';
 
-export function CommandCenterView({ projection, current = false, loading = false, onNavigate, onInvestigate, onPaperBuy, autoTradePrime = false, onToggleAutoTradePrime }) {
+export function CommandCenterView({
+  projection,
+  current = false,
+  loading = false,
+  onNavigate,
+  onInvestigate,
+  onPaperBuy,
+  autoTradePrime = false,
+  onToggleAutoTradePrime,
+  onOpenFlightRecorder,
+  onOpenDivergence,
+  onOpenCapsule,
+}) {
   const sourceRows = projection?.rows ?? projection?.tokens;
   const rows = Array.isArray(sourceRows) ? sourceRows.filter(Boolean) : null;
   const candidates = rows?.filter(row => row.tier === 'PRIME') ?? [];
@@ -34,6 +46,8 @@ export function CommandCenterView({ projection, current = false, loading = false
       <div className="op-command-actions">
         {onNavigate && <button type="button" className={attention.length ? 'op-button op-primary' : 'op-button'} onClick={() => onNavigate(attention.length ? 'System' : 'Aether Flux')}>{attention.length ? 'Inspect system details' : 'Explore discovery'}</button>}
         {onNavigate && <button type="button" className="op-button" onClick={() => onNavigate('Positions')}>Inspect reported capital</button>}
+        {onOpenFlightRecorder && <button type="button" className="op-button" style={{color:'#14F195',borderColor:'rgba(20,241,149,0.3)',background:'rgba(20,241,149,0.08)'}} onClick={onOpenFlightRecorder}>🔬 Flight Recorder (15 Stages)</button>}
+        {onOpenDivergence && <button type="button" className="op-button" style={{color:'#9bcbff',borderColor:'rgba(155,203,255,0.3)',background:'rgba(155,203,255,0.08)'}} onClick={onOpenDivergence}>⚖️ Shadow Parity</button>}
       </div>
       </div><aside className="op-command-brief" aria-label="Evidence brief"><span className="op-command-label">At a glance</span><dl><div><dt>Observed candidates</dt><dd>{rows ? formatNumber(rows.length) : 'Unknown'}</dd></div><div><dt>Reported positions</dt><dd>{positions ? formatNumber(positions.length) : 'Unknown'}</dd></div><div><dt>Capabilities reported</dt><dd>{current && projection ? `${4 - unknownCount} / 4` : 'Unknown'}</dd></div></dl><p className="op-muted">{current ? 'Facts from the current projection.' : 'Current operational state is unknown.'}</p></aside></div>
     </section>
@@ -41,8 +55,52 @@ export function CommandCenterView({ projection, current = false, loading = false
       <section className="op-section op-command-fact"><h3>Discovery evidence</h3><p className="op-command-key-value">{rows ? (candidates.length > 0 ? `${formatNumber(candidates.length)} Prime · ${formatNumber(developing.length)} Developing` : `${formatNumber(developing.length)} Developing`) : 'Unknown'}</p><p className="op-muted">{rows ? `${formatNumber(rows.length)} observed candidates · ${context}` : 'Candidate evidence unavailable.'} A discovery tier does not grant execution permission.</p></section>
       <section className="op-section op-command-fact"><h3>Reported capital</h3><dl className="op-command-values"><div><dt>Available · USD</dt><dd>{formatMoney(projection?.capital?.available)}</dd></div><div><dt>Reserved · USD</dt><dd>{formatMoney(projection?.capital?.reserved)}</dd></div></dl><p className="op-muted">{context} · Ledger values only; live wallet exposure is unknown.</p></section>
       <section className="op-section op-command-fact"><h3>Position evidence</h3><p className="op-command-key-value">{positions ? `${formatNumber(positions.length)} reported` : 'Unknown'}</p><p className="op-muted">Exposure: Unknown. {positions ? 'A position count does not establish reconciliation or live exposure.' : 'Position records are unavailable.'}</p></section>
-      <section className="op-section op-command-fact"><h3>Exit Guardian &amp; Learning</h3><p className="op-command-key-value" style={{color:'#14F195',fontSize:'15px',fontWeight:700}}>MFE / MAE Active</p><p className="op-muted">Dynamic Trailing (+15%), False Breakout Cut (&le; -2.5%), Hard Stop (-12%). Pavlov attribution armed.</p></section>
+      <section className="op-section op-command-fact"><h3>Exit Guardian &amp; Learning</h3><p className="op-command-key-value">Evidence unavailable</p><p className="op-muted">Current exit-policy activation and finalized Pavlov attribution are not present in this projection.</p></section>
     </div>
+    <section className="op-section op-command-scaling">
+      <div className="op-section-heading">
+        <div>
+          <div className="op-command-kicker"><Lock size={16} aria-hidden="true"/> Real-World Scaling &amp; Execution Telemetry</div>
+          <h3>Performance &amp; Scaling Verification Architecture</h3>
+          <p className="op-muted">Step 4.1 Shadow Parity · Hot-Path Proof Capsules · 15-Stage Flight Recorder</p>
+        </div>
+        <div style={{display:'flex',gap:'8px'}}>
+          {onOpenFlightRecorder && <button type="button" className="op-button" onClick={onOpenFlightRecorder}>Flight Recorder <ArrowUpRight size={14} aria-hidden="true"/></button>}
+          {onOpenCapsule && <button type="button" className="op-button" onClick={onOpenCapsule}>Proof Capsule <ArrowUpRight size={14} aria-hidden="true"/></button>}
+          {onOpenDivergence && <button type="button" className="op-button" onClick={onOpenDivergence}>Shadow Parity <ArrowUpRight size={14} aria-hidden="true"/></button>}
+        </div>
+      </div>
+      <div className="op-command-capability-grid">
+        <article className="op-command-capability" style={{cursor: onOpenDivergence ? 'pointer' : 'default'}} onClick={onOpenDivergence}>
+          <div className="op-command-capability-heading">
+            <h4>Runtime Parity Ratio</h4>
+            <Status value="UNKNOWN" />
+          </div>
+          <p className="op-muted">No paired, production-sourced legacy and unified decisions are available in this projection.</p>
+        </article>
+        <article className="op-command-capability" style={{cursor: onOpenCapsule ? 'pointer' : 'default'}} onClick={onOpenCapsule}>
+          <div className="op-command-capability-heading">
+            <h4>Proof Capsule Leases</h4>
+            <Status value="UNKNOWN" />
+          </div>
+          <p className="op-muted">No source-bound capsule lease set is available for a current candidate.</p>
+        </article>
+        <article className="op-command-capability" style={{cursor: onOpenFlightRecorder ? 'pointer' : 'default'}} onClick={onOpenFlightRecorder}>
+          <div className="op-command-capability-heading">
+            <h4>Flight Recorder WAL</h4>
+            <Status value="UNKNOWN" />
+          </div>
+          <p className="op-muted">Recorder persistence and execution-attempt coverage require current store evidence.</p>
+        </article>
+        <article className="op-command-capability" style={{cursor: onNavigate ? 'pointer' : 'default'}} onClick={() => onNavigate?.('Positions')}>
+          <div className="op-command-capability-heading">
+            <h4>Paper reserve policy</h4>
+            <Status value="UNKNOWN" />
+          </div>
+          <p className="op-muted">Configured reserve arithmetic does not establish executable exit liquidity.</p>
+        </article>
+      </div>
+    </section>
     <section className="op-section op-command-veto">
       <div className="op-section-heading">
         <div>

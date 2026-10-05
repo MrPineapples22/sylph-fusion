@@ -1,5 +1,6 @@
 import {calculateOptimalBuyPositionValue} from '../dist/intelligence/execution/position-sizer.js';
 import {createServer} from 'node:http';
+import {mkdirSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
 import {createAstraFeed} from './astra-feed.mjs';
@@ -38,6 +39,23 @@ import {
   TOKEN_2022_PROGRAM_ID,
   sha256Hex,
 } from '../dist/platform/security/hard-veto-kernel.js';
+import {
+  EconomicFlightRecorder,
+  SQLiteExecutionAttemptStore,
+} from '../dist/intelligence/execution-adaptation/economic-flight-recorder.js';
+import {
+  RuntimeDivergenceAuditor,
+} from '../dist/platform/pipeline/runtime-divergence.js';
+import {
+  HotPathCapsuleRegistry,
+  createEvidenceLease,
+} from '../dist/platform/assurance/hot-path-proof-capsule.js';
+import {
+  RealizedEdgeLedger,
+} from '../dist/platform/pipeline/realized-edge-ledger.js';
+import {
+  EconomicAuthorityStore,
+} from '../dist/intelligence/capital/economic-authority-store.js';
 
 process.on('uncaughtException', (err) => {
   console.error('Terminal stopped after an uncaught exception:', err?.stack || err?.message || err);
@@ -51,11 +69,28 @@ const masterEngine = new MasterIntelligenceEngine();
 const vetoRegistry = new HardRuleRegistry();
 const vetoVault = new ProofVault();
 const vetoMicrokernel = new TokenSafetyMicrokernel(vetoRegistry);
+const project=fileURLToPath(new URL('../',import.meta.url));
+const projectDataDir=resolve(project,'data');
+mkdirSync(projectDataDir,{recursive:true});
+
+// Real-World Scaling Blueprint Singletons
+const flightRecorderStore = new SQLiteExecutionAttemptStore(resolve(projectDataDir,'economic-flight-recorder.sqlite'));
+const flightRecorder = new EconomicFlightRecorder(flightRecorderStore);
+const runtimeDivergenceAuditor = new RuntimeDivergenceAuditor();
+const hotPathCapsuleRegistry = new HotPathCapsuleRegistry();
+const realizedEdgeLedger = new RealizedEdgeLedger();
+const economicAuthorityStore = new EconomicAuthorityStore(
+  1_666_666_666n, // ~$250 at $150/SOL in lamports
+  {
+    stressedFullExitCostLamports: 25_000_000n,
+    fixedOperationalFloorLamports: 50_000_000n,
+    equityReservePctBps: 2000, // 20%
+  }
+);
 
 const root=fileURLToPath(new URL('./dist/',import.meta.url));
 const liveOrigin='http://127.0.0.1:8788';
-const livePaths=new Set(['/api/market','/api/search','/api/risk','/api/intelligence','/api/intelligence/learning','/api/system/trust','/api/research/audit','/api/system/health','/api/capital/authority','/api/system/omega','/api/system/strip','/api/positions','/api/opportunity/best','/api/gateway/snapshot','/api/command','/api/solaris']);
-const project=fileURLToPath(new URL('../',import.meta.url));
+const livePaths=new Set(['/api/market','/api/search','/api/risk','/api/intelligence','/api/intelligence/learning','/api/system/trust','/api/research/audit','/api/system/health','/api/capital/authority','/api/system/omega','/api/system/strip','/api/positions','/api/opportunity/best','/api/gateway/snapshot','/api/command','/api/solaris','/api/flight-recorder/attempts','/api/divergence/certificates','/api/capsule/status','/api/edge/breakdown','/api/capital/reserve']);
 const emergencyStopStore = EmergencyStopStore.atProjectDataDirectory(project);
 try {
   if (typeof process.loadEnvFile === 'function') {
@@ -942,6 +977,111 @@ async function handleRequest(req,res){
     const inspectResult = await inspectTokenVetoProof(mint);
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify(inspectResult, (_, v) => typeof v === 'bigint' ? v.toString() : v));
+    return;
+  }
+
+  // Real-World Scaling Blueprint Endpoints
+  if (req.method === 'GET' && reqUrl.pathname === '/api/flight-recorder/attempts') {
+    const attempts = flightRecorderStore.getAllHistory();
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ ok: true, attempts }, (_, v) => typeof v === 'bigint' ? v.toString() : v));
+    return;
+  }
+
+  if (req.method === 'GET' && reqUrl.pathname === '/api/divergence/certificates') {
+    const certs = runtimeDivergenceAuditor.getAllEvaluations();
+    const total = certs.length;
+    const divergent = certs.filter(c => c.hasDivergence).length;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({
+      ok: true,
+      certificates: certs,
+      stats: {
+        totalEvaluated: total,
+        inSync: total - divergent,
+        divergent,
+        parityPct: total > 0 ? ((total - divergent) / total) * 100 : null,
+        evidenceStatus: total > 0 ? 'OBSERVED' : 'UNKNOWN',
+      }
+    }));
+    return;
+  }
+
+  if (req.method === 'POST' && reqUrl.pathname === '/api/divergence/probe') {
+    res.writeHead(409, {'Content-Type': 'application/json'});
+    res.end(JSON.stringify({ ok: false, evidenceStatus: 'UNAVAILABLE', error: 'RUNTIME_PAIR_NOT_CONNECTED' }));
+    return;
+  }
+
+  if (req.method === 'GET' && reqUrl.pathname === '/api/capsule/status') {
+    const now = Date.now();
+    const mint = reqUrl.searchParams.get('mint') || 'active_candidate';
+    const readiness = hotPathCapsuleRegistry.evaluateHotPathReadiness(mint, now);
+    const capsule = readiness.capsule;
+    const leases = capsule ? [
+      capsule.blockhashState, capsule.feeEstimates, capsule.tokenSemantics,
+      capsule.holderState, capsule.poolReserves, capsule.riskCertificate,
+      capsule.exitabilityCertificate, capsule.providerHealthCertificate,
+    ].map(lease => ({
+      featureClass: lease.featureClass,
+      label: lease.featureClass.replaceAll('_', ' '),
+      ttlMs: lease.expiresAtMs - lease.knownAtMs,
+      expiresAtMs: lease.expiresAtMs,
+      isAvailable: lease.isAvailable && now <= lease.expiresAtMs,
+      value: lease.value,
+      source: lease.source,
+    })) : [];
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({
+      ok: true,
+      evidenceStatus: capsule ? readiness.isReady ? 'READY' : 'STALE' : 'UNKNOWN',
+      mint,
+      isReady: readiness.isReady,
+      expiredCount: readiness.expiredLeases.length,
+      expiredLeases: readiness.expiredLeases,
+      assembledAt: now,
+      capsuleHash: capsule?.capsuleHash ?? null,
+      reason: readiness.reason ?? null,
+      leases,
+    }, (_, value) => typeof value === 'bigint' ? value.toString() : value));
+    return;
+  }
+
+  if (req.method === 'GET' && reqUrl.pathname === '/api/edge/breakdown') {
+    const records = realizedEdgeLedger.all();
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ ok: true, evidenceStatus: records.length ? 'OBSERVED' : 'UNKNOWN', records, breakdown: records.at(-1)?.comprehensiveBreakdown ?? null }, (_, v) => typeof v === 'bigint' ? v.toString() : v));
+    return;
+  }
+
+  if (req.method === 'GET' && reqUrl.pathname === '/api/capital/reserve') {
+    const isStressed = reqUrl.searchParams.get('stressed') === 'true';
+    const exitCost = isStressed ? 50_000_000n : 25_000_000n;
+    const dynamicReserveLamports = economicAuthorityStore.recomputeEmergencyReserve({
+      stressedFullExitCostLamports: exitCost,
+      fixedOperationalFloorLamports: 50_000_000n,
+      equityReservePctBps: 2000,
+    });
+    const solPrice = 150;
+    const confirmedLamports = economicAuthorityStore.getConfirmedCash();
+    const availableLamports = economicAuthorityStore.getAvailableCash();
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({
+      ok: true,
+      evidenceStatus: 'SIMULATED_POLICY',
+      valueSource: 'IN_MEMORY_PAPER_ECONOMIC_AUTHORITY',
+      paperCashLamports: confirmedLamports.toString(),
+      paperCashUsd: (Number(confirmedLamports) / 1e9) * solPrice,
+      emergencyReserveLamports: dynamicReserveLamports.toString(),
+      emergencyReserveUsd: (Number(dynamicReserveLamports) / 1e9) * solPrice,
+      reservedCashLamports: economicAuthorityStore.getReservedCash().toString(),
+      reservedCashUsd: (Number(economicAuthorityStore.getReservedCash()) / 1e9) * solPrice,
+      unknownCapitalLamports: economicAuthorityStore.getUnknownCapital().toString(),
+      availableCashLamports: availableLamports.toString(),
+      availableCashUsd: (Number(availableLamports) / 1e9) * solPrice,
+      solPriceUsdAssumption: solPrice,
+      isStressed,
+    }));
     return;
   }
 

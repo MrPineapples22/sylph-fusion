@@ -1,6 +1,8 @@
 import React from 'react';
 import { formatMoney, formatPrice, formatNumber, formatDuration } from '../design-system/format.js';
 import { Status, EmptyState, MetricCard } from '../design-system/primitives.jsx';
+import { DynamicReserveGauge } from './DynamicReserveGauge.jsx';
+import { RealizedEdgeBreakdownPanel } from './RealizedEdgeBreakdownPanel.jsx';
 
 export function CapitalCommandView({ capital = {}, positions = [], capabilities = {}, current = false, loading = false, mode = 'UNKNOWN', onClosePosition = () => {}, onSetCapital, tokens = [], autoExitGuardian = false, onToggleAutoExitGuardian }) {
   const [learningData, setLearningData] = React.useState(null);
@@ -223,7 +225,11 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
             </div>
           </div>
         </div>
-</section>
+      </section>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '16px' }}>
+        <DynamicReserveGauge capital={capital} solPriceUsd={150} />
+        <RealizedEdgeBreakdownPanel solPriceUsd={150} />
+      </div>
       <section className="op-section">
         <h3>Reported positions ({formatNumber(records.length)})</h3>
         {enrichedRecords.length ? <div className="op-card-grid">{enrichedRecords.map((position, index) => {
