@@ -6,3 +6,4 @@
 export * from './reality-gap-vector.js';
 export * from './twin-trust-state.js';
 export * from './twin-calibration-certificate.js';
+export * from './twin-red-team.js';

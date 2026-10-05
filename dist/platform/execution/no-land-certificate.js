@@ -47,7 +47,7 @@ export class NoLandVerificationAuthority {
      * A matching digest must never authorize a terminal transition.
      */
     static validateCertificateDigest(cert) {
-        if (cert.certificateType === 'NO_LAND_CERTIFICATE') {
+        if ('certificateType' in cert && cert.certificateType === 'NO_LAND_CERTIFICATE') {
             const expected = this.computeNoLandDigest({
                 intentId: cert.intentId,
                 generation: cert.generation,
@@ -59,7 +59,7 @@ export class NoLandVerificationAuthority {
             });
             return cert.proofDigest === expected;
         }
-        if (cert.certificateType === 'FINALIZED_SETTLEMENT_CERTIFICATE') {
+        if ('certificateType' in cert && cert.certificateType === 'FINALIZED_SETTLEMENT_CERTIFICATE') {
             const expected = this.computeSettlementDigest({
                 intentId: cert.intentId,
                 generation: cert.generation,

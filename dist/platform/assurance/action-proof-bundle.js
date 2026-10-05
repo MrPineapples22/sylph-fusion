@@ -62,26 +62,42 @@ export function validateActionProofBundle(bundle, activeRoots) {
     if (bundle.policyVSA !== activeRoots.policyRoot) {
         reasons.push(`POLICY_ROOT_MISMATCH: Bundle built against ${bundle.policyVSA}, active is ${activeRoots.policyRoot}`);
     }
-    // 4. Mandatory Certificate Presence
+    // 4. Exact Transaction Wire Hash Check
+    if (!bundle.exactTransactionHash || bundle.exactTransactionHash.length !== 64 || !/^[0-9a-fA-F]{64}$/.test(bundle.exactTransactionHash)) {
+        reasons.push(`INVALID_TRANSACTION_WIRE_HASH: exactTransactionHash must be a 64-character SHA-256 hex string`);
+    }
+    // 5. Mandatory Certificate Presence & Role Verification (Blueprint Section 6 Problem A)
     const mandatoryCerts = [
-        { name: 'marketTruthCertificate', cert: bundle.marketTruthCertificate },
-        { name: 'tokenSemanticsCertificate', cert: bundle.tokenSemanticsCertificate },
-        { name: 'alphaRealityCertificate', cert: bundle.alphaRealityCertificate },
-        { name: 'signalPortfolioCertificate', cert: bundle.signalPortfolioCertificate },
-        { name: 'executionPolicyCertificate', cert: bundle.executionPolicyCertificate },
-        { name: 'simulationCertificate', cert: bundle.simulationCertificate },
-        { name: 'exitabilityCertificate', cert: bundle.exitabilityCertificate },
-        { name: 'portfolioEvacuationCertificate', cert: bundle.portfolioEvacuationCertificate },
-        { name: 'capitalAllocationCertificate', cert: bundle.capitalAllocationCertificate },
-        { name: 'reservationCertificate', cert: bundle.reservationCertificate },
-        { name: 'survivalCertificate', cert: bundle.survivalCertificate },
-        { name: 'twinTrustCertificate', cert: bundle.twinTrustCertificate },
+        { name: 'marketTruthCertificate', cert: bundle.marketTruthCertificate, expectedType: 'MARKET_TRUTH_CERTIFICATE', expectedRole: 'TruthAuthority' },
+        { name: 'tokenSemanticsCertificate', cert: bundle.tokenSemanticsCertificate, expectedType: 'TOKEN_SEMANTICS_CERTIFICATE', expectedRole: 'SemanticAuthority' },
+        { name: 'alphaRealityCertificate', cert: bundle.alphaRealityCertificate, expectedType: 'ALPHA_REALITY_CERTIFICATE', expectedRole: 'ResearchAuthority' },
+        { name: 'signalPortfolioCertificate', cert: bundle.signalPortfolioCertificate, expectedType: 'SIGNAL_PORTFOLIO_CERTIFICATE', expectedRole: 'ResearchAuthority' },
+        { name: 'executionPolicyCertificate', cert: bundle.executionPolicyCertificate, expectedType: 'EXECUTION_POLICY_CERTIFICATE', expectedRole: 'RiskAuthority' },
+        { name: 'simulationCertificate', cert: bundle.simulationCertificate, expectedType: 'SIMULATION_CERTIFICATE', expectedRole: 'SimulationAuthority' },
+        { name: 'exitabilityCertificate', cert: bundle.exitabilityCertificate, expectedType: 'EXITABILITY_CERTIFICATE', expectedRole: 'ExitabilityAuthority' },
+        { name: 'portfolioEvacuationCertificate', cert: bundle.portfolioEvacuationCertificate, expectedType: 'PORTFOLIO_EVACUATION_CERTIFICATE', expectedRole: 'RiskAuthority' },
+        { name: 'capitalAllocationCertificate', cert: bundle.capitalAllocationCertificate, expectedType: 'CAPITAL_ALLOCATION_CERTIFICATE', expectedRole: 'CapitalAuthority' },
+        { name: 'reservationCertificate', cert: bundle.reservationCertificate, expectedType: 'RESERVATION_CERTIFICATE', expectedRole: 'CapitalAuthority' },
+        { name: 'survivalCertificate', cert: bundle.survivalCertificate, expectedType: 'SURVIVAL_CERTIFICATE', expectedRole: 'RiskAuthority' },
+        { name: 'twinTrustCertificate', cert: bundle.twinTrustCertificate, expectedType: 'TWIN_TRUST_CERTIFICATE', expectedRole: 'SimulationAuthority' },
     ];
+    const seenArtifactIds = new Set();
     for (const item of mandatoryCerts) {
         if (!item.cert || !item.cert.artifactId || !item.cert.signature) {
             reasons.push(`MISSING_MANDATORY_CERTIFICATE: Certificate ${item.name} is missing or unsigned`);
+            continue;
         }
-        else if (item.cert.evidenceClass === 'UNKNOWN' || item.cert.evidenceClass === 'INSUFFICIENT_EVIDENCE') {
+        if (seenArtifactIds.has(item.cert.artifactId)) {
+            reasons.push(`DUPLICATE_AUTHORITY_IMPERSONATION: Artifact ${item.cert.artifactId} was reused across multiple certificates; each authority must be independently certified`);
+        }
+        seenArtifactIds.add(item.cert.artifactId);
+        if (item.cert.artifactType !== item.expectedType) {
+            reasons.push(`ARTIFACT_TYPE_MISMATCH: Certificate ${item.name} expected type ${item.expectedType}, got ${item.cert.artifactType}`);
+        }
+        if (item.cert.issuerRole !== item.expectedRole) {
+            reasons.push(`AUTHORITY_ROLE_MISMATCH: Certificate ${item.name} expected role ${item.expectedRole}, got ${item.cert.issuerRole}`);
+        }
+        if (item.cert.evidenceClass === 'UNKNOWN' || item.cert.evidenceClass === 'INSUFFICIENT_EVIDENCE' || item.cert.evidenceClass === 'MISSING') {
             reasons.push(`UNFAVORABLE_EVIDENCE: Certificate ${item.name} contains invalid evidenceClass '${item.cert.evidenceClass}'`);
         }
     }

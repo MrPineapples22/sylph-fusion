@@ -1,0 +1,68 @@
+[
+  {
+    "name": "null_value",
+    "rawJson": "null",
+    "encodedHex": "00",
+    "sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d"
+  },
+  {
+    "name": "bool_false",
+    "rawJson": "false",
+    "encodedHex": "01",
+    "sha256": "4bf5122f344554c53bde2ebb8cd2b7e3d1600ad631c385a5d7cce23c7785459a"
+  },
+  {
+    "name": "bool_true",
+    "rawJson": "true",
+    "encodedHex": "02",
+    "sha256": "dbc1b4c900ffe48d575b5da5c638040125f65db0fe3e24494b76ea986457d986"
+  },
+  {
+    "name": "u64_zero",
+    "rawJson": "0",
+    "encodedHex": "030000000000000000",
+    "sha256": "dc4c8669df128318c5790c414c870cc76c585268552851e78d3ee8604dbec0e3"
+  },
+  {
+    "name": "u64_large",
+    "rawJson": "310000000",
+    "encodedHex": "0300000000127a3980",
+    "sha256": "c60d3e9b9b9bd7997c151a5942b262faac6b760529deb183f8955d92fe686159"
+  },
+  {
+    "name": "i64_negative",
+    "rawJson": "-42",
+    "encodedHex": "04ffffffffffffffd6",
+    "sha256": "5f4328445bfc4fd90a8c35a9d83abda62aa92186f074400f583619476d5fe86d"
+  },
+  {
+    "name": "string_simple",
+    "rawJson": "\"hello_sylph\"",
+    "encodedHex": "060000000b68656c6c6f5f73796c7068",
+    "sha256": "fc09830aac79b1cf0992a980cbb5dd271e2e6b6a456b64970c6ccfe7cb09aa39"
+  },
+  {
+    "name": "string_unicode",
+    "rawJson": "\"Solana_λ_proof_2026\"",
+    "encodedHex": "0600000014536f6c616e615fcebb5f70726f6f665f32303236",
+    "sha256": "fceb5d0d7f576e98ea78cc947edf3f0ae51628307af1b13f77176277a372d051"
+  },
+  {
+    "name": "array_integers",
+    "rawJson": "[1,2,3,4,5]",
+    "encodedHex": "0800000005030000000000000001030000000000000002030000000000000003030000000000000004030000000000000005",
+    "sha256": "fbf47a91e0ea1e9a5614774f41cf1eebdd5709b5780218a4244e82219cab3528"
+  },
+  {
+    "name": "map_simple",
+    "rawJson": "{\"b\":2,\"a\":1,\"c\":3}",
+    "encodedHex": "0900000003060000000161030000000000000001060000000162030000000000000002060000000163030000000000000003",
+    "sha256": "944265b2e9602fd5128afefc4d751d1a9131fbdb66fe6826559e00d36595cdf5"
+  },
+  {
+    "name": "nested_record",
+    "rawJson": "{\"actionId\":\"action_001\",\"cluster\":\"mainnet-beta\",\"slot\":310000000,\"authorized\":true,\"routes\":[\"pump_v2\",\"raydium_clmm\"],\"metrics\":{\"slippageBps\":25,\"feeLamports\":5000}}",
+    "encodedHex": "09000000060600000004736c6f740300000000127a39800600000006726f757465730800000002060000000770756d705f7632060000000c7261796469756d5f636c6d6d0600000007636c7573746572060000000c6d61696e6e65742d6265746106000000076d6574726963730900000002060000000b6665654c616d706f727473030000000000001388060000000b736c6970706167654270730300000000000000190600000008616374696f6e4964060000000a616374696f6e5f303031060000000a617574686f72697a656402",
+    "sha256": "021a96558a8e4aa0e038ebf5a2e6d73d1acde8d6b89f12b7fe7f07c566606987"
+  }
+]

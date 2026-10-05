@@ -40,7 +40,49 @@ export interface FinalizedSettlementCertificate {
   readonly proofDigest: string;
 }
 
-export type TerminalExecutionCertificate = NoLandCertificate | FinalizedSettlementCertificate;
+import type { BlockHeight, Slot } from './execution-types.js';
+
+export interface ProviderWitness {
+  readonly providerId: string;
+  readonly operator: string;
+  readonly observedAtSlot: bigint;
+  readonly transactionFound: boolean;
+  readonly signature: string;
+}
+
+export interface SearchWitness {
+  readonly searchStartSlot: bigint;
+  readonly searchEndSlot: bigint;
+  readonly blocksSearchedCount: number;
+  readonly signatureConfirmedAbsent: boolean;
+}
+
+export interface NoLandProofCertificate {
+  readonly certificateId: string;
+  readonly economicFactId: string;
+  readonly executionGenerationId: string;
+  readonly signature: string;
+  readonly exactMessageHash: string;
+  readonly lifetimeType: 'RECENT_BLOCKHASH' | 'DURABLE_NONCE';
+  readonly blockhash?: string;
+  readonly lastValidBlockHeight?: BlockHeight;
+  readonly nonceAccount?: string;
+  readonly nonceValue?: string;
+  readonly nonceStateRoot?: string;
+  readonly finalizedFrontier: BlockHeight | Slot;
+  readonly providerWitnesses: readonly ProviderWitness[];
+  readonly searchHistoryWitnesses: readonly SearchWitness[];
+  readonly providerIndependenceRoot: string;
+  readonly coverageRoot: string;
+  readonly accountDeltaRoot: string;
+  readonly conclusion: 'CERTIFIED_NOLAND';
+  readonly issuerId: string;
+  readonly signatureAlgorithm: 'Ed25519';
+  readonly authoritySignature: string;
+}
+
+export type TerminalExecutionCertificate = NoLandCertificate | FinalizedSettlementCertificate | NoLandProofCertificate;
+
 
 export class NoLandVerificationAuthority {
   /**
@@ -98,7 +140,7 @@ export class NoLandVerificationAuthority {
    * A matching digest must never authorize a terminal transition.
    */
   public static validateCertificateDigest(cert: TerminalExecutionCertificate): boolean {
-    if (cert.certificateType === 'NO_LAND_CERTIFICATE') {
+    if ('certificateType' in cert && cert.certificateType === 'NO_LAND_CERTIFICATE') {
       const expected = this.computeNoLandDigest({
         intentId: cert.intentId,
         generation: cert.generation,
@@ -111,7 +153,7 @@ export class NoLandVerificationAuthority {
       return cert.proofDigest === expected;
     }
 
-    if (cert.certificateType === 'FINALIZED_SETTLEMENT_CERTIFICATE') {
+    if ('certificateType' in cert && cert.certificateType === 'FINALIZED_SETTLEMENT_CERTIFICATE') {
       const expected = this.computeSettlementDigest({
         intentId: cert.intentId,
         generation: cert.generation,
@@ -127,6 +169,7 @@ export class NoLandVerificationAuthority {
 
     return false;
   }
+
 
   /**
    * Legacy API retained to reject existing callers explicitly. No trusted

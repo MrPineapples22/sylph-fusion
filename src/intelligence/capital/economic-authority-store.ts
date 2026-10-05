@@ -35,9 +35,25 @@ export type EconomicJournalEventType =
   | 'RESERVATION_RELEASED'
   | 'FILL_SETTLED_OPEN'
   | 'FILL_SETTLED_CLOSE'
-  | 'RECONCILIATION_CORRECTION';
+  | 'RECONCILIATION_CORRECTION'
+  | 'UNKNOWN_CAPITAL_QUARANTINED'
+  | 'QUARANTINE_RELEASED_NOLAND';
+
+export interface FinalizedAssetDeltaSet {
+  readonly economicFactId: string;
+  readonly executionGenerationId: string;
+  readonly deltaCashLamports: bigint;
+  readonly deltaTokensRaw: bigint;
+  readonly mint: string;
+  readonly feeLamports: bigint;
+  readonly tipLamports: bigint;
+  readonly rentLamports: bigint;
+  readonly finalizedSlot: number;
+  readonly finalityReceiptHash: string;
+}
 
 export interface EconomicJournalEntry {
+
   readonly sequenceNumber: bigint;
   readonly eventType: EconomicJournalEventType;
   readonly timestampMs: number;
@@ -76,6 +92,7 @@ export interface SettleExitResult {
 export class EconomicAuthorityStore {
   private confirmedCashLamports: bigint;
   private reservedCashLamports: bigint = 0n;
+  private unknownCapitalLamports: bigint = 0n;
   private emergencyReserveLamports: bigint = 5_000_000_000n; // 5 SOL minimum reserve
 
   // Inventory: mint -> total raw tokens held
@@ -122,13 +139,87 @@ export class EconomicAuthorityStore {
   }
 
   public getAvailableCash(): bigint {
-    const available = this.confirmedCashLamports - this.reservedCashLamports - this.emergencyReserveLamports;
+    const available = this.confirmedCashLamports - this.reservedCashLamports - this.unknownCapitalLamports - this.emergencyReserveLamports;
     return available > 0n ? available : 0n;
   }
 
   public getReservedCash(): bigint {
     return this.reservedCashLamports;
   }
+
+  public getUnknownCapital(): bigint {
+    return this.unknownCapitalLamports;
+  }
+
+  public getEmergencyReserve(): bigint {
+    return this.emergencyReserveLamports;
+  }
+
+  /**
+   * Quarantines encumbered capital when an execution outcome is UNKNOWN or ambiguous.
+   * Quarantined capital is strictly unavailable for new intents until certified terminality.
+   */
+  public quarantineUnknownCapital(reservationId: string, currentSlot: number): void {
+    const res = this.reservations.get(reservationId);
+    if (!res) return;
+
+    this.reservedCashLamports -= res.maxDebitLamports;
+    if (this.reservedCashLamports < 0n) this.reservedCashLamports = 0n;
+    this.unknownCapitalLamports += res.maxDebitLamports;
+    this.reservations.delete(reservationId);
+
+    this.appendJournalEntry({
+      eventType: 'UNKNOWN_CAPITAL_QUARANTINED',
+      slot: currentSlot,
+      intentId: res.intentId,
+      deltaCashLamports: 0n,
+      deltaTokensRaw: 0n,
+      mint: 'SOL',
+      payload: { reservationId, quarantinedLamports: res.maxDebitLamports.toString() },
+    });
+  }
+
+  /**
+   * Releases quarantined capital back to confirmed cash ONLY upon certified terminality.
+   * Timeout, RPC null, or transport rejection CANNOT authorize release.
+   */
+  public releaseQuarantineOnVerifiedTerminality(params: {
+    intentId: string;
+    amountLamports: bigint;
+    terminalityVerdict: 'CERTIFIED_NOLAND';
+    currentSlot: number;
+  }): void {
+    if (params.terminalityVerdict !== 'CERTIFIED_NOLAND') {
+      throw new Error(`QUARANTINE_RELEASE_FORBIDDEN: Verdict ${params.terminalityVerdict} cannot release quarantined capital`);
+    }
+
+    if (this.unknownCapitalLamports < params.amountLamports) {
+      throw new Error(`QUARANTINE_RELEASE_OVERFLOW: Cannot release ${params.amountLamports} from unknownCapital ${this.unknownCapitalLamports}`);
+    }
+
+    this.unknownCapitalLamports -= params.amountLamports;
+
+    this.appendJournalEntry({
+      eventType: 'QUARANTINE_RELEASED_NOLAND',
+      slot: params.currentSlot,
+      intentId: params.intentId,
+      deltaCashLamports: params.amountLamports,
+      deltaTokensRaw: 0n,
+      mint: 'SOL',
+      payload: { releasedLamports: params.amountLamports.toString() },
+    });
+  }
+
+  public settleFinalizedAssetDeltas(deltas: FinalizedAssetDeltaSet): void {
+    this.confirmedCashLamports += deltas.deltaCashLamports;
+    if (deltas.deltaTokensRaw !== 0n) {
+      const currentTokens = this.tokenInventories.get(deltas.mint) ?? 0n;
+      this.tokenInventories.set(deltas.mint, currentTokens + deltas.deltaTokensRaw);
+    }
+    const friction = deltas.feeLamports + deltas.tipLamports + deltas.rentLamports;
+    this.totalFrictionBurnLamports += friction;
+  }
+
 
   public getTokenInventory(mint: string): bigint {
     return this.tokenInventories.get(mint) ?? 0n;

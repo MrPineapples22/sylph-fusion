@@ -1,5 +1,5 @@
 //! SYLPH FUSION — KERNEL STATE & INVARIANTS
-//! Specifications: Master Blueprint Section XXXVII, XXXVIII, XXXIX
+//! Specifications: Master Blueprint Section XXXVII, XXXVIII, XXXIX & Blueprint Section 14
 
 use crate::authority::AuthorityMode;
 use serde::{Deserialize, Serialize};
@@ -11,10 +11,13 @@ pub struct KernelState {
     pub control_epoch: u64,
     pub fence_epoch: u64,
     pub revocation_epoch: u64,
+    pub state_root: String,
     pub config_root: String,
     pub release_root: String,
     pub policy_root: String,
+    pub governor_vsa: String,
     pub consumed_permit_nonces: HashSet<String>,
+    pub revoked_proofs: HashSet<String>,
     pub unresolved_intents_count: u32,
     pub confirmed_cash_lamports: u64,
     pub reserved_cash_lamports: u64,
@@ -31,10 +34,13 @@ impl Default for KernelState {
             control_epoch: 1,
             fence_epoch: 1,
             revocation_epoch: 1,
+            state_root: "0".repeat(64),
             config_root: "0".repeat(64),
             release_root: "0".repeat(64),
             policy_root: "0".repeat(64),
+            governor_vsa: "0".repeat(64),
             consumed_permit_nonces: HashSet::new(),
+            revoked_proofs: HashSet::new(),
             unresolved_intents_count: 0,
             confirmed_cash_lamports: 0,
             reserved_cash_lamports: 0,

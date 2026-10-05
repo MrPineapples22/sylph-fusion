@@ -6,6 +6,7 @@ pub mod authority;
 pub mod canonical;
 pub mod crypto;
 pub mod error;
+pub mod evidence;
 pub mod permit;
 pub mod proof;
 pub mod recovery;
@@ -16,7 +17,9 @@ pub mod transition;
 
 pub use action::{ActionRequest, ActionType};
 pub use authority::AuthorityMode;
+pub use evidence::EvidenceClass;
 pub use permit::VerifiedPermit;
 pub use proof::KernelActionProofBundle;
 pub use state::KernelState;
 pub use transition::{evaluate_action, KernelDenialReason};
+

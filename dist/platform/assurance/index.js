@@ -6,4 +6,7 @@ export * from './proof-artifact.js';
 export * from './action-proof-bundle.js';
 export * from './receipt-chain.js';
 export * from './revocation-registry.js';
+export * from './evidence-class.js';
+export * from './no-synthetic-authority.js';
+export * from './issuer-manifest.js';
 //# sourceMappingURL=index.js.map

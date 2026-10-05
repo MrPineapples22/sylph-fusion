@@ -44,16 +44,17 @@ export class SystemIntegrityEngine {
 
   public evaluateIntegrity(checks: Partial<SystemIntegritySubsystemChecks>): SystemIntegrityCertificate {
     const fullChecks: SystemIntegritySubsystemChecks = {
-      rpcQuorum: checks.rpcQuorum ?? true,
-      eventContinuity: checks.eventContinuity ?? true,
-      decoderHealth: checks.decoderHealth ?? true,
-      stateDeterminism: checks.stateDeterminism ?? true,
-      executionReconciled: checks.executionReconciled ?? true,
-      portfolioLedgerIntegrity: checks.portfolioLedgerIntegrity ?? true,
-      clockHealth: checks.clockHealth ?? true,
-      persistenceHealth: checks.persistenceHealth ?? true,
-      queueHealth: checks.queueHealth ?? true,
+      rpcQuorum: checks.rpcQuorum === true,
+      eventContinuity: checks.eventContinuity === true,
+      decoderHealth: checks.decoderHealth === true,
+      stateDeterminism: checks.stateDeterminism === true,
+      executionReconciled: checks.executionReconciled === true,
+      portfolioLedgerIntegrity: checks.portfolioLedgerIntegrity === true,
+      clockHealth: checks.clockHealth === true,
+      persistenceHealth: checks.persistenceHealth === true,
+      queueHealth: checks.queueHealth === true,
     };
+
 
     const failedChecks: string[] = [];
     if (!fullChecks.rpcQuorum) failedChecks.push('RPC_QUORUM_FAIL');

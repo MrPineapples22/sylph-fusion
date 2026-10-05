@@ -6,4 +6,5 @@ export * from './signal-role.js';
 export * from './signal-specialist.js';
 export * from './family-aggregator.js';
 export * from './signal-portfolio-certificate.js';
+export * from './mechanism-fingerprint.js';
 //# sourceMappingURL=index.js.map

@@ -8,6 +8,8 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { generateKeyPairSync, sign } from 'node:crypto';
+import { computePromotionPayloadDigest } from '../../dist/intelligence/research-governor/promotion-evidence-bundle.js';
 
 import {
   UnifiedPipelineUnit,
@@ -287,17 +289,38 @@ describe('UnifiedPipelineUnit — End-to-End Control Unit', () => {
       createdAtMs: Date.now(),
     };
 
-    const promotionBundle = {
+    const { publicKey, privateKey } = generateKeyPairSync('ed25519', {
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    });
+
+    const baseBundle = {
       bundleId: 'bundle_prom_01',
       hypothesisId: 'hyp_vol_regime_01',
       fromState: 'UNTESTED',
       targetState: 'REPLAY_TESTED',
+      proposerAgentId: 'agent_sol_quant_01',
       independentVerifierAgentId: 'agent_independent_verifier_02',
+      codeHash: 'code_hash_01',
+      featureSchema: 'schema_v1',
+      datasetRoot: 'data_root_01',
+      knowledgeCutRoot: 'cut_root_01',
+      trainingWindow: { startMs: 1000, endMs: 2000 },
+      validationWindow: { startMs: 2001, endMs: 3000 },
+      sealedHoldoutRoot: 'sealed_holdout_root_01',
       outOfSampleSampleSize: 500,
+      metricDefinitions: ['sharpe', 'cvar'],
       falsificationTestPassed: true,
       counterfactualSharpe: 1.75,
-      proofArtifactRoot: 'proof_root_verification_01',
-      verifierSignature: 'signature_of_independent_verifier_32bytes',
+      releaseRoot: 'release_root_canonical_01',
+      verifierPublicKeyPem: publicKey,
+    };
+
+    const digestHex = computePromotionPayloadDigest({ ...baseBundle, verifierSignatureHex: '' });
+    const sigBuffer = sign(null, Buffer.from(digestHex, 'hex'), privateKey);
+    const promotionBundle = {
+      ...baseBundle,
+      verifierSignatureHex: sigBuffer.toString('hex'),
     };
 
     const gov = unit.governSelfImprovement({

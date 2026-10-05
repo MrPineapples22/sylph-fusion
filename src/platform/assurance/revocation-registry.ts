@@ -88,3 +88,4 @@ export class AssuranceRevocationRegistry {
 }
 
 export const globalRevocationRegistry = new AssuranceRevocationRegistry();
+export type RevocationRegistry = AssuranceRevocationRegistry;

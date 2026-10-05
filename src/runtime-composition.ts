@@ -4,19 +4,26 @@
  * neither a signer nor a network client.
  */
 import type { RuntimeConfigSnapshot } from './runtime-context.js';
-import type { UnifiedPipelineUnit } from './platform/pipeline/unified-unit.js';
+import { UnifiedPipelineUnit } from './platform/pipeline/unified-unit.js';
 
 export interface RuntimeComposition<TMarket, TExecution, TReconciliation> {
   readonly context: RuntimeConfigSnapshot;
   readonly market: TMarket;
   readonly execution: TExecution;
   readonly reconciliation: TReconciliation;
-  readonly unit?: UnifiedPipelineUnit;
+  readonly unit: UnifiedPipelineUnit;
 }
 
-export function composePaperRuntime<TMarket, TExecution, TReconciliation>(parts: RuntimeComposition<TMarket, TExecution, TReconciliation>): RuntimeComposition<TMarket, TExecution, TReconciliation> {
+export function composePaperRuntime<TMarket, TExecution, TReconciliation>(
+  parts: Omit<RuntimeComposition<TMarket, TExecution, TReconciliation>, 'unit'> & { unit?: UnifiedPipelineUnit }
+): RuntimeComposition<TMarket, TExecution, TReconciliation> {
   if (parts.context.mode !== 'PAPER') {
     throw new Error('LIVE_RUNTIME_COMPOSITION_UNAVAILABLE');
   }
-  return Object.freeze({...parts});
+  const unit = parts.unit ?? new UnifiedPipelineUnit();
+  return Object.freeze({
+    ...parts,
+    unit,
+  });
 }
+

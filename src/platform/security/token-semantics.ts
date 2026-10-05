@@ -390,7 +390,7 @@ export class SemanticLeaseAuthority {
       closeAuthority: params.closeAuthority ?? null,
       cpiGuardEnabled: params.cpiGuardEnabled === true,
       memoTransferRequired: params.memoTransferRequired === true,
-      transferHookAccountValid: params.transferHookAccountValid ?? true,
+      transferHookAccountValid: params.transferHookAccountValid === true,
       isEntryCertified: isEntryCertified && (!existsOnChain || !isFrozen),
       requiresAtaCreation: !existsOnChain,
       certifiedAtMs: Date.now(),
