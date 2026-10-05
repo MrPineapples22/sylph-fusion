@@ -22,10 +22,12 @@ export class ResearchTruthFirewall {
      * Evaluates a candidate strategy through the 9 rigorous gates.
      */
     evaluateCandidate(candidate) {
+        this.validateCandidate(candidate);
         const gates = [];
         // Gate 1: Signal Significance Engine
-        const significantCount = candidate.signalSignificanceSamples.filter(s => s.statisticallySignificant).length;
+        const significantCount = candidate.signalSignificanceSamples.filter(s => s.sampleCount > 0 && s.statisticallySignificant && s.pValue <= 0.05 && s.meanFutureReturnBps > s.randomBaselineReturnBps).length;
         const significancePassed = candidate.signalSignificanceSamples.length > 0 &&
+            candidate.signalSignificanceSamples.every(s => s.sampleCount > 0) &&
             significantCount === candidate.signalSignificanceSamples.length;
         gates.push({
             gateId: 'SIGNAL_SIGNIFICANCE_GATE',
@@ -91,26 +93,77 @@ export class ResearchTruthFirewall {
             score: Math.max(0, 100 - candidate.monteCarloRuinProbabilityPct * 10),
             reason: mcPassed ? undefined : `Excessive tail ruin probability under trade shuffling: ${candidate.monteCarloRuinProbabilityPct}% (limit < 1.0%)`,
         });
+        // Gates are diagnostics over caller-provided assertions. This module has no
+        // evidence-verification or certification authority and therefore cannot promote.
         const passedCount = gates.filter(g => g.passed).length;
-        const isAlphaReality = passedCount === gates.length;
-        const status = isAlphaReality ? 'ALPHA_REALITY' : 'RESEARCH_ONLY';
+        const status = 'RESEARCH_ONLY';
+        const evaluatedAt = new Date().toISOString();
+        const candidateClaimsHash = hashCanonical(candidate);
+        const immutableGates = Object.freeze(gates.map(gate => Object.freeze({ ...gate })));
+        const immutableSamples = Object.freeze(candidate.signalSignificanceSamples.map(sample => Object.freeze({ ...sample })));
         const payload = {
             strategyId: candidate.strategyId,
             status,
             gatesPassed: passedCount,
             totalGates: gates.length,
-            evaluatedAt: new Date().toISOString(),
-            gateResults: gates,
+            evaluatedAt,
+            gateResults: immutableGates,
+            candidateClaimsHash,
+            evidenceStatus: 'UNVERIFIED_CALLER_ASSERTIONS',
         };
         const graduationHash = hashCanonical(payload);
         const evaluationId = `firewall_eval_${candidate.strategyId}_${graduationHash.slice(0, 12)}`;
         return Object.freeze({
             ...payload,
             evaluationId,
-            signalSignificance: Object.freeze([...candidate.signalSignificanceSamples]),
-            gateResults: Object.freeze(gates),
+            signalSignificance: immutableSamples,
+            gateResults: immutableGates,
             graduationHash,
         });
+    }
+    validateCandidate(candidate) {
+        if (!candidate || typeof candidate !== 'object')
+            throw new TypeError('Candidate must be an object');
+        if (typeof candidate.strategyId !== 'string' || candidate.strategyId.trim().length === 0) {
+            throw new TypeError('strategyId must be a non-empty string');
+        }
+        if (!Array.isArray(candidate.features) || candidate.features.some(feature => typeof feature !== 'string' || !feature.trim())) {
+            throw new TypeError('features must be an array of non-empty strings');
+        }
+        if (!Array.isArray(candidate.signalSignificanceSamples))
+            throw new TypeError('signalSignificanceSamples must be an array');
+        const finite = (value, name) => {
+            if (typeof value !== 'number' || !Number.isFinite(value))
+                throw new TypeError(`${name} must be finite`);
+        };
+        for (const [index, sample] of candidate.signalSignificanceSamples.entries()) {
+            if (!sample || typeof sample.featureName !== 'string' || !sample.featureName.trim())
+                throw new TypeError(`sample ${index} featureName is invalid`);
+            if (!Number.isSafeInteger(sample.sampleCount) || sample.sampleCount < 0)
+                throw new TypeError(`sample ${index} sampleCount must be a non-negative safe integer`);
+            for (const field of ['meanFutureReturnBps', 'randomBaselineReturnBps', 'pValue', 'maximumFavorableExcursionBps', 'maximumAdverseExcursionBps', 'rugAvoidanceRatePct']) {
+                finite(sample[field], `sample ${index} ${field}`);
+            }
+            if (sample.pValue < 0 || sample.pValue > 1)
+                throw new RangeError(`sample ${index} pValue must be between 0 and 1`);
+            if (sample.maximumFavorableExcursionBps < 0)
+                throw new RangeError(`sample ${index} maximumFavorableExcursionBps cannot be negative`);
+            if (sample.maximumAdverseExcursionBps > 0)
+                throw new RangeError(`sample ${index} maximumAdverseExcursionBps cannot be positive`);
+            if (sample.rugAvoidanceRatePct < 0 || sample.rugAvoidanceRatePct > 100)
+                throw new RangeError(`sample ${index} rugAvoidanceRatePct must be between 0 and 100`);
+            if (typeof sample.statisticallySignificant !== 'boolean')
+                throw new TypeError(`sample ${index} statisticallySignificant must be boolean`);
+        }
+        for (const field of ['temporalLeakageVerified', 'knowledgeCutValid', 'recursiveStateStable', 'clusterLeakageClean', 'protocolCompatibilityCertified', 'sealedHoldoutPositive']) {
+            if (typeof candidate[field] !== 'boolean')
+                throw new TypeError(`${field} must be boolean`);
+        }
+        if (!Number.isSafeInteger(candidate.walkForwardFoldsPassed) || candidate.walkForwardFoldsPassed < 0)
+            throw new RangeError('walkForwardFoldsPassed must be a non-negative safe integer');
+        finite(candidate.monteCarloRuinProbabilityPct, 'monteCarloRuinProbabilityPct');
+        if (candidate.monteCarloRuinProbabilityPct < 0 || candidate.monteCarloRuinProbabilityPct > 100)
+            throw new RangeError('monteCarloRuinProbabilityPct must be between 0 and 100');
     }
 }
 //# sourceMappingURL=research-truth-firewall.js.map

@@ -12,29 +12,42 @@
 import { hashCanonical } from '../pipeline/canonical-hashing.js';
 export class SolanaSensorTournament {
     receiptsByEvent = new Map();
-    providerCosts = new Map();
-    constructor() {
-        // Default baseline monthly provider costs amortized to event cost weights
-        this.providerCosts.set('SHREDS', 150000n);
-        this.providerCosts.set('GEYSER', 250000n);
-        this.providerCosts.set('LOGS_SUBSCRIBE', 50000n);
-        this.providerCosts.set('BLOCK_SUBSCRIBE', 40000n);
-        this.providerCosts.set('RPC_PRIMARY', 80000n);
-        this.providerCosts.set('RPC_FALLBACK', 20000n);
-    }
     /**
      * Records receipt of an event from an individual sensor.
      */
     recordReceipt(receipt) {
+        const knownSensors = ['SHREDS', 'GEYSER', 'LOGS_SUBSCRIBE', 'BLOCK_SUBSCRIBE', 'RPC_PRIMARY', 'RPC_FALLBACK'];
+        if (typeof receipt.eventId !== 'string' || !receipt.eventId.trim() || typeof receipt.slot !== 'bigint' || receipt.slot < 0n ||
+            typeof receipt.receiverClockId !== 'string' || !receipt.receiverClockId.trim() ||
+            !knownSensors.includes(receipt.sensorType) || typeof receipt.decodeSuccess !== 'boolean' || typeof receipt.isStale !== 'boolean' ||
+            ![receipt.firstSeenAtMs, receipt.correctlyDecodedAtMs, receipt.canonicalAtMs, receipt.latencyMs].every(Number.isFinite) ||
+            receipt.firstSeenAtMs < 0 || receipt.correctlyDecodedAtMs < 0 || receipt.canonicalAtMs < 0 || receipt.latencyMs < 0) {
+            throw new Error('Invalid sensor receipt');
+        }
         let sensorMap = this.receiptsByEvent.get(receipt.eventId);
         if (!sensorMap) {
             sensorMap = new Map();
             this.receiptsByEvent.set(receipt.eventId, sensorMap);
         }
+        const existing = sensorMap.get(receipt.sensorType);
+        if (existing) {
+            if (hashCanonical(existing) !== hashCanonical(receipt)) {
+                throw new Error('Conflicting sensor receipt for event and sensor');
+            }
+            return;
+        }
+        const otherReceipt = sensorMap.values().next().value;
+        if (otherReceipt && otherReceipt.slot !== receipt.slot) {
+            throw new Error('Sensor receipts for one event must agree on slot');
+        }
+        if (otherReceipt && otherReceipt.receiverClockId !== receipt.receiverClockId) {
+            throw new Error('Sensor receipts for one event must share a receiver clock');
+        }
         sensorMap.set(receipt.sensorType, Object.freeze({ ...receipt }));
     }
     /**
-     * Evaluates the multi-sensor tournament ranking by SensorEconomicValue.
+     * Reports observed telemetry only. No economic ranking is available without
+     * reconciled event outcomes and measured provider costs.
      */
     evaluateTournament() {
         const allSensors = [
@@ -53,9 +66,6 @@ export class SolanaSensorTournament {
             let totalLatency = 0;
             let falseDecodes = 0;
             let stales = 0;
-            let edgePreservedLamports = 0n;
-            let errorsCausedLamports = 0n;
-            let infoMissedLamports = 0n;
             for (const [, sensorMap] of this.receiptsByEvent) {
                 const receipt = sensorMap.get(sensor);
                 if (receipt) {
@@ -63,37 +73,26 @@ export class SolanaSensorTournament {
                     totalLatency += receipt.latencyMs;
                     if (!receipt.decodeSuccess) {
                         falseDecodes++;
-                        errorsCausedLamports += 500000n; // Penalize false decode
                     }
                     if (receipt.isStale) {
                         stales++;
                     }
-                    // Check if this sensor won the race for this event
-                    let isWinner = true;
-                    for (const [otherSensor, otherReceipt] of sensorMap) {
-                        if (otherSensor !== sensor && otherReceipt.decodeSuccess && otherReceipt.firstSeenAtMs < receipt.firstSeenAtMs) {
-                            isWinner = false;
-                            break;
-                        }
-                    }
-                    if (isWinner && receipt.decodeSuccess) {
-                        winsCount++;
-                        edgePreservedLamports += 1000000n; // Edge reward
-                    }
                 }
-                else {
-                    // Event was missed by this sensor
-                    infoMissedLamports += 300000n;
-                }
+            }
+            for (const sensorMap of this.receiptsByEvent.values()) {
+                const receipt = sensorMap.get(sensor);
+                if (!receipt || !receipt.decodeSuccess || receipt.isStale)
+                    continue;
+                const correctPeers = [...sensorMap.values()].filter(candidate => candidate.decodeSuccess && !candidate.isStale);
+                const earliestDecode = Math.min(...correctPeers.map(candidate => candidate.correctlyDecodedAtMs));
+                if (receipt.correctlyDecodedAtMs === earliestDecode)
+                    winsCount++;
             }
             const coverageRatePct = totalEvents > 0 ? (observedCount / totalEvents) * 100 : 0;
             const falseDecodeRatePct = observedCount > 0 ? (falseDecodes / observedCount) * 100 : 0;
             const missingEventRatePct = totalEvents > 0 ? ((totalEvents - observedCount) / totalEvents) * 100 : 0;
             const staleEventRatePct = observedCount > 0 ? (stales / observedCount) * 100 : 0;
             const meanLatencyMs = observedCount > 0 ? totalLatency / observedCount : 0;
-            const providerCostLamports = (this.providerCosts.get(sensor) || 0n) * BigInt(Math.max(1, observedCount));
-            // SensorEconomicValue = edgePreserved - errorsCaused - informationMissed - providerCost
-            const economicValueLamports = edgePreservedLamports - errorsCausedLamports - infoMissedLamports - providerCostLamports;
             aggregates.push(Object.freeze({
                 sensorType: sensor,
                 totalEventsObserved: observedCount,
@@ -103,15 +102,16 @@ export class SolanaSensorTournament {
                 falseDecodeRatePct,
                 missingEventRatePct,
                 staleEventRatePct,
-                edgePreservedLamports,
-                errorsCausedLamports,
-                informationMissedLamports: infoMissedLamports,
-                providerCostLamports,
-                economicValueLamports,
+                economicValueState: 'UNKNOWN',
+                economicValueReason: 'REALIZED_EDGE_AND_PROVIDER_COST_EVIDENCE_REQUIRED',
+                edgePreservedLamports: null,
+                errorsCausedLamports: null,
+                informationMissedLamports: null,
+                providerCostLamports: null,
+                economicValueLamports: null,
             }));
         }
-        // Rank by economicValueLamports descending
-        return Object.freeze(aggregates.sort((a, b) => Number(b.economicValueLamports - a.economicValueLamports)));
+        return Object.freeze(aggregates);
     }
     /**
      * Section 6: Sensor Shadow Universe
@@ -120,36 +120,30 @@ export class SolanaSensorTournament {
     evaluateShadowUniverse(hypotheticalPrimary) {
         let eventsConsidered = 0;
         let counterfactualWins = 0;
-        let potentialEdgeDeltaLamports = 0n;
+        let eventsWithComparableReceipts = 0;
+        let pairedDecodeLatencyAdvantageMs = 0;
         for (const [, sensorMap] of this.receiptsByEvent) {
             eventsConsidered++;
             const hypReceipt = sensorMap.get(hypotheticalPrimary);
-            if (hypReceipt && hypReceipt.decodeSuccess) {
-                // Find actual winner
-                let actualWinner = null;
-                for (const [, r] of sensorMap) {
-                    if (r.decodeSuccess && (!actualWinner || r.firstSeenAtMs < actualWinner.firstSeenAtMs)) {
-                        actualWinner = r;
-                    }
-                }
-                if (actualWinner && hypReceipt.firstSeenAtMs < actualWinner.firstSeenAtMs) {
-                    counterfactualWins++;
-                    potentialEdgeDeltaLamports += 500000n; // Edge gained if hypothetical had been used
-                }
-                else if (actualWinner && actualWinner.firstSeenAtMs < hypReceipt.firstSeenAtMs) {
-                    potentialEdgeDeltaLamports -= 200000n; // Edge lost if hypothetical had been used
-                }
-            }
+            if (!hypReceipt || !hypReceipt.decodeSuccess || hypReceipt.isStale)
+                continue;
+            const validReceipts = [...sensorMap.values()].filter(r => r.decodeSuccess && !r.isStale);
+            if (validReceipts.length === 0)
+                continue;
+            const actualEarliestDecode = Math.min(...validReceipts.map(r => r.correctlyDecodedAtMs));
+            eventsWithComparableReceipts++;
+            if (hypReceipt.correctlyDecodedAtMs === actualEarliestDecode)
+                counterfactualWins++;
+            pairedDecodeLatencyAdvantageMs += actualEarliestDecode - hypReceipt.correctlyDecodedAtMs;
         }
-        const reliabilityImpact = potentialEdgeDeltaLamports > 0n ? 'IMPROVED'
-            : potentialEdgeDeltaLamports < 0n ? 'DEGRADED'
-                : 'NEUTRAL';
         return Object.freeze({
             hypotheticalPrimarySensor: hypotheticalPrimary,
             eventsConsidered,
+            eventsWithComparableReceipts,
             counterfactualWins,
-            potentialEdgeDeltaLamports,
-            reliabilityImpact,
+            pairedDecodeLatencyAdvantageMs: eventsWithComparableReceipts > 0 ? pairedDecodeLatencyAdvantageMs : null,
+            economicImpactLamports: null,
+            reliabilityImpact: 'UNKNOWN',
         });
     }
     /**

@@ -192,4 +192,20 @@ export class SolanaMarketMakingEngine {
   public getAdverseSelectionScore(): number {
     return this.adverseSelectionScore;
   }
+
+  public getTelemetry(): {
+    readonly adverseSelectionScore: number;
+    readonly currentInventoryLamports: bigint;
+    readonly maxInventoryCapacityLamports: bigint;
+    readonly totalFillsObserved: number;
+    readonly recentFills: readonly PostFillObservation[];
+  } {
+    return Object.freeze({
+      adverseSelectionScore: this.adverseSelectionScore,
+      currentInventoryLamports: this.currentInventoryLamports,
+      maxInventoryCapacityLamports: this.maxInventoryCapacityLamports,
+      totalFillsObserved: this.fillHistory.length,
+      recentFills: Object.freeze([...this.fillHistory.slice(-10)]),
+    });
+  }
 }

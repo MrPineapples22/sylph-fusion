@@ -134,5 +134,8 @@ export class SolanaStrategyEcology {
         }
         return realizedBps;
     }
+    getAllRegisteredStrategies() {
+        return Object.freeze([...this.fingerprints.values()]);
+    }
 }
 //# sourceMappingURL=strategy-ecology.js.map

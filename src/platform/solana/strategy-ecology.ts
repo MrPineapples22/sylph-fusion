@@ -202,4 +202,8 @@ export class SolanaStrategyEcology {
     }
     return realizedBps;
   }
+
+  public getAllRegisteredStrategies(): readonly MechanismFingerprint[] {
+    return Object.freeze([...this.fingerprints.values()]);
+  }
 }

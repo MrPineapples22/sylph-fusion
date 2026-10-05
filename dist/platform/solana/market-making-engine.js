@@ -122,5 +122,14 @@ export class SolanaMarketMakingEngine {
     getAdverseSelectionScore() {
         return this.adverseSelectionScore;
     }
+    getTelemetry() {
+        return Object.freeze({
+            adverseSelectionScore: this.adverseSelectionScore,
+            currentInventoryLamports: this.currentInventoryLamports,
+            maxInventoryCapacityLamports: this.maxInventoryCapacityLamports,
+            totalFillsObserved: this.fillHistory.length,
+            recentFills: Object.freeze([...this.fillHistory.slice(-10)]),
+        });
+    }
 }
 //# sourceMappingURL=market-making-engine.js.map

@@ -18,8 +18,9 @@
  */
 
 import { hashCanonical } from '../../platform/pipeline/canonical-hashing.js';
+import { types as utilTypes } from 'node:util';
 
-export type StrategyGraduationStatus = 'ALPHA_REALITY' | 'RESEARCH_ONLY';
+export type StrategyGraduationStatus = 'RESEARCH_ONLY';
 
 export interface SignalSignificanceMetrics {
   readonly featureName: string;
@@ -50,6 +51,8 @@ export interface ResearchTruthEvaluation {
   readonly gateResults: readonly FirewallGateResult[];
   readonly signalSignificance: readonly SignalSignificanceMetrics[];
   readonly graduationHash: string;
+  readonly candidateClaimsHash: string;
+  readonly evidenceStatus: 'UNVERIFIED_CALLER_ASSERTIONS';
 }
 
 export interface StrategyResearchCandidate {
@@ -71,11 +74,15 @@ export class ResearchTruthFirewall {
    * Evaluates a candidate strategy through the 9 rigorous gates.
    */
   public evaluateCandidate(candidate: StrategyResearchCandidate): ResearchTruthEvaluation {
+    candidate = this.snapshotCandidate(candidate);
     const gates: FirewallGateResult[] = [];
 
     // Gate 1: Signal Significance Engine
-    const significantCount = candidate.signalSignificanceSamples.filter(s => s.statisticallySignificant).length;
+    const significantCount = candidate.signalSignificanceSamples.filter(s =>
+      s.sampleCount > 0 && s.statisticallySignificant && s.pValue <= 0.05 && s.meanFutureReturnBps > s.randomBaselineReturnBps,
+    ).length;
     const significancePassed = candidate.signalSignificanceSamples.length > 0 &&
+      candidate.signalSignificanceSamples.every(s => s.sampleCount > 0) &&
       significantCount === candidate.signalSignificanceSamples.length;
     gates.push({
       gateId: 'SIGNAL_SIGNIFICANCE_GATE',
@@ -150,17 +157,24 @@ export class ResearchTruthFirewall {
       reason: mcPassed ? undefined : `Excessive tail ruin probability under trade shuffling: ${candidate.monteCarloRuinProbabilityPct}% (limit < 1.0%)`,
     });
 
+    // Gates are diagnostics over caller-provided assertions. This module has no
+    // evidence-verification or certification authority and therefore cannot promote.
     const passedCount = gates.filter(g => g.passed).length;
-    const isAlphaReality = passedCount === gates.length;
-    const status: StrategyGraduationStatus = isAlphaReality ? 'ALPHA_REALITY' : 'RESEARCH_ONLY';
+    const status: StrategyGraduationStatus = 'RESEARCH_ONLY';
+    const evaluatedAt = new Date().toISOString();
+    const candidateClaimsHash = hashCanonical(candidate);
 
+    const immutableGates = Object.freeze(gates.map(gate => Object.freeze({ ...gate })));
+    const immutableSamples = Object.freeze(candidate.signalSignificanceSamples.map(sample => Object.freeze({ ...sample })));
     const payload = {
       strategyId: candidate.strategyId,
       status,
       gatesPassed: passedCount,
       totalGates: gates.length,
-      evaluatedAt: new Date().toISOString(),
-      gateResults: gates,
+      evaluatedAt,
+      gateResults: immutableGates,
+      candidateClaimsHash,
+      evidenceStatus: 'UNVERIFIED_CALLER_ASSERTIONS' as const,
     };
 
     const graduationHash = hashCanonical(payload);
@@ -169,9 +183,104 @@ export class ResearchTruthFirewall {
     return Object.freeze({
       ...payload,
       evaluationId,
-      signalSignificance: Object.freeze([...candidate.signalSignificanceSamples]),
-      gateResults: Object.freeze(gates),
+      signalSignificance: immutableSamples,
+      gateResults: immutableGates,
       graduationHash,
+    });
+  }
+
+  private snapshotCandidate(candidate: StrategyResearchCandidate): StrategyResearchCandidate {
+    const candidateKeys = [
+      'strategyId', 'features', 'signalSignificanceSamples', 'temporalLeakageVerified',
+      'knowledgeCutValid', 'recursiveStateStable', 'clusterLeakageClean',
+      'protocolCompatibilityCertified', 'walkForwardFoldsPassed', 'sealedHoldoutPositive',
+      'monteCarloRuinProbabilityPct',
+    ];
+    const sampleKeys = [
+      'featureName', 'sampleCount', 'meanFutureReturnBps', 'randomBaselineReturnBps',
+      'pValue', 'maximumFavorableExcursionBps', 'maximumAdverseExcursionBps',
+      'rugAvoidanceRatePct', 'statisticallySignificant',
+    ];
+    const recordValues = (value: unknown, keys: readonly string[], name: string): Record<string, unknown> => {
+      if (!value || typeof value !== 'object' || Array.isArray(value) || utilTypes.isProxy(value)) {
+        throw new TypeError(`${name} must be a plain data object`);
+      }
+      const prototype = Object.getPrototypeOf(value);
+      if (prototype !== Object.prototype && prototype !== null) throw new TypeError(`${name} must have a plain object prototype`);
+      const ownKeys = Reflect.ownKeys(value);
+      if (ownKeys.length !== keys.length || ownKeys.some(key => typeof key !== 'string' || !keys.includes(key))) {
+        throw new TypeError(`${name} has unknown or missing properties`);
+      }
+      const result: Record<string, unknown> = Object.create(null);
+      for (const key of keys) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        if (!descriptor || !descriptor.enumerable || !('value' in descriptor)) {
+          throw new TypeError(`${name}.${key} must be an enumerable own data property`);
+        }
+        result[key] = descriptor.value;
+      }
+      return result;
+    };
+    const arrayValues = (value: unknown, name: string): unknown[] => {
+      if (!Array.isArray(value) || utilTypes.isProxy(value) || Object.getPrototypeOf(value) !== Array.prototype) {
+        throw new TypeError(`${name} must be a plain array`);
+      }
+      const keys = Reflect.ownKeys(value);
+      if (keys.length !== value.length + 1 || keys.some(key => key !== 'length' && (typeof key !== 'string' || !/^(0|[1-9]\d*)$/.test(key) || Number(key) >= value.length))) {
+        throw new TypeError(`${name} must be a dense array without extra properties`);
+      }
+      const values: unknown[] = [];
+      for (let i = 0; i < value.length; i += 1) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, String(i));
+        if (!descriptor || !descriptor.enumerable || !('value' in descriptor)) throw new TypeError(`${name}[${i}] must be an own data element`);
+        values.push(descriptor.value);
+      }
+      return values;
+    };
+
+    const candidateRecord = recordValues(candidate, candidateKeys, 'candidate');
+    const rawFeatures = arrayValues(candidateRecord.features, 'candidate.features');
+    if (typeof candidateRecord.strategyId !== 'string' || !candidateRecord.strategyId.trim()) throw new TypeError('strategyId must be a non-empty string');
+    if (rawFeatures.some(feature => typeof feature !== 'string' || !feature.trim())) throw new TypeError('features must contain non-empty strings');
+    const rawSamples = arrayValues(candidateRecord.signalSignificanceSamples, 'candidate.signalSignificanceSamples');
+    const samples = rawSamples.map((sample, index) => {
+      const record = recordValues(sample, sampleKeys, `sample ${index}`);
+      if (typeof record.featureName !== 'string' || !record.featureName.trim()) throw new TypeError(`sample ${index} featureName is invalid`);
+      if (!Number.isSafeInteger(record.sampleCount) || (record.sampleCount as number) <= 0) throw new RangeError(`sample ${index} sampleCount must be a positive safe integer`);
+      for (const field of ['meanFutureReturnBps', 'randomBaselineReturnBps', 'pValue', 'maximumFavorableExcursionBps', 'maximumAdverseExcursionBps', 'rugAvoidanceRatePct'] as const) {
+        finite(record[field], `sample ${index} ${field}`);
+      }
+      const pValue = record.pValue as number;
+      const favorable = record.maximumFavorableExcursionBps as number;
+      const adverse = record.maximumAdverseExcursionBps as number;
+      const rugAvoidance = record.rugAvoidanceRatePct as number;
+      if (pValue < 0 || pValue > 1) throw new RangeError(`sample ${index} pValue must be between 0 and 1`);
+      if (favorable < 0) throw new RangeError(`sample ${index} maximumFavorableExcursionBps cannot be negative`);
+      if (adverse > 0) throw new RangeError(`sample ${index} maximumAdverseExcursionBps cannot be positive`);
+      if (rugAvoidance < 0 || rugAvoidance > 100) throw new RangeError(`sample ${index} rugAvoidanceRatePct must be between 0 and 100`);
+      if (typeof record.statisticallySignificant !== 'boolean') throw new TypeError(`sample ${index} statisticallySignificant must be boolean`);
+      return Object.freeze({ ...record }) as unknown as SignalSignificanceMetrics;
+    });
+    const finite = (value: number, name: string): void => {
+      if (typeof value !== 'number' || !Number.isFinite(value)) throw new TypeError(`${name} must be finite`);
+    };
+    const booleans = ['temporalLeakageVerified', 'knowledgeCutValid', 'recursiveStateStable', 'clusterLeakageClean', 'protocolCompatibilityCertified', 'sealedHoldoutPositive'] as const;
+    for (const field of booleans) if (typeof candidateRecord[field] !== 'boolean') throw new TypeError(`${field} must be boolean`);
+    if (!Number.isSafeInteger(candidateRecord.walkForwardFoldsPassed) || (candidateRecord.walkForwardFoldsPassed as number) < 0) throw new RangeError('walkForwardFoldsPassed must be a non-negative safe integer');
+    finite(candidateRecord.monteCarloRuinProbabilityPct as number, 'monteCarloRuinProbabilityPct');
+    if ((candidateRecord.monteCarloRuinProbabilityPct as number) < 0 || (candidateRecord.monteCarloRuinProbabilityPct as number) > 100) throw new RangeError('monteCarloRuinProbabilityPct must be between 0 and 100');
+    return Object.freeze({
+      strategyId: candidateRecord.strategyId as string,
+      features: Object.freeze(rawFeatures as string[]),
+      signalSignificanceSamples: Object.freeze(samples),
+      temporalLeakageVerified: candidateRecord.temporalLeakageVerified as boolean,
+      knowledgeCutValid: candidateRecord.knowledgeCutValid as boolean,
+      recursiveStateStable: candidateRecord.recursiveStateStable as boolean,
+      clusterLeakageClean: candidateRecord.clusterLeakageClean as boolean,
+      protocolCompatibilityCertified: candidateRecord.protocolCompatibilityCertified as boolean,
+      walkForwardFoldsPassed: candidateRecord.walkForwardFoldsPassed as number,
+      sealedHoldoutPositive: candidateRecord.sealedHoldoutPositive as boolean,
+      monteCarloRuinProbabilityPct: candidateRecord.monteCarloRuinProbabilityPct as number,
     });
   }
 }

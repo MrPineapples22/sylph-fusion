@@ -143,4 +143,8 @@ export class SolanaPlannerVoi {
   public getPrewarmedState(mint: string): PrewarmingTarget | null {
     return this.prewarmedTargets.get(mint) || null;
   }
+
+  public getAllPrewarmed(): readonly PrewarmingTarget[] {
+    return Object.freeze([...this.prewarmedTargets.values()]);
+  }
 }

@@ -21,6 +21,9 @@ import {
   SolanaCapacityEngine,
   SolanaStrategyEcology,
   SolanaPlannerVoi,
+  SolanaMarketTwinResidualAuditor,
+  BasisPointEngineeringLedger,
+  SolanaAlphaFactory,
 } from '../../dist/platform/solana/index.js';
 
 import {
@@ -211,10 +214,10 @@ describe('SYLPH FUSION — Solana-Only Integration Blueprint', () => {
     assert.equal(ProtocolMutationTester.simulateBinaryUpgrade(lease, '0xbadupgradedhash').valid, false);
   });
 
-  test('Sections 9 & 10: ResearchTruthFirewall enforces 9-gate verification and signal significance', () => {
+  test('Sections 9 & 10: ResearchTruthFirewall keeps caller claims diagnostic and research-only', () => {
     const firewall = new ResearchTruthFirewall();
 
-    // Candidate with strong signal significance and all gates valid
+    // Self-asserted green booleans/statistics are diagnostics, never certification.
     const passingCandidate = {
       strategyId: 'sol_launch_continuation_alpha_01',
       features: ['buyer_velocity', 'creator_history', 'initial_liquidity_depth'],
@@ -242,9 +245,16 @@ describe('SYLPH FUSION — Solana-Only Integration Blueprint', () => {
     };
 
     const evalPassed = firewall.evaluateCandidate(passingCandidate);
-    assert.equal(evalPassed.status, 'ALPHA_REALITY');
+    assert.equal(evalPassed.status, 'RESEARCH_ONLY');
+    assert.equal(evalPassed.evidenceStatus, 'UNVERIFIED_CALLER_ASSERTIONS');
     assert.equal(evalPassed.gatesPassed, 9);
     assert.equal(evalPassed.totalGates, 9);
+    assert.match(evalPassed.graduationHash, /^[a-f0-9]+$/);
+    assert.match(evalPassed.candidateClaimsHash, /^[a-f0-9]+$/);
+    assert.throws(() => { evalPassed.signalSignificance[0].meanFutureReturnBps = 999; }, TypeError);
+    assert.throws(() => { evalPassed.gateResults[0].passed = false; }, TypeError);
+    assert.equal(evalPassed.signalSignificance[0].meanFutureReturnBps, 85);
+    assert.equal(evalPassed.gateResults[0].passed, true);
 
     // Flawed candidate failing signal significance (weak random noise feature)
     const weakCandidate = {
@@ -278,9 +288,43 @@ describe('SYLPH FUSION — Solana-Only Integration Blueprint', () => {
     const evalLeak = firewall.evaluateCandidate(leakingCandidate);
     assert.equal(evalLeak.status, 'RESEARCH_ONLY');
     assert.ok(evalLeak.gateResults.some(g => g.gateId === 'TEMPORAL_LEAKAGE_GATE' && !g.passed));
+
+    // Contradictory significance assertions cannot make the significance gate green.
+    const contradictoryCandidate = {
+      ...passingCandidate,
+      signalSignificanceSamples: [{
+        ...passingCandidate.signalSignificanceSamples[0],
+        pValue: 0.8,
+        statisticallySignificant: true,
+      }],
+    };
+    const contradictory = firewall.evaluateCandidate(contradictoryCandidate);
+    assert.equal(contradictory.status, 'RESEARCH_ONLY');
+    assert.ok(contradictory.gateResults.some(g => g.gateId === 'SIGNAL_SIGNIFICANCE_GATE' && !g.passed));
+
+    // Every supplied claim, including the feature set, participates in the claim hash.
+    const changedFeatureClaim = firewall.evaluateCandidate({ ...passingCandidate, features: ['different_feature'] });
+    assert.notEqual(changedFeatureClaim.candidateClaimsHash, evalPassed.candidateClaimsHash);
+    const changedMetricClaim = firewall.evaluateCandidate({
+      ...passingCandidate,
+      signalSignificanceSamples: [{ ...passingCandidate.signalSignificanceSamples[0], meanFutureReturnBps: 86 }],
+    });
+    assert.notEqual(changedMetricClaim.candidateClaimsHash, evalPassed.candidateClaimsHash);
+
+    assert.throws(() => firewall.evaluateCandidate({ ...passingCandidate, monteCarloRuinProbabilityPct: Number.NaN }), /finite/);
+    assert.throws(() => firewall.evaluateCandidate({ ...passingCandidate, monteCarloRuinProbabilityPct: -1 }), /between 0 and 100/);
+    assert.throws(() => firewall.evaluateCandidate({
+      ...passingCandidate,
+      signalSignificanceSamples: [{ ...passingCandidate.signalSignificanceSamples[0], pValue: Number.POSITIVE_INFINITY }],
+    }), /finite/);
+    const emptySampleClaim = firewall.evaluateCandidate({
+      ...passingCandidate,
+      signalSignificanceSamples: [{ ...passingCandidate.signalSignificanceSamples[0], sampleCount: 0 }],
+    });
+    assert.ok(emptySampleClaim.gateResults.some(g => g.gateId === 'SIGNAL_SIGNIFICANCE_GATE' && !g.passed));
   });
 
-  test('Sections 5 & 6: SolanaSensorTournament ranks by economic value and evaluates shadow counterfactuals', () => {
+  test('Sections 5 & 6: SolanaSensorTournament reports telemetry without inventing economic value', () => {
     const tournament = new SolanaSensorTournament();
 
     const event1 = 'evt_pump_mint_001';
@@ -288,6 +332,7 @@ describe('SYLPH FUSION — Solana-Only Integration Blueprint', () => {
       eventId: event1,
       sensorType: 'SHREDS',
       slot: 1000n,
+      receiverClockId: 'test-host-boot-1',
       firstSeenAtMs: 1000,
       correctlyDecodedAtMs: 1005,
       canonicalAtMs: 1020,
@@ -300,6 +345,7 @@ describe('SYLPH FUSION — Solana-Only Integration Blueprint', () => {
       eventId: event1,
       sensorType: 'GEYSER',
       slot: 1000n,
+      receiverClockId: 'test-host-boot-1',
       firstSeenAtMs: 1012,
       correctlyDecodedAtMs: 1014,
       canonicalAtMs: 1020,
@@ -312,6 +358,7 @@ describe('SYLPH FUSION — Solana-Only Integration Blueprint', () => {
       eventId: event1,
       sensorType: 'RPC_PRIMARY',
       slot: 1000n,
+      receiverClockId: 'test-host-boot-1',
       firstSeenAtMs: 1080,
       correctlyDecodedAtMs: 1085,
       canonicalAtMs: 1090,
@@ -326,13 +373,57 @@ describe('SYLPH FUSION — Solana-Only Integration Blueprint', () => {
     const shredsAgg = ranking.find(r => r.sensorType === 'SHREDS');
     assert.ok(shredsAgg !== undefined);
     assert.equal(shredsAgg.winsCount, 1);
-    assert.ok(shredsAgg.edgePreservedLamports > 0n);
+    assert.equal(shredsAgg.economicValueState, 'UNKNOWN');
+    assert.equal(shredsAgg.edgePreservedLamports, null);
+    assert.equal(shredsAgg.providerCostLamports, null);
+    assert.equal(shredsAgg.economicValueLamports, null);
+
+    // A repeated sensor/event pair cannot rewrite previously observed evidence.
+    assert.throws(() => tournament.recordReceipt({
+      eventId: event1,
+      sensorType: 'SHREDS',
+      slot: 1000n,
+      receiverClockId: 'test-host-boot-1',
+      firstSeenAtMs: 1000,
+      correctlyDecodedAtMs: 1006,
+      canonicalAtMs: 1020,
+      latencyMs: 5,
+      decodeSuccess: true,
+      isStale: false,
+    }), /Conflicting sensor receipt/);
+    assert.throws(() => tournament.recordReceipt({
+      eventId: event1,
+      sensorType: 'RPC_FALLBACK',
+      slot: 1001n,
+      receiverClockId: 'test-host-boot-1',
+      firstSeenAtMs: 1000,
+      correctlyDecodedAtMs: 1006,
+      canonicalAtMs: 1020,
+      latencyMs: 5,
+      decodeSuccess: true,
+      isStale: false,
+    }), /agree on slot/);
+    assert.throws(() => tournament.recordReceipt({
+      eventId: event1,
+      sensorType: 'RPC_FALLBACK',
+      slot: 1000n,
+      receiverClockId: 'different-host-boot',
+      firstSeenAtMs: 1000,
+      correctlyDecodedAtMs: 1006,
+      canonicalAtMs: 1020,
+      latencyMs: 5,
+      decodeSuccess: true,
+      isStale: false,
+    }), /share a receiver clock/);
 
     // Section 6: Shadow Universe counterfactual evaluation
     const shadow = tournament.evaluateShadowUniverse('GEYSER');
     assert.equal(shadow.hypotheticalPrimarySensor, 'GEYSER');
     assert.equal(shadow.eventsConsidered, 1);
-    assert.ok(shadow.reliabilityImpact === 'DEGRADED' || shadow.reliabilityImpact === 'NEUTRAL');
+    assert.equal(shadow.eventsWithComparableReceipts, 1);
+    assert.equal(shadow.pairedDecodeLatencyAdvantageMs, -9);
+    assert.equal(shadow.economicImpactLamports, null);
+    assert.equal(shadow.reliabilityImpact, 'UNKNOWN');
   });
 
   test('Sections 25–29: SolanaTransportTournament enforces Same Economic Generation and optimizes landing cost', () => {
@@ -653,6 +744,189 @@ describe('SYLPH FUSION — Solana-Only Integration Blueprint', () => {
     assert.ok(prewarmed !== null);
     assert.equal(prewarmed.isReadyForInstantBuild, true);
     assert.equal(prewarmed.associatedTokenAccount, 'ata_account_alpha');
+  });
+
+  test('Sections 36 & 44: SolanaMarketTwinResidualAuditor detects drift and BasisPointEngineeringLedger tracks upgrades', () => {
+    const auditor = new SolanaMarketTwinResidualAuditor();
+
+    // Normal execution with minor expected slippage
+    const obsNormal = auditor.auditExecution({
+      signature: 'sig_audit_normal_001',
+      mint: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
+      slot: 280_000_100n,
+      predicted: {
+        outputLamports: 1_000_000_000n,
+        feeLamports: 50_000n,
+        slippageBps: 20,
+        landingLatencyMs: 300,
+        computeUnits: 120_000,
+      },
+      actual: {
+        outputLamports: 998_000_000n,
+        feeLamports: 50_000n,
+        slippageBps: 25,
+        landingLatencyMs: 320,
+        computeUnits: 122_000,
+      },
+    });
+    assert.equal(obsNormal.hasUnexplainedResidual, false);
+    assert.equal(obsNormal.routeResidualBps, 5);
+
+    // Anomalous execution with severe price slippage drift (> 150 bps)
+    const obsAnomalous = auditor.auditExecution({
+      signature: 'sig_audit_anomaly_002',
+      mint: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
+      slot: 280_000_105n,
+      predicted: {
+        outputLamports: 1_000_000_000n,
+        feeLamports: 50_000n,
+        slippageBps: 20,
+        landingLatencyMs: 300,
+        computeUnits: 120_000,
+      },
+      actual: {
+        outputLamports: 975_000_000n, // 250 bps loss vs predicted
+        feeLamports: 50_000n,
+        slippageBps: 270,
+        landingLatencyMs: 400,
+        computeUnits: 125_000,
+      },
+    });
+    assert.equal(obsAnomalous.hasUnexplainedResidual, true);
+    assert.ok(obsAnomalous.anomalyReason?.includes('PRICE_RESIDUAL_ANOMALY'));
+    assert.equal(auditor.getActiveAnomalyCount(), 1);
+
+    // Section 44: Basis-Point Engineering Accounting
+    const engLedger = new BasisPointEngineeringLedger();
+    const upgrade = engLedger.registerUpgradeImpact({
+      upgradeName: 'Optimized Jito direct bundle routing and binary deserialization',
+      deployedAtSlot: 280_000_500n,
+      routingImprovementBps: 18,
+      slippageImprovementBps: 12,
+      failureReductionPct: 35.0,
+      cumulativeEconomicGainLamports: 5_000_000_000n,
+    });
+    assert.equal(upgrade.routingImprovementBps, 18);
+    assert.equal(upgrade.failureReductionPct, 35.0);
+    assert.equal(engLedger.getUpgrades().length, 1);
+  });
+
+  test('Section 45: SolanaAlphaFactory coordinates 17 Alpha species and arbitrates top verified opportunity', () => {
+    const protoReg = new ProtocolCompatibilityRegistry();
+    const raydiumLease = createProtocolLease({
+      protocolName: 'RAYDIUM_AMM',
+      programId: '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8',
+      programBinaryHash: 'raydium_certified_hash_v4',
+      idlVersion: '4.0.0',
+      feeModelVersion: '25bps_fixed',
+      swapMathVersion: 'cpmm_v1',
+      token2022Support: false,
+      testedVectorsCount: 150,
+      lastVerifiedSlot: 280_000_000n,
+      expirySlot: 290_000_000n,
+      isCertified: true,
+    });
+    protoReg.registerLease(raydiumLease);
+
+    const factory = new SolanaAlphaFactory(protoReg);
+
+    // Proposal 1: High return, reasonable risk (Momentum breakout on Raydium AMM)
+    factory.submitProposal({
+      strategySpecies: 'MOMENTUM',
+      strategyName: 'Raydium Volume Acceleration Hunter',
+      targetMint: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
+      targetPoolId: 'pool_ray_bonk_sol',
+      expectedExecutableReturnBps: 140, // +1.40%
+      confidenceScorePct: 85,
+      recommendedNotionalLamports: 1_000_000_000n, // 1 SOL
+      holdingHorizonSeconds: 120, // 2 minutes
+      expectedTailLossBps: 200,
+      requiredCapacityLamports: 10_000_000_000n,
+      correlationRiskDiscountPct: 5,
+    });
+
+    // Proposal 2: Ultra-high return but excessive tail loss and long holding time (Launch continuation)
+    factory.submitProposal({
+      strategySpecies: 'LAUNCH_INTELLIGENCE',
+      strategyName: 'Pump.fun High-Risk Curve Scalper',
+      targetMint: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
+      targetPoolId: 'pool_ray_bonk_sol',
+      expectedExecutableReturnBps: 300,
+      confidenceScorePct: 40, // low confidence
+      recommendedNotionalLamports: 1_000_000_000n,
+      holdingHorizonSeconds: 3600, // 1 hour holding
+      expectedTailLossBps: 1200, // heavy tail risk
+      requiredCapacityLamports: 5_000_000_000n,
+      correlationRiskDiscountPct: 10,
+    });
+
+    // Proposal 3: Unregistered target without Market IR (must fail gating)
+    factory.submitProposal({
+      strategySpecies: 'CROSS_DEX_ARBITRAGE',
+      strategyName: 'Ghost Route Scalp',
+      targetMint: 'UnregisteredMintAddress111111111111111111111',
+      targetPoolId: 'pool_unregistered',
+      expectedExecutableReturnBps: 500,
+      confidenceScorePct: 99,
+      recommendedNotionalLamports: 1_000_000_000n,
+      holdingHorizonSeconds: 10,
+      expectedTailLossBps: 50,
+      requiredCapacityLamports: 1_000_000_000n,
+      correlationRiskDiscountPct: 0,
+    });
+
+    const marketBonk = createSolanaMarketIR({
+      mint: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
+      tokenProgram: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+      token2022Extensions: [],
+      programId: '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8',
+      poolId: 'pool_ray_bonk_sol',
+      poolType: 'RAYDIUM_AMM',
+      baseAsset: 'BONK',
+      quoteAsset: 'SOL',
+      reserves: {
+        base: 1_000_000_000_000_000n,
+        quote: 500_000_000_000n,
+      },
+      liquidityLamports: 50_000_000_000n,
+      priceSol: 0.0000005,
+      priceUsd: 0.000075,
+      feeModel: { baseFeeBps: 25, creatorFeeBps: 0, dynamicFeeBps: 0 },
+      transferFees: { feeBps: 0, maxFeeLamports: 0n },
+      creatorFees: { creatorBps: 0, recipient: '11111111111111111111111111111111' },
+      mintAuthority: null,
+      freezeAuthority: null,
+      delegates: [],
+      creator: 'creator_bonk',
+      funder: 'funder_bonk',
+      holders: { count: 5000, top10ConcentrationBps: 2500 },
+      walletClusters: ['cluster_organic'],
+      slot: 280_000_050n,
+      blockHeight: 250_000_050n,
+      observedAt: new Date().toISOString(),
+      receivedAt: new Date().toISOString(),
+      availableAt: new Date().toISOString(),
+      knownAt: new Date().toISOString(),
+      source: 'GEYSER_SHRED_RECONCILED',
+      freshnessMs: 50,
+    });
+
+    const verdict = factory.arbitrateOpportunities({
+      marketIRs: [marketBonk],
+      currentSlot: 280_000_050n,
+      solPriceUsd: 150,
+    });
+
+    assert.ok(verdict.winningProposal !== null);
+    assert.equal(verdict.winningProposal.strategySpecies, 'MOMENTUM');
+    assert.equal(verdict.winningProposal.strategyName, 'Raydium Volume Acceleration Hunter');
+    assert.ok(verdict.answerSummary.includes('Raydium Volume Acceleration Hunter'));
+
+    // Check that ghost proposal was blocked by missing Market IR gate
+    const ghostRank = verdict.rankedProposals.find(r => r.proposal.strategySpecies === 'CROSS_DEX_ARBITRAGE');
+    assert.ok(ghostRank !== undefined);
+    assert.equal(ghostRank.passGating, false);
+    assert.ok(ghostRank.rejectionReason?.includes('MISSING_MARKET_IR'));
   });
 
 });

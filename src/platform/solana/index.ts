@@ -13,3 +13,5 @@ export * from './market-making-engine.js';
 export * from './capacity-curves.js';
 export * from './strategy-ecology.js';
 export * from './planner-voi.js';
+export * from './market-twin-residuals.js';
+export * from './alpha-factory.js';

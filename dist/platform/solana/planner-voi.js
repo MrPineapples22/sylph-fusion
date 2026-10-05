@@ -85,5 +85,8 @@ export class SolanaPlannerVoi {
     getPrewarmedState(mint) {
         return this.prewarmedTargets.get(mint) || null;
     }
+    getAllPrewarmed() {
+        return Object.freeze([...this.prewarmedTargets.values()]);
+    }
 }
 //# sourceMappingURL=planner-voi.js.map

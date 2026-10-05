@@ -20,6 +20,7 @@ const files = [
   'components/DynamicReserveGauge.jsx',
   'components/AdversarialCouncilDrawer.jsx',
   'components/ConservationProofsDrawer.jsx',
+  'components/SolanaArchitectureDrawer.jsx',
   'design-system/format.js',
   'design-system/primitives.jsx',
 ];
@@ -74,6 +75,9 @@ const {
 const {
   ConservationProofsDrawer,
 } = require(output('components/ConservationProofsDrawer.jsx'));
+const {
+  SolanaArchitectureDrawer,
+} = require(output('components/SolanaArchitectureDrawer.jsx'));
 
 after(() => rmSync(temp, {recursive: true, force: true}));
 
@@ -381,4 +385,30 @@ test('ConservationProofsDrawer: renders exact integer lot conservation and outco
   assert.match(populatedHtml, /Outcome Maturity Gate \(Section 44\)/);
   assert.match(populatedHtml, /LEARNING_READY: CERTIFIED/);
   assert.match(populatedHtml, /MAINNET_TRUTH/);
+});
+
+test('SolanaArchitectureDrawer: renders 10 protocol leases, sensor tournament, transport lanes, and fail-closed notice', () => {
+  const html = renderToStaticMarkup(
+    React.createElement(SolanaArchitectureDrawer, {
+      isOpen: true,
+      onClose: () => {},
+      protocolLeases: [
+        { protocolName: 'PUMP_FUN', programId: '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P', idlVersion: '1.0.0', feeModelVersion: '1.0.0', verificationStatus: 'COMPATIBLE', isCertified: true },
+        { protocolName: 'RAYDIUM_AMM', programId: '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8', idlVersion: '4.0.0', feeModelVersion: '25bps_fixed', verificationStatus: 'COMPATIBLE', isCertified: true },
+      ],
+      sensorLeaderboard: [
+        { sensorType: 'SHREDS', coverageRatePct: 99.4, meanLatencyMs: 4.2, falseDecodeRatePct: 0.1, winsCount: 452, economicValueState: 'UNKNOWN' },
+      ],
+      transportTelemetry: [
+        { lane: 'JITO_BUNDLE', landingRatePct: 94.5, meanLatencyMs: 120, meanTipLamports: '100000', instructionFailureRatePct: 0.5, netRealizedEdgeBps: 85 },
+      ],
+    })
+  );
+
+  assert.match(html, /SYLPH FUSION — SOLANA-ONLY ARCHITECTURE/);
+  assert.match(html, /FAIL-CLOSED/);
+  assert.match(html, /PUMP_FUN/);
+  assert.match(html, /RAYDIUM_AMM/);
+  assert.match(html, /10 \/ 10 Protocols Cryptographically Bound/);
+  assert.match(html, /UNKNOWN ≠ SAFE • PROFIT PREDICTED ≠ PROFIT REALIZED/);
 });
