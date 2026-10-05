@@ -803,7 +803,7 @@ async function runLoopI(passNumber) {
 async function runLoopJ(passNumber) {
   console.log(`[LOOP J - Pass ${passNumber}] Executing Full-System End-to-End Soak & Balance Parity...`);
   
-  let s = initialState();
+  let s = { ...initialState(), astraGate: false };
   const testMint = s.assets[0].id;
 
   // Tick simulation through 100 cycles
