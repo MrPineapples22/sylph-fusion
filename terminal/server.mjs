@@ -56,14 +56,6 @@ import {
 import {
   EconomicAuthorityStore,
 } from '../dist/intelligence/capital/economic-authority-store.js';
-import {
-  ConservationProofAuthority,
-  OutcomeMaturityGate,
-} from '../dist/platform/pipeline/conservation-proofs.js';
-import {
-  AdversarialEvidenceCouncil,
-  ResourceAdmissionController,
-} from '../dist/platform/pipeline/adversarial-council.js';
 
 process.on('uncaughtException', (err) => {
   console.error('Terminal stopped after an uncaught exception:', err?.stack || err?.message || err);
@@ -95,74 +87,10 @@ const economicAuthorityStore = new EconomicAuthorityStore(
     equityReservePctBps: 2000, // 20%
   }
 );
-const conservationProofAuthority = new ConservationProofAuthority();
-const outcomeMaturityGate = new OutcomeMaturityGate();
-const adversarialEvidenceCouncil = new AdversarialEvidenceCouncil();
-const resourceAdmissionController = new ResourceAdmissionController();
-
-// Pre-seed initial dialectic verdict
-const initialProverEvidence = {
-  opportunityId: 'opp_dialectic_001',
-  tokenMint: '9dSMwFfPezQ8WPcW1uZV7ns4rcviEj2LssSAg75WBLXd',
-  observedSlot: 280_000_100n,
-  quotePriceLamports: 1_500_000n,
-  liquidityLamports: 50_000_000_000n, // 50 SOL
-  authenticityScore: 94,
-  temporalValidityVerified: true,
-  evidenceHash: '0000000000000000000000000000000000000000000000000000000000000001',
-};
-
-const initialSkepticChecks = [
-  { checkName: 'CREATOR_CONCENTRATION', passed: true, severity: 'FATAL_VETO' },
-  { checkName: 'TRANSFER_HOOK_WHITELIST', passed: true, severity: 'FATAL_VETO' },
-  { checkName: 'PRICE_DRIFT_TOLERANCE', passed: true, severity: 'HIGH_UNCERTAINTY' },
-  { checkName: 'DEV_DUMP_PROBE', passed: true, severity: 'FATAL_VETO' },
-  { checkName: 'LIQUIDITY_DEPTH_GATE', passed: true, severity: 'FATAL_VETO' },
-];
-
-const initialCouncilVerdict = adversarialEvidenceCouncil.evaluateDialectic(
-  'fact_dialectic_001',
-  initialProverEvidence,
-  initialSkepticChecks,
-  new Date().toISOString()
-);
-
-const initialConservationProof = conservationProofAuthority.certifyConservation(
-  'lot_canonical_001',
-  '9dSMwFfPezQ8WPcW1uZV7ns4rcviEj2LssSAg75WBLXd',
-  10_000_000n,
-  8_000_000n,
-  2_000_000n,
-  1_000_000_000n,
-  800_000_000n,
-  200_000_000n,
-  1_200_000_000n,
-  15_000_000n,
-  385_000_000n,
-  new Date().toISOString()
-);
-
-const initialOutcomeMaturity = outcomeMaturityGate.evaluateMaturity(
-  {
-    tradeId: 'trd_canonical_001',
-    economicFactId: 'fact_dialectic_001',
-    accountMode: 'paper',
-    settledSlot: 280_000_000n,
-    currentSlot: 280_000_650n,
-    settledAtMs: Date.now() - 180_000,
-    currentAtMs: Date.now(),
-    minMaturityDelayMs: 120_000,
-    minMaturitySlotDelta: 500n,
-    mfePct: 24.5,
-    maePct: -1.2,
-    realizedNetPnLLamports: 385_000_000n,
-  },
-  new Date().toISOString()
-);
 
 const root=fileURLToPath(new URL('./dist/',import.meta.url));
 const liveOrigin='http://127.0.0.1:8788';
-const livePaths=new Set(['/api/market','/api/search','/api/risk','/api/intelligence','/api/intelligence/learning','/api/system/trust','/api/research/audit','/api/system/health','/api/capital/authority','/api/system/omega','/api/system/strip','/api/positions','/api/opportunity/best','/api/gateway/snapshot','/api/command','/api/solaris','/api/flight-recorder/attempts','/api/divergence/certificates','/api/capsule/status','/api/edge/breakdown','/api/capital/reserve','/api/council/verdicts','/api/council/capacity','/api/conservation/proofs','/api/conservation/maturity']);
+const livePaths=new Set(['/api/market','/api/search','/api/risk','/api/intelligence','/api/intelligence/learning','/api/system/trust','/api/research/audit','/api/system/health','/api/capital/authority','/api/system/omega','/api/system/strip','/api/positions','/api/opportunity/best','/api/gateway/snapshot','/api/command','/api/solaris','/api/flight-recorder/attempts','/api/divergence/certificates','/api/capsule/status','/api/edge/breakdown','/api/capital/reserve']);
 const emergencyStopStore = EmergencyStopStore.atProjectDataDirectory(project);
 try {
   if (typeof process.loadEnvFile === 'function') {
@@ -1161,59 +1089,34 @@ async function handleRequest(req,res){
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({
       ok: true,
-      latestVerdict: {
-        ...initialCouncilVerdict,
-        prover: initialProverEvidence,
-        skepticChecks: initialSkepticChecks,
-      },
-      verdicts: [{
-        ...initialCouncilVerdict,
-        prover: initialProverEvidence,
-        skepticChecks: initialSkepticChecks,
-      }],
-    }, (_, v) => typeof v === 'bigint' ? v.toString() : v));
+      evidenceStatus: 'UNKNOWN',
+      reasonCode: 'COUNCIL_RUNTIME_NOT_CONNECTED',
+      latestVerdict: null,
+      verdicts: [],
+    }));
     return;
   }
 
   if (req.method === 'GET' && reqUrl.pathname === '/api/council/capacity') {
-    const capacity = {
-      rpcCapacityAvailablePct: 82,
-      archiveQuorumAvailable: true,
-      streamFeedHealthy: true,
-      verificationQueueDepth: 2,
-      activeUnresolvedLiabilities: 1,
-      memoryPressurePct: 38,
-    };
-    const permit = resourceAdmissionController.admitWorkload(
-      'fact_dialectic_001',
-      capacity,
-      new Date().toISOString()
-    );
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({
       ok: true,
-      ...capacity,
-      activePermit: permit,
-    }, (_, v) => typeof v === 'bigint' ? v.toString() : v));
+      evidenceStatus: 'UNKNOWN',
+      reasonCode: 'RESOURCE_TELEMETRY_NOT_CONNECTED',
+      rpcCapacityAvailablePct: null,
+      archiveQuorumAvailable: null,
+      streamFeedHealthy: null,
+      verificationQueueDepth: null,
+      activeUnresolvedLiabilities: null,
+      memoryPressurePct: null,
+      activePermit: null,
+    }));
     return;
   }
 
   if (req.method === 'POST' && reqUrl.pathname === '/api/council/evaluate') {
-    const verdict = adversarialEvidenceCouncil.evaluateDialectic(
-      `fact_dialectic_${Date.now()}`,
-      initialProverEvidence,
-      initialSkepticChecks,
-      new Date().toISOString()
-    );
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({
-      ok: true,
-      verdict: {
-        ...verdict,
-        prover: initialProverEvidence,
-        skepticChecks: initialSkepticChecks,
-      }
-    }, (_, v) => typeof v === 'bigint' ? v.toString() : v));
+    res.writeHead(503, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: false, error: 'COUNCIL_RUNTIME_NOT_CONNECTED' }));
     return;
   }
 
@@ -1221,9 +1124,11 @@ async function handleRequest(req,res){
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({
       ok: true,
-      latestProof: initialConservationProof,
-      proofs: [initialConservationProof],
-    }, (_, v) => typeof v === 'bigint' ? v.toString() : v));
+      evidenceStatus: 'UNKNOWN',
+      reasonCode: 'CONSERVATION_RUNTIME_NOT_CONNECTED',
+      latestProof: null,
+      proofs: [],
+    }));
     return;
   }
 
@@ -1231,9 +1136,11 @@ async function handleRequest(req,res){
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({
       ok: true,
-      latestCertificate: initialOutcomeMaturity,
-      certificates: [initialOutcomeMaturity],
-    }, (_, v) => typeof v === 'bigint' ? v.toString() : v));
+      evidenceStatus: 'UNKNOWN',
+      reasonCode: 'OUTCOME_MATURITY_RUNTIME_NOT_CONNECTED',
+      latestCertificate: null,
+      certificates: [],
+    }));
     return;
   }
 

@@ -20,7 +20,7 @@ import { formatMoney, formatNumber } from '../design-system/format.js';
 export function ConservationProofsDrawer({
   isOpen,
   onClose,
-  selectedLotId = null,
+  selectedMint = null,
   initialData = null,
   solPriceUsd = 150,
 }) {
@@ -33,9 +33,10 @@ export function ConservationProofsDrawer({
     if (typeof fetch === 'undefined') return;
     setLoading(true);
     try {
+      const mintQuery = selectedMint ? `?mint=${encodeURIComponent(selectedMint)}` : '';
       const [consRes, matRes] = await Promise.all([
-        fetch('/api/conservation/proofs'),
-        fetch('/api/conservation/maturity'),
+        fetch(`/api/conservation/proofs${mintQuery}`),
+        fetch(`/api/conservation/maturity${mintQuery}`),
       ]);
       if (consRes.ok) {
         const json = await consRes.json();
@@ -60,7 +61,7 @@ export function ConservationProofsDrawer({
       const interval = setInterval(fetchProofs, 5000);
       return () => clearInterval(interval);
     }
-  }, [isOpen, selectedLotId]);
+  }, [isOpen, selectedMint]);
 
   if (!isOpen) return null;
 
@@ -79,8 +80,15 @@ export function ConservationProofsDrawer({
   };
 
   const isConserved = proof?.isConserved === true;
+  const conservationFailed = proof?.isConserved === false;
   const isMature = maturity?.isMature === true;
   const learningReady = maturity?.learningReady === true;
+  const conservationColor = proof == null ? '#98aabd' : isConserved ? '#14F195' : '#FF3B69';
+  const maturityColor = !maturity ? '#98aabd' : learningReady ? '#14F195' : '#F59E0B';
+  const maturityStatus = !maturity ? 'MATURITY UNKNOWN'
+    : learningReady ? 'LEARNING_READY: CERTIFIED'
+    : isMature ? 'MATURE · LEARNING NOT READY'
+    : 'MATURITY DELAY PENDING';
 
   return (
     <div className="sb-drawer-overlay" onClick={onClose}>
@@ -127,7 +135,7 @@ export function ConservationProofsDrawer({
           <div
             className="sb-glass-card"
             style={{
-              borderLeft: `4px solid ${isConserved ? '#14F195' : '#FF3B69'}`,
+              borderLeft: `4px solid ${conservationColor}`,
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
@@ -140,13 +148,13 @@ export function ConservationProofsDrawer({
                 MATHEMATICAL CONSERVATION STATE
               </span>
               <h3 style={{ margin: '2px 0', fontSize: '1.25rem', color: '#f0f4f8', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ color: isConserved ? '#14F195' : '#FF3B69', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  {isConserved ? <CheckCircle2 size={20} /> : <AlertTriangle size={20} />}
-                  {isConserved ? 'EXACT INTEGER CONSERVATION SEALED' : 'CONSERVATION VIOLATION'}
+                <span style={{ color: conservationColor, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {isConserved ? <CheckCircle2 size={20} /> : conservationFailed ? <AlertTriangle size={20} /> : <ShieldAlert size={20} />}
+                  {isConserved ? 'EXACT INTEGER CONSERVATION SEALED' : conservationFailed ? 'CONSERVATION VIOLATION' : 'CONSERVATION UNKNOWN'}
                 </span>
               </h3>
               <p style={{ margin: 0, fontSize: '0.75rem', color: '#98aabd' }}>
-                Lot ID: {proof?.lotId || selectedLotId || 'lot_canonical_001'} · Token Mint: {proof?.tokenMint ? `${proof.tokenMint.slice(0, 16)}…` : 'Unknown'}
+                Lot ID: {proof?.lotId || 'Unknown'} · Token context: {proof?.tokenMint || selectedMint || 'Unknown'}
               </p>
             </div>
 
@@ -358,12 +366,12 @@ export function ConservationProofsDrawer({
                   padding: '4px 8px',
                   borderRadius: '4px',
                   fontWeight: 700,
-                  background: isMature ? 'rgba(20, 241, 149, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-                  color: isMature ? '#14F195' : '#F59E0B',
+                  background: !maturity ? 'rgba(152, 170, 189, 0.15)' : learningReady ? 'rgba(20, 241, 149, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                  color: maturityColor,
                   border: '1px solid currentColor',
                 }}
               >
-                {learningReady ? 'LEARNING_READY: CERTIFIED' : 'MATURITY DELAY PENDING'}
+                {maturityStatus}
               </span>
             </header>
 
@@ -406,20 +414,20 @@ export function ConservationProofsDrawer({
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '0.75rem' }}>
                   <span className="text-muted">Dataset Tag:</span>
                   <b className="font-mono" style={{ color: '#9bcbff' }}>
-                    {maturity.labelDatasetTag || 'RESEARCH_COUNTERFACTUAL'}
+                    {maturity.labelDatasetTag || 'UNKNOWN'}
                   </b>
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '0.75rem' }}>
                   <span className="text-muted">Trade ID:</span>
                   <b className="font-mono">
-                    {maturity.tradeId || 'trd_canonical_001'}
+                    {maturity.tradeId || 'UNKNOWN'}
                   </b>
                 </div>
               </div>
             ) : (
               <div className="op-empty" style={{ padding: '1rem', fontSize: '0.75rem' }}>
-                No outcome maturity certificate registered. Post-trade observation window is awaiting settled fills.
+                No outcome maturity evidence is available from the connected runtime.
               </div>
             )}
           </div>

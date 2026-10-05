@@ -409,6 +409,6 @@ export default function OperatorTerminal(){
   <RuntimeDivergenceInspector isOpen={divergenceOpen} onClose={()=>setDivergenceOpen(false)} />
   <HotPathProofCapsuleMonitor isOpen={capsuleOpen} onClose={()=>setCapsuleOpen(false)} selectedMint={ui.investigation} />
   <AdversarialCouncilDrawer isOpen={councilOpen} onClose={()=>setCouncilOpen(false)} selectedFactId={ui.investigation} />
-  <ConservationProofsDrawer isOpen={conservationOpen} onClose={()=>setConservationOpen(false)} selectedLotId={ui.investigation} />
+  <ConservationProofsDrawer isOpen={conservationOpen} onClose={()=>setConservationOpen(false)} selectedMint={ui.investigation} />
  </div>;
 }

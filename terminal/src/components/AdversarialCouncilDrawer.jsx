@@ -81,6 +81,9 @@ export function AdversarialCouncilDrawer({
     : status === 'INSUFFICIENT' ? '#F59E0B'
     : status === 'DEGRADED' ? '#EAB308'
     : '#98aabd';
+  const decisionLabel = status === 'UNKNOWN'
+    ? 'EVALUATION UNAVAILABLE'
+    : isApproved ? 'COUNCIL SUFFICIENT' : 'NOT SUFFICIENT';
 
   return (
     <div className="sb-drawer-overlay" onClick={onClose}>
@@ -141,15 +144,15 @@ export function AdversarialCouncilDrawer({
               </span>
               <h3 style={{ margin: '2px 0', fontSize: '1.25rem', color: '#f0f4f8', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ color: statusColor, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  {isApproved ? <CheckCircle2 size={20} /> : <AlertTriangle size={20} />}
+                  {isApproved ? <CheckCircle2 size={20} /> : status === 'UNKNOWN' ? <ShieldAlert size={20} /> : <AlertTriangle size={20} />}
                   {status}
                 </span>
                 <span style={{ fontSize: '0.85rem', color: '#becad6', fontWeight: 400 }}>
-                  ({isApproved ? 'RISK ADMITTED' : 'EXECUTION VETOED'})
+                  ({decisionLabel})
                 </span>
               </h3>
               <p style={{ margin: 0, fontSize: '0.75rem', color: '#98aabd' }}>
-                Economic Fact ID: {verdict?.economicFactId || selectedFactId || 'fact_canonical_unselected'}
+                Economic Fact ID: {verdict?.economicFactId || selectedFactId || 'Unknown'}
               </p>
             </div>
 
@@ -168,7 +171,7 @@ export function AdversarialCouncilDrawer({
                 </button>
               </div>
               <div style={{ marginTop: '4px', fontSize: '0.7rem', color: '#98aabd' }}>
-                Evaluated: {verdict?.evaluatedAt ? new Date(verdict.evaluatedAt).toLocaleTimeString() : 'Pending'}
+                Evaluated: {verdict?.evaluatedAt ? new Date(verdict.evaluatedAt).toLocaleTimeString() : 'Unavailable'}
               </div>
             </div>
           </div>
@@ -323,43 +326,43 @@ export function AdversarialCouncilDrawer({
             <div className="sb-capacity-grid">
               <div className="sb-capacity-card">
                 <span className="text-muted" style={{ fontSize: '0.7rem' }}>RPC Capacity</span>
-                <b className="font-mono" style={{ color: (capacity?.rpcCapacityAvailablePct ?? 80) >= 30 ? '#14F195' : '#FF3B69', fontSize: '1rem' }}>
-                  {capacity?.rpcCapacityAvailablePct ?? 82}%
+                <b className="font-mono" style={{ color: capacity?.rpcCapacityAvailablePct == null ? '#98aabd' : capacity.rpcCapacityAvailablePct >= 30 ? '#14F195' : '#FF3B69', fontSize: '1rem' }}>
+                  {capacity?.rpcCapacityAvailablePct == null ? 'UNKNOWN' : `${capacity.rpcCapacityAvailablePct}%`}
                 </b>
               </div>
 
               <div className="sb-capacity-card">
                 <span className="text-muted" style={{ fontSize: '0.7rem' }}>Stream Feed</span>
-                <b className="font-mono" style={{ color: capacity?.streamFeedHealthy !== false ? '#14F195' : '#FF3B69', fontSize: '0.85rem' }}>
-                  {capacity?.streamFeedHealthy !== false ? 'HEALTHY' : 'UNHEALTHY'}
+                <b className="font-mono" style={{ color: capacity?.streamFeedHealthy == null ? '#98aabd' : capacity.streamFeedHealthy ? '#14F195' : '#FF3B69', fontSize: '0.85rem' }}>
+                  {capacity?.streamFeedHealthy == null ? 'UNKNOWN' : capacity.streamFeedHealthy ? 'HEALTHY' : 'UNHEALTHY'}
                 </b>
               </div>
 
               <div className="sb-capacity-card">
                 <span className="text-muted" style={{ fontSize: '0.7rem' }}>Archive Quorum</span>
-                <b className="font-mono" style={{ color: capacity?.archiveQuorumAvailable !== false ? '#14F195' : '#FF3B69', fontSize: '0.85rem' }}>
-                  {capacity?.archiveQuorumAvailable !== false ? 'AVAILABLE' : 'OFFLINE'}
+                <b className="font-mono" style={{ color: capacity?.archiveQuorumAvailable == null ? '#98aabd' : capacity.archiveQuorumAvailable ? '#14F195' : '#FF3B69', fontSize: '0.85rem' }}>
+                  {capacity?.archiveQuorumAvailable == null ? 'UNKNOWN' : capacity.archiveQuorumAvailable ? 'AVAILABLE' : 'OFFLINE'}
                 </b>
               </div>
 
               <div className="sb-capacity-card">
                 <span className="text-muted" style={{ fontSize: '0.7rem' }}>Verification Queue</span>
                 <b className="font-mono" style={{ fontSize: '1rem' }}>
-                  {capacity?.verificationQueueDepth ?? 2} <span style={{ fontSize: '0.7rem', color: '#98aabd' }}>/ 20</span>
+                  {capacity?.verificationQueueDepth ?? 'UNKNOWN'} <span style={{ fontSize: '0.7rem', color: '#98aabd' }}> / 20</span>
                 </b>
               </div>
 
               <div className="sb-capacity-card">
                 <span className="text-muted" style={{ fontSize: '0.7rem' }}>Active Liabilities</span>
                 <b className="font-mono" style={{ fontSize: '1rem' }}>
-                  {capacity?.activeUnresolvedLiabilities ?? 1} <span style={{ fontSize: '0.7rem', color: '#98aabd' }}>/ 5</span>
+                  {capacity?.activeUnresolvedLiabilities ?? 'UNKNOWN'} <span style={{ fontSize: '0.7rem', color: '#98aabd' }}> / 5</span>
                 </b>
               </div>
 
               <div className="sb-capacity-card">
                 <span className="text-muted" style={{ fontSize: '0.7rem' }}>Memory Pressure</span>
-                <b className="font-mono" style={{ color: (capacity?.memoryPressurePct ?? 40) < 80 ? '#14F195' : '#FF3B69', fontSize: '1rem' }}>
-                  {capacity?.memoryPressurePct ?? 38}%
+                <b className="font-mono" style={{ color: capacity?.memoryPressurePct == null ? '#98aabd' : capacity.memoryPressurePct < 80 ? '#14F195' : '#FF3B69', fontSize: '1rem' }}>
+                  {capacity?.memoryPressurePct == null ? 'UNKNOWN' : `${capacity.memoryPressurePct}%`}
                 </b>
               </div>
             </div>

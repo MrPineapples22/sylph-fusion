@@ -268,6 +268,8 @@ test('AdversarialCouncilDrawer: renders Prover vs Skeptic dialectic cards and re
 
   assert.match(emptyHtml, /Adversarial Evidence Council/);
   assert.match(emptyHtml, /UNKNOWN/);
+  assert.match(emptyHtml, /EVALUATION UNAVAILABLE/);
+  assert.match(emptyHtml, /RPC Capacity[\s\S]*?UNKNOWN/);
   assert.match(emptyHtml, /Section 30 Epistemic Rules/);
 
   const populatedHtml = renderToStaticMarkup(
@@ -311,7 +313,7 @@ test('AdversarialCouncilDrawer: renders Prover vs Skeptic dialectic cards and re
 
   assert.match(populatedHtml, /DIALECTIC COUNCIL VERDICT/);
   assert.match(populatedHtml, /SUFFICIENT/);
-  assert.match(populatedHtml, /RISK ADMITTED/);
+  assert.match(populatedHtml, /COUNCIL SUFFICIENT/);
   assert.match(populatedHtml, /Prover Affirmative Evidence/);
   assert.match(populatedHtml, /TEMPORAL VALID/);
   assert.match(populatedHtml, /Skeptic Falsification Probes/);
@@ -330,14 +332,16 @@ test('ConservationProofsDrawer: renders exact integer lot conservation and outco
   );
 
   assert.match(emptyHtml, /Conservation Proofs &amp; Outcome Gate/);
-  assert.match(emptyHtml, /CONSERVATION VIOLATION/);
+  assert.match(emptyHtml, /CONSERVATION UNKNOWN/);
+  assert.match(emptyHtml, /MATURITY UNKNOWN/);
+  assert.doesNotMatch(emptyHtml, /lot_canonical_001|trd_canonical_001/);
   assert.match(emptyHtml, /Section 43 &amp; 44 Invariants/);
 
   const populatedHtml = renderToStaticMarkup(
     React.createElement(ConservationProofsDrawer, {
       isOpen: true,
       onClose: () => {},
-      selectedLotId: 'lot-sol-404',
+      selectedMint: 'So11111111111111111111111111111111111111112',
       solPriceUsd: 150,
       initialData: {
         latestProof: {
@@ -378,4 +382,3 @@ test('ConservationProofsDrawer: renders exact integer lot conservation and outco
   assert.match(populatedHtml, /LEARNING_READY: CERTIFIED/);
   assert.match(populatedHtml, /MAINNET_TRUTH/);
 });
-
