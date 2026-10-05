@@ -2,9 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { MasterIntelligenceEngine } from '../../dist/intelligence/master-orchestrator.js';
+import { certifySyntheticRuntimeForTestOnly } from './helpers/synthetic-system-integrity.mjs';
 
 test('MasterIntelligenceEngine end-to-end: processes synthetic launch, verifies all phases, produces Aether Flux viewmodel', async () => {
   const engine = new MasterIntelligenceEngine();
+  certifySyntheticRuntimeForTestOnly(engine);
 
   // Verify IntegrationKernel registered all major components
   const scorecard = engine.kernel.generateIntegrationScorecard();

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MasterIntelligenceEngine } from '../../dist/intelligence/master-orchestrator.js';
+import { certifySyntheticRuntimeForTestOnly } from './helpers/synthetic-system-integrity.mjs';
 
 const liveError = /^LIVE_EXECUTION_BLOCKED: CertifiedLiveExecutionCoordinator required for live capital mutations$/;
 const mint = 'So11111111111111111111111111111111111111112';
@@ -95,6 +96,7 @@ for (const [mode, runtimeMode] of [['live', 'paper'], ['paper', 'live'], ['live'
   test(`live entry denies before reservations and commit artifacts: ${label}`, async t => {
     setModes(t, mode, runtimeMode);
     const engine = new MasterIntelligenceEngine();
+    certifySyntheticRuntimeForTestOnly(engine);
     const before = capture(engine);
     const assertUntouched = watchMutations(t, engine);
     await assert.rejects(engine.processEvent(event, context), { message: liveError });
@@ -105,6 +107,7 @@ for (const [mode, runtimeMode] of [['live', 'paper'], ['paper', 'live'], ['live'
   test(`live routed exit denies before synthetic settlement: ${label}`, async t => {
     setModes(t, mode, runtimeMode);
     const engine = new MasterIntelligenceEngine();
+    certifySyntheticRuntimeForTestOnly(engine);
     seedPosition(engine);
     forcePolicy(t, engine, 'EXIT');
     const before = capture(engine);
@@ -117,6 +120,7 @@ for (const [mode, runtimeMode] of [['live', 'paper'], ['paper', 'live'], ['live'
   test(`live direct exit denies, including a missing position: ${label}`, t => {
     setModes(t, mode, runtimeMode);
     const engine = new MasterIntelligenceEngine();
+    certifySyntheticRuntimeForTestOnly(engine);
     seedPosition(engine);
     const before = capture(engine);
     const assertUntouched = watchMutations(t, engine);
@@ -129,6 +133,7 @@ for (const [mode, runtimeMode] of [['live', 'paper'], ['paper', 'live'], ['live'
   test(`live observation remains available without capital mutation: ${label}`, async t => {
     setModes(t, mode, runtimeMode);
     const engine = new MasterIntelligenceEngine();
+    certifySyntheticRuntimeForTestOnly(engine);
     forcePolicy(t, engine, 'OBSERVE');
     const before = capture(engine);
     const assertUntouched = watchMutations(t, engine);
@@ -144,6 +149,7 @@ for (const [mode, runtimeMode] of [['paper', 'paper'], [undefined, undefined]]) 
   test(`paper entry artifacts preserved: MODE=${mode}, SYLPH_RUNTIME_MODE=${runtimeMode}`, async t => {
     setModes(t, mode, runtimeMode);
     const engine = new MasterIntelligenceEngine();
+    certifySyntheticRuntimeForTestOnly(engine);
     // Inspect the paper request without invoking the signer or simulating a chain landing.
     const signatureRequest = t.mock.method(engine.vaultSigner, 'processSignatureRequest', () => ({
       success: false, reason: 'TEST_SIGNER_UNAVAILABLE',
@@ -162,6 +168,7 @@ for (const [mode, runtimeMode] of [['paper', 'paper'], [undefined, undefined]]) 
   test(`paper exit behavior preserved: MODE=${mode}, SYLPH_RUNTIME_MODE=${runtimeMode}`, async t => {
     setModes(t, mode, runtimeMode);
     const engine = new MasterIntelligenceEngine();
+    certifySyntheticRuntimeForTestOnly(engine);
     seedPosition(engine);
     forcePolicy(t, engine, 'EXIT');
     const result = await engine.processEvent(event, context);
@@ -175,6 +182,7 @@ for (const [mode, runtimeMode] of [['paper', 'paper'], [undefined, undefined]]) 
 test('direct exit checks mode at invocation, and paper success is preserved', t => {
   setModes(t, 'paper', 'paper');
   const engine = new MasterIntelligenceEngine();
+  certifySyntheticRuntimeForTestOnly(engine);
   seedPosition(engine);
   const before = capture(engine);
   process.env.SYLPH_RUNTIME_MODE = 'live';

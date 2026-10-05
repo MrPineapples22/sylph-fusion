@@ -1,9 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { MasterIntelligenceEngine } from '../../dist/intelligence/master-orchestrator.js';
+import { certifySyntheticRuntimeForTestOnly } from './helpers/synthetic-system-integrity.mjs';
 
 test('Part 81 - Master Architecture End-to-End Scenario Loop with Unbroken Provenance', async () => {
   const master = new MasterIntelligenceEngine();
+  certifySyntheticRuntimeForTestOnly(master);
   const mint = 'SoL55555555555555555555555555555555555555556';
 
   const canonicalEvent = {

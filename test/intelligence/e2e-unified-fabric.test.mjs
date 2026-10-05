@@ -2,10 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { MasterIntelligenceEngine } from '../../dist/intelligence/master-orchestrator.js';
+import { certifySyntheticRuntimeForTestOnly } from './helpers/synthetic-system-integrity.mjs';
 
 for (const forcePositiveEstimate of [false, true])
 test(`Unified Fabric E2E: paper candidate preserves missing evidence (optimistic estimate=${forcePositiveEstimate})`, async t => {
   const engine = new MasterIntelligenceEngine();
+  certifySyntheticRuntimeForTestOnly(engine);
   for (const key of ['MODE', 'SYLPH_RUNTIME_MODE']) {
     const previous = process.env[key];
     process.env[key] = 'paper';

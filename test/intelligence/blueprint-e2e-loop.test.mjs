@@ -2,9 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { MasterIntelligenceEngine } from '../../dist/intelligence/master-orchestrator.js';
+import { certifySyntheticRuntimeForTestOnly } from './helpers/synthetic-system-integrity.mjs';
 
 test('Part XCVI - SOL-SYLPH End-to-End Unified Intelligence Blueprint Loop', async () => {
   const master = new MasterIntelligenceEngine();
+  certifySyntheticRuntimeForTestOnly(master);
 
   // 1. New launch detected & canonical event created
   const now = Date.now();

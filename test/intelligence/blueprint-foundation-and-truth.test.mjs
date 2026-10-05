@@ -155,6 +155,11 @@ test('Blueprint Phase 1 - Source Health Engine & Independent Provider Deduplicat
 });
 
 test('Blueprint Phase 1 - System Integrity Engine & Token vs System Separation', () => {
+  const uninitializedIntegrity = new SystemIntegrityEngine().getLastCertificate();
+  assert.equal(uninitializedIntegrity.status, 'INVALID');
+  assert.equal(uninitializedIntegrity.operationalMode, 'SAFE_MODE');
+  assert.equal(uninitializedIntegrity.executionPermitted, false);
+
   const integrityEngine = new SystemIntegrityEngine();
 
   // Baseline healthy checks
