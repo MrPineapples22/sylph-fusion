@@ -12,7 +12,7 @@ import { CapitalTimeLedger } from '../../dist/intelligence/economics/capital-tim
 import { AntiPortfolioLedger } from '../../dist/intelligence/forensics/anti-portfolio-ledger.js';
 import { FilterMarginalValueEngine } from '../../dist/intelligence/forensics/filter-marginal-value.js';
 
-test('Planner-X: Evaluates 14 counterfactual stress worlds and belief-state CVaR', () => {
+test('Planner-X: Evaluates 14 counterfactual stress worlds without claiming probability-based CVaR', () => {
   const engine = new PlannerXResearchEngine();
 
   const report = engine.evaluateCandidate({
@@ -26,9 +26,10 @@ test('Planner-X: Evaluates 14 counterfactual stress worlds and belief-state CVaR
 
   assert.equal(report.evaluatedWorldsCount, 14);
   assert.ok(report.safeContinuationPct >= 0.70);
-  assert.ok(report.beliefStateCvarBps < 0);
+  assert.equal(report.tailScenarioCount, 2);
+  assert.ok(report.worstTailScenarioMeanReturnBps < 0);
   assert.ok(report.minimumLiquidationValueLamports >= 0n);
-  assert.ok(report.advisoryEvidenceRoot.startsWith('ev_planner_'));
+  assert.ok(report.advisoryReportId.startsWith('planner_'));
 
   // Test fragile candidate in illiquid pool
   const fragileReport = engine.evaluateCandidate({
@@ -42,6 +43,42 @@ test('Planner-X: Evaluates 14 counterfactual stress worlds and belief-state CVaR
 
   assert.equal(fragileReport.isSafeToPropose, false);
   assert.ok(fragileReport.advisoryVetoReasons.some((r) => r.includes('LOW_SAFE_CONTINUATION')));
+});
+
+test('Planner-X: Preserves exact lamport comparisons beyond JavaScript safe integers', () => {
+  const engine = new PlannerXResearchEngine();
+  const report = engine.evaluateCandidate({
+    candidateId: 'large-lamport-boundary',
+    tokenMint: 'TokenMint11111111111111111111111111111111111',
+    proposedNotionalLamports: 10_000_000_000_000_001n,
+    // After a 10% shock this is exactly 5x notional, so strict `>` is false.
+    poolLiquidityLamports: 55_555_555_555_555_562n,
+    expectedReturnBps: 100,
+    targetRegime: 'TEST',
+  });
+
+  assert.equal(report.worldOutcomes[0].worldType, 'LIQUIDITY_DROP_10');
+  assert.equal(report.worldOutcomes[0].survivable, false);
+});
+
+test('Planner-X: Rejects malformed candidate context instead of generating a report', () => {
+  const engine = new PlannerXResearchEngine();
+  assert.throws(() => engine.evaluateCandidate({
+    candidateId: 'invalid-notional',
+    tokenMint: 'TokenMint11111111111111111111111111111111111',
+    proposedNotionalLamports: 0n,
+    poolLiquidityLamports: 1_000_000_000n,
+    expectedReturnBps: 100,
+    targetRegime: 'TEST',
+  }), /PLANNER_X_INVALID_CANDIDATE_CONTEXT/);
+  assert.throws(() => engine.evaluateCandidate({
+    candidateId: 'invalid-return',
+    tokenMint: 'TokenMint11111111111111111111111111111111111',
+    proposedNotionalLamports: 1_000_000_000n,
+    poolLiquidityLamports: 1_000_000_000n,
+    expectedReturnBps: Number.NaN,
+    targetRegime: 'TEST',
+  }), /PLANNER_X_INVALID_CANDIDATE_CONTEXT/);
 });
 
 test('Capital-Time Economics: Computes lamport-seconds and capital velocity metrics', () => {

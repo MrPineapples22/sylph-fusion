@@ -1,5 +1,5 @@
 # SYLPH FUSION — AUTHORITY MATRIX (MECHANICALLY GENERATED)
-Generated At: 2026-10-05T02:07:23.554Z
+Generated At: 2026-10-05T02:12:20.821Z
 
 ## Authority Plane Separation (Ed25519 Asymmetric Identities)
 | Authority Role | Primary Responsibility | Prohibited Action |

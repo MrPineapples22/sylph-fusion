@@ -62,14 +62,17 @@ export interface PlannerXAdvisoryReport {
   readonly candidateId: string;
   readonly evaluatedWorldsCount: number;
   readonly safeContinuationPct: number;
-  readonly beliefStateCvarBps: number; // 95% CVaR
+  /** Unweighted mean of the lowest 15% of this fixed stress catalog; not CVaR. */
+  readonly worstTailScenarioMeanReturnBps: number;
+  readonly tailScenarioCount: number;
   readonly worstCaseReturnBps: number;
   readonly medianRecoveryTimeMs: number;
   readonly minimumLiquidationValueLamports: bigint;
   readonly isSafeToPropose: boolean;
   readonly advisoryVetoReasons: readonly string[];
   readonly worldOutcomes: readonly WorldSimulationOutcome[];
-  readonly advisoryEvidenceRoot: string;
+  /** Display identifier only; it is neither an evidence root nor a digest. */
+  readonly advisoryReportId: string;
 }
 
 export class PlannerXResearchEngine {
@@ -77,6 +80,15 @@ export class PlannerXResearchEngine {
    * Simulates the candidate across 14 orthogonal stress worlds.
    */
   public evaluateCandidate(context: CandidatePlanningContext): PlannerXAdvisoryReport {
+    if (!context || typeof context !== 'object' ||
+        typeof context.candidateId !== 'string' || context.candidateId.trim().length === 0 ||
+        typeof context.tokenMint !== 'string' || context.tokenMint.trim().length === 0 ||
+        typeof context.proposedNotionalLamports !== 'bigint' || context.proposedNotionalLamports <= 0n ||
+        typeof context.poolLiquidityLamports !== 'bigint' || context.poolLiquidityLamports < 0n ||
+        !Number.isFinite(context.expectedReturnBps) ||
+        typeof context.targetRegime !== 'string' || context.targetRegime.trim().length === 0) {
+      throw new Error('PLANNER_X_INVALID_CANDIDATE_CONTEXT');
+    }
     const outcomes: WorldSimulationOutcome[] = [];
 
     // 1. Liquidity drop -10%
@@ -205,10 +217,11 @@ export class PlannerXResearchEngine {
     const returns = outcomes.map((o) => o.simulatedReturnBps).sort((a, b) => a - b);
     const worstCaseReturnBps = returns[0];
 
-    // 95% CVaR (tail loss average of the worst 2 worlds)
+    // A fixed-catalog tail summary: the mean of the lowest 15% stress worlds.
+    // These deterministic stress cases have no probabilities and are not CVaR.
     const tailCount = Math.max(1, Math.floor(returns.length * 0.15));
     const tailLossSum = returns.slice(0, tailCount).reduce((sum, r) => sum + r, 0);
-    const beliefStateCvarBps = Number((tailLossSum / tailCount).toFixed(2));
+    const worstTailScenarioMeanReturnBps = Number((tailLossSum / tailCount).toFixed(2));
 
     const recoveryTimes = outcomes.map((o) => o.recoveryTimeMs).sort((a, b) => a - b);
     const medianRecoveryTimeMs = recoveryTimes[Math.floor(recoveryTimes.length / 2)];
@@ -224,8 +237,8 @@ export class PlannerXResearchEngine {
     if (safeContinuationPct < 0.70) {
       advisoryVetoReasons.push(`LOW_SAFE_CONTINUATION: ${Math.round(safeContinuationPct * 100)}% < 70% required`);
     }
-    if (beliefStateCvarBps < -1500) {
-      advisoryVetoReasons.push(`EXCESSIVE_TAIL_CVAR: ${beliefStateCvarBps} bps exceeds -1500 bps limit`);
+    if (worstTailScenarioMeanReturnBps < -1500) {
+      advisoryVetoReasons.push(`EXCESSIVE_STRESS_SCENARIO_TAIL: ${worstTailScenarioMeanReturnBps} bps exceeds -1500 bps limit`);
     }
 
     const isSafeToPropose = advisoryVetoReasons.length === 0;
@@ -234,14 +247,15 @@ export class PlannerXResearchEngine {
       candidateId: context.candidateId,
       evaluatedWorldsCount: outcomes.length,
       safeContinuationPct,
-      beliefStateCvarBps,
+      worstTailScenarioMeanReturnBps,
+      tailScenarioCount: tailCount,
       worstCaseReturnBps,
       medianRecoveryTimeMs,
       minimumLiquidationValueLamports: minLiquidation,
       isSafeToPropose,
       advisoryVetoReasons,
       worldOutcomes: outcomes,
-      advisoryEvidenceRoot: `ev_planner_${context.candidateId}_${Date.now()}`,
+      advisoryReportId: `planner_${context.candidateId}_${Date.now()}`,
     };
   }
 
@@ -251,7 +265,8 @@ export class PlannerXResearchEngine {
     dropFraction: number,
     baseSlippageBps: number
   ): WorldSimulationOutcome {
-    const postDropLiquidity = BigInt(Math.floor(Number(context.poolLiquidityLamports) * (1 - dropFraction)));
+    const retainedLiquidityBps = BigInt(Math.round((1 - dropFraction) * 10_000));
+    const postDropLiquidity = (context.poolLiquidityLamports * retainedLiquidityBps) / 10_000n;
     const survivable = postDropLiquidity > context.proposedNotionalLamports * 5n;
     const simulatedReturn = survivable ? baseSlippageBps : baseSlippageBps * 3;
 

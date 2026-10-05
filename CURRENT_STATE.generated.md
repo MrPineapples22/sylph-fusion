@@ -1,5 +1,5 @@
 # SYLPH FUSION — CURRENT STATE (MECHANICALLY GENERATED)
-Generated At: 2026-10-05T02:07:23.554Z
+Generated At: 2026-10-05T02:12:20.821Z
 Audited Baseline: d9522b5e34663d55920e8489fda948a02db08586
 
 ## Production Posture (Fail-Closed Enforcement)
