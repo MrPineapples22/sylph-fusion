@@ -18,6 +18,10 @@ export function compileTradeAccounting(params) {
     // Exact accounting invariant check
     const calculated = params.actualExitProceedsLamports - params.actualEntryCostLamports - totalExplicitFeesLamports;
     const isAccountingBalanced = calculated === realizedNetPnLLamports;
+    const category = params.category ?? 'PAPER_PNL';
+    if (category === 'REALIZED_FINAL_PNL' && !params.isFinalizedSettlement) {
+        throw new Error('PNL_AUTHORITY_VIOLATION: REALIZED_FINAL_PNL requires isFinalizedSettlement=true');
+    }
     return {
         actualEntryCostLamports: params.actualEntryCostLamports,
         actualExitProceedsLamports: params.actualExitProceedsLamports,
@@ -28,6 +32,46 @@ export function compileTradeAccounting(params) {
         totalExplicitFeesLamports,
         realizedNetPnLLamports,
         isAccountingBalanced,
+        category,
+        settlementId: params.settlementId,
+        economicFactId: params.economicFactId,
+        isFinalizedSettlement: params.isFinalizedSettlement ?? false,
+    };
+}
+export function decomposeComprehensiveProfitAttribution(params) {
+    const { accounting } = params;
+    const marketBeta = params.marketBetaLamports ?? 0n;
+    const cohortReturn = params.marketWideCohortReturnLamports ?? 0n;
+    const tokenSpecific = params.tokenSpecificReturnLamports ?? 0n;
+    const timingAlpha = params.timingAlphaLamports ?? 0n;
+    const signalAlpha = params.strategySignalAlphaLamports ?? 0n;
+    const execEfficiency = params.executionEfficiencyLamports ?? -accounting.totalExplicitFeesLamports;
+    const routeEfficiency = params.routeEfficiencyLamports ?? 0n;
+    const liquidityImpact = params.liquidityImpactLamports ?? 0n;
+    const explainedSum = marketBeta +
+        cohortReturn +
+        tokenSpecific +
+        timingAlpha +
+        signalAlpha +
+        execEfficiency +
+        routeEfficiency +
+        liquidityImpact;
+    // Crucial invariant: remainder is explicitly UNEXPLAINED, never laundered into alpha!
+    const unexplainedResidual = accounting.realizedNetPnLLamports - explainedSum;
+    const totalAttributed = explainedSum + unexplainedResidual;
+    const isReconciled = totalAttributed === accounting.realizedNetPnLLamports;
+    return {
+        marketBetaLamports: marketBeta,
+        marketWideCohortReturnLamports: cohortReturn,
+        tokenSpecificReturnLamports: tokenSpecific,
+        timingAlphaLamports: timingAlpha,
+        strategySignalAlphaLamports: signalAlpha,
+        executionEfficiencyLamports: execEfficiency,
+        routeEfficiencyLamports: routeEfficiency,
+        liquidityImpactLamports: liquidityImpact,
+        unexplainedResidualLamports: unexplainedResidual,
+        totalAttributedLamports: totalAttributed,
+        isReconciled,
     };
 }
 export function decomposePnLAttribution(accounting, betaRatio = 0.0, alphaRatio = 1.0) {

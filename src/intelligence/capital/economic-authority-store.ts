@@ -89,11 +89,18 @@ export interface SettleExitResult {
   readonly lotsAffected: readonly string[];
 }
 
+export interface EmergencyReservePolicy {
+  readonly fixedOperationalFloorLamports?: bigint;
+  readonly equityReservePctBps?: number;
+  readonly stressedFullExitCostLamports?: bigint;
+}
+
 export class EconomicAuthorityStore {
   private confirmedCashLamports: bigint;
   private reservedCashLamports: bigint = 0n;
   private unknownCapitalLamports: bigint = 0n;
-  private emergencyReserveLamports: bigint = 5_000_000_000n; // 5 SOL minimum reserve
+  private emergencyReserveLamports: bigint;
+  private reservePolicy?: EmergencyReservePolicy;
 
   // Inventory: mint -> total raw tokens held
   private readonly tokenInventories = new Map<string, bigint>();
@@ -116,11 +123,29 @@ export class EconomicAuthorityStore {
   private totalBasisRelievedLamports = 0n;
   private totalFrictionBurnLamports = 0n; // Fees + Tips + Rent across entries and exits
 
-  constructor(initialCashLamports: bigint) {
+  constructor(initialCashLamports: bigint, reservePolicy?: EmergencyReservePolicy) {
     if (initialCashLamports < 0n) {
       throw new Error('ECONOMIC_STORE_INIT_FAILED: initialCashLamports cannot be negative');
     }
     this.confirmedCashLamports = initialCashLamports;
+    this.reservePolicy = reservePolicy;
+
+    // Blueprint Section 27: Dynamic hybrid emergency reserve
+    if (reservePolicy) {
+      const stressedExit = (reservePolicy.stressedFullExitCostLamports ?? 25_000_000n) * 2n;
+      const operationalFloor = reservePolicy.fixedOperationalFloorLamports ?? 50_000_000n;
+      const equityReserve = (initialCashLamports * BigInt(reservePolicy.equityReservePctBps ?? 500)) / 10_000n;
+      let res = stressedExit > operationalFloor ? stressedExit : operationalFloor;
+      if (equityReserve > res) res = equityReserve;
+      this.emergencyReserveLamports = res;
+    } else if (initialCashLamports >= 10_000_000_000n) {
+      this.emergencyReserveLamports = 5_000_000_000n; // Standard 5 SOL default for larger bankrolls
+    } else {
+      // Dynamic for small bankrolls ($250 experiment)
+      const operationalFloor = 50_000_000n; // 0.05 SOL operational floor
+      const equityReserve = (initialCashLamports * 1000n) / 10_000n; // 10% of small bankroll
+      this.emergencyReserveLamports = operationalFloor > equityReserve ? operationalFloor : equityReserve;
+    }
 
     // Record Genesis Journal Entry
     this.appendJournalEntry({
@@ -132,6 +157,20 @@ export class EconomicAuthorityStore {
       mint: 'SOL',
       payload: { initialCashLamports: initialCashLamports.toString() },
     });
+  }
+
+  public recomputeEmergencyReserve(policy?: EmergencyReservePolicy): bigint {
+    const activePolicy = policy ?? this.reservePolicy;
+    const liquidEquity = this.confirmedCashLamports;
+    const stressedExit = ((activePolicy?.stressedFullExitCostLamports ?? 25_000_000n) * 2n);
+    const operationalFloor = activePolicy?.fixedOperationalFloorLamports ?? 50_000_000n;
+    const pctBps = BigInt(activePolicy?.equityReservePctBps ?? 500);
+    const equityPct = (liquidEquity * pctBps) / 10_000n;
+
+    let res = stressedExit > operationalFloor ? stressedExit : operationalFloor;
+    if (equityPct > res) res = equityPct;
+    this.emergencyReserveLamports = res;
+    return res;
   }
 
   public getConfirmedCash(): bigint {

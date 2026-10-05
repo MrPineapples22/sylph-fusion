@@ -1,5 +1,5 @@
 # SYLPH FUSION — CERTIFICATION MATRIX (MECHANICALLY GENERATED)
-Generated At: 2026-10-05T02:28:13.294Z
+Generated At: 2026-10-05T02:44:24.948Z
 
 ## Authority Invariant Verification
 | Invariant | Description | Verification Mechanism | Status |

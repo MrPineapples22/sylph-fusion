@@ -3,17 +3,18 @@
  * Specifications: Master Blueprint Section 97 & 25 (Capturability-X).
  *
  * Implements:
- * 1. UltimateOpportunityDecision: Synthesizes all 12 intelligence vectors into an advisory decision:
+ * 1. Research-only diagnostic: summarizes intelligence vectors without calibrated
+ *    probabilities, expected values, or execution approval:
  *    - Token truth & Token-2022 semantics
  *    - Entity control & Sybil clustering
  *    - Market authenticity & manipulation resistance
  *    - Lifecycle phase & competing transition hazards
  *    - Capital flow velocity & acceleration derivatives
  *    - Market grammar motifs & latent state probabilities
- *    - Competing multiplier hazards P(2x), P(5x), P(10x before failure)
+ *    - Uncalibrated multiplier heuristic scores
  *    - Stressed exitability capacity & liquidity fracture
  *    - Model failure predictor & uncertainty conformal confidence
- *    - Expected after-cost robust capturable EV
+ *    - Capturable EV unavailable until calibrated outcomes and execution evidence exist
  * 2. Enforces Invariant:
  *    OpportunityDecision != ExecutionPermit.
  *    Models advise; only deterministic authority issues execution permits.
@@ -25,7 +26,7 @@ import type { MarketAuthenticityCertificate } from '../../platform/authenticity/
 import type { LifecycleState } from '../lifecycle/lifecycle-x.js';
 import type { CapitalFlowState } from '../flow/capital-flow-x.js';
 import type { MarketGrammarState } from '../grammar/market-grammar.js';
-import type { CompetingHazardsPrediction } from '../multiplier/competing-hazards-multiplier.js';
+import type { MultiplierResearchAssessment } from '../multiplier/competing-hazards-multiplier.js';
 import type { ExitabilityCertificate } from '../exitability/exitability-certificate.js';
 
 export interface UltimateOpportunityDecision {
@@ -51,29 +52,29 @@ export interface UltimateOpportunityDecision {
   readonly marketGrammarState: MarketGrammarState;
 
   // 6. Multiplier & Competing Hazards
-  readonly competingHazards: CompetingHazardsPrediction;
+  readonly multiplierResearch: MultiplierResearchAssessment;
 
   // 7. Exitability & Liquidity Fracture
   readonly exitabilityCertificate: ExitabilityCertificate;
 
   // 8. Robust Capturable Economic Quantities (Section 1 North-Star Objective)
-  readonly pEntryLand: number;
-  readonly pExitLand: number;
-  readonly expectedEntrySlippageBps: number;
-  readonly expectedExitSlippageBps: number;
-  readonly expectedCapturedMultiple: number;
-  readonly expectedAfterCostEvSol: number;
+  readonly pEntryLand: null;
+  readonly pExitLand: null;
+  readonly expectedEntrySlippageBps: null;
+  readonly expectedExitSlippageBps: null;
+  readonly expectedCapturedMultiple: null;
+  readonly expectedAfterCostEvSol: null;
   readonly maximumSafeExposureSol: number;
-  readonly isApprovedByIntelligence: boolean;
+  readonly decisionStatus: 'RESEARCH_ONLY_UNCALIBRATED';
   readonly disqualificationReasons: readonly string[];
 
-  // 9. Immutable Evidence Root
-  readonly evidenceRootHash: string;
+  // 9. Deterministic decision digest; not a source-evidence root.
+  readonly decisionDigest: string;
 }
 
 export class MasterOpportunityDecisionEngine {
   /**
-   * Synthesizes decoupled intelligence vectors into an authoritative UltimateOpportunityDecision.
+   * Summarizes decoupled intelligence vectors into a non-authorizing research diagnostic.
    */
   public static evaluateOpportunity(params: {
     candidateId: string;
@@ -84,10 +85,16 @@ export class MasterOpportunityDecisionEngine {
     lifecycleState: LifecycleState;
     capitalFlowState: CapitalFlowState;
     marketGrammarState: MarketGrammarState;
-    competingHazards: CompetingHazardsPrediction;
+    multiplierResearch: MultiplierResearchAssessment;
     exitabilityCertificate: ExitabilityCertificate;
     proposedSizeSol?: number;
   }): UltimateOpportunityDecision {
+    if (typeof params.candidateId !== 'string' || !params.candidateId.trim() ||
+        typeof params.mint !== 'string' || !params.mint.trim() ||
+        !Number.isSafeInteger(params.slot) || params.slot < 0 ||
+        !Number.isFinite(params.proposedSizeSol ?? 1.0) || (params.proposedSizeSol ?? 1.0) <= 0) {
+      throw new Error('INVALID_OPPORTUNITY_DECISION_CONTEXT');
+    }
     const {
       candidateId,
       mint,
@@ -97,7 +104,7 @@ export class MasterOpportunityDecisionEngine {
       lifecycleState,
       capitalFlowState,
       marketGrammarState,
-      competingHazards,
+      multiplierResearch,
       exitabilityCertificate,
       proposedSizeSol = 1.0,
     } = params;
@@ -126,53 +133,24 @@ export class MasterOpportunityDecisionEngine {
       );
     }
 
-    // 4. Competing Hazards Check: High catastrophic failure hazard
-    if (competingHazards.pRug > 0.40) {
-      disqualificationReasons.push(`EXCESSIVE_RUG_HAZARD: P(rug)=${competingHazards.pRug} > 0.40`);
+    // Heuristic scores are not calibrated hazards; keep them out of probability thresholds.
+    if (multiplierResearch.status !== 'UNCALIBRATED_RESEARCH_HEURISTIC') {
+      disqualificationReasons.push('INVALID_MULTIPLIER_RESEARCH_ASSESSMENT');
     }
+    disqualificationReasons.push('CALIBRATED_OUTCOME_AND_EXECUTION_EVIDENCE_UNAVAILABLE');
 
     // 5. Flow Toxicity Check
     if (capitalFlowState.toxicity > 0.60) {
       disqualificationReasons.push(`HOSTILE_FLOW_TOXICITY: Flow toxicity=${capitalFlowState.toxicity} > 0.60`);
     }
 
-    // Compute North-Star Robust Capturable EV (Section 1)
-    // RobustCapturableEV = P_A * P_M * P_S * P_E * P_X * P_L * E[R] - C
-    const pA = authenticityCertificate.probabilities.pAuthentic;
-    const pM = competingHazards.p10xBeforeFailure;
-    const pS = 0.90; // Market state stability across execution
-    const pE = 0.88; // Probability entry lands
-    const pX = exitabilityCertificate.verdict === 'PERMITTED' ? 0.92 : 0.65; // Probability exit capacity remains
-    const pL = 0.85; // Probability exit lands
-
-    const expectedMultiple = 1.0 + competingHazards.p2x * 1.0 + competingHazards.p5x * 4.0 + competingHazards.p10x * 9.0;
-    const expectedCapturedMultiple = Number(expectedMultiple.toFixed(2));
-
-    const grossExpectedReturnSol = proposedSizeSol * (expectedMultiple - 1.0);
-    const expectedEntrySlippageBps = 150;
-    const expectedExitSlippageBps = 200;
-    const totalCostSol = proposedSizeSol * ((expectedEntrySlippageBps + expectedExitSlippageBps) / 10_000) + 0.005; // fees + tips
-
-    const capturableProbability = pA * pM * pS * pE * pX * pL;
-    const expectedAfterCostEvSol = Number(
-      (capturableProbability * grossExpectedReturnSol - totalCostSol).toFixed(4)
-    );
-
     const maximumSafeExposureSol = Math.min(
       proposedSizeSol,
       exitabilityCertificate.maxSafePositionSol
     );
-
-    if (expectedAfterCostEvSol <= 0) {
-      disqualificationReasons.push(
-        `NEGATIVE_CAPTURABLE_EV: Expected net EV is ${expectedAfterCostEvSol} SOL (unfavorable risk/reward)`
-      );
-    }
-
-    const isApprovedByIntelligence = disqualificationReasons.length === 0;
     const decisionId = `dec_${mint.slice(0, 8)}_${slot}_${evaluatedAtMs}`;
 
-    const evidenceRootHash = createHash('sha256')
+    const decisionDigest = createHash('sha256')
       .update('OPPORTUNITY_DECISION:')
       .update(decisionId)
       .update(tokenSemanticRoot.semanticHash)
@@ -180,9 +158,9 @@ export class MasterOpportunityDecisionEngine {
       .update(lifecycleState.stateDigest)
       .update(capitalFlowState.stateDigest)
       .update(marketGrammarState.grammarDigest)
-      .update(competingHazards.predictionDigest)
+      .update(multiplierResearch.diagnosticDigest)
       .update(exitabilityCertificate.certificateHash)
-      .update(expectedAfterCostEvSol.toString())
+      .update('CALIBRATED_OUTCOME_AND_EXECUTION_EVIDENCE_UNAVAILABLE')
       .digest('hex');
 
     return {
@@ -196,18 +174,18 @@ export class MasterOpportunityDecisionEngine {
       lifecycleState,
       capitalFlowState,
       marketGrammarState,
-      competingHazards,
+      multiplierResearch,
       exitabilityCertificate,
-      pEntryLand: pE,
-      pExitLand: pL,
-      expectedEntrySlippageBps,
-      expectedExitSlippageBps,
-      expectedCapturedMultiple,
-      expectedAfterCostEvSol,
+      pEntryLand: null,
+      pExitLand: null,
+      expectedEntrySlippageBps: null,
+      expectedExitSlippageBps: null,
+      expectedCapturedMultiple: null,
+      expectedAfterCostEvSol: null,
       maximumSafeExposureSol,
-      isApprovedByIntelligence,
+      decisionStatus: 'RESEARCH_ONLY_UNCALIBRATED',
       disqualificationReasons: Object.freeze(disqualificationReasons),
-      evidenceRootHash,
+      decisionDigest,
     };
   }
 }

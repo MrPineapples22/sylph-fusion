@@ -6,14 +6,14 @@ import { MarketAuthenticityEngine } from '../../dist/platform/authenticity/marke
 import { LifecycleXEngine } from '../../dist/intelligence/lifecycle/lifecycle-x.js';
 import { CapitalFlowEngine } from '../../dist/intelligence/flow/capital-flow-x.js';
 import { MarketGrammarEngine } from '../../dist/intelligence/grammar/market-grammar.js';
-import { CompetingHazardsMultiplierEngine } from '../../dist/intelligence/multiplier/competing-hazards-multiplier.js';
+import { MultiplierResearchHeuristicEngine } from '../../dist/intelligence/multiplier/competing-hazards-multiplier.js';
 import { ExitabilityEngine } from '../../dist/intelligence/exitability/exitability-certificate.js';
 import { MasterOpportunityDecisionEngine } from '../../dist/intelligence/decision/master-opportunity-decision.js';
 import { EnvironmentCertificationEngine } from '../../dist/platform/truth/runtime-program-root.js';
 import { UltimateExecutionPermitAuthority } from '../../dist/intelligence/execution/ultimate-execution-permit.js';
 import { UltimateExecutionRecordLedger } from '../../dist/platform/evidence/ultimate-execution-record.js';
 
-test('MasterOpportunityDecisionEngine: evaluates complete 12-vector opportunity and computes robust capturable EV', () => {
+test('MasterOpportunityDecisionEngine: keeps uncalibrated research scores out of EV and approval', () => {
   const mint = 'CleanOpportunityMint1111111111111111111111';
   const slot = 280_000_000;
 
@@ -87,7 +87,7 @@ test('MasterOpportunityDecisionEngine: evaluates complete 12-vector opportunity 
   grammarEngine.recordEvent(mint, { type: 'LIQUIDITY_ADD', entityId: 'b2', solAmount: 5.0, slot: 4, timestampMs: 4000 });
   const grammar = grammarEngine.evaluateGrammar(mint);
 
-  const competingHazards = CompetingHazardsMultiplierEngine.predictHazards({
+  const multiplierResearch = MultiplierResearchHeuristicEngine.evaluateResearchHeuristics({
     mint,
     netCapitalFlowVelocity: 2.5,
     netCapitalFlowAcceleration: 0.8,
@@ -123,15 +123,23 @@ test('MasterOpportunityDecisionEngine: evaluates complete 12-vector opportunity 
     lifecycleState: lifecycle,
     capitalFlowState: flow,
     marketGrammarState: grammar,
-    competingHazards,
+    multiplierResearch,
     exitabilityCertificate: exitability,
     proposedSizeSol: 1.0,
   });
 
-  assert.equal(decision.isApprovedByIntelligence, true);
-  assert.ok(decision.expectedAfterCostEvSol > 0);
-  assert.ok(decision.expectedCapturedMultiple > 1.0);
-  assert.ok(decision.evidenceRootHash.length === 64);
+  assert.equal(decision.decisionStatus, 'RESEARCH_ONLY_UNCALIBRATED');
+  assert.equal(decision.expectedAfterCostEvSol, null);
+  assert.equal(decision.expectedCapturedMultiple, null);
+  assert.equal(decision.pEntryLand, null);
+  assert.equal(decision.pExitLand, null);
+  assert.ok(decision.disqualificationReasons.includes('CALIBRATED_OUTCOME_AND_EXECUTION_EVIDENCE_UNAVAILABLE'));
+  assert.ok(decision.decisionDigest.length === 64);
+  assert.throws(() => MasterOpportunityDecisionEngine.evaluateOpportunity({
+    candidateId: 'bad', mint, slot: -1, tokenSemanticRoot: semantics,
+    authenticityCertificate: authenticity, lifecycleState: lifecycle, capitalFlowState: flow,
+    marketGrammarState: grammar, multiplierResearch, exitabilityCertificate: exitability,
+  }), /INVALID_OPPORTUNITY_DECISION_CONTEXT/);
 });
 
 test('UltimateExecutionPermitAuthority & RecordLedger: issue permit and seal tamper-proof 19-link evidence chain', () => {

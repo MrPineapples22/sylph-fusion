@@ -9,4 +9,5 @@ export * from './revocation-registry.js';
 export * from './evidence-class.js';
 export * from './no-synthetic-authority.js';
 export * from './issuer-manifest.js';
+export * from './hot-path-proof-capsule.js';
 //# sourceMappingURL=index.js.map

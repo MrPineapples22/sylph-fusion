@@ -141,6 +141,12 @@ test('Capital-Time Economics: Rejects invalid interval and preserves negative di
     grossProceedsLamports: 0n, basisRelievedLamports: 1n, totalFrictionLamports: 1n,
     unencumberedAtMs: 5, settledAtMs: 5,
   }), /CAPITAL_TIME_INVALID_SEGMENT/);
+  assert.throws(() => ledger.recordTradeLifecycle({
+    tradeId: 'trade_cash_before_occupancy', economicFactId: 'fact_cash_before_occupancy',
+    segments: [{ segmentId: 's', capitalSliceId: 'slice', state: 'INVESTED', startMs: 10, endMs: 20, amountLamports: 1n }],
+    grossProceedsLamports: 1n, basisRelievedLamports: 1n, totalFrictionLamports: 0n,
+    unencumberedAtMs: 9, settledAtMs: 20,
+  }), /CAPITAL_TIME_CASH_PRECEDES_OCCUPANCY/);
   const metrics = ledger.recordTradeLifecycle({
     tradeId: 'trade_loss', economicFactId: 'fact_loss',
     segments: [{ segmentId: 's', capitalSliceId: 'slice', state: 'INVESTED', startMs: 1, endMs: 2, amountLamports: 10n }],

@@ -5,7 +5,7 @@ import { ExitabilityEngine } from '../../dist/intelligence/exitability/exitabili
 import { CapitalBarrierKernel } from '../../dist/intelligence/capital/capital-barrier-kernel.js';
 import { LifecycleXEngine } from '../../dist/intelligence/lifecycle/lifecycle-x.js';
 import { CapitalFlowEngine } from '../../dist/intelligence/flow/capital-flow-x.js';
-import { CompetingHazardsMultiplierEngine } from '../../dist/intelligence/multiplier/competing-hazards-multiplier.js';
+import { MultiplierResearchHeuristicEngine } from '../../dist/intelligence/multiplier/competing-hazards-multiplier.js';
 import { MarketGrammarEngine } from '../../dist/intelligence/grammar/market-grammar.js';
 import { HypothesisRegistry } from '../../dist/intelligence/research/hypothesis-registry.js';
 
@@ -225,8 +225,8 @@ test('CapitalFlowEngine: tracks first/second derivatives, quality and toxicity',
   assert.ok(state2.repeatBuyerRate > 0.2);
 });
 
-test('CompetingHazardsMultiplierEngine: calculates P10x before failure and outcome certificates', () => {
-  const hazards = CompetingHazardsMultiplierEngine.predictHazards({
+test('Multiplier-X: emits validated heuristic scores without probabilities or executable outcome claims', () => {
+  const hazards = MultiplierResearchHeuristicEngine.evaluateResearchHeuristics({
     mint: 'HazardMint111111111111111111111111111111111',
     netCapitalFlowVelocity: 2.5,
     netCapitalFlowAcceleration: 0.8,
@@ -242,12 +242,28 @@ test('CompetingHazardsMultiplierEngine: calculates P10x before failure and outco
     timestampMs: 1_000_000,
   });
 
-  assert.ok(hazards.p2x > 0.4);
-  assert.ok(hazards.p10xBeforeFailure > 0.3);
-  assert.ok(hazards.pRug < 0.15);
+  assert.equal(hazards.status, 'UNCALIBRATED_RESEARCH_HEURISTIC');
+  assert.ok(hazards.scores.expansion2x > 0.4);
+  assert.ok(hazards.scores.relativeExpansion10xVersusFailureScore > 0.3);
+  assert.ok(hazards.scores.rugRisk < 0.15);
+  assert.equal('p10xBeforeFailure' in hazards, false);
+  assert.equal('expectedTimeTo10xSec' in hazards, false);
+  assert.equal(Object.isFrozen(hazards.scores), true);
+  assert.throws(() => MultiplierResearchHeuristicEngine.evaluateResearchHeuristics({
+    mint: 'bad', netCapitalFlowVelocity: 1, netCapitalFlowAcceleration: 1, poolLiquiditySol: 10,
+    bondingCurveProgressPct: 50, authenticityProbability: 1.2, manipulationResistanceScore: 0.5,
+    entityCount: 10, sellerAbsorptionRate: 0.5, currentMcapSol: 20, ageSeconds: 1,
+    observationSlot: 5, timestampMs: 100,
+  }), /MULTIPLIER_INVALID_FEATURE_RANGE/);
+  assert.throws(() => MultiplierResearchHeuristicEngine.evaluateResearchHeuristics({
+    mint: 'bad', netCapitalFlowVelocity: NaN, netCapitalFlowAcceleration: 1, poolLiquiditySol: 10,
+    bondingCurveProgressPct: 50, authenticityProbability: 0.5, manipulationResistanceScore: 0.5,
+    entityCount: 10, sellerAbsorptionRate: 0.5, currentMcapSol: 20, ageSeconds: 1,
+    observationSlot: 5, timestampMs: 100,
+  }), /MULTIPLIER_INVALID_FEATURE:netCapitalFlowVelocity/);
 
-  // Label Certificate
-  const label = CompetingHazardsMultiplierEngine.certifyOutcomeLabel({
+  // Caller-supplied chart prices plus assumed slippage are not executable evidence.
+  const label = MultiplierResearchHeuristicEngine.analyzeObservedPath({
     mint: 'HazardMint111111111111111111111111111111111',
     observationSlot: 280_000_000,
     observationTimeMs: 1_000_000,
@@ -257,13 +273,16 @@ test('CompetingHazardsMultiplierEngine: calculates P10x before failure and outco
     exitPriceSol: 0.00095,
     entrySlippageBps: 150,
     exitSlippageBps: 200,
-    liquidityAtPeakSol: 120.0,
-    exitCapacityAtPeakSol: 15.0,
   });
 
-  assert.equal(label.outcomeClass, 'EXECUTABLE_10X');
-  assert.ok(label.maxExecutableMultiple >= 10.0);
-  assert.ok(label.maxFavorableExcursionBps > 80_000);
+  assert.equal(label.labelStatus, 'UNVERIFIED_RESEARCH_ONLY');
+  assert.ok(label.chartPeakMultiple > 10);
+  assert.ok(label.modeledMultipleAfterAssumedSlippage > 10);
+  assert.equal('outcomeClass' in label, false);
+  assert.throws(() => MultiplierResearchHeuristicEngine.analyzeObservedPath({
+    mint: 'bad', observationSlot: 1, observationTimeMs: 1, entryPriceSol: 0,
+    peakPriceSol: 1, troughPriceSol: 0.5, exitPriceSol: 0.8, entrySlippageBps: 0, exitSlippageBps: 0,
+  }), /MULTIPLIER_INVALID_PATH_RANGE/);
 });
 
 test('MarketGrammarEngine: extracts sequential motifs and builds latent state distribution', () => {

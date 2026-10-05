@@ -1,139 +1,145 @@
 /**
- * SOL-SYLPH Intelligence Fabric - Competing Hazards MULTIPLIER-X Engine
- * Specifications: Master Blueprint Sections 19, 20 & 21, Priority Item 17.
+ * SYLPH FUSION — MULTIPLIER-X RESEARCH HEURISTICS
  *
- * Implements:
- * 1. Competing Hazards Multiplier:
- *    Retires scalar heuristic scores in favor of calibrated competing survival hazards:
- *    - P(2x), P(5x), P(10x)
- *    - P(stall), P(rug), P(distribution), P(liquidity_death)
- *    - P(10x before catastrophic failure | evidence)
- * 2. Executable Outcome Labeling:
- *    LabelCertificate with realistic quote slippage, entry/exit transferability, and position unwinding.
- * 3. MFE / MAE / Trajectory Labels:
- *    Max Favorable Excursion, Max Adverse Excursion, timing milestones, and exit capacity at peak.
+ * This module has no fitted or calibrated survival model. Its bounded outputs
+ * are relative heuristic scores only. They are not probabilities, hazards,
+ * event-time estimates, evidence certificates, or execution authority.
  */
 import { createHash } from 'node:crypto';
-export class CompetingHazardsMultiplierEngine {
-    static VERSION = 'SYLPH_COMPETING_HAZARDS_V2';
-    /**
-     * Forecasts competing multi-horizon survival and expansion hazards.
-     */
-    static predictHazards(features) {
-        const { mint, netCapitalFlowVelocity, netCapitalFlowAcceleration, poolLiquiditySol, bondingCurveProgressPct, authenticityProbability, manipulationResistanceScore, entityCount, sellerAbsorptionRate, currentMcapSol, } = features;
-        // 1. Catastrophic failure hazards
-        // Rug probability driven by low authenticity, low entity count, and low manipulation resistance
-        const rugHazard = Math.min(0.95, (1 - authenticityProbability) * 0.5 +
-            (1 - manipulationResistanceScore) * 0.3 +
-            (entityCount < 5 ? 0.3 : 0.05));
-        const pRug = Number(Math.max(0.01, rugHazard).toFixed(3));
-        // Liquidity death hazard: low liquidity + negative capital acceleration
-        const liqDeathHazard = Math.min(0.95, (poolLiquiditySol < 10.0 ? 0.4 : 0.05) +
-            (netCapitalFlowAcceleration < -0.5 ? 0.3 : 0.05));
-        const pLiquidityDeath = Number(Math.max(0.01, liqDeathHazard).toFixed(3));
-        // Distribution hazard: seller absorption exhaustion
-        const pDistribution = Number(Math.max(0.05, Math.min(0.85, (1 - sellerAbsorptionRate) * 0.6 + (currentMcapSol > 500 ? 0.2 : 0.05))).toFixed(3));
-        // Stall hazard
-        const pStall = Number(Math.max(0.05, Math.min(0.70, (Math.abs(netCapitalFlowVelocity) < 0.1 ? 0.4 : 0.1))).toFixed(3));
-        const totalAdverseHazard = Math.min(0.98, pRug + pLiquidityDeath * 0.5 + pDistribution * 0.3);
-        // 2. Expansion hazards (P2x, P5x, P10x)
-        // Positive velocity, acceleration, strong curve progress, high authenticity
-        const expansionBase = authenticityProbability * 0.3 +
-            manipulationResistanceScore * 0.2 +
-            (netCapitalFlowVelocity > 0.5 ? 0.25 : 0.05) +
-            (netCapitalFlowAcceleration > 0 ? 0.15 : 0.0) +
-            (bondingCurveProgressPct > 30 ? 0.1 : 0.0);
-        const expansionCapacity = Math.max(0.01, 1 - totalAdverseHazard);
-        const p2x = Number(Math.min(0.95, Math.max(0.02, expansionBase * expansionCapacity * 0.9)).toFixed(3));
-        const p5x = Number(Math.min(0.80, Math.max(0.01, p2x * 0.55 * (poolLiquiditySol > 15 ? 1.0 : 0.6))).toFixed(3));
-        const p10x = Number(Math.min(0.50, Math.max(0.005, p5x * 0.40 * (currentMcapSol < 150 ? 1.2 : 0.7))).toFixed(3));
-        // 3. Conditional target: P(10x before catastrophic failure)
-        const p10xBeforeFailure = Number((p10x / Math.max(0.05, p10x + pRug + pLiquidityDeath)).toFixed(3));
-        // 4. Timing horizons
-        const expectedTimeTo2xSec = p2x > 0.1 ? Math.round(120 / Math.max(0.2, netCapitalFlowVelocity)) : null;
-        const expectedTimeTo5xSec = p5x > 0.05 ? Math.round(300 / Math.max(0.2, netCapitalFlowVelocity)) : null;
-        const expectedTimeTo10xSec = p10x > 0.02 ? Math.round(600 / Math.max(0.2, netCapitalFlowVelocity)) : null;
-        const expectedTimeToFailureSec = Math.round(Math.max(15, 180 * (1 - pRug)));
-        const predictionDigest = createHash('sha256')
-            .update('COMPETING_HAZARDS:')
-            .update(mint)
-            .update(p2x.toString())
-            .update(p5x.toString())
-            .update(p10x.toString())
-            .update(p10xBeforeFailure.toString())
+function bounded(value, min, max) {
+    return Number(Math.min(max, Math.max(min, value)).toFixed(3));
+}
+function requireFinite(name, value) {
+    if (!Number.isFinite(value))
+        throw new Error(`MULTIPLIER_INVALID_FEATURE:${name}`);
+}
+function validateFeatures(f) {
+    if (typeof f.mint !== 'string' || f.mint.trim().length === 0)
+        throw new Error('MULTIPLIER_INVALID_FEATURE:mint');
+    const finiteFields = [
+        'netCapitalFlowVelocity', 'netCapitalFlowAcceleration', 'poolLiquiditySol',
+        'bondingCurveProgressPct', 'authenticityProbability', 'manipulationResistanceScore',
+        'entityCount', 'sellerAbsorptionRate', 'currentMcapSol', 'ageSeconds',
+        'observationSlot', 'timestampMs',
+    ];
+    for (const field of finiteFields)
+        requireFinite(field, f[field]);
+    if (f.poolLiquiditySol < 0 || f.bondingCurveProgressPct < 0 || f.bondingCurveProgressPct > 100 ||
+        f.authenticityProbability < 0 || f.authenticityProbability > 1 ||
+        f.manipulationResistanceScore < 0 || f.manipulationResistanceScore > 1 ||
+        !Number.isSafeInteger(f.entityCount) || f.entityCount < 0 ||
+        f.sellerAbsorptionRate < 0 || f.sellerAbsorptionRate > 1 ||
+        f.currentMcapSol < 0 || f.ageSeconds < 0 ||
+        !Number.isSafeInteger(f.observationSlot) || f.observationSlot < 0 ||
+        !Number.isSafeInteger(f.timestampMs) || f.timestampMs < 0) {
+        throw new Error('MULTIPLIER_INVALID_FEATURE_RANGE');
+    }
+}
+export class MultiplierResearchHeuristicEngine {
+    static VERSION = 'SYLPH_MULTIPLIER_HEURISTICS_V3';
+    /** Produces relative, uncalibrated research scores; never a probability forecast. */
+    static evaluateResearchHeuristics(features) {
+        validateFeatures(features);
+        const f = features;
+        const rugRisk = bounded((1 - f.authenticityProbability) * 0.5 +
+            (1 - f.manipulationResistanceScore) * 0.3 +
+            (f.entityCount < 5 ? 0.3 : 0.05), 0.01, 0.95);
+        const liquidityDeathRisk = bounded((f.poolLiquiditySol < 10 ? 0.4 : 0.05) +
+            (f.netCapitalFlowAcceleration < -0.5 ? 0.3 : 0.05), 0.01, 0.95);
+        const distributionRisk = bounded((1 - f.sellerAbsorptionRate) * 0.6 + (f.currentMcapSol > 500 ? 0.2 : 0.05), 0.05, 0.85);
+        const stallRisk = bounded(Math.abs(f.netCapitalFlowVelocity) < 0.1 ? 0.4 : 0.1, 0.05, 0.70);
+        const expansionBase = f.authenticityProbability * 0.3 +
+            f.manipulationResistanceScore * 0.2 +
+            (f.netCapitalFlowVelocity > 0.5 ? 0.25 : 0.05) +
+            (f.netCapitalFlowAcceleration > 0 ? 0.15 : 0) +
+            (f.bondingCurveProgressPct > 30 ? 0.1 : 0);
+        const remainingScore = Math.max(0.01, 1 - Math.min(0.98, rugRisk + liquidityDeathRisk * 0.5 + distributionRisk * 0.3));
+        const expansion2x = bounded(expansionBase * remainingScore * 0.9, 0.02, 0.95);
+        const expansion5x = bounded(expansion2x * 0.55 * (f.poolLiquiditySol > 15 ? 1 : 0.6), 0.01, 0.80);
+        const expansion10x = bounded(expansion5x * 0.4 * (f.currentMcapSol < 150 ? 1.2 : 0.7), 0.005, 0.50);
+        const relativeExpansion10xVersusFailureScore = bounded(expansion10x / Math.max(0.05, expansion10x + rugRisk + liquidityDeathRisk), 0, 1);
+        const scores = Object.freeze({
+            expansion2x,
+            expansion5x,
+            expansion10x,
+            rugRisk,
+            liquidityDeathRisk,
+            distributionRisk,
+            stallRisk,
+            relativeExpansion10xVersusFailureScore,
+        });
+        const diagnosticDigest = createHash('sha256')
+            .update(JSON.stringify([
+            this.VERSION, f.mint, f.netCapitalFlowVelocity, f.netCapitalFlowAcceleration,
+            f.poolLiquiditySol, f.bondingCurveProgressPct, f.authenticityProbability,
+            f.manipulationResistanceScore, f.entityCount, f.sellerAbsorptionRate,
+            f.currentMcapSol, f.ageSeconds, f.observationSlot, f.timestampMs,
+            scores.expansion2x, scores.expansion5x, scores.expansion10x, scores.rugRisk,
+            scores.liquidityDeathRisk, scores.distributionRisk, scores.stallRisk,
+            scores.relativeExpansion10xVersusFailureScore,
+        ]))
             .digest('hex');
-        return {
-            mint,
-            p2x,
-            p5x,
-            p10x,
-            pStall,
-            pRug,
-            pDistribution,
-            pLiquidityDeath,
-            p10xBeforeFailure,
-            expectedTimeTo2xSec,
-            expectedTimeTo5xSec,
-            expectedTimeTo10xSec,
-            expectedTimeToFailureSec,
-            predictionDigest,
-        };
+        return Object.freeze({
+            mint: f.mint,
+            status: 'UNCALIBRATED_RESEARCH_HEURISTIC',
+            scores,
+            diagnosticDigest,
+        });
     }
     /**
-     * Generates a verifiable, executable outcome label certificate.
+     * Summarizes a supplied price path under caller-specified slippage assumptions.
+     * Without route, size, token semantics, and finalized execution evidence this
+     * can never establish an executable or capturable multiplier outcome.
      */
-    static certifyOutcomeLabel(params) {
-        const { mint, observationSlot, observationTimeMs, entryPriceSol, peakPriceSol, troughPriceSol, exitPriceSol, entrySlippageBps, exitSlippageBps, liquidityAtPeakSol, exitCapacityAtPeakSol, } = params;
-        // Real executable prices incorporating quote and slippage decay
-        const executableEntryPriceSol = entryPriceSol * (1 + entrySlippageBps / 10000);
-        const executablePeakPriceSol = peakPriceSol * (1 - exitSlippageBps / 10000);
-        const executableExitPriceSol = exitPriceSol * (1 - exitSlippageBps / 10000);
-        const maxChartMultiple = Number((peakPriceSol / Math.max(0.000001, entryPriceSol)).toFixed(2));
-        const maxExecutableMultiple = Number(Math.max(0.01, executablePeakPriceSol / Math.max(0.000001, executableEntryPriceSol)).toFixed(2));
-        const maxFavorableExcursionBps = Math.round(((executablePeakPriceSol - executableEntryPriceSol) / executableEntryPriceSol) * 10000);
-        const maxAdverseExcursionBps = Math.round(((executableEntryPriceSol - troughPriceSol) / executableEntryPriceSol) * 10000);
-        let outcomeClass = 'STALL';
-        if (maxExecutableMultiple >= 10.0 && exitCapacityAtPeakSol >= 5.0) {
-            outcomeClass = 'EXECUTABLE_10X';
+    static analyzeObservedPath(params) {
+        if (typeof params.mint !== 'string' || !params.mint.trim() ||
+            !Number.isSafeInteger(params.observationSlot) || params.observationSlot < 0 ||
+            !Number.isSafeInteger(params.observationTimeMs) || params.observationTimeMs < 0) {
+            throw new Error('MULTIPLIER_INVALID_PATH_IDENTITY');
         }
-        else if (maxExecutableMultiple >= 5.0 && exitCapacityAtPeakSol >= 2.5) {
-            outcomeClass = 'EXECUTABLE_5X';
+        for (const [name, value] of Object.entries({
+            entryPriceSol: params.entryPriceSol, peakPriceSol: params.peakPriceSol,
+            troughPriceSol: params.troughPriceSol, exitPriceSol: params.exitPriceSol,
+            entrySlippageBps: params.entrySlippageBps, exitSlippageBps: params.exitSlippageBps,
+        })) {
+            if (!Number.isFinite(value))
+                throw new Error(`MULTIPLIER_INVALID_PATH_VALUE:${name}`);
         }
-        else if (maxExecutableMultiple >= 2.0 && exitCapacityAtPeakSol >= 1.0) {
-            outcomeClass = 'EXECUTABLE_2X';
+        if (params.entryPriceSol <= 0 || params.peakPriceSol <= 0 || params.troughPriceSol < 0 ||
+            params.exitPriceSol <= 0 || params.entrySlippageBps < 0 || params.entrySlippageBps > 10_000 ||
+            params.exitSlippageBps < 0 || params.exitSlippageBps > 10_000) {
+            throw new Error('MULTIPLIER_INVALID_PATH_RANGE');
         }
-        else if (maxAdverseExcursionBps >= 8000) {
-            outcomeClass = 'RUG';
+        const modeledEntry = params.entryPriceSol * (1 + params.entrySlippageBps / 10_000);
+        const modeledPeakExit = params.peakPriceSol * (1 - params.exitSlippageBps / 10_000);
+        const modeledFinalExit = params.exitPriceSol * (1 - params.exitSlippageBps / 10_000);
+        const chartPeakMultiple = params.peakPriceSol / params.entryPriceSol;
+        const modeledMultipleAfterAssumedSlippage = modeledPeakExit / modeledEntry;
+        const modeledExitMultipleAfterAssumedSlippage = modeledFinalExit / modeledEntry;
+        const observedWorstDrawdownBps = Math.round(Math.max(0, (params.entryPriceSol - params.troughPriceSol) / params.entryPriceSol * 10_000));
+        if (![chartPeakMultiple, modeledMultipleAfterAssumedSlippage, modeledExitMultipleAfterAssumedSlippage, observedWorstDrawdownBps].every(Number.isFinite)) {
+            throw new Error('MULTIPLIER_PATH_METRIC_OVERFLOW');
         }
-        else if (executableExitPriceSol < executableEntryPriceSol) {
-            outcomeClass = 'DISTRIBUTION_LOSS';
-        }
-        const certificateId = `label_cert_${mint.slice(0, 8)}_${observationSlot}`;
-        const certificateHash = createHash('sha256')
-            .update('LABEL_CERTIFICATE:')
-            .update(certificateId)
-            .update(maxExecutableMultiple.toString())
-            .update(outcomeClass)
+        const diagnosticDigest = createHash('sha256')
+            .update(JSON.stringify([
+            this.VERSION, params.mint, params.observationSlot, params.observationTimeMs,
+            params.entryPriceSol, params.peakPriceSol, params.troughPriceSol, params.exitPriceSol,
+            params.entrySlippageBps, params.exitSlippageBps, chartPeakMultiple,
+            modeledMultipleAfterAssumedSlippage, modeledExitMultipleAfterAssumedSlippage,
+            observedWorstDrawdownBps,
+        ]))
             .digest('hex');
-        return {
-            certificateId,
-            mint,
-            observationTimeMs,
-            observationSlot,
-            executableEntryPriceSol,
-            executablePeakPriceSol,
-            executableExitPriceSol,
-            maxChartMultiple,
-            maxExecutableMultiple,
-            maxFavorableExcursionBps,
-            maxAdverseExcursionBps,
-            liquidityAtPeakSol,
-            exitCapacityAtPeakSol,
-            outcomeClass,
-            labelConfidence: 0.95,
-            verifierVersion: this.VERSION,
-            certificateHash,
-        };
+        return Object.freeze({
+            mint: params.mint,
+            observationSlot: params.observationSlot,
+            observationTimeMs: params.observationTimeMs,
+            chartPeakMultiple: Number(chartPeakMultiple.toFixed(6)),
+            modeledMultipleAfterAssumedSlippage: Number(modeledMultipleAfterAssumedSlippage.toFixed(6)),
+            modeledExitMultipleAfterAssumedSlippage: Number(modeledExitMultipleAfterAssumedSlippage.toFixed(6)),
+            observedWorstDrawdownBps,
+            labelStatus: 'UNVERIFIED_RESEARCH_ONLY',
+            diagnosticDigest,
+        });
     }
 }
 //# sourceMappingURL=competing-hazards-multiplier.js.map

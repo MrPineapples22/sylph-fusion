@@ -32,6 +32,34 @@ export interface PnLAttributionBreakdown {
   readonly attributionGapLamports: bigint;
 }
 
+export type PnLCategory =
+  | 'PREDICTED_PNL'
+  | 'PAPER_PNL'
+  | 'SHADOW_PNL'
+  | 'MARK_TO_MARKET_PNL'
+  | 'REALIZED_FINAL_PNL';
+
+export interface ClassifiedPnLStatement extends TradeAccountingStatement {
+  readonly category: PnLCategory;
+  readonly settlementId?: string;
+  readonly economicFactId?: string;
+  readonly isFinalizedSettlement: boolean;
+}
+
+export interface ComprehensiveProfitAttribution {
+  readonly marketBetaLamports: bigint;
+  readonly marketWideCohortReturnLamports: bigint;
+  readonly tokenSpecificReturnLamports: bigint;
+  readonly timingAlphaLamports: bigint;
+  readonly strategySignalAlphaLamports: bigint;
+  readonly executionEfficiencyLamports: bigint;
+  readonly routeEfficiencyLamports: bigint;
+  readonly liquidityImpactLamports: bigint;
+  readonly unexplainedResidualLamports: bigint;
+  readonly totalAttributedLamports: bigint;
+  readonly isReconciled: boolean;
+}
+
 export function compileTradeAccounting(params: {
   actualEntryCostLamports: bigint;
   actualExitProceedsLamports: bigint;
@@ -39,7 +67,11 @@ export function compileTradeAccounting(params: {
   priorityFeesLamports: bigint;
   jitoTipsLamports: bigint;
   routeFeesLamports: bigint;
-}): TradeAccountingStatement {
+  category?: PnLCategory;
+  settlementId?: string;
+  economicFactId?: string;
+  isFinalizedSettlement?: boolean;
+}): ClassifiedPnLStatement {
   const totalExplicitFeesLamports =
     params.networkFeesLamports +
     params.priorityFeesLamports +
@@ -55,6 +87,11 @@ export function compileTradeAccounting(params: {
   const calculated = params.actualExitProceedsLamports - params.actualEntryCostLamports - totalExplicitFeesLamports;
   const isAccountingBalanced = calculated === realizedNetPnLLamports;
 
+  const category = params.category ?? 'PAPER_PNL';
+  if (category === 'REALIZED_FINAL_PNL' && !params.isFinalizedSettlement) {
+    throw new Error('PNL_AUTHORITY_VIOLATION: REALIZED_FINAL_PNL requires isFinalizedSettlement=true');
+  }
+
   return {
     actualEntryCostLamports: params.actualEntryCostLamports,
     actualExitProceedsLamports: params.actualExitProceedsLamports,
@@ -65,6 +102,62 @@ export function compileTradeAccounting(params: {
     totalExplicitFeesLamports,
     realizedNetPnLLamports,
     isAccountingBalanced,
+    category,
+    settlementId: params.settlementId,
+    economicFactId: params.economicFactId,
+    isFinalizedSettlement: params.isFinalizedSettlement ?? false,
+  };
+}
+
+export function decomposeComprehensiveProfitAttribution(params: {
+  accounting: TradeAccountingStatement;
+  marketBetaLamports?: bigint;
+  marketWideCohortReturnLamports?: bigint;
+  tokenSpecificReturnLamports?: bigint;
+  timingAlphaLamports?: bigint;
+  strategySignalAlphaLamports?: bigint;
+  executionEfficiencyLamports?: bigint;
+  routeEfficiencyLamports?: bigint;
+  liquidityImpactLamports?: bigint;
+}): ComprehensiveProfitAttribution {
+  const { accounting } = params;
+
+  const marketBeta = params.marketBetaLamports ?? 0n;
+  const cohortReturn = params.marketWideCohortReturnLamports ?? 0n;
+  const tokenSpecific = params.tokenSpecificReturnLamports ?? 0n;
+  const timingAlpha = params.timingAlphaLamports ?? 0n;
+  const signalAlpha = params.strategySignalAlphaLamports ?? 0n;
+  const execEfficiency = params.executionEfficiencyLamports ?? -accounting.totalExplicitFeesLamports;
+  const routeEfficiency = params.routeEfficiencyLamports ?? 0n;
+  const liquidityImpact = params.liquidityImpactLamports ?? 0n;
+
+  const explainedSum =
+    marketBeta +
+    cohortReturn +
+    tokenSpecific +
+    timingAlpha +
+    signalAlpha +
+    execEfficiency +
+    routeEfficiency +
+    liquidityImpact;
+
+  // Crucial invariant: remainder is explicitly UNEXPLAINED, never laundered into alpha!
+  const unexplainedResidual = accounting.realizedNetPnLLamports - explainedSum;
+  const totalAttributed = explainedSum + unexplainedResidual;
+  const isReconciled = totalAttributed === accounting.realizedNetPnLLamports;
+
+  return {
+    marketBetaLamports: marketBeta,
+    marketWideCohortReturnLamports: cohortReturn,
+    tokenSpecificReturnLamports: tokenSpecific,
+    timingAlphaLamports: timingAlpha,
+    strategySignalAlphaLamports: signalAlpha,
+    executionEfficiencyLamports: execEfficiency,
+    routeEfficiencyLamports: routeEfficiency,
+    liquidityImpactLamports: liquidityImpact,
+    unexplainedResidualLamports: unexplainedResidual,
+    totalAttributedLamports: totalAttributed,
+    isReconciled,
   };
 }
 
@@ -94,3 +187,4 @@ export function decomposePnLAttribution(
     attributionGapLamports: attributionGap,
   };
 }
+

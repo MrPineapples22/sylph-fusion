@@ -5,5 +5,6 @@
 
 export * from './action-vector.js';
 export * from './execution-attempt-record.js';
+export * from './economic-flight-recorder.js';
 export * from './writable-set-fee-surface.js';
 export * from './policy-artifact.js';

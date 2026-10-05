@@ -51,6 +51,24 @@ export interface RealizedEdgeDecomposition {
   readonly netRealizedEdgeLamports: bigint;
 }
 
+export interface ComprehensiveEdgeBreakdown {
+  readonly signalEdgeLamports: bigint;
+  readonly temporalDecayLamports: bigint;
+  readonly decisionLatencyLossLamports: bigint;
+  readonly buildLatencyLossLamports: bigint;
+  readonly routingEdgeLamports: bigint;
+  readonly leaderEdgeLamports: bigint;
+  readonly liquidityChangeLamports: bigint;
+  readonly priceImpactLamports: bigint;
+  readonly slippageLamports: bigint;
+  readonly baseFeeLamports: bigint;
+  readonly priorityFeeLamports: bigint;
+  readonly tipLamports: bigint;
+  readonly failureCostLamports: bigint;
+  readonly capitalLockCostLamports: bigint;
+  readonly netRealizedEdgeLamports: bigint;
+}
+
 export interface RealizedEdgeRecord {
   readonly recordId: string;
   readonly economicFactId: string;
@@ -58,6 +76,7 @@ export interface RealizedEdgeRecord {
   readonly stages: EdgeStages;
   readonly leakage: EdgeLeakageBreakdown;
   readonly attribution: RealizedEdgeDecomposition;
+  readonly comprehensiveBreakdown: ComprehensiveEdgeBreakdown;
   readonly primaryLeakageCause: 'SIGNAL_DECAY' | 'LATENCY_TRANSPORT' | 'SLIPPAGE_IMPACT' | 'EXECUTION_FRICTION' | 'NONE';
   readonly recordedAt: string;
   readonly recordHash: string;
@@ -73,6 +92,19 @@ export class RealizedEdgeLedger {
     feesAndTipsLamports: bigint;
     slippageAndImpactLamports: bigint;
     capitalTimeAndFrictionLamports: bigint;
+    routingEdgeLamports?: bigint;
+    leaderEdgeLamports?: bigint;
+    temporalDecayLamports?: bigint;
+    decisionLatencyLossLamports?: bigint;
+    buildLatencyLossLamports?: bigint;
+    liquidityChangeLamports?: bigint;
+    priceImpactLamports?: bigint;
+    slippageLamports?: bigint;
+    baseFeeLamports?: bigint;
+    priorityFeeLamports?: bigint;
+    tipLamports?: bigint;
+    failureCostLamports?: bigint;
+    capitalLockCostLamports?: bigint;
   }): RealizedEdgeRecord {
     const { stages, feesAndTipsLamports, slippageAndImpactLamports, capitalTimeAndFrictionLamports } = params;
 
@@ -105,15 +137,36 @@ export class RealizedEdgeLedger {
       }
     }
 
+    const routingEdge = params.routingEdgeLamports ?? 0n;
+    const leaderEdge = params.leaderEdgeLamports ?? 0n;
+
     const attribution: RealizedEdgeDecomposition = Object.freeze({
       signalEdgeLamports: stages.decisionEdgeLamports,
       timingEdgeLamports: -decisionToSubmission,
-      routingEdgeLamports: 0n,
-      leaderEdgeLamports: 0n,
+      routingEdgeLamports: routingEdge,
+      leaderEdgeLamports: leaderEdge,
       liquidityEdgeLamports: -submissionToLanding,
       feesAndTipsLamports,
       slippageAndImpactLamports,
       capitalTimeAndFrictionLamports,
+      netRealizedEdgeLamports: stages.realizedNetEdgeLamports,
+    });
+
+    const comprehensiveBreakdown: ComprehensiveEdgeBreakdown = Object.freeze({
+      signalEdgeLamports: stages.decisionEdgeLamports,
+      temporalDecayLamports: params.temporalDecayLamports ?? (predictionToDecision > 0n ? predictionToDecision : 0n),
+      decisionLatencyLossLamports: params.decisionLatencyLossLamports ?? (decisionToSubmission / 2n),
+      buildLatencyLossLamports: params.buildLatencyLossLamports ?? (decisionToSubmission - decisionToSubmission / 2n),
+      routingEdgeLamports: routingEdge,
+      leaderEdgeLamports: leaderEdge,
+      liquidityChangeLamports: params.liquidityChangeLamports ?? (submissionToLanding > 0n ? submissionToLanding : 0n),
+      priceImpactLamports: params.priceImpactLamports ?? (slippageAndImpactLamports / 2n),
+      slippageLamports: params.slippageLamports ?? (slippageAndImpactLamports - slippageAndImpactLamports / 2n),
+      baseFeeLamports: params.baseFeeLamports ?? 5_000n,
+      priorityFeeLamports: params.priorityFeeLamports ?? (feesAndTipsLamports > 5_000n ? (feesAndTipsLamports - 5_000n) / 2n : 0n),
+      tipLamports: params.tipLamports ?? (feesAndTipsLamports > 5_000n ? (feesAndTipsLamports - 5_000n) - (feesAndTipsLamports - 5_000n) / 2n : 0n),
+      failureCostLamports: params.failureCostLamports ?? 0n,
+      capitalLockCostLamports: params.capitalLockCostLamports ?? capitalTimeAndFrictionLamports,
       netRealizedEdgeLamports: stages.realizedNetEdgeLamports,
     });
 
@@ -145,6 +198,7 @@ export class RealizedEdgeLedger {
       stages: Object.freeze({ ...stages }),
       leakage,
       attribution,
+      comprehensiveBreakdown,
       primaryLeakageCause: primaryCause,
       recordedAt,
       recordHash,

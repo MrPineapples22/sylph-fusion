@@ -128,6 +128,10 @@ export class CapitalTimeLedger {
     }
 
     const totalLamportMilliseconds = stateTimes.RESERVED + stateTimes.UNKNOWN + stateTimes.INVESTED;
+    const lifecycleStartMs = segments.reduce((start, s) => Math.min(start, s.startMs), Number.MAX_SAFE_INTEGER);
+    if (obs.unencumberedAtMs < lifecycleStartMs) {
+      throw new Error('CAPITAL_TIME_CASH_PRECEDES_OCCUPANCY');
+    }
     const realizedNetPnlLamports = obs.grossProceedsLamports - obs.basisRelievedLamports - obs.totalFrictionLamports;
     const capitalTimeEfficiencyPerSecondBps = totalLamportMilliseconds > 0n
       ? Number((realizedNetPnlLamports * 10_000_000n) / totalLamportMilliseconds)
@@ -137,8 +141,8 @@ export class CapitalTimeLedger {
       economicFactId: obs.economicFactId,
       lamportMillisecondsByState: Object.freeze({ ...stateTimes }),
       totalLamportMilliseconds,
-      timeToCashMs: obs.unencumberedAtMs - segments.reduce((start, s) => Math.min(start, s.startMs), Number.MAX_SAFE_INTEGER),
-      timeToFinalSettlementMs: obs.settledAtMs - segments.reduce((start, s) => Math.min(start, s.startMs), Number.MAX_SAFE_INTEGER),
+      timeToCashMs: obs.unencumberedAtMs - lifecycleStartMs,
+      timeToFinalSettlementMs: obs.settledAtMs - lifecycleStartMs,
       realizedNetPnlLamports,
       capitalTimeEfficiencyPerSecondBps,
       status: 'RESEARCH_ONLY',

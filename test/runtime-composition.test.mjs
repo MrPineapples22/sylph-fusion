@@ -7,6 +7,8 @@ test('composition preserves one injected paper runtime identity',()=>{
  const context=createRuntimeContext(env,{now:1,runtimeGeneration:'r'});
  const composed=composePaperRuntime({context,market:{},execution:{},reconciliation:{}});
  assert.equal(composed.context.runtimeGeneration,'r'); assert.equal(Object.isFrozen(composed),true);
+ assert.ok(composed.unit);
+ assert.ok(composed.divergenceAuditor);
 });
 test('composition cannot promote a live configuration',()=>{
  const context=createRuntimeContext({...env,MODE:'live',KEYPAIR_PATH:'unused'});
