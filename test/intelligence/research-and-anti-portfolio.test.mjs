@@ -81,30 +81,74 @@ test('Planner-X: Rejects malformed candidate context instead of generating a rep
   }), /PLANNER_X_INVALID_CANDIDATE_CONTEXT/);
 });
 
-test('Capital-Time Economics: Computes lamport-seconds and capital velocity metrics', () => {
+test('Capital-Time Economics: Integrates explicit state intervals and computes realized P&L', () => {
   const ledger = new CapitalTimeLedger();
 
   const metrics = ledger.recordTradeLifecycle({
     tradeId: 'trade_001',
     economicFactId: 'fact_001',
-    reservedAtMs: 10_000,
-    signedAtMs: 11_000,
-    landedAtMs: 12_000,
+    segments: [
+      { segmentId: 'reserve-1', capitalSliceId: 'slice-1', state: 'RESERVED', startMs: 10_000, endMs: 12_000, amountLamports: 1_000_000_000n },
+      { segmentId: 'invest-1', capitalSliceId: 'slice-1', state: 'INVESTED', startMs: 12_000, endMs: 15_000, amountLamports: 1_000_000_000n },
+    ],
     settledAtMs: 15_000,
     unencumberedAtMs: 15_000,
-    reservedLamports: 1_000_000_000n,
-    investedLamports: 1_000_000_000n,
-    unknownLamports: 500_000_000n,
-    realizedNetProceedsLamports: 1_050_000_000n, // +5% net
+    grossProceedsLamports: 1_060_000_000n,
+    basisRelievedLamports: 1_000_000_000n,
     totalFrictionLamports: 10_000_000n,
   });
 
   assert.equal(metrics.status, 'RESEARCH_ONLY');
-  assert.ok(metrics.totalLamportSeconds > 0n);
+  assert.equal(metrics.totalLamportMilliseconds, 5_000_000_000_000n);
+  assert.equal(metrics.lamportMillisecondsByState.RESERVED, 2_000_000_000_000n);
+  assert.equal(metrics.lamportMillisecondsByState.INVESTED, 3_000_000_000_000n);
   assert.equal(metrics.timeToCashMs, 5000);
   assert.equal(metrics.timeToFinalSettlementMs, 5000);
   assert.ok(metrics.capitalTimeEfficiencyPerSecondBps > 0);
+  assert.equal(metrics.realizedNetPnlLamports, 50_000_000n);
+  assert.equal(metrics.reportId, 'cap_time_trade_001_fact_001');
   assert.equal(ledger.getMetrics('trade_001')?.tradeId, 'trade_001');
+  assert.throws(() => { metrics.lamportMillisecondsByState.RESERVED = 0n; }, TypeError);
+});
+
+test('Capital-Time Economics: Rejects overlapping occupancy and conflicting duplicate observations', () => {
+  const ledger = new CapitalTimeLedger();
+  const base = {
+    tradeId: 'trade_overlap',
+    economicFactId: 'fact_overlap',
+    segments: [
+      { segmentId: 's1', capitalSliceId: 'slice-1', state: 'RESERVED', startMs: 10, endMs: 20, amountLamports: 5n },
+      { segmentId: 's2', capitalSliceId: 'slice-1', state: 'UNKNOWN', startMs: 19, endMs: 30, amountLamports: 5n },
+    ],
+    grossProceedsLamports: 20n,
+    basisRelievedLamports: 10n,
+    totalFrictionLamports: 1n,
+    unencumberedAtMs: 30,
+    settledAtMs: 30,
+  };
+  assert.throws(() => ledger.recordTradeLifecycle(base), /CAPITAL_TIME_OVERLAPPING_SLICE_INTERVALS/);
+  ledger.recordTradeLifecycle({ ...base, segments: [base.segments[0]] });
+  const valid = { ...base, segments: [base.segments[0]] };
+  assert.equal(ledger.recordTradeLifecycle(valid), ledger.recordTradeLifecycle(valid));
+  assert.throws(() => ledger.recordTradeLifecycle({ ...valid, economicFactId: 'different-fact' }), /CAPITAL_TIME_DUPLICATE_OBSERVATION_CONFLICT/);
+});
+
+test('Capital-Time Economics: Rejects invalid interval and preserves negative diagnostic P&L', () => {
+  const ledger = new CapitalTimeLedger();
+  assert.throws(() => ledger.recordTradeLifecycle({
+    tradeId: 'trade_bad', economicFactId: 'fact_bad',
+    segments: [{ segmentId: 's', capitalSliceId: 'slice', state: 'INVESTED', startMs: 5, endMs: 5, amountLamports: 1n }],
+    grossProceedsLamports: 0n, basisRelievedLamports: 1n, totalFrictionLamports: 1n,
+    unencumberedAtMs: 5, settledAtMs: 5,
+  }), /CAPITAL_TIME_INVALID_SEGMENT/);
+  const metrics = ledger.recordTradeLifecycle({
+    tradeId: 'trade_loss', economicFactId: 'fact_loss',
+    segments: [{ segmentId: 's', capitalSliceId: 'slice', state: 'INVESTED', startMs: 1, endMs: 2, amountLamports: 10n }],
+    grossProceedsLamports: 5n, basisRelievedLamports: 10n, totalFrictionLamports: 2n,
+    unencumberedAtMs: 2, settledAtMs: 2,
+  });
+  assert.equal(metrics.realizedNetPnlLamports, -7n);
+  assert.equal(metrics.capitalTimeEfficiencyPerSecondBps, -7_000_000);
 });
 
 test('Anti-Portfolio: Tracks rejected trades, computes loss avoided vs regret', () => {
