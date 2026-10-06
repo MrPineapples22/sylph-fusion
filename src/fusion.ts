@@ -39,6 +39,7 @@ import { RuntimeDivergenceAuditor, type DecisionVector } from './platform/pipeli
 import type { PaperAuthorityMode } from './platform/paper/paper-authority-policy.js';
 import { StartupHealthAuditor } from './platform/assurance/startup-health-audit.js';
 import type { RawObservationEnvelope } from './platform/ingestion/types.js';
+import { DurableResearchSpool } from './platform/audit/durable-research-spool.js';
 
 type Candidate = {
   mint: string;
@@ -198,6 +199,7 @@ export class Engine {
     readonly gateMode: 'ml_gated' | 'shadow' | 'deterministic_only' = modelEvaluator ? 'ml_gated' : 'deterministic_only',
     runtimeUnit?: UnifiedPipelineUnit,
     divergenceAuditor?: RuntimeDivergenceAuditor,
+    readonly researchSpool?: DurableResearchSpool,
   ) {
     this.feed = new Feed(cfg, rpc.connection, e => this.onEvent(e));
     if (state.researchEvidenceLoss !== undefined) {
@@ -220,6 +222,10 @@ export class Engine {
     this.runtimeUnit = runtimeUnit ?? new UnifiedPipelineUnit(paperMode);
     this.divergenceAuditor = divergenceAuditor ?? new RuntimeDivergenceAuditor();
   }
+  public async drainResearchSpool(maxBatch = 100) {
+    if (!this.researchSpool) return { replayedCount: 0, remainingCount: 0 };
+    return this.researchSpool.replay(this.store, maxBatch);
+  }
   private persistResearchJournal(
     method: 'saveCounterfactualEvaluation' | 'saveFalsificationReport',
     record: Record<string, unknown>,
@@ -229,6 +235,14 @@ export class Engine {
     // Older injected Store implementations may have only the core state API.
     const failed = (reason: 'method_unavailable' | 'write_rejected') => {
       this.noteResearchPersistenceFailure(method, recordId, reason);
+      if (reason === 'write_rejected' && this.researchSpool) {
+        this.researchSpool.enqueue(
+          method === 'saveCounterfactualEvaluation' ? 'JOURNAL_COUNTERFACTUAL' : 'JOURNAL_FALSIFICATION',
+          method,
+          record,
+          recordId
+        );
+      }
       try {
         this.sessionLogger?.writeEvent('research_journal_persist_failed', { journal: method, recordId, reason });
       } catch {
@@ -250,6 +264,9 @@ export class Engine {
     const append = (this.store as Store | undefined)?.appendAuditEvent;
     const failed = (reason: 'method_unavailable' | 'write_rejected') => {
       this.noteResearchPersistenceFailure(event, recordId, reason);
+      if (reason === 'write_rejected' && this.researchSpool) {
+        this.researchSpool.enqueue('AUDIT_EVENT', event, payload, recordId);
+      }
       try { this.sessionLogger?.writeEvent('research_observation_persist_failed', { event, recordId, reason }); } catch { /* telemetry failure remains non-authorizing */ }
     };
     if (typeof append !== 'function') {
@@ -676,7 +693,7 @@ export class Engine {
         eligible,
         paperFilled,
       },
-      positions: Object.values(this.state.positions).map(p => {
+      positions: Object.values(this.state.positions ?? {}).map(p => {
         const mark = this.marks.get(p.mint) ?? null;
         const currentValue = mark ? mark.value : null;
         const unrealizedPnl = mark ? String(BigInt(mark.value) - BigInt(p.cost)) : null;
@@ -706,6 +723,7 @@ export class Engine {
         lossMarkerStatus: this.researchLossMarkerInvalid ? 'INVALID' :
           this.state.researchEvidenceLoss === undefined ? 'NONE_RECORDED' :
           this.persistedResearchLossCount >= this.state.researchEvidenceLoss.failureCount ? 'PERSISTED' : 'PENDING_STATE_SAVE',
+        spool: this.researchSpool?.getSnapshot() ?? null,
       },
       candidates: [...this.candidates.values()].slice(-50).reverse().map(c => ({
         mint: c.mint,

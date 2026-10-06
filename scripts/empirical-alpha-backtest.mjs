@@ -266,7 +266,7 @@ async function runBacktest() {
   console.log('\n================================================================');
   console.log(' BACKTEST EXECUTION COMPLETE — ANALYSIS & COMPARISON');
   console.log(` Rows in clean multi-observation cohort: ${usableTokens}`);
-  console.log(` Source rows: ${totalParsed - 1} | malformed-width rows: ${malformedRows} | excluded before rule evaluation: ${excludedFromCleanCohort}`);
+  console.log(` Source CSV records: ${totalParsed - 1} | malformed-width records: ${malformedRows} | excluded before rule evaluation: ${excludedFromCleanCohort}`);
   console.log(` Malformed CSV records excluded: ${malformedRows}`);
   console.log('================================================================\n');
 
@@ -315,7 +315,7 @@ async function runBacktest() {
     ],
     cohort: {
       id: 'MULTI_OBSERVATION_NONEXTREME_SOURCE_COHORT',
-      sourceRows: totalParsed - 1,
+      sourceRecords: totalParsed - 1,
       malformedWidthRows: malformedRows,
       excludedBeforeRuleEvaluation: excludedFromCleanCohort,
       includedRows: usableTokens,

@@ -146,10 +146,10 @@ test('scenario CLI labels the parser-defined cohort and accounts for excluded so
     });
     assert.equal(result.status,0,result.stderr);
     assert.match(result.stdout,/RULE: \[BASELINE_RESEARCH_COHORT\]/);
-    assert.match(result.stdout,/Source rows: 2 \| malformed-width rows: 0 \| excluded before rule evaluation: 1/);
+    assert.match(result.stdout,/Source CSV records: 2 \| malformed-width records: 0 \| excluded before rule evaluation: 1/);
     const report=JSON.parse(fs.readFileSync(reportPath,'utf8'));
     assert.deepEqual(report.cohort,{
-      id:'MULTI_OBSERVATION_NONEXTREME_SOURCE_COHORT',sourceRows:2,malformedWidthRows:0,
+      id:'MULTI_OBSERVATION_NONEXTREME_SOURCE_COHORT',sourceRecords:2,malformedWidthRows:0,
       excludedBeforeRuleEvaluation:1,includedRows:1,
     });
     assert.equal(report.matrix.BASELINE_RESEARCH_COHORT.STATIC_2X_STOP_25.inSample.trades,1);

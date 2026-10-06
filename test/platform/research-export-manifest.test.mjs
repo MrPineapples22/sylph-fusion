@@ -54,6 +54,51 @@ test('research export verification detects changed snapshots and edited manifest
   assert.equal(JSON.parse(await readFile(manifestPath, 'utf8')).schemaVersion, 'sylph-research-export-manifest/1');
 });
 
+test('signed manifests bind snapshot inventory and anchor claims to the HMAC', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'sylph-export-signed-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const snapshot = await makeSnapshot(directory, undefined);
+  const manifestPath = `${snapshot}.manifest.json`;
+  const key = 'test-only-signing-secret';
+  const anchor = { witnessRootSha256: 'a'.repeat(64), anchorReference: 'witness://batch-42' };
+  const manifest = await createResearchExportManifest(snapshot, manifestPath, {
+    signingKey: key, signerId: 'research-test', externalAnchor: anchor,
+  });
+  assert.equal(manifest.trust.manifestAuthentication.mode, 'HMAC_SHA256');
+  assert.deepEqual(await verifyResearchExportManifest(snapshot, manifestPath, { verificationKey: key }), {
+    valid: true, snapshotSha256: manifest.snapshotSha256, retainedAuditRows: 2,
+    authentication: { signerId: 'research-test', verified: true },
+    externalAnchor: { witnessRootSha256: anchor.witnessRootSha256, anchorReference: anchor.anchorReference },
+  });
+  assert.deepEqual(await verifyResearchExportManifest(snapshot, manifestPath), {
+    valid: false, reason: 'SIGNATURE_INVALID',
+  });
+  assert.deepEqual(await verifyResearchExportManifest(snapshot, manifestPath, { verificationKey: 'wrong-key' }), {
+    valid: false, reason: 'SIGNATURE_INVALID',
+  });
+
+  await writeFile(manifestPath, JSON.stringify({
+    ...manifest,
+    trust: { ...manifest.trust, externalAnchor: { ...manifest.trust.externalAnchor, anchorReference: 'witness://edited' } },
+  }));
+  assert.deepEqual(await verifyResearchExportManifest(snapshot, manifestPath, { verificationKey: key }), {
+    valid: false, reason: 'SIGNATURE_INVALID',
+  });
+});
+
+test('manifest signing and external-anchor inputs cannot be silently downgraded', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'sylph-export-signing-input-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const snapshot = await makeSnapshot(directory, undefined);
+  await assert.rejects(createResearchExportManifest(snapshot, undefined, { signingKey: 'secret' }),
+    /INVALID_MANIFEST_SIGNING_CONFIGURATION/);
+  await assert.rejects(createResearchExportManifest(snapshot, undefined, { signerId: 'signer' }),
+    /INVALID_MANIFEST_SIGNING_CONFIGURATION/);
+  await assert.rejects(createResearchExportManifest(snapshot, undefined, {
+    signingKey: 'secret', signerId: 'signer', externalAnchor: { witnessRootSha256: 'bad', anchorReference: 'ref' },
+  }), /INVALID_EXTERNAL_ANCHOR/);
+});
+
 test('manifest describes and verifies the existing Store VACUUM INTO snapshot', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'sylph-store-export-'));
   const store = new Store(join(directory, 'source.sqlite'));

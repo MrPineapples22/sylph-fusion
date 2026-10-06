@@ -1,8 +1,24 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+
+export type ManifestAuthentication =
+  | 'NONE'
+  | {
+      readonly mode: 'HMAC_SHA256';
+      readonly signerId: string;
+      readonly signatureHex: string;
+    };
+
+export type ManifestExternalAnchor =
+  | 'NONE'
+  | {
+      readonly mode: 'EXTERNAL_WITNESS_ROOT';
+      readonly witnessRootSha256: string;
+      readonly anchorReference: string;
+    };
 
 export interface ResearchExportManifestV1 {
   readonly schemaVersion: 'sylph-research-export-manifest/1';
@@ -33,16 +49,48 @@ export interface ResearchExportManifestV1 {
   };
   readonly trust: {
     readonly snapshotHash: 'SHA256';
-    readonly manifestAuthentication: 'NONE';
-    readonly externalAnchor: 'NONE';
+    readonly manifestAuthentication: ManifestAuthentication;
+    readonly externalAnchor: ManifestExternalAnchor;
   };
 }
 
 export type ResearchExportVerification =
-  | { readonly valid: true; readonly snapshotSha256: string; readonly retainedAuditRows: number }
-  | { readonly valid: false; readonly reason: 'MANIFEST_INVALID' | 'SNAPSHOT_HASH_MISMATCH' | 'SNAPSHOT_INVENTORY_MISMATCH' };
+  | {
+      readonly valid: true;
+      readonly snapshotSha256: string;
+      readonly retainedAuditRows: number;
+      readonly authentication?: { readonly signerId: string; readonly verified: boolean };
+      readonly externalAnchor?: { readonly witnessRootSha256: string; readonly anchorReference: string };
+    }
+  | { readonly valid: false; readonly reason: 'MANIFEST_INVALID' | 'SNAPSHOT_HASH_MISMATCH' | 'SNAPSHOT_INVENTORY_MISMATCH' | 'SIGNATURE_INVALID' };
+
+export interface CreateManifestOptions {
+  readonly signingKey?: string;
+  readonly signerId?: string;
+  readonly externalAnchor?: {
+    readonly witnessRootSha256: string;
+    readonly anchorReference: string;
+  };
+}
+
+export interface VerifyManifestOptions {
+  readonly verificationKey?: string;
+}
 
 const MAX_MANIFEST_BYTES = 2 * 1024 * 1024;
+
+function isValidSignerId(value: unknown): value is string {
+  return typeof value === 'string' && value.length >= 1 && value.length <= 128 && !/[\u0000-\u001f\u007f]/.test(value);
+}
+
+function isValidExternalAnchor(value: unknown): value is Exclude<ManifestExternalAnchor, 'NONE'> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const anchor = value as Record<string, unknown>;
+  return (anchor.mode === undefined || anchor.mode === 'EXTERNAL_WITNESS_ROOT') && typeof anchor.witnessRootSha256 === 'string' &&
+    /^[a-f0-9]{64}$/.test(anchor.witnessRootSha256) && typeof anchor.anchorReference === 'string' &&
+    anchor.anchorReference.length >= 1 && anchor.anchorReference.length <= 512 &&
+    !/[\u0000-\u001f\u007f]/.test(anchor.anchorReference);
+}
 
 async function hashFile(path: string): Promise<{ sha256: string; bytes: number }> {
   const hash = createHash('sha256');
@@ -179,15 +227,96 @@ function safeInteger(value: number | bigint): number {
   return value;
 }
 
-export async function createResearchExportManifest(snapshotPath: string, manifestPath = `${snapshotPath}.manifest.json`): Promise<ResearchExportManifestV1> {
+export function computeManifestDigest(manifest: {
+  schemaVersion: string;
+  createdAt: string;
+  snapshotFile: string;
+  snapshotBytes: number;
+  snapshotSha256: string;
+  auditCoverage: ResearchExportManifestV1['auditCoverage'];
+  knownCaptureLoss: ResearchExportManifestV1['knownCaptureLoss'];
+  trust: {
+    snapshotHash: 'SHA256';
+    externalAnchor: ManifestExternalAnchor;
+  };
+}): string {
+  const canonical = {
+    schemaVersion: manifest.schemaVersion,
+    createdAt: manifest.createdAt,
+    snapshotFile: manifest.snapshotFile,
+    snapshotBytes: manifest.snapshotBytes,
+    snapshotSha256: manifest.snapshotSha256,
+    auditCoverage: manifest.auditCoverage,
+    knownCaptureLoss: manifest.knownCaptureLoss,
+    trust: {
+      snapshotHash: manifest.trust.snapshotHash,
+      externalAnchor: manifest.trust.externalAnchor,
+    },
+  };
+  return createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
+}
+
+export async function createResearchExportManifest(
+  snapshotPath: string,
+  manifestPath = `${snapshotPath}.manifest.json`,
+  options?: CreateManifestOptions
+): Promise<ResearchExportManifestV1> {
+  if ((options?.signingKey === undefined) !== (options?.signerId === undefined) ||
+      (options?.signingKey !== undefined && (typeof options.signingKey !== 'string' || options.signingKey.length === 0)) ||
+      (options?.signerId !== undefined && !isValidSignerId(options.signerId))) {
+    throw new Error('INVALID_MANIFEST_SIGNING_CONFIGURATION');
+  }
+  if (options?.externalAnchor !== undefined && !isValidExternalAnchor(options.externalAnchor)) {
+    throw new Error('INVALID_EXTERNAL_ANCHOR');
+  }
   const snapshot = resolve(snapshotPath), destination = resolve(manifestPath);
   if (snapshot === destination) throw new Error('RESEARCH_EXPORT_PATH_COLLISION');
   const { sha256, bytes, facts } = await stableSnapshot(snapshot);
+
+  const externalAnchor: ManifestExternalAnchor = options?.externalAnchor
+    ? {
+        mode: 'EXTERNAL_WITNESS_ROOT',
+        witnessRootSha256: options.externalAnchor.witnessRootSha256,
+        anchorReference: options.externalAnchor.anchorReference,
+      }
+    : 'NONE';
+
+  let manifestAuthentication: ManifestAuthentication = 'NONE';
+  const createdAt = new Date().toISOString();
+  const snapshotFile = basename(snapshot);
+
+  if (options?.signingKey !== undefined && options.signerId !== undefined) {
+    const digest = computeManifestDigest({
+      schemaVersion: 'sylph-research-export-manifest/1',
+      createdAt,
+      snapshotFile,
+      snapshotBytes: bytes,
+      snapshotSha256: sha256,
+      ...facts,
+      trust: { snapshotHash: 'SHA256', externalAnchor },
+    });
+    const signatureHex = createHmac('sha256', options.signingKey).update(digest).digest('hex');
+    manifestAuthentication = {
+      mode: 'HMAC_SHA256',
+      signerId: options.signerId,
+      signatureHex,
+    };
+  }
+
   const manifest: ResearchExportManifestV1 = Object.freeze({
-    schemaVersion: 'sylph-research-export-manifest/1', createdAt: new Date().toISOString(), snapshotFile: basename(snapshot),
-    snapshotBytes: bytes, snapshotSha256: sha256, ...facts,
-    trust: { snapshotHash: 'SHA256', manifestAuthentication: 'NONE', externalAnchor: 'NONE' } as ResearchExportManifestV1['trust'],
+    schemaVersion: 'sylph-research-export-manifest/1',
+    createdAt,
+    snapshotFile,
+    snapshotBytes: bytes,
+    snapshotSha256: sha256,
+    ...facts,
+    trust: {
+      snapshotHash: 'SHA256' as const,
+      manifestAuthentication,
+      externalAnchor,
+    },
   });
+
   const temporary = `${destination}.${randomUUID()}.tmp`;
   try {
     await writeFile(temporary, `${JSON.stringify(manifest, null, 2)}\n`, { flag: 'wx' });
@@ -196,7 +325,11 @@ export async function createResearchExportManifest(snapshotPath: string, manifes
   return manifest;
 }
 
-export async function verifyResearchExportManifest(snapshotPath: string, manifestPath = `${snapshotPath}.manifest.json`): Promise<ResearchExportVerification> {
+export async function verifyResearchExportManifest(
+  snapshotPath: string,
+  manifestPath = `${snapshotPath}.manifest.json`,
+  options?: VerifyManifestOptions
+): Promise<ResearchExportVerification> {
   let manifest: ResearchExportManifestV1;
   try {
     const sidecarStat = await stat(manifestPath);
@@ -206,10 +339,50 @@ export async function verifyResearchExportManifest(snapshotPath: string, manifes
         !/^[a-f0-9]{64}$/.test(manifest.snapshotSha256) || !Number.isSafeInteger(manifest.snapshotBytes) || manifest.snapshotBytes < 0 ||
         !Number.isFinite(Date.parse(manifest.createdAt)) || manifest.snapshotFile !== basename(resolve(snapshotPath)) ||
         manifest.auditCoverage?.completeness !== 'UNKNOWN' || manifest.auditCoverage.completenessReason !== 'AUDIT_ROWS_MAY_HAVE_BEEN_PRUNED_OR_LOST' ||
-        manifest.trust?.snapshotHash !== 'SHA256' || manifest.trust.manifestAuthentication !== 'NONE' || manifest.trust.externalAnchor !== 'NONE' ||
+        manifest.trust?.snapshotHash !== 'SHA256' ||
         !['NONE_RECORDED', 'RECORDED', 'INVALID_OR_UNAVAILABLE'].includes(manifest.knownCaptureLoss?.status) ||
         !Number.isSafeInteger(manifest.auditCoverage.retainedRowCount) || manifest.auditCoverage.retainedRowCount < 0) return { valid: false, reason: 'MANIFEST_INVALID' };
+
+    const auth = manifest.trust?.manifestAuthentication;
+    const anchor = manifest.trust?.externalAnchor;
+
+    const authValid = auth === 'NONE' || (
+      auth && typeof auth === 'object' && auth.mode === 'HMAC_SHA256' &&
+      isValidSignerId(auth.signerId) &&
+      typeof auth.signatureHex === 'string' && /^[a-f0-9]{64}$/.test(auth.signatureHex)
+    );
+
+    const anchorValid = anchor === 'NONE' || (
+      anchor && typeof anchor === 'object' && anchor.mode === 'EXTERNAL_WITNESS_ROOT' && isValidExternalAnchor(anchor)
+    );
+
+    if (!authValid || !anchorValid) return { valid: false, reason: 'MANIFEST_INVALID' };
+
+    // Verify cryptographic signature if authentication is present
+    if (auth && typeof auth === 'object' && auth.mode === 'HMAC_SHA256') {
+      if (typeof options?.verificationKey !== 'string' || options.verificationKey.length === 0) {
+        return { valid: false, reason: 'SIGNATURE_INVALID' };
+      }
+      const digest = computeManifestDigest({
+        schemaVersion: manifest.schemaVersion,
+        createdAt: manifest.createdAt,
+        snapshotFile: manifest.snapshotFile,
+        snapshotBytes: manifest.snapshotBytes,
+        snapshotSha256: manifest.snapshotSha256,
+        auditCoverage: manifest.auditCoverage,
+        knownCaptureLoss: manifest.knownCaptureLoss,
+        trust: {
+          snapshotHash: 'SHA256',
+          externalAnchor: manifest.trust.externalAnchor,
+        },
+      });
+      const expectedSig = createHmac('sha256', options.verificationKey).update(digest).digest('hex');
+      if (!timingSafeEqual(Buffer.from(expectedSig, 'hex'), Buffer.from(auth.signatureHex, 'hex'))) {
+        return { valid: false, reason: 'SIGNATURE_INVALID' };
+      }
+    }
   } catch { return { valid: false, reason: 'MANIFEST_INVALID' }; }
+
   let snapshot: { sha256: string; bytes: number; facts: ReturnType<typeof inventory> };
   try { snapshot = await stableSnapshot(resolve(snapshotPath)); }
   catch { return { valid: false, reason: 'SNAPSHOT_INVENTORY_MISMATCH' }; }
@@ -217,5 +390,20 @@ export async function verifyResearchExportManifest(snapshotPath: string, manifes
   if (JSON.stringify(snapshot.facts) !== JSON.stringify({ auditCoverage: manifest.auditCoverage, knownCaptureLoss: manifest.knownCaptureLoss })) {
     return { valid: false, reason: 'SNAPSHOT_INVENTORY_MISMATCH' };
   }
-  return { valid: true, snapshotSha256: snapshot.sha256, retainedAuditRows: manifest.auditCoverage.retainedRowCount };
+
+  const auth = manifest.trust.manifestAuthentication;
+  const anchor = manifest.trust.externalAnchor;
+
+  const result: ResearchExportVerification = {
+    valid: true,
+    snapshotSha256: snapshot.sha256,
+    retainedAuditRows: manifest.auditCoverage.retainedRowCount,
+    ...(auth && typeof auth === 'object' && auth.mode === 'HMAC_SHA256'
+      ? { authentication: { signerId: auth.signerId, verified: true } }
+      : {}),
+    ...(anchor && typeof anchor === 'object' && anchor.mode === 'EXTERNAL_WITNESS_ROOT'
+      ? { externalAnchor: { witnessRootSha256: anchor.witnessRootSha256, anchorReference: anchor.anchorReference } }
+      : {}),
+  };
+  return result;
 }
