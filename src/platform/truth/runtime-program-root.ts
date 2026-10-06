@@ -91,13 +91,15 @@ export function verifyRuntimeRootIntegrity(value: unknown): value is RuntimeRoot
   const root = dataRecord(value, RUNTIME_REQUIRED_KEYS, ['runtimeRootHashSchemaVersion']);
   if (!root) return false;
   const version = Object.prototype.hasOwnProperty.call(root, 'runtimeRootHashSchemaVersion') ? root.runtimeRootHashSchemaVersion : 1;
-  if ((version !== 1 && version !== 2) || !['mainnet-beta', 'devnet', 'testnet', 'localnet'].includes(String(root.cluster)) ||
+  if ((version !== 1 && version !== 2) || typeof root.cluster !== 'string' ||
+      !['mainnet-beta', 'devnet', 'testnet', 'localnet'].includes(root.cluster) ||
       typeof root.genesisHash !== 'string' || root.genesisHash.length < 1 || root.genesisHash.length > MAX_RUNTIME_TEXT_CHARS ||
       typeof root.agaveVersion !== 'string' || root.agaveVersion.length < 1 || root.agaveVersion.length > MAX_RUNTIME_TEXT_CHARS ||
       typeof root.resourcePolicyVersion !== 'string' || root.resourcePolicyVersion.length < 1 || root.resourcePolicyVersion.length > MAX_RUNTIME_TEXT_CHARS ||
       typeof root.runtimeRootHash !== 'string' || !/^[a-f0-9]{64}$/.test(root.runtimeRootHash) ||
       typeof root.activeFeatureSetHash !== 'string' || !(version === 1 ? /^[a-f0-9]{16}$/ : /^[a-f0-9]{64}$/).test(root.activeFeatureSetHash) ||
-      (version === 2 && !['legacy', 'v0', 'all'].includes(String(root.transactionVersionSupported))) ||
+      (version === 2 && (typeof root.transactionVersionSupported !== 'string' ||
+        !['legacy', 'v0', 'all'].includes(root.transactionVersionSupported))) ||
       // The historical creator always emitted `all`; v1 did not hash this field, so accepting another value would trust an unauthenticated edit.
       (version === 1 && root.transactionVersionSupported !== 'all') ||
       !Number.isSafeInteger(root.epoch) || Number(root.epoch) < 0 || !Number.isSafeInteger(root.contextSlot) || Number(root.contextSlot) < 0) return false;

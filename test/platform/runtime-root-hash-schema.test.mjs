@@ -188,6 +188,19 @@ test('shared integrity validators reject field tampering, accessors, proxies, cy
   assert.equal(verifyProgramRootForestIntegrity(tooMany.slice(0,512)),true);
 });
 
+test('RuntimeRoot verifier rejects object-coerced enums without invoking attacker hooks',()=>{
+  const runtime=EnvironmentCertificationEngine.createRuntimeRoot({epoch:3,contextSlot:9});
+  let coercionCalls=0;
+  const enumObject=(value)=>({
+    toString(){coercionCalls++;return value;},
+    toJSON(){coercionCalls++;return value;},
+  });
+  assert.equal(verifyRuntimeRootIntegrity({...runtime,cluster:enumObject('mainnet-beta')}),false);
+  assert.equal(coercionCalls,0,'cluster validation must not coerce attacker-controlled objects');
+  assert.equal(verifyRuntimeRootIntegrity({...runtime,transactionVersionSupported:enumObject('all')}),false);
+  assert.equal(coercionCalls,0,'transaction-support validation must reject before hashing');
+});
+
 test('verifyCompatibility refuses roots whose fields no longer match their embedded hashes',()=>{
   const current=EnvironmentCertificationEngine.createRuntimeRoot({epoch:4,contextSlot:10});
   const certified=EnvironmentCertificationEngine.createRuntimeRoot({epoch:4,contextSlot:10});

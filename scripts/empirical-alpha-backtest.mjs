@@ -22,8 +22,8 @@ const ROUND_TRIP_FRICTION_PCT = ((PROTOCOL_FEE_BPS * 2 + AMM_PRICE_IMPACT_BPS * 
 // Candidate filters use available source columns; their point-in-time availability is not established.
 const ENTRY_RULES = [
   {
-    id: 'BASELINE_ALL_TOKENS',
-    description: 'No filter: Buy every token at first observed price (unconditional baseline)',
+    id: 'BASELINE_RESEARCH_COHORT',
+    description: 'No rule-level filter within the parser-defined multi-observation, non-extreme cohort; this is not every source token',
     predicate: () => true
   },
   {
@@ -207,6 +207,7 @@ async function runBacktest() {
   let totalParsed = 0;
   let usableTokens = 0;
   let malformedRows = 0;
+  let excludedFromCleanCohort = 0;
   let columnIndex = null;
   const SPLIT_DATE = '2026-06-25T23:59:59Z';
 
@@ -225,7 +226,10 @@ async function runBacktest() {
       continue;
     }
     const tokenContext = parseBacktestTokenRow(row, columnIndex);
-    if (tokenContext === null) continue;
+    if (tokenContext === null) {
+      excludedFromCleanCohort++;
+      continue;
+    }
     usableTokens++;
     const isOutSample = tokenContext.detectedAtMs > Date.parse(SPLIT_DATE);
 
@@ -261,7 +265,8 @@ async function runBacktest() {
   assertCsvDatasetPresent(columnIndex, totalParsed);
   console.log('\n================================================================');
   console.log(' BACKTEST EXECUTION COMPLETE — ANALYSIS & COMPARISON');
-  console.log(` Total Usable Tokens Evaluated: ${usableTokens}`);
+  console.log(` Rows in clean multi-observation cohort: ${usableTokens}`);
+  console.log(` Source rows: ${totalParsed - 1} | malformed-width rows: ${malformedRows} | excluded before rule evaluation: ${excludedFromCleanCohort}`);
   console.log(` Malformed CSV records excluded: ${malformedRows}`);
   console.log('================================================================\n');
 
@@ -308,6 +313,13 @@ async function runBacktest() {
       'Scenario PnL sums use fixed position-size and friction assumptions; they are not realized PnL or positive-expectancy evidence.',
       'Malformed-width CSV records are excluded without padding or repairing field boundaries.',
     ],
+    cohort: {
+      id: 'MULTI_OBSERVATION_NONEXTREME_SOURCE_COHORT',
+      sourceRows: totalParsed - 1,
+      malformedWidthRows: malformedRows,
+      excludedBeforeRuleEvaluation: excludedFromCleanCohort,
+      includedRows: usableTokens,
+    },
     matrix, totalTokens: usableTokens, malformedRows, frictionPct: ROUND_TRIP_FRICTION_PCT,
   }, null, 2));
   console.log(`\nDetailed backtest results saved to: ${reportPath}`);

@@ -131,3 +131,30 @@ test('CLI rejects empty, malformed-header, invalid-scalar, and truncated-quote i
     fs.rmSync(dir,{recursive:true,force:true});
   }
 });
+
+test('scenario CLI labels the parser-defined cohort and accounts for excluded source rows',()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'sylph-backtest-cohort-'));
+  const inputPath=path.join(dir,'input.csv');
+  const reportPath=path.join(dir,'report.json');
+  const scriptPath=fileURLToPath(new URL('../scripts/empirical-alpha-backtest.mjs',import.meta.url));
+  const singleObservation=[...row];singleObservation[0]='1';singleObservation[2]='';
+  try {
+    fs.writeFileSync(inputPath,[header.join(','),row.join(','),singleObservation.join(',')].join('\n'));
+    const result=spawnSync(process.execPath,[scriptPath],{
+      encoding:'utf8',timeout:10_000,
+      env:{...process.env,SYLPH_BACKTEST_CSV_PATH:inputPath,SYLPH_BACKTEST_REPORT_PATH:reportPath},
+    });
+    assert.equal(result.status,0,result.stderr);
+    assert.match(result.stdout,/RULE: \[BASELINE_RESEARCH_COHORT\]/);
+    assert.match(result.stdout,/Source rows: 2 \| malformed-width rows: 0 \| excluded before rule evaluation: 1/);
+    const report=JSON.parse(fs.readFileSync(reportPath,'utf8'));
+    assert.deepEqual(report.cohort,{
+      id:'MULTI_OBSERVATION_NONEXTREME_SOURCE_COHORT',sourceRows:2,malformedWidthRows:0,
+      excludedBeforeRuleEvaluation:1,includedRows:1,
+    });
+    assert.equal(report.matrix.BASELINE_RESEARCH_COHORT.STATIC_2X_STOP_25.inSample.trades,1);
+    assert.equal(Object.hasOwn(report.matrix,'BASELINE_ALL_TOKENS'),false);
+  } finally {
+    fs.rmSync(dir,{recursive:true,force:true});
+  }
+});
