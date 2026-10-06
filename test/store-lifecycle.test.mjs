@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
+import {DatabaseSync} from 'node:sqlite';
 import {Store} from '../dist/store.js';
 test('concurrent close drains accepted writes and rejects late requests',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'sylph-store-audit-'));
@@ -30,6 +31,30 @@ test('audit journal validates event identity, payload size, and bounded reads',a
   await db.appendAuditEvent('candidate_discovered_v1',{candidateId:'b'});
   assert.deepEqual((await db.getAuditEvents('candidate_discovered_v1',1)).map(row=>JSON.parse(row.body).candidateId),['a']);
  }finally{await db.close();}
+});
+test('stable audit event IDs deduplicate uncertain retries across reopen and retention pruning',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'sylph-store-audit-id-'));
+ const path=join(dir,'state.sqlite'),eventId='research_test_event_1';let db=new Store(path);
+ try{
+  const first=await db.appendAuditEvent('candidate_discovered_v1',{candidateId:'candidate-1'},eventId);
+  assert.deepEqual(first,{inserted:true,auditId:1});
+  await db.close();
+
+  // Model a committed SQLite write whose acknowledgment was lost to its caller.
+  db=new Store(path);
+  const retry=await db.appendAuditEvent('candidate_discovered_v1',{candidateId:'candidate-1'},eventId);
+  assert.deepEqual(retry,{inserted:false,auditId:1});
+  assert.equal((await db.getAuditEvents('candidate_discovered_v1')).length,1);
+  await assert.rejects(db.appendAuditEvent('candidate_discovered_v1',{candidateId:'different'},eventId),
+    /DUPLICATE_EVENT_ID_CONTENT_CONFLICT/);
+  const raw=new DatabaseSync(path);
+  raw.prepare('UPDATE audit SET at=? WHERE id=1').run(Date.now()-100);
+  raw.close();
+  await db.pruneAudit(0);
+  const delayedReplay=await db.appendAuditEvent('candidate_discovered_v1',{candidateId:'candidate-1'},eventId);
+  assert.deepEqual(delayedReplay,{inserted:false,auditId:1});
+  assert.equal((await db.getAuditEvents('candidate_discovered_v1')).length,0);
+ }finally{await db.close();await rm(dir,{recursive:true,force:true});}
 });
 test('database queue rejects overload without losing accepted requests',async()=>{
  const db=new Store(':memory:');

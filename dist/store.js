@@ -32,7 +32,7 @@ export class Store {
                 ? new GenerationStorageError('STORAGE_OUTCOME_UNKNOWN') : this.failure);
         this.calls.clear();
     }
-    call(op, body, event) {
+    call(op, body, event, eventId) {
         if (this.closing && op !== 'close')
             return Promise.reject(new Error('Database is closing; request rejected'));
         if (this.failure)
@@ -44,7 +44,7 @@ export class Store {
             const id = ++this.seq;
             this.calls.set(id, { op, resolve, reject });
             try {
-                this.worker.postMessage({ id, op, body, event });
+                this.worker.postMessage({ id, op, body, event, eventId });
             }
             catch (e) {
                 this.calls.delete(id);
@@ -53,15 +53,19 @@ export class Store {
         });
     }
     async load() { const text = await this.call('load'); return text ? JSON.parse(text) : null; }
-    async appendAuditEvent(event, payload) {
+    async appendAuditEvent(event, payload, stableEventId) {
         if (typeof event !== 'string' || !/^[a-z][a-z0-9_]{0,63}$/.test(event))
             throw new Error('Invalid audit event name');
         if (!payload || typeof payload !== 'object' || Array.isArray(payload))
             throw new Error('Invalid audit event payload');
+        if (stableEventId !== undefined && (typeof stableEventId !== 'string' || !/^[a-zA-Z0-9_\-:]{1,128}$/.test(stableEventId))) {
+            throw new Error('Invalid audit event id');
+        }
         const body = JSON.stringify(payload, (_, value) => typeof value === 'bigint' ? value.toString() : value);
         if (typeof body !== 'string' || Buffer.byteLength(body) > 65_536)
             throw new Error('Audit event payload exceeds size limit');
-        await this.call('append-audit-event', body, event);
+        const result = await this.call('append-audit-event', body, event, stableEventId);
+        return result ? JSON.parse(result) : { inserted: true };
     }
     async getAuditEvents(event, limit = 1000) {
         if (typeof event !== 'string' || !/^[a-z][a-z0-9_]{0,63}$/.test(event))

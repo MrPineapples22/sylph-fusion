@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -97,6 +99,41 @@ test('manifest signing and external-anchor inputs cannot be silently downgraded'
   await assert.rejects(createResearchExportManifest(snapshot, undefined, {
     signingKey: 'secret', signerId: 'signer', externalAnchor: { witnessRootSha256: 'bad', anchorReference: 'ref' },
   }), /INVALID_EXTERNAL_ANCHOR/);
+});
+
+test('manifest CLI signs from environment keys without printing secrets and verifies signed exports', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'sylph-export-cli-signed-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const snapshot = await makeSnapshot(directory, undefined);
+  const manifestPath = `${snapshot}.manifest.json`;
+  const cliPath = fileURLToPath(new URL('../../scripts/research-export-manifest.mjs', import.meta.url));
+  const key = 'cli-test-signing-secret';
+  const baseEnv = { ...process.env };
+  const create = spawnSync(process.execPath, [cliPath, 'create', snapshot, manifestPath], {
+    encoding: 'utf8',
+    env: {
+      ...baseEnv,
+      SYLPH_RESEARCH_MANIFEST_SIGNING_KEY: key,
+      SYLPH_RESEARCH_MANIFEST_SIGNER_ID: 'cli-test-signer',
+    },
+  });
+  assert.equal(create.status, 0, create.stderr);
+  assert.equal(create.stdout.includes(key), false);
+  assert.equal(JSON.parse(create.stdout).trust.manifestAuthentication.signerId, 'cli-test-signer');
+
+  const verify = spawnSync(process.execPath, [cliPath, 'verify', snapshot, manifestPath], {
+    encoding: 'utf8',
+    env: { ...baseEnv, SYLPH_RESEARCH_MANIFEST_VERIFICATION_KEY: key },
+  });
+  assert.equal(verify.status, 0, verify.stderr);
+  assert.equal(JSON.parse(verify.stdout).authentication.verified, true);
+
+  const wrongKey = spawnSync(process.execPath, [cliPath, 'verify', snapshot, manifestPath], {
+    encoding: 'utf8',
+    env: { ...baseEnv, SYLPH_RESEARCH_MANIFEST_VERIFICATION_KEY: 'wrong-cli-key' },
+  });
+  assert.equal(wrongKey.status, 1);
+  assert.deepEqual(JSON.parse(wrongKey.stdout), { valid: false, reason: 'SIGNATURE_INVALID' });
 });
 
 test('manifest describes and verifies the existing Store VACUUM INTO snapshot', async t => {

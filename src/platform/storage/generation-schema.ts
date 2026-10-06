@@ -69,6 +69,12 @@ CREATE TRIGGER signing_intent_no_kind_change BEFORE UPDATE ON signing_intents
 WHEN OLD.record_kind != NEW.record_kind
 BEGIN SELECT RAISE(ABORT,'INTENT_KIND_IMMUTABLE'); END;`;
 export const otherStoreSchema = `CREATE TABLE IF NOT EXISTS state(id INTEGER PRIMARY KEY CHECK(id=1), body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY, at INTEGER NOT NULL, event TEXT NOT NULL, body TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS audit_event_dedupe(
+  event_id TEXT PRIMARY KEY,
+  event_hash TEXT NOT NULL,
+  audit_id INTEGER,
+  created_at_ms INTEGER NOT NULL
+) STRICT;
 CREATE TABLE IF NOT EXISTS audit_prune_ledger(
   id INTEGER PRIMARY KEY,
   pruned_at_ms INTEGER NOT NULL,

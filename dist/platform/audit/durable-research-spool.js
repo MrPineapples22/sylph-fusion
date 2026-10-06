@@ -5,13 +5,17 @@ export const DEFAULT_MAX_CAPACITY = 1000;
 export const DEFAULT_MAX_PAYLOAD_BYTES = 65_536; // 64 KiB
 export const DEFAULT_MAX_AGGREGATE_BYTES = 16 * 1024 * 1024; // 16 MiB
 export const DEFAULT_MAX_DRAINED_HISTORY = 10_000;
-function computeStableEventId(eventType, eventName, payload, recordId) {
-    if (recordId && typeof recordId === 'string' && /^[a-zA-Z0-9_\-:]{1,128}$/.test(recordId)) {
-        return recordId;
+export function stableResearchEventId(eventType, eventName, payload, recordId) {
+    if (!['AUDIT_EVENT', 'JOURNAL_COUNTERFACTUAL', 'JOURNAL_FALSIFICATION'].includes(eventType) ||
+        typeof eventName !== 'string' || !/^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/.test(eventName) ||
+        (recordId !== undefined && (typeof recordId !== 'string' || !/^[a-zA-Z0-9_\-:]{1,128}$/.test(recordId)))) {
+        throw new Error('INVALID_RESEARCH_EVENT_IDENTITY');
     }
     const serialized = JSON.stringify(payload, (_, v) => (typeof v === 'bigint' ? v.toString() : v));
-    const digest = createHash('sha256').update(`${eventType}:${eventName}:${serialized}`).digest('hex');
-    return `spool_${digest.slice(0, 24)}`;
+    if (typeof serialized !== 'string')
+        throw new Error('INVALID_RESEARCH_EVENT_PAYLOAD');
+    const digest = createHash('sha256').update(`${eventType}\0${eventName}\0${recordId ?? ''}\0${serialized}`).digest('hex');
+    return `research_${digest}`;
 }
 export class DurableResearchSpool {
     spoolFilePath;
@@ -53,7 +57,7 @@ export class DurableResearchSpool {
         };
     }
     enqueue(eventType, eventName, payload, recordId) {
-        const eventId = computeStableEventId(eventType, eventName, payload, recordId);
+        const eventId = stableResearchEventId(eventType, eventName, payload, recordId);
         // Duplicate suppression
         if (this.pendingIndex.has(eventId)) {
             return { accepted: false, eventId, reason: 'DUPLICATE_ALREADY_SPOOLED' };
@@ -168,7 +172,7 @@ export class DurableResearchSpool {
                 if (typeof drainTarget.appendAuditEvent !== 'function') {
                     throw new Error('DRAIN_TARGET_AUDIT_UNAVAILABLE');
                 }
-                await drainTarget.appendAuditEvent(record.eventName, record.payload);
+                await drainTarget.appendAuditEvent(record.eventName, record.payload, record.eventId);
                 break;
             }
             case 'JOURNAL_COUNTERFACTUAL': {

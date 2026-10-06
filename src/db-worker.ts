@@ -1,4 +1,5 @@
 import { parentPort, workerData } from 'node:worker_threads';
+import { createHash } from 'node:crypto';
 import { openGenerationDatabase, registerInitialGenerationSync, readGenerationIdentitySync, sqliteDiagnostic } from './platform/storage/generation-sqlite.js';
 import { GenerationStorageError } from './platform/storage/generation-identity.js';
 const initialized = (() => {
@@ -10,7 +11,7 @@ const initialized = (() => {
   }
 })();
 const { db, registrationCapable } = initialized;
-parentPort!.on('message', (m: { id: number; op: string; body?: string; event?: string }) => {
+parentPort!.on('message', (m: { id: number; op: string; body?: string; event?: string; eventId?: string }) => {
   try {
     if (m.op === 'register-initial-generation') {
       const result = registerInitialGenerationSync(db, registrationCapable, m.body);
@@ -35,8 +36,37 @@ parentPort!.on('message', (m: { id: number; op: string; body?: string; event?: s
           typeof m.body !== 'string' || Buffer.byteLength(m.body) > 65_536) throw new Error('invalid audit event');
       const payload = JSON.parse(m.body);
       if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('invalid audit event payload');
-      db.prepare('INSERT INTO audit(at,event,body) VALUES(?,?,?)').run(Date.now(), m.event, m.body);
-      parentPort!.postMessage({ id: m.id, value: null });
+      const stableEventId = m.eventId;
+      if (stableEventId !== undefined) {
+        if (typeof stableEventId !== 'string' || !/^[a-zA-Z0-9_\-:]{1,128}$/.test(stableEventId)) {
+          throw new Error('invalid audit event id');
+        }
+        const eventHash = createHash('sha256').update(`${m.event}:${m.body}`).digest('hex');
+        db.exec('BEGIN IMMEDIATE');
+        try {
+          db.exec('CREATE TABLE IF NOT EXISTS audit_event_dedupe(event_id TEXT PRIMARY KEY, event_hash TEXT NOT NULL, audit_id INTEGER, created_at_ms INTEGER NOT NULL) STRICT;');
+          const existing = db.prepare('SELECT event_hash, audit_id FROM audit_event_dedupe WHERE event_id=?').get(stableEventId) as { event_hash: string; audit_id: number } | undefined;
+          if (existing) {
+            if (existing.event_hash !== eventHash) {
+              throw new Error('DUPLICATE_EVENT_ID_CONTENT_CONFLICT');
+            }
+            db.exec('COMMIT');
+            parentPort!.postMessage({ id: m.id, value: JSON.stringify({ inserted: false, auditId: existing.audit_id }) });
+            return;
+          }
+          const info = db.prepare('INSERT INTO audit(at,event,body) VALUES(?,?,?)').run(Date.now(), m.event, m.body);
+          const auditId = Number(info.lastInsertRowid);
+          db.prepare('INSERT INTO audit_event_dedupe(event_id,event_hash,audit_id,created_at_ms) VALUES(?,?,?,?)').run(stableEventId, eventHash, auditId, Date.now());
+          db.exec('COMMIT');
+          parentPort!.postMessage({ id: m.id, value: JSON.stringify({ inserted: true, auditId }) });
+        } catch (e) {
+          db.exec('ROLLBACK');
+          throw e;
+        }
+      } else {
+        db.prepare('INSERT INTO audit(at,event,body) VALUES(?,?,?)').run(Date.now(), m.event, m.body);
+        parentPort!.postMessage({ id: m.id, value: null });
+      }
     } else if (m.op === 'get-audit-events') {
       const query = JSON.parse(m.body!);
       if (!query || typeof query.event !== 'string' || !/^[a-z][a-z0-9_]{0,63}$/.test(query.event) ||

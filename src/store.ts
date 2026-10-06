@@ -38,24 +38,32 @@ export class Store implements
       ? new GenerationStorageError('STORAGE_OUTCOME_UNKNOWN') : this.failure);
     this.calls.clear();
   }
-  private call(op: string, body?: string, event?: string): Promise<string | null> {
+  private call(op: string, body?: string, event?: string, eventId?: string): Promise<string | null> {
     if (this.closing && op !== 'close') return Promise.reject(new Error('Database is closing; request rejected'));
     if (this.failure) return Promise.reject(this.failure);
     // Bound queued snapshots when disk throughput falls behind producers.
     if (op !== 'close' && this.calls.size >= 128) return Promise.reject(new Error('Database request queue full; retry after pending writes complete'));
     return new Promise((resolve, reject) => {
       const id = ++this.seq; this.calls.set(id, { op, resolve, reject });
-      try { this.worker.postMessage({ id, op, body, event }); }
+      try { this.worker.postMessage({ id, op, body, event, eventId }); }
       catch (e) { this.calls.delete(id); reject(e); }
     });
   }
   async load(): Promise<State | null> { const text = await this.call('load'); return text ? JSON.parse(text) : null; }
-  async appendAuditEvent(event: string, payload: Readonly<Record<string, unknown>>): Promise<void> {
+  async appendAuditEvent(
+    event: string,
+    payload: Readonly<Record<string, unknown>>,
+    stableEventId?: string
+  ): Promise<{ inserted: boolean; auditId?: number }> {
     if (typeof event !== 'string' || !/^[a-z][a-z0-9_]{0,63}$/.test(event)) throw new Error('Invalid audit event name');
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('Invalid audit event payload');
+    if (stableEventId !== undefined && (typeof stableEventId !== 'string' || !/^[a-zA-Z0-9_\-:]{1,128}$/.test(stableEventId))) {
+      throw new Error('Invalid audit event id');
+    }
     const body = JSON.stringify(payload, (_, value) => typeof value === 'bigint' ? value.toString() : value);
     if (typeof body !== 'string' || Buffer.byteLength(body) > 65_536) throw new Error('Audit event payload exceeds size limit');
-    await this.call('append-audit-event', body, event);
+    const result = await this.call('append-audit-event', body, event, stableEventId);
+    return result ? JSON.parse(result) : { inserted: true };
   }
   async getAuditEvents(event: string, limit = 1000): Promise<readonly { id: number; at: number; event: string; body: string }[]> {
     if (typeof event !== 'string' || !/^[a-z][a-z0-9_]{0,63}$/.test(event)) throw new Error('Invalid audit event name');

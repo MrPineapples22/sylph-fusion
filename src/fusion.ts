@@ -39,7 +39,7 @@ import { RuntimeDivergenceAuditor, type DecisionVector } from './platform/pipeli
 import type { PaperAuthorityMode } from './platform/paper/paper-authority-policy.js';
 import { StartupHealthAuditor } from './platform/assurance/startup-health-audit.js';
 import type { RawObservationEnvelope } from './platform/ingestion/types.js';
-import { DurableResearchSpool } from './platform/audit/durable-research-spool.js';
+import { DurableResearchSpool, stableResearchEventId } from './platform/audit/durable-research-spool.js';
 
 type Candidate = {
   mint: string;
@@ -226,6 +226,27 @@ export class Engine {
     if (!this.researchSpool) return { replayedCount: 0, remainingCount: 0 };
     return this.researchSpool.replay(this.store, maxBatch);
   }
+  private enqueueResearchSpool(
+    eventType: 'AUDIT_EVENT' | 'JOURNAL_COUNTERFACTUAL' | 'JOURNAL_FALSIFICATION',
+    eventName: string,
+    payload: Readonly<Record<string, unknown>>,
+    recordId: string,
+    failureEvent: string
+  ): void {
+    if (!this.researchSpool) return;
+    try {
+      const result = this.researchSpool.enqueue(eventType, eventName, payload, recordId);
+      if (result.accepted || result.reason === 'DUPLICATE_ALREADY_SPOOLED' || result.reason === 'DUPLICATE_ALREADY_DRAINED') return;
+      this.noteResearchPersistenceFailure(failureEvent, recordId, 'spool_enqueue_failed');
+      try {
+        this.sessionLogger?.writeEvent('research_spool_enqueue_failed', {
+          event: failureEvent, recordId, reason: result.reason, spoolEventId: result.eventId,
+        });
+      } catch { /* spool failure remains visible in the Engine loss counter */ }
+    } catch {
+      this.noteResearchPersistenceFailure(failureEvent, recordId, 'spool_enqueue_failed');
+    }
+  }
   private persistResearchJournal(
     method: 'saveCounterfactualEvaluation' | 'saveFalsificationReport',
     record: Record<string, unknown>,
@@ -235,12 +256,10 @@ export class Engine {
     // Older injected Store implementations may have only the core state API.
     const failed = (reason: 'method_unavailable' | 'write_rejected') => {
       this.noteResearchPersistenceFailure(method, recordId, reason);
-      if (reason === 'write_rejected' && this.researchSpool) {
-        this.researchSpool.enqueue(
+      if (reason === 'write_rejected') {
+        this.enqueueResearchSpool(
           method === 'saveCounterfactualEvaluation' ? 'JOURNAL_COUNTERFACTUAL' : 'JOURNAL_FALSIFICATION',
-          method,
-          record,
-          recordId
+          method, record, recordId, method
         );
       }
       try {
@@ -262,11 +281,15 @@ export class Engine {
   }
   private persistResearchObservation(event: string, payload: Record<string, unknown>, recordId: string): void {
     const append = (this.store as Store | undefined)?.appendAuditEvent;
+    let stableEventId: string;
+    try { stableEventId = stableResearchEventId('AUDIT_EVENT', event, payload, recordId); }
+    catch {
+      this.noteResearchPersistenceFailure(event, recordId, 'invalid_research_identity');
+      return;
+    }
     const failed = (reason: 'method_unavailable' | 'write_rejected') => {
       this.noteResearchPersistenceFailure(event, recordId, reason);
-      if (reason === 'write_rejected' && this.researchSpool) {
-        this.researchSpool.enqueue('AUDIT_EVENT', event, payload, recordId);
-      }
+      if (reason === 'write_rejected') this.enqueueResearchSpool('AUDIT_EVENT', event, payload, recordId, event);
       try { this.sessionLogger?.writeEvent('research_observation_persist_failed', { event, recordId, reason }); } catch { /* telemetry failure remains non-authorizing */ }
     };
     if (typeof append !== 'function') {
@@ -274,7 +297,7 @@ export class Engine {
       return;
     }
     try {
-      void Promise.resolve(append.call(this.store, event, payload)).catch(() => failed('write_rejected'));
+      void Promise.resolve(append.call(this.store, event, payload, stableEventId)).catch(() => failed('write_rejected'));
     } catch {
       failed('write_rejected');
     }

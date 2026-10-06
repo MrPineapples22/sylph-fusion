@@ -21,7 +21,7 @@ test('DurableResearchSpool assigns stable event IDs and rejects duplicate submis
   // 1. Enqueue with custom recordId
   const res1 = spool.enqueue('AUDIT_EVENT', 'candidate_discovered_v1', { mint: 'mint-1' }, 'custom-id-1');
   assert.equal(res1.accepted, true);
-  assert.equal(res1.eventId, 'custom-id-1');
+  assert.match(res1.eventId, /^research_[a-f0-9]{64}$/);
   assert.equal(res1.pendingCount, 1);
 
   // 2. Duplicate submission with same recordId is suppressed
@@ -32,7 +32,7 @@ test('DurableResearchSpool assigns stable event IDs and rejects duplicate submis
   // 3. Enqueue with deterministic hash ID
   const res3 = spool.enqueue('JOURNAL_COUNTERFACTUAL', 'saveCounterfactualEvaluation', { evalId: 'e-1', metric: 42 });
   assert.equal(res3.accepted, true);
-  assert.match(res3.eventId, /^spool_[a-f0-9]{24}$/);
+  assert.match(res3.eventId, /^research_[a-f0-9]{64}$/);
   assert.equal(res3.pendingCount, 2);
 
   // 4. Duplicate content without recordId produces same stable ID and is suppressed
@@ -174,7 +174,7 @@ test('DurableResearchSpool handles partial replay failure with bounded backoff a
   const res = await spool.replay(failingTarget, 10);
   assert.equal(res.replayedCount, 1); // item 1 succeeded
   assert.equal(res.remainingCount, 2); // item 2 and 3 stay pending
-  assert.equal(res.failedEventId, 'id-2');
+  assert.match(res.failedEventId, /^research_[a-f0-9]{64}$/);
   assert.match(res.error, /lock timeout/);
 
   const snap = spool.getSnapshot();
@@ -200,10 +200,14 @@ test('Engine integrates DurableResearchSpool and surfaces spool telemetry in res
 
   const spool = new DurableResearchSpool({ spoolFilePath: spoolFile });
 
+  let firstEventId;
   const mockStore = {
     save: async () => {},
     load: async () => null,
-    appendAuditEvent: async () => { throw new Error('database write queue rejected'); },
+    appendAuditEvent: async (_event, _payload, eventId) => {
+      firstEventId = eventId;
+      throw new Error('database write queue rejected');
+    },
   };
 
   const cfg = { MAX_POSITIONS: 3, MAX_EXPOSURE_LAMPORTS: 1000n, MAX_DAILY_LOSS_LAMPORTS: 1000n, BUY_LAMPORTS: 100n, MAX_SPECULATIVE_RISK_BPS: 500, ROLLING_DRAWDOWN_BPS: 1000, FAILURE_HALT_COUNT: 3, SLIPPAGE_BPS: 100, STOP_BPS: 200, MAX_TIP_LAMPORTS: 10n, MAX_PRIORITY_LAMPORTS: 10n, RPC_URL: 'http://127.0.0.1:8899', WS_URL: 'ws://127.0.0.1:8900' };
@@ -241,15 +245,52 @@ test('Engine integrates DurableResearchSpool and surfaces spool telemetry in res
   assert.equal(evidence.spool.pendingCount, 1);
   assert.equal(evidence.spool.totalSpooledCount, 1);
 
+  // A second rejected write with identical identity is safely covered by the
+  // already-pending spool entry and must not be counted as another lost event.
+  engine['persistResearchObservation']('candidate_spool_test_v1', { test: true }, 'rec-spool-1');
+  await new Promise(resolve => setImmediate(resolve));
+  const duplicateEvidence = engine.snapshot().researchEvidence;
+  assert.equal(duplicateEvidence.persistenceFailures, 2);
+  assert.equal(duplicateEvidence.lastPersistenceFailure.reason, 'write_rejected');
+  assert.equal(duplicateEvidence.spool.pendingCount, 1);
+  assert.equal(duplicateEvidence.spool.totalDroppedCount, 0);
+
   // Fix store and drain spool through engine
   let drainedEvent = null;
-  mockStore.appendAuditEvent = async (event, payload) => { drainedEvent = { event, payload }; };
+  mockStore.appendAuditEvent = async (event, payload, eventId) => { drainedEvent = { event, payload, eventId }; };
 
   const drainResult = await engine.drainResearchSpool();
   assert.equal(drainResult.replayedCount, 1);
   assert.equal(drainResult.remainingCount, 0);
   assert.equal(drainedEvent.event, 'candidate_spool_test_v1');
+  assert.match(drainedEvent.eventId, /^research_[a-f0-9]{64}$/);
+  assert.equal(drainedEvent.eventId, firstEventId);
 
   assert.equal(engine.snapshot().researchEvidence.spool.pendingCount, 0);
   assert.equal(engine.snapshot().researchEvidence.spool.totalDrainedCount, 1);
+});
+
+test('Engine records a second loss when the research spool cannot write its recovery record', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'sylph-engine-spool-disk-failure-'));
+  const spoolFile = join(dir, 'missing-parent', 'spool.jsonl');
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const spool = new DurableResearchSpool({ spoolFilePath: spoolFile });
+  const mockStore = {
+    save: async () => {},
+    load: async () => null,
+    appendAuditEvent: async () => { throw new Error('database write queue rejected'); },
+  };
+  const cfg = { MAX_POSITIONS: 3, MAX_EXPOSURE_LAMPORTS: 1000n, MAX_DAILY_LOSS_LAMPORTS: 1000n,
+    BUY_LAMPORTS: 100n, MAX_SPECULATIVE_RISK_BPS: 500, ROLLING_DRAWDOWN_BPS: 1000,
+    FAILURE_HALT_COUNT: 3, SLIPPAGE_BPS: 100, STOP_BPS: 200, MAX_TIP_LAMPORTS: 10n,
+    MAX_PRIORITY_LAMPORTS: 10n, RPC_URL: 'http://127.0.0.1:8899', WS_URL: 'ws://127.0.0.1:8900' };
+  const engine = new Engine(cfg, { connection: {} }, {}, {}, mockStore,
+    { cash: 1000000000n, positions: {} }, undefined, undefined, 'deterministic_only', undefined, undefined, spool);
+  engine['persistResearchObservation']('candidate_spool_disk_failure_v1', { test: true }, 'disk-failure-record');
+  await new Promise(resolve => setImmediate(resolve));
+  const evidence = engine.snapshot().researchEvidence;
+  assert.equal(evidence.persistenceFailures, 2);
+  assert.equal(evidence.lastPersistenceFailure.reason, 'spool_enqueue_failed');
+  assert.equal(evidence.spool.pendingCount, 0);
+  assert.equal(evidence.spool.diskFailureCount, 1);
 });

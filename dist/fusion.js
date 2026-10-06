@@ -26,6 +26,7 @@ import { composePaperRuntime } from './runtime-composition.js';
 import { UnifiedPipelineUnit } from './platform/pipeline/unified-unit.js';
 import { RuntimeDivergenceAuditor } from './platform/pipeline/runtime-divergence.js';
 import { StartupHealthAuditor } from './platform/assurance/startup-health-audit.js';
+import { stableResearchEventId } from './platform/audit/durable-research-spool.js';
 const reserveBigInt = (value) => BigInt(typeof value?.toString === 'function' ? value.toString() : String(value));
 function candidateEvaluationRetryDelayMs(reason, maxAgeMs) {
     const normalized = reason.toLowerCase();
@@ -162,13 +163,32 @@ export class Engine {
             return { replayedCount: 0, remainingCount: 0 };
         return this.researchSpool.replay(this.store, maxBatch);
     }
+    enqueueResearchSpool(eventType, eventName, payload, recordId, failureEvent) {
+        if (!this.researchSpool)
+            return;
+        try {
+            const result = this.researchSpool.enqueue(eventType, eventName, payload, recordId);
+            if (result.accepted || result.reason === 'DUPLICATE_ALREADY_SPOOLED' || result.reason === 'DUPLICATE_ALREADY_DRAINED')
+                return;
+            this.noteResearchPersistenceFailure(failureEvent, recordId, 'spool_enqueue_failed');
+            try {
+                this.sessionLogger?.writeEvent('research_spool_enqueue_failed', {
+                    event: failureEvent, recordId, reason: result.reason, spoolEventId: result.eventId,
+                });
+            }
+            catch { /* spool failure remains visible in the Engine loss counter */ }
+        }
+        catch {
+            this.noteResearchPersistenceFailure(failureEvent, recordId, 'spool_enqueue_failed');
+        }
+    }
     persistResearchJournal(method, record, recordId) {
         // Research evidence is useful but cannot change a paper fill or exit.
         // Older injected Store implementations may have only the core state API.
         const failed = (reason) => {
             this.noteResearchPersistenceFailure(method, recordId, reason);
-            if (reason === 'write_rejected' && this.researchSpool) {
-                this.researchSpool.enqueue(method === 'saveCounterfactualEvaluation' ? 'JOURNAL_COUNTERFACTUAL' : 'JOURNAL_FALSIFICATION', method, record, recordId);
+            if (reason === 'write_rejected') {
+                this.enqueueResearchSpool(method === 'saveCounterfactualEvaluation' ? 'JOURNAL_COUNTERFACTUAL' : 'JOURNAL_FALSIFICATION', method, record, recordId, method);
             }
             try {
                 this.sessionLogger?.writeEvent('research_journal_persist_failed', { journal: method, recordId, reason });
@@ -191,11 +211,18 @@ export class Engine {
     }
     persistResearchObservation(event, payload, recordId) {
         const append = this.store?.appendAuditEvent;
+        let stableEventId;
+        try {
+            stableEventId = stableResearchEventId('AUDIT_EVENT', event, payload, recordId);
+        }
+        catch {
+            this.noteResearchPersistenceFailure(event, recordId, 'invalid_research_identity');
+            return;
+        }
         const failed = (reason) => {
             this.noteResearchPersistenceFailure(event, recordId, reason);
-            if (reason === 'write_rejected' && this.researchSpool) {
-                this.researchSpool.enqueue('AUDIT_EVENT', event, payload, recordId);
-            }
+            if (reason === 'write_rejected')
+                this.enqueueResearchSpool('AUDIT_EVENT', event, payload, recordId, event);
             try {
                 this.sessionLogger?.writeEvent('research_observation_persist_failed', { event, recordId, reason });
             }
@@ -206,7 +233,7 @@ export class Engine {
             return;
         }
         try {
-            void Promise.resolve(append.call(this.store, event, payload)).catch(() => failed('write_rejected'));
+            void Promise.resolve(append.call(this.store, event, payload, stableEventId)).catch(() => failed('write_rejected'));
         }
         catch {
             failed('write_rejected');
