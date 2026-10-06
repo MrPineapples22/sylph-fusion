@@ -50,6 +50,14 @@ test('reconstructs deterministic index parents across nested calls, siblings, an
   assert.ok(Object.isFrozen(trace) && Object.isFrozen(trace.groups) && Object.isFrozen(trace.groups[0].instructions[0].parent));
 });
 
+test('matches independent nested-instruction and one-node trace hash vectors', () => {
+  const trace = normalizeSimulationCpiTrace(true, 1, [{ index: 0, instructions: [{
+    parsed: { info: { amount: '1' }, type: 'transfer' }, program: 'system', programId, stackHeight: 2,
+  }] }]);
+  assert.equal(trace.groups[0].instructions[0].instructionHash, '70b1682c183cd398c6b74bd6831e61926c7913d876384e115c757ae339bf2e5a');
+  assert.equal(trace.traceHash, '6726b6aa0059c3734d09f40e7e4ffab1cc59b6af5dc1c787f3177eeea7d85179');
+});
+
 test('unknown heights preserve feasible partial paths but suppress every edge in that group', () => {
   for (const heights of [[2, null, 4], [null, 3, 4], [2, 3, 4, null, 2, null, 4], [2, 3, 4, null, 2]]) {
     const trace = normalizeSimulationCpiTrace(true, 1, [group(0, heights)]);
