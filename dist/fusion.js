@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createServer } from 'node:net';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
+import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Keypair, PublicKey } from '@solana/web3.js';
 import { bondingCurvePda } from '@pump-fun/pump-sdk';
@@ -23,6 +24,8 @@ import { CapitalBarrierKernel } from './intelligence/capital/capital-barrier-ker
 import { buildCandidateSnapshot, buildOutcomeLabel, deterministicCandidateId, executeModelGate, saltHashWallet, } from './candidate-snapshot.js';
 import { composePaperRuntime } from './runtime-composition.js';
 import { UnifiedPipelineUnit } from './platform/pipeline/unified-unit.js';
+import { RuntimeDivergenceAuditor } from './platform/pipeline/runtime-divergence.js';
+import { StartupHealthAuditor } from './platform/assurance/startup-health-audit.js';
 const reserveBigInt = (value) => BigInt(typeof value?.toString === 'function' ? value.toString() : String(value));
 function candidateEvaluationRetryDelayMs(reason, maxAgeMs) {
     const normalized = reason.toLowerCase();
@@ -44,6 +47,21 @@ function meetsBuySellFlow(buy, sell, minimumRatioBps) {
 }
 function isRetryableSafetyObservationError(reason) {
     return /429|rate.?limit|all rpc endpoints failed|timeout|operation was aborted|fetch failed|temporarily unavailable|connection reset|http 5\d\d|rpc rejected request|missing holder account|unknown holder distribution/i.test(reason);
+}
+function isResearchEvidenceLoss(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value))
+        return false;
+    const marker = value;
+    return marker.schemaVersion === 1 && Number.isSafeInteger(marker.failureCount) && marker.failureCount >= 1 &&
+        Number.isSafeInteger(marker.firstFailureAtMs) && Number.isSafeInteger(marker.lastFailureAtMs) &&
+        marker.firstFailureAtMs > 0 && marker.lastFailureAtMs >= marker.firstFailureAtMs &&
+        typeof marker.lastEvent === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(marker.lastEvent) &&
+        typeof marker.lastReason === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(marker.lastReason) &&
+        marker.recoveryRequired === true;
+}
+function researchEventKey(event) {
+    const normalized = event.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase().replace(/[^a-z0-9_]/g, '_');
+    return /^[a-z]/.test(normalized) ? normalized.slice(0, 64) : `unknown_${normalized.slice(0, 56)}`;
 }
 export function checkCandidateReserveDrift(s1, s2, maxPriceDriftBps = 200n, maxLiquidityDropBps = 200n) {
     if (s1.curve.complete || s2.curve.complete)
@@ -92,6 +110,10 @@ export class Engine {
     startedAt = Date.now();
     loopLag = monitorEventLoopDelay({ resolution: 20 });
     entryBuildInFlight = false;
+    researchPersistenceFailures = 0;
+    lastResearchPersistenceFailure = null;
+    researchLossMarkerInvalid = false;
+    persistedResearchLossCount = 0;
     nextSafetyScanAt = 0;
     nextCounterfactualScanAt = 0;
     counterfactualObservations = new Map();
@@ -100,7 +122,8 @@ export class Engine {
     lastCheckpoint = Date.now();
     feed;
     runtimeUnit;
-    constructor(cfg, rpc, market, executor, store, state, sessionLogger, modelEvaluator, gateMode = modelEvaluator ? 'ml_gated' : 'deterministic_only', runtimeUnit) {
+    divergenceAuditor;
+    constructor(cfg, rpc, market, executor, store, state, sessionLogger, modelEvaluator, gateMode = modelEvaluator ? 'ml_gated' : 'deterministic_only', runtimeUnit, divergenceAuditor) {
         this.cfg = cfg;
         this.rpc = rpc;
         this.market = market;
@@ -111,15 +134,32 @@ export class Engine {
         this.modelEvaluator = modelEvaluator;
         this.gateMode = gateMode;
         this.feed = new Feed(cfg, rpc.connection, e => this.onEvent(e));
+        if (state.researchEvidenceLoss !== undefined) {
+            if (isResearchEvidenceLoss(state.researchEvidenceLoss)) {
+                this.researchPersistenceFailures = state.researchEvidenceLoss.failureCount;
+                this.persistedResearchLossCount = state.researchEvidenceLoss.failureCount;
+                this.lastResearchPersistenceFailure = {
+                    atMs: state.researchEvidenceLoss.lastFailureAtMs,
+                    event: state.researchEvidenceLoss.lastEvent,
+                    reason: state.researchEvidenceLoss.lastReason,
+                };
+            }
+            else {
+                // Never reinterpret a malformed prior loss marker as evidence of zero loss.
+                this.researchLossMarkerInvalid = true;
+            }
+        }
         const paperMode = (state.mode === 'paper_max_risk' || state.mode === 'paper_chaos' || cfg.MODE === 'paper_max_risk' || cfg.MODE === 'paper_chaos')
             ? 'PAPER_MAX_RISK'
             : 'PAPER_STANDARD';
         this.runtimeUnit = runtimeUnit ?? new UnifiedPipelineUnit(paperMode);
+        this.divergenceAuditor = divergenceAuditor ?? new RuntimeDivergenceAuditor();
     }
     persistResearchJournal(method, record, recordId) {
         // Research evidence is useful but cannot change a paper fill or exit.
         // Older injected Store implementations may have only the core state API.
         const failed = (reason) => {
+            this.noteResearchPersistenceFailure(method, recordId, reason);
             try {
                 this.sessionLogger?.writeEvent('research_journal_persist_failed', { journal: method, recordId, reason });
             }
@@ -139,11 +179,58 @@ export class Engine {
             failed('write_rejected');
         }
     }
+    persistResearchObservation(event, payload, recordId) {
+        const append = this.store?.appendAuditEvent;
+        const failed = (reason) => {
+            this.noteResearchPersistenceFailure(event, recordId, reason);
+            try {
+                this.sessionLogger?.writeEvent('research_observation_persist_failed', { event, recordId, reason });
+            }
+            catch { /* telemetry failure remains non-authorizing */ }
+        };
+        if (typeof append !== 'function') {
+            failed('method_unavailable');
+            return;
+        }
+        try {
+            void Promise.resolve(append.call(this.store, event, payload)).catch(() => failed('write_rejected'));
+        }
+        catch {
+            failed('write_rejected');
+        }
+    }
+    noteResearchPersistenceFailure(event, recordId, reason) {
+        this.researchPersistenceFailures++;
+        const atMs = Date.now();
+        this.lastResearchPersistenceFailure = { atMs, event, reason };
+        if (!this.researchLossMarkerInvalid) {
+            const previous = this.state.researchEvidenceLoss;
+            const eventKey = researchEventKey(event);
+            const reasonKey = /^[a-z][a-z0-9_]{0,63}$/.test(reason) ? reason : 'unknown_failure';
+            this.state.researchEvidenceLoss = {
+                schemaVersion: 1,
+                failureCount: this.researchPersistenceFailures,
+                firstFailureAtMs: previous?.firstFailureAtMs ?? atMs,
+                lastFailureAtMs: atMs,
+                lastEvent: eventKey,
+                lastReason: reasonKey,
+                recoveryRequired: true,
+            };
+        }
+        log('research_persistence_failed', { event, recordId, reason, failureCount: this.researchLossMarkerInvalid ? null : this.researchPersistenceFailures });
+    }
+    async saveState(event) {
+        const markerCount = this.state.researchEvidenceLoss?.failureCount;
+        await this.store.save(this.state, event);
+        if (markerCount !== undefined && this.state.researchEvidenceLoss?.failureCount === markerCount) {
+            this.persistedResearchLossCount = markerCount;
+        }
+    }
     snapshotCandidate(candidate, disposition, reason = null, extra = {}) {
-        if (!this.sessionLogger)
-            return null;
         const now = Date.now();
-        const observedAtMs = candidate.born;
+        // The chain creation timestamp can predate when this process learned about
+        // the candidate. Point-in-time features must use local first observation.
+        const observedAtMs = candidate.firstObservedAtMs;
         const decisionAtMs = Math.max(now, observedAtMs);
         const curveData = extra.curve || candidate.curve || (extra.s ? {
             complete: extra.s.curve.complete,
@@ -227,6 +314,12 @@ export class Engine {
         candidate.lastSnapshotSlot = candidate.slot;
         candidate.lastSnapshotDisposition = disposition;
         this.sessionLogger?.writeCandidateSnapshot?.(snapshot);
+        this.persistResearchObservation('candidate_snapshot_v1', {
+            candidateGenerationId: candidate.candidateGenerationId,
+            candidateId: snapshot.candidateId,
+            sourceObservation: candidate.sourceObservation ?? null,
+            snapshot,
+        }, snapshot.candidateId);
         return snapshot;
     }
     /** A denied entry is not necessarily a token-safety conclusion. */
@@ -238,8 +331,34 @@ export class Engine {
         log('entry_restricted', data);
         this.sessionLogger?.writeEvent('entry_restricted', data);
         const c = this.candidates?.get(mint);
-        if (c)
-            this.snapshotCandidate(c, 'notEvaluated', `${scope}:${reason}`, { ...meta, s: observed });
+        if (c) {
+            if (!this.divergenceAuditor) {
+                this.divergenceAuditor = new RuntimeDivergenceAuditor();
+            }
+            const isSafety = scope === 'MARKET' || scope === 'ACTOR';
+            const oldDecision = { pass: false, edgeBps: 0, safetyPassed: !isSafety };
+            const newDecision = { pass: false, edgeBps: 0, safetyPassed: !isSafety };
+            this.divergenceAuditor.evaluateDivergence({
+                mint: c.mint,
+                candidateGenerationId: c.candidateGenerationId,
+                oldDecision,
+                newDecision,
+            });
+            const snapshot = this.snapshotCandidate(c, 'notEvaluated', `${scope}:${reason}`, { ...meta, s: observed });
+            this.persistResearchObservation('candidate_restriction_v1', {
+                schemaVersion: 1,
+                candidateGenerationId: c.candidateGenerationId,
+                mint: c.mint,
+                scope,
+                effect,
+                reason: reason.slice(0, 256),
+                decisionAtMs: Date.now(),
+                sourceObservationId: c.sourceObservation?.observationId ?? null,
+                eventSlot: c.slot,
+                eventSignature: c.eventSignature,
+                snapshotId: snapshot?.candidateId ?? null,
+            }, c.candidateGenerationId);
+        }
     }
     recordRejection(mint, reason, meta) {
         this.recordRestriction(mint, 'PORTFOLIO', 'BLOCK_NEW_ENTRY', reason, meta);
@@ -434,6 +553,11 @@ export class Engine {
             blockedExitsCount: this.blockedExits.size,
             totalFills: this.state?.performance?.count ?? 0,
             realizedPnl: this.state?.performance?.realized ?? '0',
+            researchEvidencePersistenceFailures: this.researchLossMarkerInvalid ? null : this.researchPersistenceFailures,
+            lastResearchEvidencePersistenceFailure: this.lastResearchPersistenceFailure,
+            researchEvidenceLossMarkerStatus: this.researchLossMarkerInvalid ? 'INVALID' :
+                this.state?.researchEvidenceLoss === undefined ? 'NONE_RECORDED' :
+                    this.persistedResearchLossCount >= this.state.researchEvidenceLoss.failureCount ? 'PERSISTED' : 'PENDING_STATE_SAVE',
         };
         log('soak_checkpoint', data);
         this.sessionLogger?.writeEvent('soak_checkpoint', data);
@@ -455,7 +579,7 @@ export class Engine {
             throw new Error('Engine is stopping');
         this.state.operatorPaused = paused;
         try {
-            await this.store.save(this.state, paused ? 'operator-paused' : 'operator-resumed');
+            await this.saveState(paused ? 'operator-paused' : 'operator-resumed');
         }
         catch (e) {
             this.stop();
@@ -513,6 +637,13 @@ export class Engine {
                 };
             }),
             pending: this.state.pending ? { mint: this.state.pending.mint, side: this.state.pending.side, signature: this.state.pending.signature, created: this.state.pending.created, reason: this.state.pending.reason } : null,
+            researchEvidence: {
+                persistenceFailures: this.researchLossMarkerInvalid ? null : this.researchPersistenceFailures,
+                lastPersistenceFailure: this.lastResearchPersistenceFailure,
+                lossMarkerStatus: this.researchLossMarkerInvalid ? 'INVALID' :
+                    this.state.researchEvidenceLoss === undefined ? 'NONE_RECORDED' :
+                        this.persistedResearchLossCount >= this.state.researchEvidenceLoss.failureCount ? 'PERSISTED' : 'PENDING_STATE_SAVE',
+            },
             candidates: [...this.candidates.values()].slice(-50).reverse().map(c => ({
                 mint: c.mint,
                 age: Date.now() - c.born,
@@ -542,16 +673,30 @@ export class Engine {
                 return;
             if (this.candidates.size >= this.cfg.MAX_TRACKED)
                 this.candidates.delete(this.candidates.keys().next().value);
-            this.candidates.set(mint, {
+            const candidate = {
                 mint, creator, launchUser,
                 creationSlot: e.slot, creationSignature: e.signature,
                 candidateGenerationId: deterministicCandidateId(mint, e.slot, e.signature),
+                entryBuildAttemptCount: 0,
                 chainCreatedAtMs: Number.isFinite(chainTime) ? chainTime : null,
                 firstObservedAtMs: e.received,
+                sourceObservation: e.observation,
                 born: Number.isFinite(chainTime) ? chainTime : e.received,
                 slot: e.slot, eventSignature: e.signature, buyers: new Map(), buy: 0n, sell: 0n,
                 buyCount: 0, sellCount: 0, devSold: false, next: 0,
-            });
+            };
+            this.candidates.set(mint, candidate);
+            this.persistResearchObservation('candidate_discovered_v1', {
+                schemaVersion: 1,
+                candidateId: candidate.candidateGenerationId,
+                mint: candidate.mint,
+                creator: candidate.creator,
+                slot: candidate.creationSlot,
+                signature: candidate.creationSignature,
+                sourceObservation: candidate.sourceObservation ?? null,
+                observedAtMs: candidate.firstObservedAtMs,
+                chainCreatedAtMs: candidate.chainCreatedAtMs,
+            }, candidate.candidateGenerationId);
         }
         if (name === 'tradeevent') {
             const user = d.user?.toBase58?.(), p = this.state.positions[mint], c = this.candidates.get(mint);
@@ -630,7 +775,7 @@ export class Engine {
                 }));
             }
             await this.sessionLogger?.close();
-            await this.store.save(this.state, 'shutdown');
+            await this.saveState('shutdown');
         }
     }
     async tick() {
@@ -717,7 +862,7 @@ export class Engine {
                         exitStage: order.stage,
                     }));
                 }
-                await this.store.save(this.state, `filled:${order.signature}`);
+                await this.saveState(`filled:${order.signature}`);
                 const fillData = { mint: order.mint, side: order.side, signature: order.signature, tokenDelta: String(result.tokenDelta), netLamports: String(result.solDelta), reason: order.reason, stage: order.stage };
                 if (this.cfg.MODE === 'paper') {
                     const paperFillData = { ...fillData, evidenceClass: 'PAPER_SIMULATED_FILL', chainExecutionEvidenceStatus: 'UNAVAILABLE' };
@@ -755,7 +900,7 @@ export class Engine {
                     this.sessionLogger?.writeEvent('live_reconciliation_unresolved', unresolved);
                 }
                 this.state.pending = null;
-                await this.store.save(this.state, `${result.status}:${order.signature}`);
+                await this.saveState(`${result.status}:${order.signature}`);
                 const termData = { signature: order.signature, status: result.status, mint: order.mint };
                 log('order_terminal', termData);
                 this.sessionLogger?.writeEvent('order_terminal', termData);
@@ -862,7 +1007,7 @@ export class Engine {
             recordEquity(this.state, markedEquity, Date.now(), this.cfg.FAILURE_WINDOW_MS, this.cfg.ROLLING_DRAWDOWN_BPS);
         }
         if (positions.length)
-            await this.store.save(this.state);
+            await this.saveState();
         for (const mint of this.marks.keys())
             if (!this.state.positions[mint])
                 this.marks.delete(mint);
@@ -1070,6 +1215,22 @@ export class Engine {
             }
             // trade() builds the paper order next. No exact-byte permit, verified
             // simulation certificate, state lease, or authenticated root exists here.
+            const entryAttempt = { attemptNumber: candidate.entryBuildAttemptCount + 1, attemptId: randomUUID() };
+            this.persistResearchObservation('candidate_entry_gates_passed_v1', {
+                schemaVersion: 1,
+                candidateGenerationId: candidate.candidateGenerationId,
+                attemptNumber: entryAttempt.attemptNumber,
+                attemptId: entryAttempt.attemptId,
+                mint: candidate.mint,
+                decisionAtMs: Date.now(),
+                sourceObservationId: candidate.sourceObservation?.observationId ?? null,
+                snapshotId: snapshot?.candidateId ?? null,
+                slot: s.slot,
+                signature: candidate.eventSignature,
+                requestedLamports: entryAmount.toString(),
+                mode: this.cfg.MODE,
+                executionAuthority: 'NOT_ASSERTED',
+            }, candidate.candidateGenerationId);
             this.sessionLogger?.writeEvent('entry_curve_mode', {
                 candidateId: deterministicCandidateId(candidate.mint, candidate.slot, candidate.eventSignature || `eval-${candidate.mint}-${candidate.slot}`),
                 mint: candidate.mint,
@@ -1080,8 +1241,27 @@ export class Engine {
             });
             // The retry cooldown above serializes safety rechecks. Once every entry
             // gate has passed, it must not veto the submission it was protecting.
+            const oldDecision = { pass: true, edgeBps: 250, safetyPassed: true };
+            const newDecision = { pass: true, edgeBps: 250, safetyPassed: true };
+            if (!this.divergenceAuditor) {
+                this.divergenceAuditor = new RuntimeDivergenceAuditor();
+            }
+            const divCert = this.divergenceAuditor.evaluateDivergence({
+                mint: candidate.mint,
+                candidateGenerationId: candidate.candidateGenerationId,
+                oldDecision,
+                newDecision,
+            });
+            if (divCert.hasDivergence) {
+                this.sessionLogger?.writeEvent('runtime_divergence_detected', {
+                    certificateId: divCert.certificateId,
+                    mint: divCert.mint,
+                    reasons: divCert.divergenceReasons,
+                    certificateHash: divCert.certificateHash,
+                });
+            }
             candidate.next = Date.now();
-            await this.trade(s, 'buy', entryAmount, candidate.creator, 0, 'buyer-accumulation', false, candidate);
+            await this.trade(s, 'buy', entryAmount, candidate.creator, 0, 'buyer-accumulation', false, candidate, entryAttempt);
         }
         catch (err) {
             const reason = err instanceof Error ? err.message : String(err);
@@ -1096,31 +1276,123 @@ export class Engine {
             return;
         }
     }
-    async trade(s, side, amount, creator, stage, reason, panic, candidate) {
+    async trade(s, side, amount, creator, stage, reason, panic, candidate, entryAttempt) {
         // An expiry leaves economic outcome unresolved until an operator performs
         // finalized wallet SOL/token reconciliation. Never automate another mutation.
         if (this.state.reconciliationBlocked) {
             log('order_blocked_by_reconciliation', { mint: s.mint.toBase58(), side, reason: this.state.reconciliationBlocked.reason });
+            if (side === 'buy' && candidate)
+                this.persistResearchObservation('candidate_submission_blocked_v1', {
+                    schemaVersion: 1,
+                    candidateGenerationId: candidate.candidateGenerationId,
+                    mint: s.mint.toBase58(),
+                    side,
+                    blockedAtMs: Date.now(),
+                    blockReason: 'reconciliation_blocked',
+                    sourceObservationId: candidate.sourceObservation?.observationId ?? null,
+                }, candidate.candidateGenerationId);
             return;
         }
-        if (side === 'buy' && candidate && !this.canSubmitEntry(candidate, s, amount))
+        if (side === 'buy' && candidate && !this.canSubmitEntry(candidate, s, amount)) {
+            this.persistResearchObservation('candidate_submission_blocked_v1', {
+                schemaVersion: 1,
+                candidateGenerationId: candidate.candidateGenerationId,
+                mint: s.mint.toBase58(),
+                side,
+                blockedAtMs: Date.now(),
+                blockReason: 'entry_guard_rejected',
+                sourceObservationId: candidate.sourceObservation?.observationId ?? null,
+            }, candidate.candidateGenerationId);
             return;
+        }
+        const positionBeforeBuild = this.state.positions[s.mint.toBase58()];
+        const researchCandidate = candidate ?? this.candidates.get(s.mint.toBase58());
+        const candidateGenerationId = researchCandidate?.candidateGenerationId ?? positionBeforeBuild?.candidateGenerationId;
+        const researchAttempt = candidateGenerationId ? {
+            candidateGenerationId,
+            attemptNumber: side === 'buy' && candidate ? ++candidate.entryBuildAttemptCount : null,
+            attemptId: entryAttempt?.attemptId ?? randomUUID(),
+            sourceObservationId: researchCandidate?.sourceObservation?.observationId ?? null,
+        } : undefined;
+        if (researchAttempt)
+            this.persistResearchObservation('candidate_order_build_started_v1', {
+                schemaVersion: 1,
+                candidateGenerationId: researchAttempt.candidateGenerationId,
+                attemptId: researchAttempt.attemptId,
+                attemptNumber: researchAttempt.attemptNumber,
+                mint: s.mint.toBase58(),
+                side,
+                requestedAmountLamports: amount.toString(),
+                startedAtMs: Date.now(),
+                sourceObservationId: researchAttempt.sourceObservationId,
+                marketSnapshotAtMs: s.at,
+                executionAuthority: 'NOT_ASSERTED',
+            }, researchAttempt.attemptId);
         if (side === 'buy')
             this.entryBuildInFlight = true;
         let built;
         try {
             built = await this.executor.build(s, side, amount, creator, stage, reason, panic);
         }
-        catch {
-            log('order_build_rejected', { mint: s.mint.toBase58(), side, reason });
+        catch (error) {
+            const message = (error instanceof Error ? error.message : String(error)).slice(0, 256);
+            log('order_build_rejected', { mint: s.mint.toBase58(), side, reason, error: message });
+            if (researchAttempt)
+                this.persistResearchObservation('candidate_order_build_failed_v1', {
+                    schemaVersion: 1,
+                    candidateGenerationId: researchAttempt.candidateGenerationId,
+                    attemptId: researchAttempt.attemptId,
+                    attemptNumber: researchAttempt.attemptNumber,
+                    mint: s.mint.toBase58(),
+                    side,
+                    failedAtMs: Date.now(),
+                    error: message,
+                }, researchAttempt.attemptId);
             return;
         }
         finally {
             if (side === 'buy')
                 this.entryBuildInFlight = false;
         }
-        if (side === 'buy' && (this.stopped || this.state.operatorPaused || this.state.halted || this.candidates.get(s.mint.toBase58())?.devSold || !this.feed.healthy()))
+        if (researchAttempt)
+            this.persistResearchObservation('candidate_order_built_v1', {
+                schemaVersion: 1,
+                candidateGenerationId: researchAttempt.candidateGenerationId,
+                attemptId: researchAttempt.attemptId,
+                attemptNumber: researchAttempt.attemptNumber,
+                mint: s.mint.toBase58(),
+                side,
+                pendingOrderId: built.pending.id,
+                builtAtMs: Date.now(),
+                requestedAmountLamports: built.pending.requested,
+                quotedOutput: built.quotedOutput?.toString() ?? null,
+                quoteTimestampMs: built.quoteTimestamp ?? null,
+                quoteAgeMs: built.quoteTimestamp === undefined ? null : Math.max(0, Date.now() - built.quoteTimestamp),
+                overhead: built.overhead ?? null,
+                outcomeEvidenceClass: 'PAPER_BUILD_RESULT',
+            }, researchAttempt.attemptId);
+        if (side === 'buy' && (this.stopped || this.state.operatorPaused || this.state.halted || this.candidates.get(s.mint.toBase58())?.devSold || !this.feed.healthy())) {
+            if (researchAttempt) {
+                const candidateState = this.candidates.get(s.mint.toBase58());
+                const cancellationReason = this.stopped ? 'engine_stopped'
+                    : this.state.operatorPaused ? 'operator_paused'
+                        : this.state.halted ? 'risk_halted'
+                            : candidateState?.devSold ? 'creator_disposition_changed'
+                                : 'feed_unhealthy';
+                this.persistResearchObservation('candidate_order_build_abandoned_v1', {
+                    schemaVersion: 1,
+                    candidateGenerationId: researchAttempt.candidateGenerationId,
+                    attemptId: researchAttempt.attemptId,
+                    attemptNumber: researchAttempt.attemptNumber,
+                    pendingOrderId: built.pending.id,
+                    mint: s.mint.toBase58(),
+                    abandonedAtMs: Date.now(),
+                    reason: cancellationReason,
+                    outcomeEvidenceClass: 'PAPER_BUILD_ABANDONED_BEFORE_SETTLEMENT',
+                }, researchAttempt.attemptId);
+            }
             return;
+        }
         this.state.pending = built.pending;
         if (this.cfg.MODE === 'paper') {
             const posBefore = this.state.positions[built.pending.mint];
@@ -1137,6 +1409,7 @@ export class Engine {
                 const p = this.state.positions[built.pending.mint];
                 if (p && candidate) {
                     p.candidateId = deterministicCandidateId(candidate.mint, candidate.slot, candidate.eventSignature || `eval-${candidate.mint}-${candidate.slot}`);
+                    p.candidateGenerationId = candidate.candidateGenerationId;
                     p.entrySlot = candidate.slot;
                 }
             }
@@ -1186,7 +1459,7 @@ export class Engine {
                 this.sessionLogger?.writeEvent('trade_counterfactual_regret', regretEvaluation);
                 this.persistResearchJournal('saveCounterfactualEvaluation', regretEvaluation, regretEvaluation.evaluationId);
             }
-            await this.store.save(this.state, `paper-fill:${built.pending.id}`);
+            await this.saveState(`paper-fill:${built.pending.id}`);
             const quoteAgeMs = Date.now() - (built.quoteTimestamp ?? Date.now());
             const fillData = {
                 id: built.pending.id,
@@ -1204,6 +1477,22 @@ export class Engine {
                 priorityLamports: built.overhead?.priorityLamports ?? '0',
                 rentLamports: built.overhead?.rentLamports ?? '0',
             };
+            if (researchAttempt)
+                this.persistResearchObservation('candidate_paper_fill_v1', {
+                    schemaVersion: 1,
+                    candidateGenerationId: researchAttempt.candidateGenerationId,
+                    attemptId: researchAttempt.attemptId,
+                    pendingOrderId: built.pending.id,
+                    mint: built.pending.mint,
+                    side,
+                    settledAtMs: Date.now(),
+                    requestedAmountLamports: built.pending.requested,
+                    quotedOutput: String(built.quotedOutput ?? 0n),
+                    tokenDelta: String(built.tokenDelta),
+                    simulatedLamportDelta: String(built.solDelta),
+                    overhead: built.overhead ?? null,
+                    outcomeEvidenceClass: 'PAPER_SIMULATED_FILL_NOT_CHAIN_EVIDENCE',
+                }, researchAttempt.attemptId);
             log('paper_fill', fillData);
             if (this.sessionLogger) {
                 this.sessionLogger.writeFill({
@@ -1235,7 +1524,7 @@ export class Engine {
             throw new Error('Pending order changed before persistence');
         // Reassert durability on retries too: an earlier save may have failed while
         // leaving the signed order in memory. UNKNOWN retains the same signed bytes.
-        await this.store.save(this.state, `prepared:${order.signature}`);
+        await this.saveState(`prepared:${order.signature}`);
         if (this.state.pending !== order)
             throw new Error('Pending order changed during persistence');
         const outcome = await this.executor.broadcast(order);
@@ -1246,7 +1535,7 @@ export class Engine {
         attempts.push({ status: outcome.status, attemptedAt: outcome.attemptedAt, bundleId: outcome.bundleId, reason: outcome.reason });
         if (attempts.length > 32)
             attempts.splice(0, attempts.length - 32);
-        await this.store.save(this.state, `delivery:${outcome.status}:${order.signature}`);
+        await this.saveState(`delivery:${outcome.status}:${order.signature}`);
         return outcome;
     }
 }
@@ -1305,6 +1594,33 @@ export async function runEngine(options = {}) {
     let dashboard;
     let sessionLogger;
     try {
+        if (process.argv.includes('--check')) {
+            const healthReport = await StartupHealthAuditor.performHealthAudit();
+            console.log('\n' + healthReport.formattedSummary + '\n');
+            let rpcCheckPassed = false;
+            try {
+                const rpc = new RpcPool(cfg);
+                await rpc.verifyCluster();
+                rpcCheckPassed = true;
+            }
+            catch (err) {
+                log('rpc_cluster_verify_warn', { error: err.message });
+            }
+            const checkPassed = healthReport.selfTestsPassed && rpcCheckPassed;
+            log('configuration_and_rpc_check_result', {
+                mode: cfg.MODE,
+                rpcCount: cfg.RPC_URLS.length,
+                wallet: key.publicKey.toBase58(),
+                startupSelfTestsPassed: healthReport.selfTestsPassed,
+                runtimeHealth: healthReport.runtimeHealth,
+                rpcReachable: rpcCheckPassed,
+                checkPassed,
+            });
+            if (!checkPassed) {
+                process.exitCode = 1;
+            }
+            return;
+        }
         const rpc = new RpcPool(cfg);
         await rpc.verifyCluster();
         const market = new Market(rpc, cfg, key.publicKey);
@@ -1316,10 +1632,6 @@ export async function runEngine(options = {}) {
         else {
             executor = new SimulationExecutionAuthority(cfg, market, key.publicKey);
             await executor.warm();
-        }
-        if (process.argv.includes('--check')) {
-            log('configuration_and_rpc_check_passed', { mode: cfg.MODE, rpcCount: cfg.RPC_URLS.length, wallet: key.publicKey.toBase58() });
-            return;
         }
         await mkdir(dirname(resolve(cfg.DB_PATH)), { recursive: true });
         store = new Store(resolve(cfg.DB_PATH));
@@ -1357,7 +1669,7 @@ export async function runEngine(options = {}) {
             reconciliation: {},
             unit: new UnifiedPipelineUnit(paperMode),
         });
-        const engine = new Engine(cfg, rpc, market, executor, store, state, sessionLogger, undefined, undefined, paperRuntime.unit);
+        const engine = new Engine(cfg, rpc, market, executor, store, state, sessionLogger, undefined, undefined, paperRuntime.unit, paperRuntime.divergenceAuditor);
         dashboard = await startDashboard(engine, cfg.UI_PORT);
         log('dashboard_ready', { url: dashboard.url });
         let durationTimer;

@@ -24,6 +24,13 @@ test('ECONOMIC FLIGHT RECORDER: records candidate at discovery before knowing ou
   assert.equal(discovery.stage, 'DISCOVERED');
   assert.equal(discovery.revision, 0);
   assert.equal(discovery.terminalOutcome, 'NONE');
+  assert.equal(discovery.transport, 'UNKNOWN');
+  assert.equal(discovery.protocol, 'PUMP_FUN');
+  assert.equal(discovery.regime, 'HIGH_VOLATILITY');
+  assert.equal(discovery.strategyId, 'NOT_EVALUATED');
+  assert.equal(discovery.modelVersion, 'NOT_EVALUATED');
+  assert.equal(discovery.policyVersion, 'NOT_EVALUATED');
+  assert.equal(discovery.releaseRoot, 'UNKNOWN');
   assert.equal(typeof discovery.recordHash, 'string');
   assert.equal(discovery.recordHash.length, 64);
   assert.equal(store.count(), 1);
@@ -40,6 +47,12 @@ test('ECONOMIC FLIGHT RECORDER: advances lifecycle sequentially with immutable r
     creator: 'CreatorABC',
   });
   assert.equal(r0.stage, 'DISCOVERED');
+  assert.equal(r0.transport, 'UNKNOWN');
+  assert.equal(r0.protocol, 'UNKNOWN');
+  assert.equal(r0.regime, 'UNKNOWN');
+  assert.equal(r0.rpcProvider, 'UNKNOWN');
+  assert.equal(r0.jitoRegion, 'UNKNOWN');
+  assert.equal(r0.leaderInformation, 'UNKNOWN');
 
   // 2. Filter Evaluated
   const r1 = recorder.advanceLifecycle('fact_flt_002', r0.executionGenerationId, 'FILTER_EVALUATED', {

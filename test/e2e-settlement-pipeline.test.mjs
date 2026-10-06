@@ -80,6 +80,7 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
   const sessionDir = join(sessionsDir, sessionName);
   let logger;
   let store;
+  let evidenceRecoveryStore;
 
   try {
     logger = new SessionLogger(sessionDir);
@@ -201,7 +202,20 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
       name: 'create_event',
       signature: 'create-sig-1',
       slot: 100,
-      received: eventTime,
+      received: eventTime + 250,
+      observation: {
+        observationId: 'obs-create-sig-1',
+        sourceId: 'test-provider',
+        providerId: 'https://provider.example',
+        transport: 'test.feed',
+        receivedAt: eventTime + 250,
+        slot: 100,
+        commitment: 'confirmed',
+        signature: 'create-sig-1',
+        rawPayloadHash: 'a'.repeat(64),
+        schemaVersion: 'solana-program-logs/v1',
+        processingIntent: 'LIVE',
+      },
       data: {
         mint: mintPub,
         user: creatorPub,
@@ -228,6 +242,13 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
 
     const candidate = engine['candidates'].get(candidateMint);
     assert.ok(candidate, 'Candidate should be registered');
+    const discoveryAudit = await store.getAuditEvents('candidate_discovered_v1', 10);
+    assert.equal(discoveryAudit.length, 1, 'initial candidate enters the durable audit denominator before evaluation');
+    const discoveryRecord = JSON.parse(discoveryAudit[0].body);
+    assert.equal(discoveryRecord.candidateId, candidate.candidateGenerationId);
+    assert.equal(discoveryRecord.observedAtMs, eventTime + 250);
+    assert.equal(discoveryRecord.sourceObservation.observationId, 'obs-create-sig-1');
+    assert.equal(discoveryRecord.sourceObservation.rawPayloadHash, 'a'.repeat(64));
     assert.equal(candidate.buyCount, 6, 'Genuine buy count must be tracked');
     assert.equal(candidate.sellCount, 0, 'Genuine sell count must be tracked');
     assert.equal(candidate.buyers.size, 6, 'Genuine distinct buyers tracked');
@@ -236,12 +257,31 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
     const snap = makeSnapshot();
     const candSnapshot = engine.snapshotCandidate(candidate, 'cleared', null, { s: snap });
     assert.ok(candSnapshot);
+    assert.equal(candSnapshot.observedAtMs, eventTime + 250, 'point-in-time observation uses feed receipt time');
+    assert.notEqual(candSnapshot.observedAtMs, candidate.born, 'chain creation time is not a substitute for local knowledge time');
     assert.equal(candSnapshot.microstructure.buyTransactionCount, 6);
     assert.equal(candSnapshot.microstructure.sellTransactionCount, 0);
     assert.equal(candSnapshot.transport.leadingRpcLatencyMs, 26, 'Uses genuine leading RPC latency');
     assert.ok(candSnapshot.curveState.curveCompletionPct >= 0, 'Computed real curve completion percentage');
     assert.equal(candSnapshot.curveState.spotPriceUsd, 0, 'SOL-denominated spot price is not mislabeled as USD');
     assert.ok(candSnapshot.missingFeatureKeys.includes('spotPriceUsd'), 'USD price remains explicitly missing without an FX quote');
+    const snapshotAudit = await store.getAuditEvents('candidate_snapshot_v1', 10);
+    assert.equal(snapshotAudit.length, 1, 'point-in-time feature snapshot is durably linked to discovery provenance');
+    const snapshotRecord = JSON.parse(snapshotAudit[0].body);
+    assert.equal(snapshotRecord.candidateGenerationId, discoveryRecord.candidateId);
+    assert.equal(snapshotRecord.snapshot.candidateId, candSnapshot.candidateId);
+    assert.equal(snapshotRecord.sourceObservation.observationId, 'obs-create-sig-1');
+    assert.equal(snapshotRecord.snapshot.featureSealHash, candSnapshot.featureSealHash);
+
+    // Durable point-in-time storage must not depend on optional SESSION_DIR files.
+    const configuredLogger = engine.sessionLogger;
+    engine.sessionLogger = undefined;
+    const noLoggerSnapshot = engine.snapshotCandidate(candidate, 'notEvaluated', 'logger_disabled');
+    engine.sessionLogger = configuredLogger;
+    assert.ok(noLoggerSnapshot, 'snapshot creation remains available without a session logger');
+    const noLoggerAudit = await store.getAuditEvents('candidate_snapshot_v1', 10);
+    assert.equal(noLoggerAudit.length, 2, 'SQLite evidence capture is independent of optional session logging');
+    assert.equal(JSON.parse(noLoggerAudit[1].body).snapshot.dispositionReason, 'logger_disabled');
 
     // Counterfactual market sampling records near-miss prices without touching
     // paper cash, positions, or the performance ledger.
@@ -266,6 +306,24 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
     candidate.buyers = candidateBuyers;
     candidate.buy = candidateBuy;
 
+    // An executor build failure is a recorded attempt, not a missing candidate.
+    const originalBuild = executor.build.bind(executor);
+    executor.build = async () => { throw new Error('fixture quote unavailable'); };
+    candidate.next = 0;
+    engine['nextSafetyScanAt'] = 0;
+    await engine['tick']();
+    executor.build = originalBuild;
+    const buildFailures = await store.getAuditEvents('candidate_order_build_failed_v1', 10);
+    assert.equal(buildFailures.length, 1, 'failed quote/build attempt is durably captured');
+    const failedAttempt = JSON.parse(buildFailures[0].body);
+    assert.equal(failedAttempt.candidateGenerationId, discoveryRecord.candidateId);
+    assert.match(failedAttempt.error, /fixture quote unavailable/);
+    const startedAttempts = await store.getAuditEvents('candidate_order_build_started_v1', 10);
+    assert.equal(startedAttempts.length, 1);
+    assert.equal(JSON.parse(startedAttempts[0].body).attemptId, failedAttempt.attemptId);
+    engine['nextSafetyScanAt'] = 0;
+    candidate.next = 0;
+
     // 5. Execute BUY Trade
     // Exercise the full safety-to-paper-entry path. The safety cooldown is
     // scheduled before external checks and must be cleared when they pass.
@@ -273,8 +331,29 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
 
     const pos = engine.state.positions[candidateMint];
     assert.ok(pos, 'Position should exist after all entry checks pass');
+    const gatePasses = await store.getAuditEvents('candidate_entry_gates_passed_v1', 10);
+    assert.equal(gatePasses.length, 2, 'each local entry-gate evaluation is durably observable, including attempts that later fail to build');
+    const gatePass = JSON.parse(gatePasses[1].body);
+    assert.equal(gatePass.candidateGenerationId, discoveryRecord.candidateId);
+    assert.equal(gatePass.attemptNumber, 2);
+    assert.notEqual(gatePass.attemptId, failedAttempt.attemptId, 'retry receives a distinct identity that does not depend on process-local counters');
+    assert.equal(gatePass.executionAuthority, 'NOT_ASSERTED', 'research record does not imply execution authorization');
+    const builtAttempts = await store.getAuditEvents('candidate_order_built_v1', 10);
+    assert.equal(builtAttempts.length, 1, 'successful built order retains the second attempt identity');
+    assert.equal(JSON.parse(builtAttempts[0].body).attemptId, gatePass.attemptId);
+    const allStartedAttempts = await store.getAuditEvents('candidate_order_build_started_v1', 10);
+    assert.equal(allStartedAttempts.length, 2);
+    assert.equal(JSON.parse(allStartedAttempts[1].body).attemptId, gatePass.attemptId);
     assert.equal(pos.qty, '970000000');
     assert.equal(pos.initialQty, '970000000');
+    assert.equal(pos.candidateGenerationId, discoveryRecord.candidateId, 'position retains stable generation identity for later exits');
+    await store.save(engine.state, 'candidate-generation-recovery-fixture');
+    const recoveryStore = new Store(cfg.DB_PATH);
+    try {
+      const recoveredState = await recoveryStore.load();
+      assert.equal(recoveredState.positions[candidateMint].candidateGenerationId, discoveryRecord.candidateId,
+        'stable candidate identity survives Store reopen for later exits');
+    } finally { await recoveryStore.close(); }
     const initialCost = BigInt(pos.cost);
     // Cost basis = requested 10_000_000 + rent 3_000_000 + priority 200_000 + base 5_000 + tip 10_000 = 13_215_000n
     assert.equal(initialCost, 13_215_000n);
@@ -301,6 +380,13 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
 
     assert.equal(engine.state.positions[candidateMint], undefined, 'Position completely cleaned up after full exit');
     assert.equal(engine.state.performance?.count, 3, 'Total 3 fills (1 buy, 2 sells)');
+    const paperFills = await store.getAuditEvents('candidate_paper_fill_v1', 10);
+    assert.equal(paperFills.length, 3, 'buy and partial/full paper exits are durably attributed to the candidate');
+    assert.ok(paperFills.every(row => JSON.parse(row.body).outcomeEvidenceClass === 'PAPER_SIMULATED_FILL_NOT_CHAIN_EVIDENCE'));
+    const allBuiltAttempts = await store.getAuditEvents('candidate_order_built_v1', 10);
+    const sellBuilds = allBuiltAttempts.map(row => JSON.parse(row.body)).filter(row => row.side === 'sell');
+    assert.equal(sellBuilds.length, 2, 'partial and full exits retain candidate-linked build identities after their entry');
+    assert.ok(sellBuilds.every(row => row.candidateGenerationId === discoveryRecord.candidateId));
 
     // 8. Verify Engine Internal Realized PnL Accounting
     const engineRealizedLamports = BigInt(engine.state.performance?.realized || '0');
@@ -392,9 +478,41 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
       BigInt(Math.round(uiStats.netReturnSol * 1e9)),
       'Zero fee double-counting across the entire pipeline'
     );
+
+    // A dropped evidence write must be visible in runtime health without affecting fills.
+    const appendAuditEvent = store.appendAuditEvent.bind(store);
+    store.appendAuditEvent = async () => { throw new Error('fixture audit storage unavailable'); };
+    engine['persistResearchObservation']('candidate_test_failure_v1', {}, 'fixture-record');
+    await new Promise(resolve => setImmediate(resolve));
+    const evidenceHealth = engine.snapshot().researchEvidence;
+    assert.equal(evidenceHealth.persistenceFailures, 1);
+    assert.equal(evidenceHealth.lastPersistenceFailure.event, 'candidate_test_failure_v1');
+    assert.equal(evidenceHealth.lastPersistenceFailure.reason, 'write_rejected');
+    assert.equal(evidenceHealth.lossMarkerStatus, 'PENDING_STATE_SAVE');
+    store.appendAuditEvent = appendAuditEvent;
+
+    // The known loss is included in the next normal state commit and survives restart.
+    await engine['saveState']('research-evidence-loss-marker');
+    assert.equal(engine.snapshot().researchEvidence.lossMarkerStatus, 'PERSISTED');
+    evidenceRecoveryStore = new Store(cfg.DB_PATH);
+    const recoveredState = await evidenceRecoveryStore.load();
+    assert.equal(recoveredState.researchEvidenceLoss.failureCount, 1);
+    assert.equal(recoveredState.researchEvidenceLoss.lastEvent, 'candidate_test_failure_v1');
+    assert.equal(recoveredState.researchEvidenceLoss.recoveryRequired, true);
+    const recoveredEngine = new Engine(cfg, rpc, mockMarket, executor, evidenceRecoveryStore, recoveredState);
+    assert.equal(recoveredEngine.snapshot().researchEvidence.persistenceFailures, 1);
+    assert.equal(recoveredEngine.snapshot().researchEvidence.lossMarkerStatus, 'PERSISTED');
+
+    // Corrupt prior markers remain visibly unknown; they are not reinterpreted as zero failures.
+    const invalidMarkerEngine = new Engine(cfg, rpc, mockMarket, executor, evidenceRecoveryStore, {
+      ...recoveredState,
+      researchEvidenceLoss: { schemaVersion: 999, failureCount: 0 },
+    });
+    assert.equal(invalidMarkerEngine.snapshot().researchEvidence.persistenceFailures, null);
+    assert.equal(invalidMarkerEngine.snapshot().researchEvidence.lossMarkerStatus, 'INVALID');
   } finally {
     // Release streams and the SQLite worker before removing the Windows fixture.
-    const closed = await Promise.allSettled([logger?.close(), store?.close()]);
+    const closed = await Promise.allSettled([logger?.close(), evidenceRecoveryStore?.close(), store?.close()]);
     const failure = closed.find(result => result.status === 'rejected');
     if (failure) throw failure.reason;
     await rm(rootDir, { recursive: true, force: true });

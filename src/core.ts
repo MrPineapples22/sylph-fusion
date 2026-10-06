@@ -2,7 +2,7 @@ export type Position = {
   mint: string; creator: string; tokenProgram: string; qty: string; initialQty: string;
   cost: string; originalCost: string; peak: string; stage: number; opened: number;
   reserve: string; panic: boolean; creatorTokens: string;
-  candidateId?: string; entrySlot?: number; mfePct?: number; maePct?: number;
+  candidateId?: string; candidateGenerationId?: string; entrySlot?: number; mfePct?: number; maePct?: number;
 };
 export type Pending = {
   id: string; mint: string; side: 'buy' | 'sell'; signature: string; wire: string;
@@ -33,6 +33,17 @@ export type ReconciliationBlock = {
   detectedAt: number;
   reason: 'LIVE_RECONCILIATION_UNRESOLVED';
 };
+/** A restart-persistent marker that research-evidence writes were rejected.
+ * This is an observability/recovery signal only; it must not affect capital decisions. */
+export type ResearchEvidenceLoss = {
+  schemaVersion: 1;
+  failureCount: number;
+  firstFailureAtMs: number;
+  lastFailureAtMs: number;
+  lastEvent: string;
+  lastReason: string;
+  recoveryRequired: true;
+};
 export function recordResult(state: State, mint:string, side:string, signature:string, net:bigint, pnl:bigint) {
  const report = state.performance ??= {since:Date.now(), realized:'0', fills:[], count:0};
  report.realized = String(BigInt(report.realized)+pnl); report.count++;
@@ -45,6 +56,8 @@ export type State = {
   closed: Record<string, number>; halted: boolean; operatorPaused?: boolean; performance?: Performance; risk?: RiskState;
   /** Blocks every automatic economic action until finalized wallet balances are reconciled. */
   reconciliationBlocked?: ReconciliationBlock;
+  /** Known research journal/audit loss; absence does not certify complete capture. */
+  researchEvidenceLoss?: ResearchEvidenceLoss;
 };
 export const mulBps = (x: bigint, bps: number) => x * BigInt(bps) / 10_000n;
 export const ceilDiv = (a: bigint, b: bigint) => (a + b - 1n) / b;

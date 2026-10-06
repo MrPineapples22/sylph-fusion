@@ -50,6 +50,19 @@ export class Store implements
     });
   }
   async load(): Promise<State | null> { const text = await this.call('load'); return text ? JSON.parse(text) : null; }
+  async appendAuditEvent(event: string, payload: Readonly<Record<string, unknown>>): Promise<void> {
+    if (typeof event !== 'string' || !/^[a-z][a-z0-9_]{0,63}$/.test(event)) throw new Error('Invalid audit event name');
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('Invalid audit event payload');
+    const body = JSON.stringify(payload, (_, value) => typeof value === 'bigint' ? value.toString() : value);
+    if (typeof body !== 'string' || Buffer.byteLength(body) > 65_536) throw new Error('Audit event payload exceeds size limit');
+    await this.call('append-audit-event', body, event);
+  }
+  async getAuditEvents(event: string, limit = 1000): Promise<readonly { id: number; at: number; event: string; body: string }[]> {
+    if (typeof event !== 'string' || !/^[a-z][a-z0-9_]{0,63}$/.test(event)) throw new Error('Invalid audit event name');
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 10_000) throw new Error('Invalid audit event limit');
+    const text = await this.call('get-audit-events', JSON.stringify({ event, limit }));
+    return Object.freeze(text ? JSON.parse(text) : []);
+  }
   async registerInitialGeneration(input: InitialGenerationRegistration): Promise<RegistrationResult> {
     const request = snapshotRegistration(input);
     return JSON.parse((await this.call('register-initial-generation', JSON.stringify(request)))!);
@@ -58,7 +71,10 @@ export class Store implements
     validateGenerationId(intentId);
     return JSON.parse((await this.call('read-generation-identity', intentId))!);
   }
-  async save(state: State, event?: string) { await this.call('save', JSON.stringify(state), event); }
+  async save(state: State, event?: string) {
+    if (event !== undefined && (typeof event !== 'string' || event.length < 1 || event.length > 256)) throw new Error('Invalid state audit event');
+    await this.call('save', JSON.stringify(state), event);
+  }
   async prepareSigningIntent(intent: PreparedSigningIntent): Promise<void> {
     await this.call('prepare-signing', JSON.stringify(intent));
   }
@@ -133,7 +149,22 @@ export class Store implements
     return text ? JSON.parse(text) : null;
   }
   async backup(destinationPath: string): Promise<void> { await this.call('backup', destinationPath); }
-  async pruneAudit(maxAgeMs?: number): Promise<void> { await this.call('prune', maxAgeMs ? String(maxAgeMs) : undefined); }
+  async pruneAudit(maxAgeMs?: number): Promise<{ prunedRowCount: number; idRanges: readonly (readonly [number, number])[]; limitReached: boolean }> {
+    if (maxAgeMs !== undefined && (!Number.isSafeInteger(maxAgeMs) || maxAgeMs < 0 || maxAgeMs > 10 * 365 * 86_400_000)) {
+      throw new Error('Invalid audit retention age');
+    }
+    const text = await this.call('prune', maxAgeMs === undefined ? undefined : String(maxAgeMs));
+    const result = JSON.parse(text ?? 'null');
+    if (!result || !Number.isSafeInteger(result.prunedRowCount) || result.prunedRowCount < 0 || !Array.isArray(result.idRanges) || typeof result.limitReached !== 'boolean') {
+      throw new Error('Invalid audit prune result');
+    }
+    return Object.freeze({ prunedRowCount: result.prunedRowCount, limitReached: result.limitReached, idRanges: Object.freeze(result.idRanges.map((range: unknown) => {
+      if (!Array.isArray(range) || range.length !== 2 || !range.every(Number.isSafeInteger) || range[0] < 0 || range[1] < range[0]) {
+        throw new Error('Invalid audit prune ranges');
+      }
+      return Object.freeze([range[0], range[1]] as const);
+    })) });
+  }
   close(): Promise<void> {
     if (this.closePromise) return this.closePromise;
     this.closing = true;

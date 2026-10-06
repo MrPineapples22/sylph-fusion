@@ -100,7 +100,7 @@ export interface EconomicFlightRecord {
   readonly implementationShortfallBps: number | null;
 
   // Transport & Microstructure Environment
-  readonly transport: 'JITO_BUNDLE' | 'TPU_QUIC' | 'RPC_FALLBACK' | 'SIMULATED';
+  readonly transport: 'UNKNOWN' | 'JITO_BUNDLE' | 'TPU_QUIC' | 'RPC_FALLBACK' | 'SIMULATED';
   readonly rpcProvider: string;
   readonly jitoRegion: string;
   readonly leaderInformation: string;
@@ -513,15 +513,15 @@ export class EconomicFlightRecorder {
       executionGenerationId: `gen_${params.economicFactId}_0`,
       revision: 0,
       stage: 'DISCOVERED',
-      strategyId: 'DISCOVERY_CANDIDATE',
-      modelVersion: '1.0.0',
-      policyVersion: '1.0.0',
-      releaseRoot: 'RELEASE_ROOT_ACTIVE',
+      strategyId: 'NOT_EVALUATED',
+      modelVersion: 'NOT_EVALUATED',
+      policyVersion: 'NOT_EVALUATED',
+      releaseRoot: 'UNKNOWN',
       mint: params.mint,
       creator: params.creator,
       walletCluster: 'UNKNOWN_CLUSTER',
-      regime: params.regime ?? 'STANDARD',
-      protocol: params.protocol ?? 'PUMP_FUN',
+      regime: params.regime ?? 'UNKNOWN',
+      protocol: params.protocol ?? 'UNKNOWN',
       discoveredAt: params.discoveredAt ?? now,
       observedAt: params.observedAt ?? now,
       knownAt: params.knownAt ?? now,
@@ -551,10 +551,10 @@ export class EconomicFlightRecorder {
       realizedSlippageBps: null,
       selfImpactBps: null,
       implementationShortfallBps: null,
-      transport: 'SIMULATED',
-      rpcProvider: 'INITIAL_PROVIDER',
-      jitoRegion: 'DEFAULT',
-      leaderInformation: 'PENDING_DISCOVERY',
+      transport: 'UNKNOWN',
+      rpcProvider: 'UNKNOWN',
+      jitoRegion: 'UNKNOWN',
+      leaderInformation: 'UNKNOWN',
       writableAccountSet: Object.freeze([]),
       terminalOutcome: 'NONE',
       mfePct: null,

@@ -30,6 +30,8 @@ parentPort.on('message', (m) => {
             db.exec('BEGIN IMMEDIATE');
             try {
                 db.prepare('INSERT INTO state VALUES(1,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body').run(m.body);
+                if (m.event !== undefined && (typeof m.event !== 'string' || m.event.length < 1 || m.event.length > 256))
+                    throw new Error('invalid state audit event');
                 if (m.event)
                     db.prepare('INSERT INTO audit(at,event,body) VALUES(?,?,?)').run(Date.now(), m.event, m.body);
                 db.exec('COMMIT');
@@ -39,6 +41,24 @@ parentPort.on('message', (m) => {
                 throw e;
             }
             parentPort.postMessage({ id: m.id, value: null });
+        }
+        else if (m.op === 'append-audit-event') {
+            if (typeof m.event !== 'string' || !/^[a-z][a-z0-9_]{0,63}$/.test(m.event) ||
+                typeof m.body !== 'string' || Buffer.byteLength(m.body) > 65_536)
+                throw new Error('invalid audit event');
+            const payload = JSON.parse(m.body);
+            if (!payload || typeof payload !== 'object' || Array.isArray(payload))
+                throw new Error('invalid audit event payload');
+            db.prepare('INSERT INTO audit(at,event,body) VALUES(?,?,?)').run(Date.now(), m.event, m.body);
+            parentPort.postMessage({ id: m.id, value: null });
+        }
+        else if (m.op === 'get-audit-events') {
+            const query = JSON.parse(m.body);
+            if (!query || typeof query.event !== 'string' || !/^[a-z][a-z0-9_]{0,63}$/.test(query.event) ||
+                !Number.isSafeInteger(query.limit) || query.limit < 1 || query.limit > 10_000)
+                throw new Error('invalid audit query');
+            const rows = db.prepare('SELECT id,at,event,body FROM audit WHERE event=? ORDER BY id ASC LIMIT ?').all(query.event, query.limit);
+            parentPort.postMessage({ id: m.id, value: JSON.stringify(rows) });
         }
         else if (m.op === 'prepare-signing') {
             const intent = JSON.parse(m.body);
@@ -208,10 +228,52 @@ parentPort.on('message', (m) => {
             parentPort.postMessage({ id: m.id, value: row?.evaluation_json ?? null });
         }
         else if (m.op === 'prune') {
-            const maxAgeMs = Number(m.body) || (7 * 86_400_000);
+            const maxAgeMs = m.body === undefined ? 7 * 86_400_000 : Number(m.body);
+            if (!Number.isSafeInteger(maxAgeMs) || maxAgeMs < 0 || maxAgeMs > 10 * 365 * 86_400_000)
+                throw new Error('invalid audit retention age');
             const cutoff = Date.now() - maxAgeMs;
-            db.prepare('DELETE FROM audit WHERE at < ?').run(cutoff);
-            parentPort.postMessage({ id: m.id, value: null });
+            db.exec('BEGIN IMMEDIATE');
+            try {
+                const select = db.prepare('SELECT id,at,substr(event,1,256) AS event FROM audit WHERE at < ? ORDER BY id LIMIT 50000');
+                select.setReadBigInts(true);
+                const rows = select.all(cutoff);
+                if (!rows.length) {
+                    db.exec('COMMIT');
+                    parentPort.postMessage({ id: m.id, value: JSON.stringify({ prunedRowCount: 0, idRanges: [], limitReached: false }) });
+                }
+                else {
+                    const idRanges = [];
+                    let start = rows[0].id, end = rows[0].id;
+                    const eventCounts = Object.create(null);
+                    for (const row of rows) {
+                        if (row.id < 0n || row.id > BigInt(Number.MAX_SAFE_INTEGER) || row.at < 0n || row.at > BigInt(Number.MAX_SAFE_INTEGER))
+                            throw new Error('audit retention integer out of range');
+                        if (row.id > end + 1n) {
+                            idRanges.push([Number(start), Number(end)]);
+                            start = row.id;
+                        }
+                        end = row.id;
+                        const eventClass = row.event.split(':', 1)[0].slice(0, 64);
+                        const category = /^[A-Za-z][A-Za-z0-9_.-]*$/.test(eventClass) ? eventClass : 'other';
+                        eventCounts[category] = (eventCounts[category] ?? 0) + 1;
+                        if (Object.keys(eventCounts).length > 1000)
+                            throw new Error('audit prune event category limit exceeded');
+                    }
+                    idRanges.push([Number(start), Number(end)]);
+                    const deletedAt = Date.now();
+                    db.prepare(`INSERT INTO audit_prune_ledger(pruned_at_ms,cutoff_at_ms,deleted_row_count,first_id,last_id,id_ranges_json,event_counts_json,first_audit_at_ms,last_audit_at_ms)
+            VALUES(?,?,?,?,?,?,?,?,?)`).run(deletedAt, cutoff, rows.length, Number(rows[0].id), Number(rows[rows.length - 1].id), JSON.stringify(idRanges), JSON.stringify(eventCounts), Number(rows.reduce((a, row) => a < row.at ? a : row.at, rows[0].at)), Number(rows.reduce((a, row) => a > row.at ? a : row.at, rows[0].at)));
+                    const remove = db.prepare('DELETE FROM audit WHERE id=?');
+                    for (const row of rows)
+                        remove.run(Number(row.id));
+                    db.exec('COMMIT');
+                    parentPort.postMessage({ id: m.id, value: JSON.stringify({ prunedRowCount: rows.length, idRanges, limitReached: rows.length === 50_000 }) });
+                }
+            }
+            catch (error) {
+                db.exec('ROLLBACK');
+                throw error;
+            }
         }
         else if (m.op === 'close') {
             db.close();

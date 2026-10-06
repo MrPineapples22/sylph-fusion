@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PublicKey, SystemProgram } from '@solana/web3.js';
+import { encode, instructionHash, traceHash as referenceTraceHash } from '../oracles/cpi-trace-normalizer-v1-reference.mjs';
 
-const { normalizeSimulationCpiTrace } = await import('../../dist/platform/simulation/cpi-trace-normalizer.js');
+const { normalizeSimulationCpiTrace, verifyNormalizedCpiTrace } = await import('../../dist/platform/simulation/cpi-trace-normalizer.js');
 const programId = SystemProgram.programId.toBase58();
 const programId2 = new PublicKey('11111111111111111111111111111112').toBase58();
 const partial = (stackHeight, patch = {}) => ({
@@ -13,6 +14,8 @@ const parsed = (stackHeight, patch = {}) => ({
   ...(stackHeight === Symbol.for('missing') ? {} : { stackHeight }), ...patch,
 });
 const group = (index, heights) => ({ index, instructions: heights.map(height => partial(height)) });
+
+const traceHash = value => { const { traceHash: _old, ...payload } = value; return referenceTraceHash(payload); };
 
 test('normalizes missing, null, unrequested, and requested-empty response states to exact hashes', () => {
   const cases = [
@@ -48,6 +51,7 @@ test('reconstructs deterministic index parents across nested calls, siblings, an
     { kind: 'TOP_LEVEL', topLevelIndex: 2 }, { kind: 'TOP_LEVEL', topLevelIndex: 2 },
   ]);
   assert.ok(Object.isFrozen(trace) && Object.isFrozen(trace.groups) && Object.isFrozen(trace.groups[0].instructions[0].parent));
+  assert.equal(verifyNormalizedCpiTrace(trace), true);
 });
 
 test('matches independent nested-instruction and one-node trace hash vectors', () => {
@@ -55,7 +59,140 @@ test('matches independent nested-instruction and one-node trace hash vectors', (
     parsed: { info: { amount: '1' }, type: 'transfer' }, program: 'system', programId, stackHeight: 2,
   }] }]);
   assert.equal(trace.groups[0].instructions[0].instructionHash, '70b1682c183cd398c6b74bd6831e61926c7913d876384e115c757ae339bf2e5a');
-  assert.equal(trace.traceHash, '6726b6aa0059c3734d09f40e7e4ffab1cc59b6af5dc1c787f3177eeea7d85179');
+  assert.equal(trace.traceHash, 'bbdcec13f54e0e1e16ab5973bc047857352f57fa0702fa60be2911c484c9ed8b');
+  assert.equal(trace.traceHash, traceHash(trace));
+  assert.equal(verifyNormalizedCpiTrace(trace), true);
+  const partialTrace = normalizeSimulationCpiTrace(true, 1, [{ index: 0, instructions: [partial(2)] }]);
+  assert.deepEqual({ ...partialTrace.groups[0].instructions[0].sourceFields }, {
+    kind: 'PARTIALLY_DECODED', accounts: [], data: '', programId,
+  });
+  assert.equal(partialTrace.groups[0].instructions[0].instructionHash,
+    'a0a29cf5d8c92827988e11f647c11f01441563b50ea019bc962c862f37dd8f90');
+  assert.equal(partialTrace.traceHash, 'da7bb9c7eed849691161d4c78b8221f8a066bdf7f805d1f057f3f874e51a6b48');
+  assert.equal(partialTrace.traceHash, traceHash(partialTrace));
+  assert.equal(verifyNormalizedCpiTrace(partialTrace), true);
+});
+
+test('verifies source fields, instruction digests, status, parents, and full trace hash from contents', () => {
+  const valid = normalizeSimulationCpiTrace(true, 1, [{ index: 0, instructions: [parsed(2)] }]);
+  assert.equal(verifyNormalizedCpiTrace(valid), true);
+  const badSourceKind = structuredClone(valid); badSourceKind.groups[0].instructions[0].sourceKind = 'PARTIALLY_DECODED';
+  badSourceKind.traceHash = traceHash(badSourceKind);
+  assert.equal(verifyNormalizedCpiTrace(badSourceKind), false);
+  const badProgramId = structuredClone(valid); badProgramId.groups[0].instructions[0].programId = programId2;
+  badProgramId.traceHash = traceHash(badProgramId);
+  assert.equal(verifyNormalizedCpiTrace(badProgramId), false);
+  const badDigest = structuredClone(valid); badDigest.groups[0].instructions[0].instructionHash = '0'.repeat(64);
+  badDigest.traceHash = traceHash(badDigest);
+  assert.equal(verifyNormalizedCpiTrace(badDigest), false);
+  const changedSource = structuredClone(valid); changedSource.groups[0].instructions[0].sourceFields.parsed.info.amount = '2';
+  changedSource.traceHash = traceHash(changedSource);
+  assert.equal(verifyNormalizedCpiTrace(changedSource), false);
+  const badParent = structuredClone(valid); badParent.groups[0].instructions[0].parent.topLevelIndex = 1;
+  badParent.traceHash = traceHash(badParent);
+  assert.equal(verifyNormalizedCpiTrace(badParent), false);
+  const badStatus = structuredClone(valid); badStatus.status = 'PARTIAL'; badStatus.traceHash = traceHash(badStatus);
+  assert.equal(verifyNormalizedCpiTrace(badStatus), false);
+
+  // Unkeyed hashes prove only self-consistency: an author can replace source
+  // content, recompute its instruction digest and trace hash, and still pass.
+  const selfConsistentForgery = structuredClone(valid);
+  const forgedNode = selfConsistentForgery.groups[0].instructions[0];
+  forgedNode.sourceFields.parsed.info.amount = '999';
+  forgedNode.instructionHash = instructionHash(forgedNode.sourceFields);
+  selfConsistentForgery.traceHash = traceHash(selfConsistentForgery);
+  assert.equal(verifyNormalizedCpiTrace(selfConsistentForgery), true);
+});
+
+test('normalized trace verification rejects accessors before reading source fields', () => {
+  const valid = normalizeSimulationCpiTrace(true, 1, [{ index: 0, instructions: [parsed(2)] }]);
+  const untrusted = structuredClone(valid);
+  const sourceFields = { parsed: { info: { amount: '1' }, type: 'transfer' }, program: 'system', programId };
+  let getterCalls = 0;
+  Object.defineProperty(sourceFields, 'kind', { enumerable: true, get() { getterCalls += 1; return 'PARSED'; } });
+  untrusted.groups[0].instructions[0].sourceFields = sourceFields;
+  assert.equal(verifyNormalizedCpiTrace(untrusted), false);
+  assert.equal(getterCalls, 0);
+});
+
+test('normalized trace verification rejects oversized malformed parents before canonical encoding', () => {
+  const trace = structuredClone(normalizeSimulationCpiTrace(true, 1, [{ index: 0, instructions: [parsed(2)] }]));
+  trace.groups[0].instructions[0].parent = {
+    kind: 'INNER', topLevelIndex: 0, innerIndex: 0,
+    payload: ['x'.repeat(800_000), 'y'.repeat(800_000), 'z'.repeat(800_000)],
+  };
+  assert.equal(verifyNormalizedCpiTrace(trace), false);
+});
+
+test('a trace preimage just under the byte ceiling verifies even when its hash envelope crosses it', () => {
+  const first = 'x'.repeat(999_900);
+  let low = 0;
+  let high = 999_999;
+  let best;
+  while (low <= high) {
+    const secondLength = Math.floor((low + high) / 2);
+    let candidate;
+    try {
+      candidate = normalizeSimulationCpiTrace(true, 1, [{ index: 0, instructions: [parsed(2, {
+        parsed: { first, second: 'y'.repeat(secondLength) },
+      })] }]);
+    } catch {
+      high = secondLength - 1;
+      continue;
+    }
+    const { traceHash: _hash, ...preimage } = candidate;
+    if (Buffer.byteLength(encode(preimage), 'utf8') <= 2_000_000) {
+      best = candidate;
+      low = secondLength + 1;
+    } else high = secondLength - 1;
+  }
+  assert.ok(best, 'a valid near-limit trace is constructed');
+  const { traceHash: _hash, ...preimage } = best;
+  assert.ok(Buffer.byteLength(encode(preimage), 'utf8') > 1_999_800);
+  assert.ok(Buffer.byteLength(encode(best), 'utf8') > 2_000_000);
+  assert.equal(verifyNormalizedCpiTrace(best), true);
+});
+
+test('normalized trace verification preflights aggregate node, instruction, and byte limits', () => {
+  const parsedProperties = Object.fromEntries(Array.from({ length: 40 }, (_v, index) => [`field${index}`, 'x']));
+  const manyNodeFields = { kind: 'PARSED', parsed: parsedProperties, program: 'system', programId };
+  const manyNode = { programId, stackHeight: 2, sourceKind: 'PARSED', sourceFields: manyNodeFields,
+    instructionHash: '0'.repeat(64), parent: { kind: 'TOP_LEVEL', topLevelIndex: 0 } };
+  const nodeHeavyTrace = { normalizationVersion: 1, status: 'STRUCTURALLY_VALID', coverage: 'REPORTED_NODES_ONLY',
+    recordingRequested: true, responseFieldState: 'ARRAY', topLevelInstructionCount: 9,
+    groups: Array.from({ length: 9 }, (_v, index) => ({ topLevelIndex: index,
+      instructions: Array.from({ length: 100 }, () => ({ ...manyNode, parent: { kind: 'TOP_LEVEL', topLevelIndex: index } })) })),
+    traceHash: '0'.repeat(64) };
+  assert.equal(verifyNormalizedCpiTrace(nodeHeavyTrace), false);
+
+  const largeSourceFields = { kind: 'PARSED', parsed: { payload: 'x'.repeat(700_000) }, program: 'system', programId };
+  const byteHeavyTrace = { normalizationVersion: 1, status: 'STRUCTURALLY_VALID', coverage: 'REPORTED_NODES_ONLY',
+    recordingRequested: true, responseFieldState: 'ARRAY', topLevelInstructionCount: 3,
+    groups: Array.from({ length: 3 }, (_v, index) => ({ topLevelIndex: index, instructions: [{
+      programId, stackHeight: 2, sourceKind: 'PARSED', sourceFields: largeSourceFields,
+      instructionHash: '0'.repeat(64), parent: { kind: 'TOP_LEVEL', topLevelIndex: index },
+    }] })), traceHash: '0'.repeat(64) };
+  assert.equal(verifyNormalizedCpiTrace(byteHeavyTrace), false);
+
+  const tooManyInstructions = { normalizationVersion: 1, status: 'STRUCTURALLY_VALID', coverage: 'REPORTED_NODES_ONLY',
+    recordingRequested: true, responseFieldState: 'ARRAY', topLevelInstructionCount: 2,
+    groups: [0, 1].map(index => ({ topLevelIndex: index,
+      instructions: Array.from({ length: 10_000 }, () => ({ ...manyNode, parent: { kind: 'TOP_LEVEL', topLevelIndex: index } })) })),
+    traceHash: '0'.repeat(64) };
+  assert.equal(verifyNormalizedCpiTrace(tooManyInstructions), false);
+});
+
+test('normalized trace verification preflights full-payload nodes before rebuilding groups', () => {
+  const sourceFields = { kind: 'PARTIALLY_DECODED', accounts: [], data: '', programId };
+  const trace = { normalizationVersion: 1, status: 'STRUCTURALLY_VALID', coverage: 'REPORTED_NODES_ONLY',
+    recordingRequested: true, responseFieldState: 'ARRAY', topLevelInstructionCount: 40,
+    groups: Array.from({ length: 40 }, (_v, topLevelIndex) => ({ topLevelIndex,
+      instructions: Array.from({ length: 100 }, () => ({ programId, stackHeight: 2, sourceKind: 'PARTIALLY_DECODED',
+        sourceFields, instructionHash: '0'.repeat(64), parent: { kind: 'TOP_LEVEL', topLevelIndex } })) })),
+    traceHash: '0'.repeat(64) };
+  // Source fields, bytes, and instruction count are individually below their
+  // caps; wrapper fields push the complete normalized payload over 65,536 nodes.
+  assert.equal(verifyNormalizedCpiTrace(trace), false);
 });
 
 test('unknown heights preserve feasible partial paths but suppress every edge in that group', () => {
@@ -136,4 +273,29 @@ test('enforces bounded instruction, group, account, and top-level counts', () =>
   assert.throws(() => normalizeSimulationCpiTrace(true, 1, [{ index: 0, instructions: Array(16_385).fill(partial(2)) }]), /CPI_TRACE_/);
   assert.throws(() => normalizeSimulationCpiTrace(true, 1, [{ index: 0, instructions: [partial(2, { accounts: Array(257).fill(programId) })] }]), /CPI_TRACE_/);
   assert.throws(() => normalizeSimulationCpiTrace(true, 1, Array(257).fill({ index: 0, instructions: [partial(2)] })), /CPI_TRACE_/);
+});
+
+test('enforces aggregate source and full-trace UTF-8 byte budgets and recursive depth', () => {
+  const multibyteAtLimit = normalizeSimulationCpiTrace(true, 1, [{ index: 0, instructions: [parsed(2, {
+    parsed: { payload: 'é'.repeat(500_000) },
+  })] }]);
+  assert.equal(multibyteAtLimit.status, 'STRUCTURALLY_VALID');
+  assert.throws(() => normalizeSimulationCpiTrace(true, 1, [{ index: 0, instructions: [parsed(2, {
+    parsed: { payload: 'é'.repeat(500_001) },
+  })] }]), /CPI_TRACE_STRING_TOO_LARGE/);
+
+  const aggregateOver = Array.from({ length: 3 }, (_value, index) => ({
+    index,
+    instructions: [parsed(2, { parsed: { payload: `${index}${'x'.repeat(900_000)}` } })],
+  }));
+  assert.throws(() => normalizeSimulationCpiTrace(true, 3, aggregateOver), /CPI_TRACE_TOO_LARGE/);
+
+  let deeplyNested = 'leaf';
+  for (let depth = 0; depth < 33; depth += 1) deeplyNested = { child: deeplyNested };
+  assert.throws(() => normalizeSimulationCpiTrace(true, 1, [{ index: 0, instructions: [parsed(2, {
+    parsed: deeplyNested,
+  })] }]), /CPI_TRACE_TOO_COMPLEX/);
+
+  const nearLimitParsed = { first: 'x'.repeat(999_700), second: 'y'.repeat(999_700) };
+  assert.throws(() => normalizeSimulationCpiTrace(true, 1, [{ index: 0, instructions: [parsed(2, { parsed: nearLimitParsed })] }]), /CPI_TRACE_TOO_LARGE/);
 });

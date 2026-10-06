@@ -144,7 +144,7 @@ export interface TimeContextV2 {
 
 export interface ProvenanceContextV2 {
   readonly providerId: string;
-  readonly connectionGeneration: number;
+  readonly connectionGeneration: number | 'unknown';
   readonly sourceClass: string;
   readonly decoderVersion: string;
   readonly failureDomain: string;

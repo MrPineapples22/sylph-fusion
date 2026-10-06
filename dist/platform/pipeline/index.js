@@ -21,4 +21,5 @@ export * from './transport-reconciliation.js';
 export * from './digital-twins.js';
 export * from './unified-unit.js';
 export * from './runtime-divergence.js';
+export * from './block-context-joiner.js';
 //# sourceMappingURL=index.js.map
