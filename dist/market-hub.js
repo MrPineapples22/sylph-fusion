@@ -116,6 +116,32 @@ class HttpError extends Error {
         this.name = 'HttpError';
     }
 }
+export function marketHubAuthenticationRequirement(providerId, endpoint) {
+    try {
+        const url = new URL(endpoint);
+        const noCredentials = !url.username && !url.password;
+        if (providerId === 'PUMPPORTAL_WS' && url.protocol === 'wss:' && url.hostname === 'pumpportal.fun' && url.port === '' && url.pathname === '/api/data' && noCredentials && !url.hash) {
+            const queryKeys = [...url.searchParams.keys()];
+            if (queryKeys.length === 0 || (queryKeys.length === 1 && queryKeys[0] === 'api-key' && Boolean(url.searchParams.get('api-key'))))
+                return 'NOT_REQUIRED';
+        }
+        // URL normalizes empty `?` and `#` delimiters to empty search/hash values.
+        // MarketHub appends API paths to the configured raw base, so those delimiters
+        // would move the appended path into a query or fragment despite parsing cleanly.
+        if (providerId === 'DEXSCREENER_API' && !endpoint.includes('?') && !endpoint.includes('#') && url.protocol === 'https:' && url.hostname === 'api.dexscreener.com' && url.port === '' && (url.pathname === '' || url.pathname === '/') && noCredentials && !url.search && !url.hash)
+            return 'NOT_REQUIRED';
+        if (providerId === 'SOLANA_RPC' && !endpoint.includes('#') && (url.protocol === 'https:' || url.protocol === 'http:')) {
+            const isPublic = (url.hostname === 'api.mainnet-beta.solana.com' || url.hostname === '127.0.0.1' || url.hostname === 'localhost') && noCredentials && !url.search;
+            const isHeliusWithKey = url.hostname.includes('helius-rpc.com') && url.searchParams.has('api-key');
+            if (isPublic || isHeliusWithKey)
+                return 'NOT_REQUIRED';
+        }
+        if (providerId === 'RUGCHECK_API' && !endpoint.includes('?') && !endpoint.includes('#') && url.protocol === 'https:' && url.hostname === 'api.rugcheck.xyz' && noCredentials && !url.search && !url.hash)
+            return 'NOT_REQUIRED';
+    }
+    catch { /* Invalid or relative endpoints cannot inherit a public provider contract. */ }
+    return 'UNKNOWN';
+}
 async function json(url, init) {
     const r = await fetch(url, { ...init, signal: AbortSignal.timeout(8000) });
     if (!r.ok)
@@ -198,15 +224,15 @@ export class MarketHub {
                 this.kolWallets = new Set(raw.split(/\r?\n/).map(x => x.trim()).filter(x => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(x)));
             }
             catch { }
-        // Register active providers with the health tracker so the operator read model sees them as configured.
+        // Only documented official public-read endpoints are classified; custom endpoints remain unknown.
         if (this.pumpUrl)
-            globalProviderHealthTracker.setProviderConfiguration('PUMPPORTAL_WS', true, true, true);
+            globalProviderHealthTracker.setProviderConfiguration('PUMPPORTAL_WS', true, true, false, marketHubAuthenticationRequirement('PUMPPORTAL_WS', this.pumpUrl));
         if (this.dexUrl)
-            globalProviderHealthTracker.setProviderConfiguration('DEXSCREENER_API', true, true, true);
+            globalProviderHealthTracker.setProviderConfiguration('DEXSCREENER_API', true, true, false, marketHubAuthenticationRequirement('DEXSCREENER_API', this.dexUrl));
         if (this.rugUrl)
-            globalProviderHealthTracker.setProviderConfiguration('RUGCHECK_API', true, true, true);
+            globalProviderHealthTracker.setProviderConfiguration('RUGCHECK_API', true, true, false, marketHubAuthenticationRequirement('RUGCHECK_API', this.rugUrl));
         if (this.rpcList.length)
-            globalProviderHealthTracker.setProviderConfiguration('SOLANA_RPC', true, true, true);
+            globalProviderHealthTracker.setProviderConfiguration('SOLANA_RPC', true, true, false, marketHubAuthenticationRequirement('SOLANA_RPC', this.rpcList[0]));
         // Discovery accepts market observations for five seconds.  Poll faster
         // than that fence so a healthy provider does not oscillate between
         // CURRENT and STALE solely because its own refresh cadence is too slow.
@@ -383,14 +409,14 @@ export class MarketHub {
         const endpoint = this.rpcList[this.rpcIndex] || this.rpc;
         try {
             const result = await json(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getSlot', params: [{ commitment: 'confirmed' }] }) });
-            if (!Number.isSafeInteger(result.result))
-                throw new Error();
+            if (!Number.isSafeInteger(result.result) || result.result < 0)
+                throw new Error('Invalid Solana RPC slot');
             this.network = { slot: result.result, at: Date.now() };
             this.status.solana = { state: 'live', at: Date.now() };
             globalProviderHealthTracker.recordSuccess('SOLANA_RPC', Date.now() - start);
         }
         catch (e) {
-            if (e?.status === 429 || e?.message?.includes('429')) {
+            if (e?.status === 429) {
                 globalProviderHealthTracker.recordRateLimit('SOLANA_RPC');
             }
             else {

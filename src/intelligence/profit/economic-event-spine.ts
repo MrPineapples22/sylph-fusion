@@ -54,6 +54,13 @@ const canonicalize = (value: unknown): string => JSON.stringify(value, (_, item)
 
 const hash = (value: unknown): string => createHash('sha256').update(canonicalize(value)).digest('hex');
 
+function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
+  if (typeof value !== 'object' || value === null || seen.has(value)) return value;
+  seen.add(value);
+  for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child, seen);
+  return Object.freeze(value);
+}
+
 const timestamp = (name: string, value: number): void => {
   if (!Number.isSafeInteger(value) || value <= 0) throw new Error(`${name}_MUST_BE_SAFE_POSITIVE_INTEGER`);
 };
@@ -103,9 +110,10 @@ export function verifyOpportunitySetSnapshot(snapshot: OpportunitySetSnapshot): 
 }
 
 export class EconomicEventSpine {
-  private readonly eventsByCertificate = new Map<string, EconomicEvent[]>();
+  private readonly eventsByCertificate = new Map<string, readonly EconomicEvent[]>();
+  private readonly preparedEvents = new WeakSet<object>();
 
-  public append(input: EconomicEventInput): EconomicEvent {
+  public assertCanAppend(input: EconomicEventInput): void {
     if (!input.certificateId) throw new Error('CERTIFICATE_ID_REQUIRED');
     timestamp('OCCURRED_AT', input.occurredAtMs);
     assertProvenance(input.provenance);
@@ -115,10 +123,46 @@ export class EconomicEventSpine {
     if (prior && input.occurredAtMs < prior.occurredAtMs) throw new Error('NON_MONOTONIC_ECONOMIC_EVENT_TIME');
     const sequence = existing.length + 1;
     const previousHash = prior?.integrityHash ?? GENESIS_HASH;
-    const payload = { ...input, sequence, previousHash };
-    const event: EconomicEvent = { ...payload, integrityHash: hash(payload) };
-    this.eventsByCertificate.set(input.certificateId, [...existing, event]);
+    // Preflight serialization too, so composed journals cannot partially
+    // commit when payload/provenance data is cyclic or otherwise unhashable.
+    hash({ ...input, sequence, previousHash });
+  }
+
+  public prepareAppend(input: EconomicEventInput): EconomicEvent {
+    const snapshot = deepFreeze(structuredClone(input));
+    this.assertCanAppend(snapshot);
+    const existing = this.eventsByCertificate.get(snapshot.certificateId) ?? [];
+    const prior = existing.at(-1);
+    const sequence = existing.length + 1;
+    const previousHash = prior?.integrityHash ?? GENESIS_HASH;
+    const payload = { ...snapshot, sequence, previousHash };
+    const event: EconomicEvent = deepFreeze({ ...payload, integrityHash: hash(payload) });
+    this.preparedEvents.add(event);
     return event;
+  }
+
+  public appendPrepared(event: EconomicEvent): EconomicEvent {
+    if (typeof event !== 'object' || event === null || !this.preparedEvents.has(event)) {
+      throw new Error('ECONOMIC_EVENT_NOT_PREPARED_BY_THIS_SPINE');
+    }
+    const existing = this.eventsByCertificate.get(event.certificateId) ?? [];
+    const prior = existing.at(-1);
+    const expectedSequence = existing.length + 1;
+    const expectedPreviousHash = prior?.integrityHash ?? GENESIS_HASH;
+    const { integrityHash, ...payload } = event;
+    if (event.sequence !== expectedSequence || event.previousHash !== expectedPreviousHash || hash(payload) !== integrityHash) {
+      throw new Error('PREPARED_ECONOMIC_EVENT_STALE_OR_INVALID');
+    }
+    this.assertCanAppend(event);
+    const stored = this.eventsByCertificate.get(event.certificateId) ?? [];
+    const committed = Object.freeze([...stored, event]);
+    this.eventsByCertificate.set(event.certificateId, committed);
+    return event;
+  }
+
+  public append(input: EconomicEventInput): EconomicEvent {
+    const event = this.prepareAppend(input);
+    return this.appendPrepared(event);
   }
 
   public list(certificateId: string): readonly EconomicEvent[] {

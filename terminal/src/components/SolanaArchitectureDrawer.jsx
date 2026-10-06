@@ -1,20 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Shield,
-  Layers,
-  Cpu,
   Zap,
-  Network,
-  TrendingUp,
   Activity,
-  AlertTriangle,
-  CheckCircle2,
-  Clock,
   Compass,
-  ArrowRight,
   GitBranch,
-  Filter,
-  DollarSign,
   Lock,
 } from 'lucide-react';
 
@@ -27,30 +17,107 @@ export function SolanaArchitectureDrawer({
   arbitrageCycles = [],
   capacityData = null,
   strategyEcology = null,
-  marketTwinAnomalies = 0,
+  marketTwinAnomalies = null,
+  executionMode = 'UNKNOWN',
+  initialTab = 'leases',
 }) {
-  const [activeTab, setActiveTab] = useState('leases');
+  const [activeTab, setActiveTab] = useState(initialTab);
+  const [liveLeases, setLiveLeases] = useState(protocolLeases);
+  const [liveSensors, setLiveSensors] = useState(sensorLeaderboard);
+  const [liveTelemetry, setLiveTelemetry] = useState(transportTelemetry);
+  const [liveArbitrage, setLiveArbitrage] = useState(arbitrageCycles);
+  const [liveCapacity, setLiveCapacity] = useState(capacityData);
+  const [liveEcology, setLiveEcology] = useState(strategyEcology);
+  const [paperMaxRiskData, setPaperMaxRiskData] = useState(null);
+  const [v8ReplayData, setV8ReplayData] = useState(null);
+  const [monteCarloData, setMonteCarloData] = useState(null);
+  const [isTogglingMode, setIsTogglingMode] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let active = true;
+    async function loadLiveData() {
+      try {
+        const [rLeases, rSensors, rTransport, rArb, rCap, rEco, rMaxRisk, rReplay, rMonte] = await Promise.allSettled([
+          fetch('/api/solana/protocol-leases').then(r => r.json()),
+          fetch('/api/solana/sensor-tournament').then(r => r.json()),
+          fetch('/api/solana/transport-tournament').then(r => r.json()),
+          fetch('/api/solana/arbitrage-cycles').then(r => r.json()),
+          fetch('/api/solana/capacity-curve').then(r => r.json()),
+          fetch('/api/solana/strategy-ecology').then(r => r.json()),
+          fetch('/api/paper/max-risk').then(r => r.json()),
+          fetch('/api/paper/v8-replay').then(r => r.json()),
+          fetch('/api/paper/monte-carlo').then(r => r.json()),
+        ]);
+        if (!active) return;
+        if (rLeases.status === 'fulfilled' && rLeases.value?.leases) setLiveLeases(rLeases.value.leases);
+        if (rSensors.status === 'fulfilled' && rSensors.value?.leaderboard) setLiveSensors(rSensors.value.leaderboard);
+        if (rTransport.status === 'fulfilled' && rTransport.value?.telemetry) setLiveTelemetry(rTransport.value.telemetry);
+        if (rArb.status === 'fulfilled' && rArb.value?.cycles) setLiveArbitrage(rArb.value.cycles);
+        if (rCap.status === 'fulfilled' && rCap.value?.curve) setLiveCapacity(rCap.value.curve);
+        if (rEco.status === 'fulfilled' && rEco.value?.strategies) setLiveEcology(rEco.value);
+        if (rMaxRisk.status === 'fulfilled') setPaperMaxRiskData(rMaxRisk.value);
+        if (rReplay.status === 'fulfilled') setV8ReplayData(rReplay.value);
+        if (rMonte.status === 'fulfilled') setMonteCarloData(rMonte.value);
+      } catch {}
+    }
+    loadLiveData();
+    return () => { active = false; };
+  }, [isOpen]);
+
+  async function handleToggleMode(newMode) {
+    setIsTogglingMode(true);
+    try {
+      const res = await fetch('/api/paper/max-risk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: newMode }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        const refresh = await fetch('/api/paper/max-risk').then(r => r.json());
+        setPaperMaxRiskData(refresh);
+      }
+    } catch {}
+    setIsTogglingMode(false);
+  }
+
+  const effectiveLeases = (liveLeases && liveLeases.length > 0) ? liveLeases : protocolLeases;
+  const effectiveSensors = (liveSensors && liveSensors.length > 0) ? liveSensors : sensorLeaderboard;
+  const effectiveTelemetry = (liveTelemetry && liveTelemetry.length > 0) ? liveTelemetry : transportTelemetry;
+  const effectiveArbitrage = (liveArbitrage && liveArbitrage.length > 0) ? liveArbitrage : arbitrageCycles;
+  const effectiveCapacity = liveCapacity || capacityData;
+  const effectiveEcology = liveEcology || strategyEcology;
+
+  const hasEvidence = (effectiveLeases && effectiveLeases.length > 0) || (effectiveSensors && effectiveSensors.length > 0) || (effectiveTelemetry && effectiveTelemetry.length > 0);
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/70 backdrop-blur-sm transition-opacity">
-      <div className="relative w-full max-w-4xl h-full bg-slate-950 border-l border-slate-800 shadow-2xl flex flex-col text-slate-100 overflow-hidden font-mono">
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/75 backdrop-blur-sm transition-opacity" style={{ zIndex: 9999 }}>
+      <div className="relative w-full max-w-4xl h-full border-l border-slate-800 shadow-2xl flex flex-col text-slate-100 overflow-hidden font-mono" style={{ background: '#080C14', borderLeft: '1px solid rgba(255,255,255,0.12)' }}>
         {/* Header */}
-        <div className="p-5 border-b border-slate-800 bg-slate-900/80 flex items-center justify-between">
+        <div className="p-5 border-b border-slate-800 flex items-center justify-between" style={{ background: '#0D1422' }}>
           <div className="flex items-center space-x-3">
             <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
               <Shield className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold tracking-tight text-white flex items-center gap-2">
-                SYLPH FUSION — SOLANA-ONLY ARCHITECTURE
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+                  SYLPH FUSION — SOLANA-ONLY ARCHITECTURE
+                </h2>
                 <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800">
-                  FAIL-CLOSED
+                  RESEARCH BLUEPRINT
                 </span>
-              </h2>
+                {!hasEvidence && (
+                  <span className="text-xs px-2 py-0.5 rounded font-bold bg-amber-950/70 text-amber-400 border border-amber-500/70">
+                    FAIL-CLOSED
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                45-Section Integration Blueprint • Zero Cross-Chain Complexity • I/O-Free Strategy Execution
+                Design overview • Runtime evidence is shown only when supplied
               </p>
             </div>
           </div>
@@ -63,14 +130,15 @@ export function SolanaArchitectureDrawer({
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-slate-800 bg-slate-900/40 px-5 gap-2 overflow-x-auto">
+        <div className="flex border-b border-slate-800 px-5 gap-2 overflow-x-auto" style={{ background: '#0A101C' }}>
           {[
-            { id: 'leases', label: 'Protocol Leases (10/10)', icon: Lock },
+            { id: 'leases', label: 'Protocol Leases', icon: Lock },
             { id: 'sensors', label: 'Sensor Tournament', icon: Activity },
             { id: 'transport', label: 'Transport Lanes', icon: Zap },
             { id: 'arbitrage', label: 'Arbitrage Graph', icon: GitBranch },
             { id: 'capacity', label: 'Exit Before Entry', icon: Shield },
             { id: 'alpha', label: 'Alpha Factory & Ecology', icon: Compass },
+            { id: 'max_risk', label: 'Max Risk & Chaos', icon: Zap },
           ].map(tab => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -92,43 +160,32 @@ export function SolanaArchitectureDrawer({
         </div>
 
         {/* Tab Content Area */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto p-6 space-y-6" style={{ background: '#080C14' }}>
           {/* TAB 1: PROTOCOL COMPATIBILITY LEASES */}
           {activeTab === 'leases' && (
             <div className="space-y-4">
               <div className="bg-slate-900/60 rounded-lg p-4 border border-slate-800">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs uppercase font-bold text-slate-400">
-                    Certified Solana Protocol Leases (Section 34 & 35)
+                    Protocol Lease Observations (Section 34 & 35)
                   </span>
                   <span className="text-xs text-emerald-400 font-semibold flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> 10 / 10 Protocols Cryptographically Bound
+                    {effectiveLeases.length} reported • certification unverified
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 leading-relaxed">
-                  Every DEX program (Pump.fun, PumpSwap, Raydium AMM/CPMM/CLMM, Meteora DLMM/DAMM, Orca Whirlpool, Jupiter, Phoenix)
-                  is bound to an explicit binary hash and layout expiry slot. Any unexpected on-chain mutation halts execution fail-closed.
+                  This panel displays reported lease data only. It does not verify program binaries, layouts, expiry slots, or runtime enforcement.
                 </p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {(protocolLeases.length > 0 ? protocolLeases : [
-                  { protocolName: 'PUMP_FUN', programId: '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P', idlVersion: '1.0.0', feeModelVersion: '1.0.0', verificationStatus: 'COMPATIBLE', isCertified: true },
-                  { protocolName: 'PUMP_SWAP', programId: 'pumpswap11111111111111111111111111111111111', idlVersion: '1.0.0', feeModelVersion: '1.0.0', verificationStatus: 'COMPATIBLE', isCertified: true },
-                  { protocolName: 'RAYDIUM_AMM', programId: '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8', idlVersion: '4.0.0', feeModelVersion: '25bps_fixed', verificationStatus: 'COMPATIBLE', isCertified: true },
-                  { protocolName: 'RAYDIUM_CPMM', programId: 'CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C', idlVersion: '1.0.0', feeModelVersion: 'dynamic_cpmm', verificationStatus: 'COMPATIBLE', isCertified: true },
-                  { protocolName: 'RAYDIUM_CLMM', programId: 'CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK', idlVersion: '1.0.0', feeModelVersion: 'clmm_ticks', verificationStatus: 'COMPATIBLE', isCertified: true },
-                  { protocolName: 'METEORA_DLMM', programId: 'LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo', idlVersion: '1.2.0', feeModelVersion: 'bin_dynamic', verificationStatus: 'COMPATIBLE', isCertified: true },
-                  { protocolName: 'METEORA_DAMM', programId: 'Eo7WjKq67rjJQSZxS6z3YkapzY3eMj6Xy8X5EQVn5UaB', idlVersion: '1.0.0', feeModelVersion: 'dynamic_fee', verificationStatus: 'COMPATIBLE', isCertified: true },
-                  { protocolName: 'ORCA_WHIRLPOOL', programId: 'whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc', idlVersion: '1.0.0', feeModelVersion: 'concentrated_fee', verificationStatus: 'COMPATIBLE', isCertified: true },
-                  { protocolName: 'JUPITER_ROUTING', programId: 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4', idlVersion: '6.0.0', feeModelVersion: 'aggregator_split', verificationStatus: 'COMPATIBLE', isCertified: true },
-                  { protocolName: 'PHOENIX_CLOB', programId: 'PhoeNiXZ8ByJGLkxNfZRnkUfjvmuYqLR89jjFHGqdXY', idlVersion: '1.0.0', feeModelVersion: 'maker_taker', verificationStatus: 'COMPATIBLE', isCertified: true },
-                ]).map((p, idx) => (
+                {effectiveLeases.length === 0 && <div className="text-xs text-slate-500">No protocol lease observations are connected.</div>}
+                {effectiveLeases.map((p, idx) => (
                   <div key={idx} className="bg-slate-900/40 border border-slate-800/80 rounded-md p-3 flex flex-col justify-between">
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-sm text-slate-200">{p.protocolName}</span>
-                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-950 text-emerald-400 border border-emerald-800">
-                        {p.verificationStatus || 'COMPATIBLE'}
+                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-950 text-amber-400 border border-amber-800">
+                        Reported: {p.verificationStatus || 'UNKNOWN'}
                       </span>
                     </div>
                     <div className="mt-2 text-[11px] text-slate-400 truncate">
@@ -137,7 +194,7 @@ export function SolanaArchitectureDrawer({
                     <div className="mt-1 flex items-center justify-between text-[11px] text-slate-400">
                       <span>IDL: {p.idlVersion}</span>
                       <span>Fee: {p.feeModelVersion}</span>
-                      <span className="text-emerald-400 font-semibold">{p.isCertified ? 'CERTIFIED' : 'PENDING'}</span>
+                      <span className="text-amber-400 font-semibold">REPORTED ONLY</span>
                     </div>
                   </div>
                 ))}
@@ -154,12 +211,11 @@ export function SolanaArchitectureDrawer({
                     Sensor Tournament (Section 5 & 6)
                   </span>
                   <span className="text-xs text-blue-400 font-semibold">
-                    Ranking = Edge Preserved - Errors - Missed - Cost
+                    Economic value: UNKNOWN without reconciled outcomes and provider costs
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 leading-relaxed">
-                  Races Shreds, Geyser, logsSubscribe, and RPC nodes. Epistemic doctrine enforces zero synthetic edge fabrication.
-                  Sensor Shadow Universe continuously computes counterfactuals without risking capital.
+                  Sensor metrics are diagnostic until observations share a clock and slot, decode correctness is established, and costs and settled outcomes are reconciled.
                 </p>
               </div>
 
@@ -176,21 +232,17 @@ export function SolanaArchitectureDrawer({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60">
-                    {(sensorLeaderboard.length > 0 ? sensorLeaderboard : [
-                      { sensorType: 'SHREDS', coverageRatePct: 99.4, meanLatencyMs: 4.2, falseDecodeRatePct: 0.1, winsCount: 452, economicValueState: 'UNKNOWN' },
-                      { sensorType: 'GEYSER', coverageRatePct: 98.8, meanLatencyMs: 14.8, falseDecodeRatePct: 0.2, winsCount: 110, economicValueState: 'UNKNOWN' },
-                      { sensorType: 'LOGS_SUBSCRIBE', coverageRatePct: 92.1, meanLatencyMs: 65.0, falseDecodeRatePct: 1.1, winsCount: 15, economicValueState: 'UNKNOWN' },
-                      { sensorType: 'RPC_FALLBACK', coverageRatePct: 88.5, meanLatencyMs: 140.2, falseDecodeRatePct: 2.4, winsCount: 2, economicValueState: 'UNKNOWN' },
-                    ]).map((s, idx) => (
+                    {effectiveSensors.length === 0 && <tr><td className="p-3 text-slate-500" colSpan="6">No sensor observations are connected.</td></tr>}
+                    {effectiveSensors.map((s, idx) => (
                       <tr key={idx} className="hover:bg-slate-900/50">
                         <td className="p-3 font-semibold text-slate-200">{s.sensorType}</td>
-                        <td className="p-3 text-emerald-400">{s.coverageRatePct.toFixed(1)}%</td>
-                        <td className="p-3">{s.meanLatencyMs.toFixed(1)} ms</td>
-                        <td className="p-3 text-amber-400">{s.falseDecodeRatePct.toFixed(1)}%</td>
-                        <td className="p-3 font-bold text-white">{s.winsCount}</td>
+                        <td className="p-3 text-emerald-400">{Number.isFinite(s.coverageRatePct) ? `${s.coverageRatePct.toFixed(1)}%` : 'UNKNOWN'}</td>
+                        <td className="p-3">{Number.isFinite(s.meanLatencyMs) ? `${s.meanLatencyMs.toFixed(1)} ms` : 'UNKNOWN'}</td>
+                        <td className="p-3 text-amber-400">{Number.isFinite(s.falseDecodeRatePct) ? `${s.falseDecodeRatePct.toFixed(1)}%` : 'UNKNOWN'}</td>
+                        <td className="p-3 font-bold text-white">{Number.isFinite(s.winsCount) ? s.winsCount : 'UNKNOWN'}</td>
                         <td className="p-3">
                           <span className="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 border border-slate-700">
-                            {s.economicValueState || 'OBSERVED'}
+                            {s.economicValueState || 'UNKNOWN'}
                           </span>
                         </td>
                       </tr>
@@ -210,7 +262,7 @@ export function SolanaArchitectureDrawer({
                     Transport Tournament & Same Economic Generation (Section 25–29)
                   </span>
                   <span className="text-xs text-amber-400 font-semibold">
-                    1 Tx Signature • 1 Generation ID • Zero Duplicate Orders
+                    Required invariant: one economic intent per transaction generation
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 leading-relaxed">
@@ -220,22 +272,18 @@ export function SolanaArchitectureDrawer({
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {(transportTelemetry.length > 0 ? transportTelemetry : [
-                  { lane: 'JITO_BUNDLE', landingRatePct: 94.5, meanLatencyMs: 120, meanTipLamports: '100000', instructionFailureRatePct: 0.5, netRealizedEdgeBps: 85 },
-                  { lane: 'DIRECT_TPU', landingRatePct: 88.0, meanLatencyMs: 45, meanTipLamports: '0', instructionFailureRatePct: 1.2, netRealizedEdgeBps: 92 },
-                  { lane: 'SWQOS_LANE', landingRatePct: 91.2, meanLatencyMs: 65, meanTipLamports: '50000', instructionFailureRatePct: 0.8, netRealizedEdgeBps: 88 },
-                  { lane: 'VALIDATOR_RPC', landingRatePct: 76.4, meanLatencyMs: 160, meanTipLamports: '0', instructionFailureRatePct: 3.5, netRealizedEdgeBps: 60 },
-                ]).map((t, idx) => (
+                {effectiveTelemetry.length === 0 && <div className="text-xs text-slate-500">No transport observations are connected; landing and economic effects are unknown.</div>}
+                {effectiveTelemetry.map((t, idx) => (
                   <div key={idx} className="bg-slate-900/40 border border-slate-800 rounded-lg p-4 space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-sm text-slate-200">{t.lane}</span>
-                      <span className="text-xs font-semibold text-emerald-400">{t.landingRatePct.toFixed(1)}% Landing</span>
+                      <span className="text-xs font-semibold text-emerald-400">{Number.isFinite(t.landingRatePct) ? `${t.landingRatePct.toFixed(1)}% reported landing` : 'Landing: UNKNOWN'}</span>
                     </div>
                     <div className="grid grid-cols-2 gap-2 text-xs text-slate-400 pt-2 border-t border-slate-800/60">
-                      <div>Latency: <span className="text-white font-medium">{t.meanLatencyMs} ms</span></div>
-                      <div>Net Edge: <span className="text-emerald-400 font-bold">+{t.netRealizedEdgeBps} bps</span></div>
-                      <div>Failures: <span className="text-amber-400">{t.instructionFailureRatePct}%</span></div>
-                      <div>Mean Tip: <span className="text-slate-300">{t.meanTipLamports} lamports</span></div>
+                      <div>Latency: <span className="text-white font-medium">{Number.isFinite(t.meanLatencyMs) ? `${t.meanLatencyMs} ms` : 'UNKNOWN'}</span></div>
+                      <div>Economic impact: <span className="text-amber-400">{Number.isFinite(t.netRealizedEdgeBps) ? `${t.netRealizedEdgeBps} bps reported` : 'UNKNOWN'}</span></div>
+                      <div>Failures: <span className="text-amber-400">{Number.isFinite(t.instructionFailureRatePct) ? `${t.instructionFailureRatePct}%` : 'UNKNOWN'}</span></div>
+                      <div>Mean Tip: <span className="text-slate-300">{t.meanTipLamports ?? 'UNKNOWN'} lamports</span></div>
                     </div>
                   </div>
                 ))}
@@ -256,22 +304,20 @@ export function SolanaArchitectureDrawer({
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 leading-relaxed">
-                  In-memory routing across SOL, USDC, Raydium, Meteora, Orca, and PumpSwap.
-                  RobustArbProfit = grossSpread - fees - priorityTip - impact - slippage - completionRisk.
-                  Single-transaction atomic execution earns an AtomicityPremium over split routes.
+                  Design target: compare routes using gross spread after fees, priority tip, impact, slippage, and completion risk. No route telemetry is connected here.
                 </p>
               </div>
 
-              {arbitrageCycles.length > 0 ? (
+              {effectiveArbitrage.length > 0 ? (
                 <div className="space-y-3">
-                  {arbitrageCycles.map((c, idx) => (
+                  {effectiveArbitrage.map((c, idx) => (
                     <div key={idx} className="bg-slate-900/40 border border-slate-800 rounded-lg p-4">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-emerald-400">
                           Cycle {idx + 1}: {c.legs.map(l => l.protocol).join(' → ')}
                         </span>
                         <span className="text-xs font-bold text-white bg-emerald-950 px-2 py-0.5 rounded border border-emerald-800">
-                          +{c.profitBps} bps Robust Profit
+                          {Number.isFinite(c.profitBps) ? `${c.profitBps} bps reported` : 'Spread: UNKNOWN'}
                         </span>
                       </div>
                       <div className="mt-2 text-xs text-slate-400 grid grid-cols-2 md:grid-cols-4 gap-2 pt-2 border-t border-slate-800/60">
@@ -286,8 +332,7 @@ export function SolanaArchitectureDrawer({
               ) : (
                 <div className="bg-slate-900/20 border border-slate-800/60 rounded-lg p-6 text-center text-xs text-slate-400">
                   <GitBranch className="w-8 h-8 text-slate-600 mx-auto mb-2" />
-                  Active cycle detection listening across Raydium, Meteora DLMM, and Orca Whirlpools.
-                  <div className="text-[11px] text-slate-500 mt-1">Zero sub-threshold or unverified spreads admitted.</div>
+                  No arbitrage cycle observations are connected. No profitability or execution-readiness conclusion is available.
                 </div>
               )}
             </div>
@@ -306,8 +351,7 @@ export function SolanaArchitectureDrawer({
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 leading-relaxed">
-                  Before every entry, SYLPH simulates selling 25%, 50%, 75%, and 100% under stressed liquidity (-25%, -50%, -75%).
-                  If any tranche lacks an exit evacuation path, entry is strictly forbidden.
+                  The blueprint requires selling 25%, 50%, 75%, and 100% under stressed liquidity before entry. This drawer does not prove that the check runs or blocks an entry.
                 </p>
               </div>
 
@@ -315,17 +359,13 @@ export function SolanaArchitectureDrawer({
                 <div className="bg-slate-900/40 border border-slate-800 rounded-lg p-4 space-y-3">
                   <span className="text-xs font-bold text-slate-300">Tranche Evacuation Feasibility</span>
                   <div className="space-y-2">
-                    {[
-                      { tranche: '25% Tranche', status: 'PASS', maxSlippage: '42 bps' },
-                      { tranche: '50% Tranche', status: 'PASS', maxSlippage: '95 bps' },
-                      { tranche: '75% Tranche', status: 'PASS', maxSlippage: '185 bps' },
-                      { tranche: '100% Full Evac', status: 'PASS', maxSlippage: '320 bps' },
-                    ].map((t, idx) => (
+                    {(effectiveCapacity?.tranches || []).length === 0 && <div className="text-xs text-slate-500">No tranche simulation evidence is connected.</div>}
+                    {(effectiveCapacity?.tranches || []).map((t, idx) => (
                       <div key={idx} className="flex items-center justify-between text-xs p-2 bg-slate-900/60 rounded border border-slate-800/40">
                         <span className="text-slate-300">{t.tranche}</span>
                         <div className="flex items-center gap-3">
-                          <span className="text-slate-400">Worst: {t.maxSlippage}</span>
-                          <span className="text-emerald-400 font-bold">{t.status}</span>
+                          <span className="text-slate-400">Worst reported: {t.maxSlippage ?? 'UNKNOWN'}</span>
+                          <span className="text-amber-400 font-bold">Reported: {t.status ?? 'UNKNOWN'}</span>
                         </div>
                       </div>
                     ))}
@@ -335,17 +375,12 @@ export function SolanaArchitectureDrawer({
                 <div className="bg-slate-900/40 border border-slate-800 rounded-lg p-4 space-y-3">
                   <span className="text-xs font-bold text-slate-300">Capacity Tiers & Slippage</span>
                   <div className="space-y-2 text-xs">
-                    {[
-                      { size: '$5 Notional', impact: '3 bps', remaining: '+175 bps' },
-                      { size: '$10 Notional', impact: '8 bps', remaining: '+168 bps' },
-                      { size: '$25 Notional', impact: '22 bps', remaining: '+150 bps' },
-                      { size: '$50 Notional', impact: '48 bps', remaining: '+120 bps' },
-                      { size: '$100 Notional', impact: '105 bps', remaining: '+60 bps' },
-                    ].map((tier, idx) => (
+                    {(effectiveCapacity?.tiers || []).length === 0 && <div className="text-slate-500">No capacity simulations are connected.</div>}
+                    {(effectiveCapacity?.tiers || []).map((tier, idx) => (
                       <div key={idx} className="flex items-center justify-between p-2 bg-slate-900/60 rounded border border-slate-800/40">
                         <span className="text-slate-300">{tier.size}</span>
-                        <span className="text-slate-400">Impact: {tier.impact}</span>
-                        <span className="text-emerald-400 font-semibold">{tier.remaining}</span>
+                        <span className="text-slate-400">Impact reported: {tier.impact ?? 'UNKNOWN'}</span>
+                        <span className="text-amber-400 font-semibold">Remaining reported: {tier.remaining ?? 'UNKNOWN'}</span>
                       </div>
                     ))}
                   </div>
@@ -363,43 +398,216 @@ export function SolanaArchitectureDrawer({
                     Solana Alpha Factory & Anti-Portfolio (Section 11–15 & 45)
                   </span>
                   <span className="text-xs text-emerald-400 font-semibold">
-                    17 Alpha Species Competing
+                    {effectiveEcology?.speciesCount ?? 'UNKNOWN'} Alpha species observed
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 leading-relaxed">
-                  &ldquo;Which Solana opportunity currently has the highest independently verified executable return per unit of risk, capital, time, liquidity and execution capacity?&rdquo;
-                  All strategies compete under mechanism fingerprints. None directly owns execution authority.
+                  Research question: which opportunity has the strongest independently verified return after risk, capital, time, liquidity, and execution capacity? This view does not establish that result or runtime authority.
                 </p>
               </div>
 
               <div className="border border-slate-800 rounded-lg p-4 bg-slate-900/40 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-200">Anti-Portfolio Filter Shapley Attribution</span>
-                  <span className="text-[11px] text-slate-400">Economic Value = Losses Avoided - Profit Missed</span>
+                  <span className="text-[11px] text-slate-400">Research attribution only; requires settled counterfactuals</span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                  {[
-                    { filter: 'Creator Cluster Concentration', avoided: '12.5 SOL', missed: '1.2 SOL', net: '+11.3 SOL' },
-                    { filter: 'Whale Coordination Velocity', avoided: '8.4 SOL', missed: '0.8 SOL', net: '+7.6 SOL' },
-                    { filter: 'Freeze Authority Honeypot', avoided: '25.0 SOL', missed: '0.0 SOL', net: '+25.0 SOL' },
-                  ].map((f, idx) => (
+                  {(effectiveEcology?.antiPortfolio || []).length === 0 && <div className="text-xs text-slate-500">No settled anti-portfolio outcomes are connected.</div>}
+                  {(effectiveEcology?.antiPortfolio || []).map((f, idx) => (
                     <div key={idx} className="p-3 bg-slate-900/80 rounded border border-slate-800 text-xs">
                       <div className="font-semibold text-slate-200 truncate">{f.filter}</div>
-                      <div className="mt-2 text-emerald-400 font-bold">Net: {f.net}</div>
-                      <div className="text-[10px] text-slate-400 mt-1">Avoided: {f.avoided} | Missed: {f.missed}</div>
+                      <div className="mt-2 text-amber-400 font-bold">Net reported: {f.net ?? 'UNKNOWN'}</div>
+                      <div className="text-[10px] text-slate-400 mt-1">Avoided reported: {f.avoided ?? 'UNKNOWN'} | Missed reported: {f.missed ?? 'UNKNOWN'}</div>
                     </div>
                   ))}
                 </div>
               </div>
             </div>
           )}
+
+          {/* TAB 7: PAPER MAX RISK & CHAOS COUNTERFACTUAL RUNTIME */}
+          {activeTab === 'max_risk' && (
+            <div className="space-y-5">
+              {/* Header Box */}
+              <div className="bg-slate-900/60 rounded-lg p-5 border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs uppercase font-bold text-slate-300">
+                      SYLPH FUSION — PAPER_MAX_RISK & CHAOS RUNTIME
+                    </span>
+                    <span className={`text-xs px-2.5 py-0.5 rounded font-bold border ${
+                      paperMaxRiskData?.isMaxRisk
+                        ? 'bg-rose-950/80 text-rose-300 border-rose-600 animate-pulse'
+                        : 'bg-emerald-950/80 text-emerald-400 border-emerald-700'
+                    }`}>
+                      {paperMaxRiskData?.mode || 'PAPER_STANDARD'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      disabled={isTogglingMode}
+                      onClick={() => handleToggleMode(paperMaxRiskData?.isMaxRisk ? 'PAPER_STANDARD' : 'PAPER_MAX_RISK')}
+                      className={`px-3 py-1.5 rounded text-xs font-bold transition flex items-center gap-1.5 ${
+                        paperMaxRiskData?.isMaxRisk
+                          ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
+                          : 'bg-rose-900 hover:bg-rose-800 text-rose-100 border border-rose-700'
+                      }`}
+                    >
+                      {paperMaxRiskData?.isMaxRisk ? 'Switch to Standard Safety' : 'Engage Max Risk (Chaos)'}
+                    </button>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Operating Principle: <strong>Risk may be bypassed in PAPER_MAX_RISK. Reality may not.</strong> 100% bankroll allocation, holding through 90%+ drawdowns, and simulated ruin are permitted. Production capital remains permanently air-gapped; AMM reserves, liquidity ceilings, and double-entry conservation are strictly enforced.
+                </p>
+              </div>
+
+              {/* 15 Invariant Proof Cards Grid */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="bg-slate-900/40 p-3 rounded border border-slate-800">
+                  <div className="text-[10px] text-slate-500 uppercase font-semibold">Drawdown & Loss Halts</div>
+                  <div className={`mt-1 font-bold text-sm ${paperMaxRiskData?.isMaxRisk ? 'text-amber-400' : 'text-emerald-400'}`}>
+                    {paperMaxRiskData?.isMaxRisk ? 'BYPASS / SHADOW' : 'ACTIVE (500 bps)'}
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-1">Invariant 1–2</div>
+                </div>
+                <div className="bg-slate-900/40 p-3 rounded border border-slate-800">
+                  <div className="text-[10px] text-slate-500 uppercase font-semibold">Bankroll Allocation</div>
+                  <div className={`mt-1 font-bold text-sm ${paperMaxRiskData?.isMaxRisk ? 'text-rose-400' : 'text-slate-300'}`}>
+                    {paperMaxRiskData?.isMaxRisk ? '100% SIZING ALLOWED' : '5% POSITION CAP'}
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-1">Invariant 3–5</div>
+                </div>
+                <div className="bg-slate-900/40 p-3 rounded border border-slate-800">
+                  <div className="text-[10px] text-slate-500 uppercase font-semibold">Exit Stops & Drawdown</div>
+                  <div className={`mt-1 font-bold text-sm ${paperMaxRiskData?.isMaxRisk ? 'text-amber-400' : 'text-emerald-400'}`}>
+                    {paperMaxRiskData?.isMaxRisk ? 'DISABLED / 90%+ HOLD' : 'NORMAL STOPS'}
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-1">Invariant 6–7</div>
+                </div>
+                <div className="bg-slate-900/40 p-3 rounded border border-slate-800">
+                  <div className="text-[10px] text-slate-500 uppercase font-semibold">Simulated Ruin</div>
+                  <div className={`mt-1 font-bold text-sm ${paperMaxRiskData?.hasBankrupted ? 'text-rose-500' : 'text-emerald-400'}`}>
+                    {paperMaxRiskData?.hasBankrupted ? 'TERMINAL BANKRUPT' : 'SOLVENT'}
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-1">Invariant 8 (Never Reset)</div>
+                </div>
+              </div>
+
+              {/* Physical Reality Invariants */}
+              <div className="bg-slate-900/40 p-4 rounded-lg border border-slate-800 space-y-2">
+                <div className="text-xs uppercase font-bold text-slate-300 flex items-center justify-between">
+                  <span>Physical Microstructure & Security Seals</span>
+                  <span className="text-emerald-400 font-semibold text-[11px]">ALL HARD SEALS ENGAGED</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                  <div className="p-2.5 rounded bg-slate-900/90 border border-slate-800/80">
+                    <span className="text-slate-400">Double-Entry Accounting:</span>
+                    <strong className="block text-emerald-400 mt-0.5">STRICTLY CONSERVED</strong>
+                  </div>
+                  <div className="p-2.5 rounded bg-slate-900/90 border border-slate-800/80">
+                    <span className="text-slate-400">Constant Product AMM:</span>
+                    <strong className="block text-emerald-400 mt-0.5">RESERVES RESPECTED</strong>
+                  </div>
+                  <div className="p-2.5 rounded bg-slate-900/90 border border-slate-800/80">
+                    <span className="text-slate-400">Production Capital & Signer:</span>
+                    <strong className="block text-rose-400 mt-0.5">AIR-GAPPED / BLOCKED</strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* Counterfactual Risk Ledger & Moonshot Tax */}
+              <div className="border border-slate-800 rounded-lg p-4 bg-slate-900/40 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-200">
+                    Counterfactual Risk Gate Ledger ({paperMaxRiskData?.totalBypasses || 0} bypass events)
+                  </span>
+                  <span className="text-[11px] text-slate-400 font-mono">
+                    FilterNetValue = AvoidedLoss - MissedExecutableEV
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="p-3 bg-slate-900/80 rounded border border-slate-800">
+                    <div className="text-[10px] text-slate-400 uppercase font-semibold">Total Filter Net Value</div>
+                    <div className="text-base font-bold text-emerald-400 mt-1">
+                      {paperMaxRiskData?.counterfactualLedger?.filterNetValueSol ?? '+0.00 SOL'}
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-1">Capital saved by safety filters</div>
+                  </div>
+                  <div className="p-3 bg-slate-900/80 rounded border border-slate-800">
+                    <div className="text-[10px] text-slate-400 uppercase font-semibold">Moonshot Tax MT(F)</div>
+                    <div className="text-base font-bold text-amber-400 mt-1">
+                      {paperMaxRiskData?.counterfactualLedger?.overallMoonshotTax ?? '0.00x'}
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-1">Extreme upside forgone per $1 loss saved</div>
+                  </div>
+                  <div className="p-3 bg-slate-900/80 rounded border border-slate-800">
+                    <div className="text-[10px] text-slate-400 uppercase font-semibold">Extreme Moonshots Blocked</div>
+                    <div className="text-base font-bold text-rose-400 mt-1">
+                      {paperMaxRiskData?.counterfactualLedger?.moonshotsBlockedCount ?? 0} (&gt;= 10x)
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-1">50x+: {paperMaxRiskData?.counterfactualLedger?.extremeWinnersBlockedCount ?? 0}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Monte Carlo Bankroll Ruin & Moonshot Probabilities */}
+              {monteCarloData?.comparison && (
+                <div className="border border-slate-800 rounded-lg p-4 bg-slate-900/40 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-200">
+                      Monte Carlo Bankroll Simulation ({monteCarloData.numPaths} paths, {monteCarloData.tradesPerPath} trades)
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-mono">
+                      $250 Starting Bankroll • Section X & CV
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    <div className="p-3 bg-slate-900/80 rounded border border-slate-800">
+                      <div className="font-semibold text-emerald-400 mb-1">PAPER_STANDARD (5% Sizing)</div>
+                      <div className="grid grid-cols-2 gap-2 text-[11px] mt-2">
+                        <div>P(Bankrupt): <strong>{(monteCarloData.comparison.PAPER_STANDARD.bankruptcyProbability * 100).toFixed(1)}%</strong></div>
+                        <div>P(2x): <strong>{(monteCarloData.comparison.PAPER_STANDARD.p2xProbability * 100).toFixed(1)}%</strong></div>
+                        <div>P(10x): <strong>{(monteCarloData.comparison.PAPER_STANDARD.p10xProbability * 100).toFixed(1)}%</strong></div>
+                        <div>Median Wealth: <strong>${monteCarloData.comparison.PAPER_STANDARD.medianTerminalEquityUsd}</strong></div>
+                      </div>
+                    </div>
+                    <div className="p-3 bg-slate-900/80 rounded border border-slate-800">
+                      <div className="font-semibold text-rose-400 mb-1">PAPER_MAX_RISK (100% Sizing)</div>
+                      <div className="grid grid-cols-2 gap-2 text-[11px] mt-2">
+                        <div>P(Bankrupt): <strong className="text-rose-400">{(monteCarloData.comparison.PAPER_MAX_RISK.bankruptcyProbability * 100).toFixed(1)}%</strong></div>
+                        <div>P(2x): <strong className="text-emerald-400">{(monteCarloData.comparison.PAPER_MAX_RISK.p2xProbability * 100).toFixed(1)}%</strong></div>
+                        <div>P(10x): <strong className="text-emerald-400">{(monteCarloData.comparison.PAPER_MAX_RISK.p10xProbability * 100).toFixed(1)}%</strong></div>
+                        <div>Median Wealth: <strong>${monteCarloData.comparison.PAPER_MAX_RISK.medianTerminalEquityUsd}</strong></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* V8 Replay Findings */}
+              {v8ReplayData?.report && (
+                <div className="border border-slate-800 rounded-lg p-4 bg-slate-900/40 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-slate-200">V8 Historical Causal Replay (Uncensored Population)</span>
+                    <span className="text-emerald-400 font-semibold">
+                      +{v8ReplayData.delta?.winnersDelta ?? 0} Runners Caught in Max Risk
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Evaluated identically matched candidates without survivorship bias. Standard safety avoided rugs but missed extreme asymmetric 10x–100x trajectories by halting on normal pre-runner drawdowns. Max Risk captured the runners while sustaining simulated ruin on non-viable tokens.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-slate-800 bg-slate-900/90 text-xs flex items-center justify-between text-slate-400">
+        <div className="p-4 border-t border-slate-800 text-xs flex items-center justify-between text-slate-400" style={{ background: '#0D1422' }}>
           <div className="flex items-center gap-4">
-            <span>Market Twin Anomalies: <strong className={marketTwinAnomalies > 0 ? 'text-amber-400' : 'text-emerald-400'}>{marketTwinAnomalies}</strong></span>
-            <span>Signing: <strong className="text-rose-400">PAPER_ONLY</strong></span>
+            <span>Market Twin Anomalies: <strong className="text-amber-400">{Number.isFinite(marketTwinAnomalies) ? marketTwinAnomalies : 'UNKNOWN'}</strong></span>
+            <span>Execution Mode: <strong className="text-amber-400">{executionMode}</strong></span>
           </div>
           <span className="text-[11px] text-slate-500">UNKNOWN ≠ SAFE • PROFIT PREDICTED ≠ PROFIT REALIZED</span>
         </div>

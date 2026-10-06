@@ -1,193 +1,137 @@
 /**
- * SYLPH FUSION — SOLANA ALPHA FACTORY & OPPORTUNITY ARBITER
+ * SYLPH FUSION — SOLANA ALPHA CLAIM REGISTER & RESEARCH RANKER
  * Specification: Solana-Only Integration Blueprint (Section 45)
  *
- * Epistemic Invariants:
- * 1. Coordinates all 17 Solana Alpha strategy species.
- * 2. Strict Invariant: "All strategies compete. None directly owns execution authority."
- * 3. Foundational Directive:
- *    "Which Solana opportunity currently has the highest independently verified
- *     executable return per unit of risk, capital, time, liquidity and execution capacity?"
- * 4. Fails closed: Missing evidence, uncertified leases, or unhedged tail loss strictly blocks entry.
+ * This module compares strategy-supplied claims for research only. It has no
+ * authenticated quote, risk, route, protocol-lease, or execution evidence and
+ * therefore cannot identify an executable opportunity or authorize an entry.
  */
 
 import { hashCanonical } from '../pipeline/canonical-hashing.js';
-import { SolanaMarketIR } from './market-ir.js';
-import { ProtocolCompatibilityRegistry } from './protocol-compatibility-lease.js';
-import { SolanaCapacityEngine } from './capacity-curves.js';
 
-export type SolanaAlphaSpecies =
-  | 'LAUNCH_INTELLIGENCE'
-  | 'WALLET_INTELLIGENCE'
-  | 'CREATOR_INTELLIGENCE'
-  | 'ACTOR_GRAPHS'
-  | 'MOMENTUM'
-  | 'MEAN_REVERSION'
-  | 'CROSS_DEX_ARBITRAGE'
-  | 'TRIANGULAR_ARBITRAGE'
-  | 'ROUTE_ARBITRAGE'
-  | 'MARKET_MAKING'
-  | 'LIQUIDITY_PROVISION'
-  | 'MIGRATION_INTELLIGENCE'
-  | 'GRADUATION_INTELLIGENCE'
-  | 'CONGESTION_INTELLIGENCE'
-  | 'FAILURE_INTELLIGENCE'
-  | 'COMPETITION_INTELLIGENCE'
-  | 'REFERENCE_MARKET_LEAD_LAG';
+export const SOLANA_ALPHA_SPECIES = Object.freeze([
+  'LAUNCH_INTELLIGENCE',
+  'WALLET_INTELLIGENCE',
+  'CREATOR_INTELLIGENCE',
+  'ACTOR_GRAPHS',
+  'MOMENTUM',
+  'MEAN_REVERSION',
+  'CROSS_DEX_ARBITRAGE',
+  'TRIANGULAR_ARBITRAGE',
+  'ROUTE_ARBITRAGE',
+  'MARKET_MAKING',
+  'LIQUIDITY_PROVISION',
+  'MIGRATION_INTELLIGENCE',
+  'GRADUATION_INTELLIGENCE',
+  'CONGESTION_INTELLIGENCE',
+  'FAILURE_INTELLIGENCE',
+  'COMPETITION_INTELLIGENCE',
+  'REFERENCE_MARKET_LEAD_LAG',
+] as const);
 
-export interface StrategyOpportunityProposal {
-  readonly proposalId: string;
+export type SolanaAlphaSpecies = typeof SOLANA_ALPHA_SPECIES[number];
+
+/** Values in this record are assertions by a strategy producer, not verified facts. */
+export interface StrategyOpportunityClaim {
+  readonly claimId: string;
   readonly strategySpecies: SolanaAlphaSpecies;
   readonly strategyName: string;
   readonly targetMint: string;
   readonly targetPoolId: string;
-  readonly expectedExecutableReturnBps: number;
-  readonly confidenceScorePct: number; // 0 to 100
-  readonly recommendedNotionalLamports: bigint;
-  readonly holdingHorizonSeconds: number;
-  readonly expectedTailLossBps: number; // P(tail) * LossGivenTail
-  readonly requiredCapacityLamports: bigint;
-  readonly correlationRiskDiscountPct: number;
-  readonly proposalTimestampMs: number;
+  readonly claimedReturnBps: number;
+  readonly claimedConfidencePct: number;
+  readonly proposedNotionalLamports: bigint;
+  readonly claimedHoldingHorizonSeconds: number;
+  readonly claimedTailLossBps: number;
+  readonly proposedCapacityLamports: bigint;
+  readonly claimedCorrelationDiscountPct: number;
+  readonly submittedAtMs: number;
 }
 
-export interface OpportunityArbiterVerdict {
-  readonly winningProposal: StrategyOpportunityProposal | null;
-  readonly rankedProposals: readonly {
-    readonly proposal: StrategyOpportunityProposal;
-    readonly compositeEfficiencyScore: number;
-    readonly passGating: boolean;
-    readonly rejectionReason?: string;
-  }[];
+export interface OpportunityClaimRanking {
+  readonly claim: StrategyOpportunityClaim;
+  readonly researchHeuristicScore: number;
+  readonly claimStatus: 'UNVERIFIED_CALLER_CLAIM';
+}
+
+export interface OpportunityClaimRankingResult {
+  readonly decisionAuthority: 'NONE';
+  readonly evidenceStatus: 'UNVERIFIED_CALLER_CLAIMS';
+  readonly rankingBasis: 'CALLER_ASSERTED_RETURN_RISK_CAPITAL_AND_TIME';
+  readonly rankedClaims: readonly OpportunityClaimRanking[];
   readonly evaluationTimestampMs: number;
   readonly answerSummary: string;
 }
 
-export class SolanaAlphaFactory {
-  private readonly registeredProposals: StrategyOpportunityProposal[] = [];
-  private readonly protocolRegistry: ProtocolCompatibilityRegistry;
+const knownSpecies = new Set<string>(SOLANA_ALPHA_SPECIES);
+const MAX_RETAINED_CLAIMS = 500;
 
-  constructor(protocolRegistry: ProtocolCompatibilityRegistry) {
-    this.protocolRegistry = protocolRegistry;
+function assertClaim(claim: Omit<StrategyOpportunityClaim, 'claimId' | 'submittedAtMs'>): void {
+  if (!knownSpecies.has(claim.strategySpecies)) throw new Error('ALPHA_CLAIM_INVALID: Unknown strategy species');
+  if (!claim.strategyName.trim() || !claim.targetMint.trim() || !claim.targetPoolId.trim()) {
+    throw new Error('ALPHA_CLAIM_INVALID: Strategy, mint and pool identifiers are required');
   }
+  if (!Number.isFinite(claim.claimedReturnBps) ||
+      !Number.isFinite(claim.claimedConfidencePct) || claim.claimedConfidencePct < 0 || claim.claimedConfidencePct > 100 ||
+      !Number.isFinite(claim.claimedHoldingHorizonSeconds) || claim.claimedHoldingHorizonSeconds <= 0 ||
+      !Number.isFinite(claim.claimedTailLossBps) || claim.claimedTailLossBps < 0 ||
+      !Number.isFinite(claim.claimedCorrelationDiscountPct) || claim.claimedCorrelationDiscountPct < 0 || claim.claimedCorrelationDiscountPct > 100) {
+    throw new Error('ALPHA_CLAIM_INVALID: Claimed metrics must be finite and within their documented domains');
+  }
+  if (claim.proposedNotionalLamports <= 0n || claim.proposedCapacityLamports <= 0n ||
+      claim.proposedNotionalLamports > BigInt(Number.MAX_SAFE_INTEGER) || claim.proposedCapacityLamports > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error('ALPHA_CLAIM_INVALID: Proposed notional and capacity must be positive and within safe heuristic precision');
+  }
+}
 
-  /**
-   * Submit an opportunity proposal from any of the 17 Solana alpha strategies.
-   * Does NOT execute or authorize execution.
-   */
-  public submitProposal(proposal: Omit<StrategyOpportunityProposal, 'proposalId' | 'proposalTimestampMs'>): StrategyOpportunityProposal {
-    const payload = {
-      strategySpecies: proposal.strategySpecies,
-      strategyName: proposal.strategyName,
-      targetMint: proposal.targetMint,
-      targetPoolId: proposal.targetPoolId,
-      expectedExecutableReturnBps: proposal.expectedExecutableReturnBps,
-      recommendedNotionalLamports: proposal.recommendedNotionalLamports,
-    };
-    const proposalId = `prop_${hashCanonical(payload).slice(0, 16)}`;
+export class SolanaAlphaFactory {
+  private readonly registeredClaims: StrategyOpportunityClaim[] = [];
 
-    const full: StrategyOpportunityProposal = Object.freeze({
-      proposalId,
-      ...proposal,
-      proposalTimestampMs: Date.now(),
-    });
+  /** Register a strategy claim without treating any supplied metric as verified evidence. */
+  public submitClaim(claim: Omit<StrategyOpportunityClaim, 'claimId' | 'submittedAtMs'>): StrategyOpportunityClaim {
+    assertClaim(claim);
+    const submittedAtMs = Date.now();
+    const claimId = `claim_${hashCanonical({ ...claim, submittedAtMs }).slice(0, 16)}`;
+    const full = Object.freeze({ claimId, ...claim, submittedAtMs });
 
-    this.registeredProposals.push(full);
-    if (this.registeredProposals.length > 500) {
-      this.registeredProposals.shift();
-    }
-
+    this.registeredClaims.push(full);
+    if (this.registeredClaims.length > MAX_RETAINED_CLAIMS) this.registeredClaims.shift();
     return full;
   }
 
   /**
-   * Evaluates all competing proposals and selects the opportunity that answers:
-   * "Which Solana opportunity currently has the highest independently verified
-   *  executable return per unit of risk, capital, time, liquidity and execution capacity?"
+   * Ranks unverified strategy assertions for analyst triage only. No quote,
+   * route, lease, or independent risk evidence is consumed by this method.
    */
-  public arbitrateOpportunities(params: {
-    marketIRs: readonly SolanaMarketIR[];
-    currentSlot: bigint;
-    solPriceUsd?: number;
-  }): OpportunityArbiterVerdict {
-    const ranked = [];
-    const solPrice = params.solPriceUsd ?? 150;
-
-    for (const proposal of this.registeredProposals) {
-      const market = params.marketIRs.find(m => m.mint === proposal.targetMint);
-      let passGating = true;
-      let rejectionReason: string | undefined;
-
-      // Gate 1: Market IR must exist and be valid
-      if (!market) {
-        passGating = false;
-        rejectionReason = 'MISSING_MARKET_IR: Target mint has no verified point-in-time Market IR';
-      } else {
-        // Gate 2: Protocol compatibility lease must be valid
-        const leaseVerification = this.protocolRegistry.verifyCompatibility(market.programId, params.currentSlot);
-        if (!leaseVerification.valid) {
-          passGating = false;
-          rejectionReason = `PROTOCOL_LEASE_BLOCKED: ${leaseVerification.reason}`;
-        }
-
-        // Gate 3: Exit Before Entry simulation
-        if (passGating) {
-          const exitCheck = SolanaCapacityEngine.simulateExitBeforeEntry({
-            proposedNotionalLamports: proposal.recommendedNotionalLamports,
-            poolLiquidityLamports: market.liquidityLamports,
-            hasFallbackRoute: true,
-            jitoAvailable: true,
-          });
-
-          if (!exitCheck.entryPermitted) {
-            passGating = false;
-            rejectionReason = exitCheck.refusalReason || 'EXIT_STRESS_FAILURE';
-          }
-        }
-      }
-
-      // Compute composite efficiency:
-      // Executable Return / (Risk * Capital-Time * Capacity Penalty)
-      let compositeScore = 0;
-      if (passGating && proposal.expectedExecutableReturnBps > 0) {
-        const capitalSol = Number(proposal.recommendedNotionalLamports) / 1e9;
-        const timeHours = Math.max(0.001, proposal.holdingHorizonSeconds / 3600);
-        const capitalTime = Math.max(0.01, capitalSol * timeHours);
-        const riskFactor = Math.max(0.1, (proposal.expectedTailLossBps / 100) * (1 - proposal.confidenceScorePct / 100));
-        
-        // Capital-Time Alpha efficiency
-        compositeScore = (proposal.expectedExecutableReturnBps / (riskFactor * capitalTime)) * (1 - proposal.correlationRiskDiscountPct / 100);
-      }
-
-      ranked.push({
-        proposal,
-        compositeEfficiencyScore: compositeScore,
-        passGating,
-        rejectionReason,
+  public rankClaims(): OpportunityClaimRankingResult {
+    const rankedClaims = this.registeredClaims.map(claim => {
+      const capitalSol = Number(claim.proposedNotionalLamports) / 1e9;
+      const timeHours = Math.max(0.001, claim.claimedHoldingHorizonSeconds / 3600);
+      const capitalTime = Math.max(0.01, capitalSol * timeHours);
+      const riskFactor = Math.max(0.1, (claim.claimedTailLossBps / 100) * (1 - claim.claimedConfidencePct / 100));
+      const score = claim.claimedReturnBps > 0
+        ? (claim.claimedReturnBps / (riskFactor * capitalTime)) * (1 - claim.claimedCorrelationDiscountPct / 100)
+        : 0;
+      return Object.freeze({
+        claim,
+        researchHeuristicScore: Number.isFinite(score) ? score : 0,
+        claimStatus: 'UNVERIFIED_CALLER_CLAIM' as const,
       });
-    }
-
-    // Sort by composite efficiency descending
-    ranked.sort((a, b) => b.compositeEfficiencyScore - a.compositeEfficiencyScore);
-
-    const winner = ranked.find(r => r.passGating && r.compositeEfficiencyScore > 0)?.proposal ?? null;
-
-    let summary: string;
-    if (winner) {
-      summary = `Winner: ${winner.strategyName} (${winner.strategySpecies}) on ${winner.targetMint.slice(0, 8)}… with ${winner.expectedExecutableReturnBps} bps return (Score: ${ranked[0].compositeEfficiencyScore.toFixed(2)})`;
-    } else {
-      summary = 'NO_EXECUTABLE_OPPORTUNITY: Zero proposals passed all epistemic, protocol, and exitability gates.';
-    }
+    }).sort((a, b) => b.researchHeuristicScore - a.researchHeuristicScore);
 
     return Object.freeze({
-      winningProposal: winner,
-      rankedProposals: Object.freeze(ranked),
+      decisionAuthority: 'NONE',
+      evidenceStatus: 'UNVERIFIED_CALLER_CLAIMS',
+      rankingBasis: 'CALLER_ASSERTED_RETURN_RISK_CAPITAL_AND_TIME',
+      rankedClaims: Object.freeze(rankedClaims),
       evaluationTimestampMs: Date.now(),
-      answerSummary: summary,
+      answerSummary: rankedClaims.length
+        ? `Research-only ranking of ${rankedClaims.length} unverified strategy claims; no opportunity is verified or executable.`
+        : 'No strategy claims are registered; no opportunity is verified or executable.',
     });
   }
 
-  public getProposalCount(): number {
-    return this.registeredProposals.length;
+  public getClaimCount(): number {
+    return this.registeredClaims.length;
   }
 }

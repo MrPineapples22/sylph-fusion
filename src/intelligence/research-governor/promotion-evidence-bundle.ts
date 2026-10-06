@@ -32,6 +32,18 @@ export interface PromotionEvidenceBundle {
   readonly metricDefinitions?: readonly string[];
   readonly falsificationTestPassed: boolean;
   readonly counterfactualSharpe: number;
+  readonly netExecutableExpectancy?: number;
+  readonly captureEfficiency?: number;
+  readonly coverage?: number;
+  readonly calibrationError?: number;
+  readonly maximumDrawdown?: number;
+  readonly ruinProbability?: number;
+  readonly tailDependence?: number;
+  readonly runnerDependence?: number;
+  readonly missingOutcomeRate?: number;
+  readonly landingFailureRate?: number;
+  readonly implementationShortfall?: number;
+  readonly regimeDispersion?: number;
   readonly releaseRoot?: string;
   readonly verifierPublicKeyPem?: string;
   readonly verifierSignatureHex?: string;

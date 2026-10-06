@@ -3,13 +3,16 @@
  * Specifications: Sections 12, 14, 15, 34, 43, 51.
  *
  * Implements:
- * 1. Independent 15-field Provider Capability Model.
+ * 1. Provider Capability Model with separate authentication state and requirement.
  * 2. Strict separation: Transport Reachability != Market Observation Validity.
  * 3. Bounded Rolling-Window Circuit Breaker (CLOSED -> DEGRADED -> OPEN -> PROBING -> RECOVERING -> HEALTHY).
  *    Recovery requires at least 3 consecutive validated observations.
  * 4. Actual endpoint transition recording for failovers.
  * 5. Aggregate health evaluates ONLY providers configured for the active capability.
  */
+function authSatisfied(requirement, authenticated) {
+    return requirement === 'NOT_REQUIRED' || (requirement === 'REQUIRED' && authenticated === true);
+}
 export class ProviderHealthTracker {
     metrics = new Map();
     endpointTransitions = new Map();
@@ -36,6 +39,7 @@ export class ProviderHealthTracker {
                 isAuthoritative: d.authoritative,
                 configured: d.configured,
                 enabled: d.enabled,
+                authenticationRequirement: 'UNKNOWN',
                 authenticated: d.authenticated,
                 transportReachable: false,
                 observationValidated: false,
@@ -57,13 +61,16 @@ export class ProviderHealthTracker {
             });
         }
     }
-    setProviderConfiguration(providerId, configured, enabled, authenticated = false) {
+    setProviderConfiguration(providerId, configured, enabled, authenticated = false, authenticationRequirement = 'UNKNOWN') {
         const entry = this.metrics.get(providerId);
         if (!entry)
             return;
-        entry.configured = configured;
-        entry.enabled = enabled;
-        entry.authenticated = authenticated;
+        entry.configured = configured === true;
+        entry.enabled = enabled === true;
+        entry.authenticationRequirement = authenticationRequirement === 'REQUIRED' || authenticationRequirement === 'NOT_REQUIRED'
+            ? authenticationRequirement
+            : 'UNKNOWN';
+        entry.authenticated = authenticated === true;
     }
     recordTransportReachable(providerId, reachable = true) {
         const entry = this.metrics.get(providerId);
@@ -251,14 +258,14 @@ export class ProviderHealthTracker {
     isMarketFeedStale(now = Date.now(), thresholdMs = 10_000) {
         // Only check active, configured, authoritative discovery and RPC feeds
         const pump = this.metrics.get('PUMPPORTAL_WS');
-        if (!pump || !pump.configured || !pump.enabled || !pump.authenticated || !pump.observationValidated || !pump.transportReachable ||
+        if (!pump || !pump.configured || !pump.enabled || !authSatisfied(pump.authenticationRequirement, pump.authenticated) || !pump.observationValidated || !pump.transportReachable ||
             pump.lastSuccessMs === 0 ||
             now - pump.lastSuccessMs > thresholdMs ||
             pump.circuitState === 'OPEN' ||
             pump.rateLimitedUntilMs > now)
             return true;
         const rpc = this.metrics.get('SOLANA_RPC');
-        if (!rpc || !rpc.configured || !rpc.enabled || !rpc.authenticated || !rpc.observationValidated || !rpc.transportReachable ||
+        if (!rpc || !rpc.configured || !rpc.enabled || !authSatisfied(rpc.authenticationRequirement, rpc.authenticated) || !rpc.observationValidated || !rpc.transportReachable ||
             rpc.lastSuccessMs === 0 ||
             now - rpc.lastSuccessMs > thresholdMs ||
             rpc.circuitState === 'OPEN' ||
@@ -279,6 +286,7 @@ export class ProviderHealthTracker {
                     role: m.role,
                     configured: false,
                     enabled: false,
+                    authenticationRequirement: 'UNKNOWN',
                     transportReachable: false,
                     authenticated: false,
                     capabilityAvailable: false,
@@ -402,9 +410,10 @@ export class ProviderHealthTracker {
                 role: m.role,
                 configured: m.configured,
                 enabled: m.enabled,
+                authenticationRequirement: m.authenticationRequirement,
                 transportReachable: m.transportReachable,
                 authenticated: m.authenticated,
-                capabilityAvailable: m.configured && m.enabled && m.authenticated && m.transportReachable && m.observationValidated && freshness === 'FRESH' && m.circuitState !== 'OPEN' && now >= m.rateLimitedUntilMs,
+                capabilityAvailable: m.configured && m.enabled && authSatisfied(m.authenticationRequirement, m.authenticated) && m.transportReachable && m.observationValidated && freshness === 'FRESH' && m.circuitState !== 'OPEN' && now >= m.rateLimitedUntilMs,
                 observationValidated: m.observationValidated,
                 freshness,
                 slotLag: m.slotLag,

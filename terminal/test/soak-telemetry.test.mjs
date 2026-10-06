@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import {
   readLatestSoakSession,
   getSoakTelemetry,
+  readRuntimeConfig,
+  buildRpcStatusPayload,
   computeBaselineScore,
   exportSessionArtifact,
 } from '../soak-reader.mjs';
@@ -168,4 +170,48 @@ test('getSoakTelemetry returns session telemetry payload', async () => {
     assert.ok(res.session.rejections);
     assert.ok(res.session.rpcHealth);
   }
+  assert.equal(res.engineRunning, Boolean(res.liveEngine && res.liveEngine.connected !== false && (res.liveEngine.limits || res.liveEngine.config)));
+});
+
+test('disconnected engine state cannot supply live configuration values', async () => {
+  const projectRoot = await mkdtemp(join(tmpdir(), 'soak-runtime-config-'));
+  try {
+    const config = await readRuntimeConfig(projectRoot, {
+      connected: false,
+      mode: 'live',
+      limits: { buy: '17', positions: 99 },
+      config: { BUY_LAMPORTS: '23' },
+    });
+    assert.equal(config.source, 'engine_defaults');
+    assert.equal(config.MODE, 'paper');
+    assert.equal(config.BUY_LAMPORTS, 10_000_000);
+    assert.equal(config.MAX_POSITIONS, 3);
+  } finally {
+    await rm(projectRoot, {recursive:true,force:true});
+  }
+});
+
+test('RPC status keeps archived gate evidence separate from current RPC health', () => {
+  const archive = {gatePassed:true,rateLimitPct:0.1,failedRpcCount:4};
+  const disconnected = buildRpcStatusPayload({
+    engineRunning:false,
+    liveEngine:{connected:false,rpcEndpoints:[{url:'old'}],rpcHealth:{gatePassed:true}},
+    session:{sessionDir:'soak-archive',rpcHealth:archive,rpcEndpoints:[{url:'archived'}]},
+  });
+  assert.equal(disconnected.engineRunning,false);
+  assert.deepEqual(disconnected.rpcEndpoints,[]);
+  assert.equal(disconnected.rpcHealth,null);
+  assert.equal(disconnected.sessionId,'soak-archive');
+  assert.deepEqual(disconnected.sessionRpcHealth,archive);
+  assert.equal(buildRpcStatusPayload({session:{rpcHealth:[]}}).sessionRpcHealth,null);
+
+  const current = buildRpcStatusPayload({
+    engineRunning:true,
+    liveEngine:{connected:true,config:{},rpcEndpoints:[{url:'current'}],rpcHealth:{gatePassed:false}},
+    session:{rpcHealth:archive},
+  });
+  assert.equal(current.engineRunning,true);
+  assert.deepEqual(current.rpcEndpoints,[{url:'current'}]);
+  assert.deepEqual(current.rpcHealth,{gatePassed:false});
+  assert.deepEqual(current.sessionRpcHealth,archive);
 });

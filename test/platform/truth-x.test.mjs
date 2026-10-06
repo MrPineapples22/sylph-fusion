@@ -123,6 +123,46 @@ test('TxV1TruthEngine: decodes Legacy, V0, V1 transactions and fails closed on u
   }, /TXV1_TRUTH_UNKNOWN_VERSION/);
 });
 
+test('TxV1TruthEngine: preserves reported CPI stack heights and fails closed on malformed trace groups', () => {
+  const base = {
+    signature: 'trace-sig',
+    version: 0,
+    slot: 101,
+    rawMessageBytes: new Uint8Array([1, 2, 3]),
+    meta: {err:null,fee:1n},
+    accountKeys: ['top-a','top-b','inner-a','inner-b'],
+    compiledInstructions: [
+      {programIdIndex:0,accountIndices:[],data:new Uint8Array()},
+      {programIdIndex:1,accountIndices:[],data:new Uint8Array()},
+    ],
+  };
+  const complete = TxV1TruthEngine.decodeTransaction({...base,innerInstructions:[
+    {index:0,instructions:[
+      {programIdIndex:2,accountIndices:[],data:new Uint8Array(),stackHeight:2},
+      {programIdIndex:3,accountIndices:[],data:new Uint8Array(),stackHeight:3},
+    ]},
+    {index:1,instructions:[{programIdIndex:2,accountIndices:[],data:new Uint8Array(),stackHeight:2}]},
+  ]});
+  assert.equal(complete.innerInstructionTraceStatus,'COMPLETE');
+  assert.deepEqual(complete.instructions[0].innerInstructions.map(item => item.stackHeight),[2,3]);
+
+  const partial = TxV1TruthEngine.decodeTransaction({...base,innerInstructions:[
+    {index:0,instructions:[{programIdIndex:2,accountIndices:[],data:new Uint8Array()}]},
+  ]});
+  assert.equal(partial.innerInstructionTraceStatus,'PARTIAL');
+  assert.equal(partial.instructions[0].innerInstructions[0].stackHeight,null);
+  assert.equal(TxV1TruthEngine.decodeTransaction({...base,innerInstructions:null}).innerInstructionTraceStatus,'UNAVAILABLE');
+  assert.equal(TxV1TruthEngine.decodeTransaction({...base,innerInstructions:[]}).innerInstructionTraceStatus,'COMPLETE');
+
+  for (const innerInstructions of [
+    [{index:2,instructions:[]}],
+    [{index:0,instructions:[]},{index:0,instructions:[]}],
+    [{index:0,instructions:[{programIdIndex:2,accountIndices:[],data:new Uint8Array(),stackHeight:1}]}],
+  ]) {
+    assert.throws(()=>TxV1TruthEngine.decodeTransaction({...base,innerInstructions}),/TXV1_TRUTH_INVALID_INNER/);
+  }
+});
+
 test('EconomicDeltaEngine: calculates account creation and closure deltas without inventing trade attribution', () => {
   const summary = EconomicDeltaEngine.calculateDeltas({
     signature: 'sig_econ_1',

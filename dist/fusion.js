@@ -21,6 +21,8 @@ import { ExecutionRegretEngine } from './intelligence/forensics/counterfactual-r
 import { AutomaticFalsificationAgent } from './platform/adversarial/automatic-falsification-agent.js';
 import { CapitalBarrierKernel } from './intelligence/capital/capital-barrier-kernel.js';
 import { buildCandidateSnapshot, buildOutcomeLabel, deterministicCandidateId, executeModelGate, saltHashWallet, } from './candidate-snapshot.js';
+import { composePaperRuntime } from './runtime-composition.js';
+import { UnifiedPipelineUnit } from './platform/pipeline/unified-unit.js';
 const reserveBigInt = (value) => BigInt(typeof value?.toString === 'function' ? value.toString() : String(value));
 function candidateEvaluationRetryDelayMs(reason, maxAgeMs) {
     const normalized = reason.toLowerCase();
@@ -97,7 +99,8 @@ export class Engine {
     blockedExits = new Map();
     lastCheckpoint = Date.now();
     feed;
-    constructor(cfg, rpc, market, executor, store, state, sessionLogger, modelEvaluator, gateMode = modelEvaluator ? 'ml_gated' : 'deterministic_only') {
+    runtimeUnit;
+    constructor(cfg, rpc, market, executor, store, state, sessionLogger, modelEvaluator, gateMode = modelEvaluator ? 'ml_gated' : 'deterministic_only', runtimeUnit) {
         this.cfg = cfg;
         this.rpc = rpc;
         this.market = market;
@@ -108,6 +111,10 @@ export class Engine {
         this.modelEvaluator = modelEvaluator;
         this.gateMode = gateMode;
         this.feed = new Feed(cfg, rpc.connection, e => this.onEvent(e));
+        const paperMode = (state.mode === 'paper_max_risk' || state.mode === 'paper_chaos' || cfg.MODE === 'paper_max_risk' || cfg.MODE === 'paper_chaos')
+            ? 'PAPER_MAX_RISK'
+            : 'PAPER_STANDARD';
+        this.runtimeUnit = runtimeUnit ?? new UnifiedPipelineUnit(paperMode);
     }
     persistResearchJournal(method, record, recordId) {
         // Research evidence is useful but cannot change a paper fill or exit.
@@ -433,6 +440,14 @@ export class Engine {
     }
     stop() { this.stopped = true; this.feed.stop(); }
     canSubmitEntry(candidate, s, entryAmount, now = Date.now()) {
+        const isMaxRisk = this.state.mode === 'paper_max_risk' || this.state.mode === 'paper_chaos' || this.runtimeUnit.paperPolicy.isMaxRisk();
+        if (isMaxRisk) {
+            const wouldNormalHalt = this.state.halted || this.state.operatorPaused || candidate.devSold || !!this.state.closed[candidate.mint];
+            if (wouldNormalHalt) {
+                log('paper_risk_bypass', { rule: 'ENTRY_RISK_GATES', normalResult: 'DENY', paperMaxRiskResult: 'ATTEMPT', mint: candidate.mint });
+            }
+            return !this.stopped && !this.state.pending && !this.entryBuildInFlight && !this.state.positions[candidate.mint] && !s.curve.complete && entryAmount > 0n;
+        }
         return !this.stopped && !this.state.operatorPaused && !this.state.halted && this.feed.healthy() && !this.state.pending && !this.entryBuildInFlight && !candidate.devSold && now >= candidate.next && !this.state.positions[candidate.mint] && !this.state.closed[candidate.mint] && !s.curve.complete && !s.curve.isMayhemMode && entryAmount > 0n;
     }
     async setPaused(paused) {
@@ -1332,7 +1347,17 @@ export async function runEngine(options = {}) {
                 state.cash = String(await rpc.connection.getBalance(key.publicKey, 'finalized'));
         }
         await store.save(state, 'startup');
-        const engine = new Engine(cfg, rpc, market, executor, store, state, sessionLogger);
+        const paperMode = (state.mode === 'paper_max_risk' || state.mode === 'paper_chaos' || cfg.MODE === 'paper_max_risk' || cfg.MODE === 'paper_chaos')
+            ? 'PAPER_MAX_RISK'
+            : 'PAPER_STANDARD';
+        const paperRuntime = composePaperRuntime({
+            context: { mode: 'PAPER' },
+            market,
+            execution: executor,
+            reconciliation: {},
+            unit: new UnifiedPipelineUnit(paperMode),
+        });
+        const engine = new Engine(cfg, rpc, market, executor, store, state, sessionLogger, undefined, undefined, paperRuntime.unit);
         dashboard = await startDashboard(engine, cfg.UI_PORT);
         log('dashboard_ready', { url: dashboard.url });
         let durationTimer;

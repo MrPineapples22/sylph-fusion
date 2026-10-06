@@ -58,8 +58,13 @@ export function RpcComparisonPanel({ rpcEndpoints = [], rpcHealth = null, onRefr
   }
 
   const maxSlot = Math.max(...endpoints.map(e => e.currentSlot || 0), 0);
-  const isRateLimited = (rpcHealth?.failedRpcCount ?? 0) > 0 || endpoints.some(e => (e.http429Count ?? 0) > 0);
-  const gatePassed = rpcHealth?.gatePassed ?? !isRateLimited;
+  const localThrottleCounts = endpoints.map(endpoint =>
+    Number.isSafeInteger(endpoint.localRateLimitDenials) && endpoint.localRateLimitDenials >= 0
+      ? endpoint.localRateLimitDenials
+      : null);
+  const knownLocalThrottleTotal = localThrottleCounts.reduce((total, count) => total + (count ?? 0), 0);
+  const unknownLocalThrottleEndpoints = localThrottleCounts.filter(count => count === null).length;
+  const gatePassed = typeof rpcHealth?.gatePassed === 'boolean' ? rpcHealth.gatePassed : null;
 
   return (
     <article className="soak-card rpc-comparison-card" id="rpc-comparison-panel">
@@ -74,11 +79,13 @@ export function RpcComparisonPanel({ rpcEndpoints = [], rpcHealth = null, onRefr
               <ShieldAlert size={11} /> STALE TELEMETRY (DISCONNECTED)
             </span>
           )}
-          <span className={`pill font-mono ${gatePassed ? 'pill-active' : 'pill-danger'}`}>
-            {gatePassed ? (
+          <span className={`pill font-mono ${gatePassed === true ? 'pill-active' : 'pill-danger'}`}>
+            {gatePassed === true ? (
               <><ShieldCheck size={11} /> 24H GATE: PASSED</>
+            ) : gatePassed === false ? (
+              <><ShieldAlert size={11} /> 24H GATE: BLOCKED</>
             ) : (
-              <><ShieldAlert size={11} /> 24H GATE: BLOCKED (&gt;5% 429s)</>
+              <><ShieldAlert size={11} /> 24H GATE: UNVERIFIED</>
             )}
           </span>
           {onRefresh && (
@@ -92,11 +99,22 @@ export function RpcComparisonPanel({ rpcEndpoints = [], rpcHealth = null, onRefr
       <p className="rpc-panel-note">
         Compares real-time response latency, slot drift, and rate limiting across the configured RPC pool. The 24-hour soak requires &lt;5% candidate drops.
       </p>
+      {(knownLocalThrottleTotal > 0 || unknownLocalThrottleEndpoints > 0) && (
+        <p className="rpc-panel-note" role="status">
+          {unknownLocalThrottleEndpoints === 0
+            ? `${knownLocalThrottleTotal.toLocaleString()} local request throttles since process start.`
+            : knownLocalThrottleTotal > 0
+              ? `At least ${knownLocalThrottleTotal.toLocaleString()} local request throttles since process start; telemetry is unavailable for ${unknownLocalThrottleEndpoints} endpoint${unknownLocalThrottleEndpoints === 1 ? '' : 's'}.`
+              : `Local request-throttle telemetry is unavailable for ${unknownLocalThrottleEndpoints} endpoint${unknownLocalThrottleEndpoints === 1 ? '' : 's'}.`}
+          {' '}These are separate from provider HTTP 429s and the 24-hour candidate-drop rate.
+        </p>
+      )}
 
       {/* Comparison Grid */}
       <div className="rpc-comparison-grid">
         {endpoints.map((ep, i) => {
           const slotLag = maxSlot > 0 && ep.currentSlot > 0 ? maxSlot - ep.currentSlot : 0;
+          const localThrottleCount = localThrottleCounts[i];
           const statusClass = ep.status === 'active'
             ? 'status-active'
             : ep.status === 'rate_limited'
@@ -160,13 +178,26 @@ export function RpcComparisonPanel({ rpcEndpoints = [], rpcHealth = null, onRefr
                     {ep.http429Count ?? 0}
                   </b>
                   <span className="error-count-sub font-mono">Errors: {ep.errorCount ?? 0}</span>
+                  <span className="error-count-sub font-mono">
+                    Local throttles (process total): {localThrottleCount === null ? 'Unknown' : localThrottleCount.toLocaleString()}
+                  </span>
                 </div>
 
                 <div className="rpc-metric-box">
                   <small>LAST SUCCESSFUL REQ</small>
                   <b className="font-mono">{timeSinceSuccess}</b>
                   <span className="req-health font-mono">
-                    {(ep.http429Count ?? 0) > 0 ? 'Rate-limited' : 'Operational'}
+                    {ep.status === 'rate_limited'
+                      ? 'Rate-limited'
+                      : ep.status === 'error'
+                        ? 'Provider errors'
+                        : ep.status === 'stale'
+                          ? 'Stale slot'
+                          : ep.status === 'standby'
+                            ? 'Standby'
+                            : ep.status === 'active'
+                              ? 'Operational'
+                              : 'Unknown'}
                   </span>
                 </div>
               </div>

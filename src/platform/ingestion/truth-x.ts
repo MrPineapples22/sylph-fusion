@@ -54,8 +54,12 @@ export interface DecodedInstruction {
   readonly programId: string;
   readonly accounts: readonly string[];
   readonly data: Uint8Array;
+  /** Runtime-reported invocation depth; absent/null values are preserved as unknown. */
+  readonly stackHeight?: number | null;
   readonly innerInstructions?: readonly DecodedInstruction[];
 }
+
+export type InnerInstructionTraceStatus = 'COMPLETE' | 'PARTIAL' | 'UNAVAILABLE';
 
 export interface DecodedTransactionV1 {
   readonly signature: string;
@@ -65,6 +69,8 @@ export interface DecodedTransactionV1 {
   readonly feeLamports: bigint;
   readonly accounts: readonly string[];
   readonly instructions: readonly DecodedInstruction[];
+  /** Describes RPC trace-field completeness, not successful execution or reconstructed parent edges. */
+  readonly innerInstructionTraceStatus: InnerInstructionTraceStatus;
   readonly rawMessageBytes: Uint8Array;
   readonly messageHash: string;
   readonly isSuccess: boolean;
@@ -96,8 +102,9 @@ export class TxV1TruthEngine {
         data?: Uint8Array;
         dataBase58?: string;
         dataHex?: string;
+        stackHeight?: number | null;
       }[];
-    }[];
+    }[] | null;
     meta?: {
       err?: unknown;
       fee?: number | bigint;
@@ -126,6 +133,33 @@ export class TxV1TruthEngine {
     }
 
     const instructions: DecodedInstruction[] = [];
+    const innerGroups = raw.innerInstructions ?? null;
+    let innerInstructionTraceStatus: InnerInstructionTraceStatus = 'UNAVAILABLE';
+    if (innerGroups !== null) {
+      if (!Array.isArray(innerGroups) || innerGroups.length > 256) throw new Error('TXV1_TRUTH_INVALID_INNER_GROUPS');
+      const validatedInnerGroups = innerGroups as NonNullable<typeof raw.innerInstructions>;
+      const seenGroupIndexes = new Set<number>();
+      let innerInstructionCount = 0;
+      let allStackHeightsKnown = true;
+      for (const group of validatedInnerGroups) {
+        if (!group || !Number.isSafeInteger(group.index) || group.index < 0 || group.index >= raw.compiledInstructions.length ||
+            seenGroupIndexes.has(group.index) || !Array.isArray(group.instructions)) {
+          throw new Error('TXV1_TRUTH_INVALID_INNER_GROUP');
+        }
+        seenGroupIndexes.add(group.index);
+        innerInstructionCount += group.instructions.length;
+        if (innerInstructionCount > 16_384) throw new Error('TXV1_TRUTH_INNER_TRACE_TOO_LARGE');
+        for (const inner of group.instructions) {
+          const height = inner?.stackHeight;
+          if (height === undefined || height === null) {
+            allStackHeightsKnown = false;
+          } else if (!Number.isSafeInteger(height) || height < 2 || height > 32) {
+            throw new Error('TXV1_TRUTH_INVALID_INNER_STACK_HEIGHT');
+          }
+        }
+      }
+      innerInstructionTraceStatus = allStackHeightsKnown ? 'COMPLETE' : 'PARTIAL';
+    }
 
     const resolveIndex = (index: number, kind: string): string => {
       if (!Number.isSafeInteger(index) || index < 0 || index >= accounts.length) {
@@ -182,6 +216,7 @@ export class TxV1TruthEngine {
             programId: resolveIndex(inner.programIdIndex, 'INNER_PROGRAM'),
             accounts: inner.accountIndices.map(idx => resolveIndex(idx, 'INNER_ACCOUNT')),
             data: decodeData(inner),
+            stackHeight: inner.stackHeight ?? null,
           });
         }
       }
@@ -205,6 +240,7 @@ export class TxV1TruthEngine {
       feeLamports: BigInt(feeValue),
       accounts,
       instructions,
+      innerInstructionTraceStatus,
       rawMessageBytes,
       messageHash,
       isSuccess: raw.meta.err === null,

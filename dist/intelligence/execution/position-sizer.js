@@ -189,4 +189,49 @@ export function calculateOptimalBuyPositionValue(token = {}, options = {}) {
         confidenceGrade,
     };
 }
+export function calculateExecutableSizing(evidence) {
+    const desired = Math.max(0, evidence.desiredResearchStakeUsd);
+    const entryCap = Math.max(0, evidence.entryCapacityUsd);
+    const exitCap = Math.max(0, evidence.stressedExitCapacityUsd);
+    const capitalAuth = Math.max(0, evidence.maxCapitalAuthorityUsd);
+    // Q = min(DesiredResearchStake, EntryCapacity, StressedExitCapacity, CapitalAuthority)
+    const q = Math.min(desired, entryCap, exitCap, capitalAuth);
+    let bindingConstraint = 'DESIRED_STAKE';
+    if (q === entryCap && entryCap < desired) {
+        bindingConstraint = 'ENTRY_CAPACITY';
+    }
+    else if (q === exitCap && exitCap < desired) {
+        bindingConstraint = 'STRESSED_EXIT_CAPACITY';
+    }
+    else if (q === capitalAuth && capitalAuth < desired) {
+        bindingConstraint = 'CAPITAL_AUTHORITY';
+    }
+    // Fixed-$250 research invariant:
+    // If experiment expects $250, any capacity or capital restriction below $250 fails closed
+    if (desired >= 250.0 && q < 250.0) {
+        return {
+            authorizedSizeUsd: 0,
+            action: 'ABSTAIN_SIZE_NOT_EXECUTABLE',
+            reason: `Fixed-$250 experiment requires $250 executable capacity. Sized capacity is $${q.toFixed(2)} (constrained by ${bindingConstraint}); silent shrinkage forbidden`,
+            evidence,
+            bindingConstraint,
+        };
+    }
+    if (q <= 0) {
+        return {
+            authorizedSizeUsd: 0,
+            action: 'ABSTAIN_SIZE_NOT_EXECUTABLE',
+            reason: `Executable size evaluates to $0 (constrained by ${bindingConstraint})`,
+            evidence,
+            bindingConstraint,
+        };
+    }
+    return {
+        authorizedSizeUsd: Math.round(q * 100) / 100,
+        action: 'CONTINUE',
+        reason: `Sized at $${q.toFixed(2)} with full executable capacity and capital authority`,
+        evidence,
+        bindingConstraint,
+    };
+}
 //# sourceMappingURL=position-sizer.js.map

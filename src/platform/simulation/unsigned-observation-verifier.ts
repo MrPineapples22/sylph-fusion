@@ -22,6 +22,10 @@ export interface ObservationMetadata {
   readonly genesis: string; readonly configurationRevision: string; readonly credentialRevision: string; readonly policyVersion: string;
   readonly policyHash: string; readonly epoch: number; readonly commitment: 'confirmed' | 'finalized';
   readonly minContextSlot: number; readonly slot: number; readonly unitsConsumed: number;
+  /** RPC-reported trace-field coverage only; this does not establish a CPI graph or execution truth. */
+  readonly innerInstructionTraceStatus: 'COMPLETE' | 'PARTIAL' | 'UNAVAILABLE';
+  readonly innerInstructionGroupCount: number; readonly innerInstructionCount: number;
+  readonly innerInstructionsHash?: string;
   readonly issuedAt: number; readonly completedAt: number; readonly expiresAt: number;
 }
 interface Bootstrap {
@@ -41,6 +45,7 @@ interface Prepared {
   readonly requestId: string; readonly simulationId: string; readonly messageHash: string;
   readonly requestHash: string; readonly intentId: string; readonly generation: number;
   readonly signer: string; readonly stage: 'ESTIMATE' | 'FINAL'; readonly minContextSlot: number;
+  readonly topLevelInstructionCount: number;
   readonly issuedAt: number; readonly expiresAt: number; readonly epoch: number;
 }
 const hash = (value: string | Uint8Array) => createHash('sha256').update(value).digest('hex');
@@ -48,8 +53,55 @@ function fail(code: string): never { throw new Error(code); }
 const integer = (value: unknown, min: number, max = Number.MAX_SAFE_INTEGER): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= min && value <= max;
 const string = (value: unknown): value is string => typeof value === 'string' && value.length > 0;
+const address = (value: unknown): value is string => {
+  if (!string(value)) return false;
+  try { new PublicKey(value); return true; } catch { return false; }
+};
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
+
+interface InnerInstructionSummary {
+  readonly status: 'COMPLETE' | 'PARTIAL' | 'UNAVAILABLE';
+  readonly groupCount: number;
+  readonly instructionCount: number;
+  readonly hash?: string;
+}
+
+function summarizeInnerInstructions(value: unknown, topLevelInstructionCount: number): InnerInstructionSummary {
+  if (value === null || value === undefined) return { status: 'UNAVAILABLE', groupCount: 0, instructionCount: 0 };
+  if (!Array.isArray(value) || value.length > 256) fail('SIMULATION_INNER_INSTRUCTIONS_INVALID');
+  const seen = new Set<number>();
+  let instructionCount = 0;
+  let allStackHeightsKnown = true;
+  for (const group of value) {
+    if (!object(group) || !integer(group.index, 0, Math.min(255, topLevelInstructionCount - 1)) ||
+        seen.has(group.index) || !Array.isArray(group.instructions)) fail('SIMULATION_INNER_INSTRUCTIONS_INVALID');
+    seen.add(group.index);
+    instructionCount += group.instructions.length;
+    if (instructionCount > 16_384) fail('SIMULATION_INNER_INSTRUCTIONS_TOO_LARGE');
+    for (const instruction of group.instructions) {
+      if (!object(instruction) || !address(instruction.programId)) fail('SIMULATION_INNER_INSTRUCTIONS_INVALID');
+      const parsed = instruction.parsed !== undefined;
+      if (parsed) {
+        // Solana's fully parsed response uses parsed/program/programId and omits accounts/data.
+        if (!object(instruction.parsed) || (instruction.program !== undefined && !string(instruction.program)) ||
+            (instruction.accounts !== undefined && (!Array.isArray(instruction.accounts) || instruction.accounts.length > 256 ||
+              instruction.accounts.some(account => !address(account)))) ||
+            (instruction.data !== undefined && typeof instruction.data !== 'string')) fail('SIMULATION_INNER_INSTRUCTIONS_INVALID');
+      } else if (!Array.isArray(instruction.accounts) || instruction.accounts.length > 256 ||
+          instruction.accounts.some(account => !address(account)) || typeof instruction.data !== 'string') {
+        fail('SIMULATION_INNER_INSTRUCTIONS_INVALID');
+      }
+      const height = instruction.stackHeight;
+      if (height === undefined || height === null) allStackHeightsKnown = false;
+      else if (!integer(height, 2, 32)) fail('SIMULATION_INNER_INSTRUCTIONS_INVALID');
+    }
+  }
+  const normalized = JSON.stringify(value);
+  if (normalized.length > 2_000_000) fail('SIMULATION_INNER_INSTRUCTIONS_TOO_LARGE');
+  return { status: allStackHeightsKnown ? 'COMPLETE' : 'PARTIAL', groupCount: value.length,
+    instructionCount, hash: hash(normalized) };
+}
 
 /**
  * Deliberately PRIVATE trusted bootstrap. Request handlers never receive this
@@ -181,9 +233,10 @@ function composeUnsignedObservationRoot(input: Bootstrap) {
     const requestId = randomUUID();
     const body = JSON.stringify({ jsonrpc: '2.0', id: requestId, method: 'simulateTransaction', params: [
       Buffer.from(wire).toString('base64'), { encoding: 'base64', sigVerify: false, replaceRecentBlockhash: false,
-        commitment: cfg.commitment, minContextSlot: r.minContextSlot },
+        commitment: cfg.commitment, minContextSlot: r.minContextSlot, innerInstructions: true },
     ] });
-    const prepared: Prepared = Object.freeze({ ...r, issuedAt, epoch, requestId, simulationId: randomUUID(),
+    const prepared: Prepared = Object.freeze({ ...r, topLevelInstructionCount: message.compiledInstructions.length,
+      issuedAt, epoch, requestId, simulationId: randomUUID(),
       body, messageBase64: Buffer.from(bytes).toString('base64'), messageHash: hash(bytes), requestHash: hash(body), messageLimit });
     precheck(prepared);
     const permit = Object.freeze(Object.create(null)) as object;
@@ -210,6 +263,7 @@ function composeUnsignedObservationRoot(input: Bootstrap) {
         !integer(result.context.slot, record.minContextSlot) ||
         !integer(result.value.unitsConsumed, 1, Math.min(record.messageLimit, cfg.maxUnits)) ||
         (result.value.replacementBlockhash !== undefined && result.value.replacementBlockhash !== null)) fail('SIMULATION_RESPONSE_INVALID');
+    const innerInstructionSummary = summarizeInnerInstructions(result.value.innerInstructions, record.topLevelInstructionCount);
     const metadata: ObservationMetadata = Object.freeze({ audience: cfg.audience, intentId: record.intentId,
       generation: record.generation, requestId: record.requestId, simulationId: record.simulationId, stage: record.stage,
       signer: record.signer, messageHash: record.messageHash, requestHash: record.requestHash, responseHash: response.digest,
@@ -217,6 +271,10 @@ function composeUnsignedObservationRoot(input: Bootstrap) {
       credentialRevision: cfg.credentialRevision,
       policyVersion: p.version, policyHash: p.hash, epoch: record.epoch, commitment: cfg.commitment,
       minContextSlot: record.minContextSlot, slot: result.context.slot, unitsConsumed: result.value.unitsConsumed,
+      innerInstructionTraceStatus: innerInstructionSummary.status,
+      innerInstructionGroupCount: innerInstructionSummary.groupCount,
+      innerInstructionCount: innerInstructionSummary.instructionCount,
+      ...(innerInstructionSummary.hash ? { innerInstructionsHash: innerInstructionSummary.hash } : {}),
       issuedAt: record.issuedAt, completedAt: now(), expiresAt: record.expiresAt });
     check(record);
     const receipt = Object.freeze(Object.create(null)) as object;

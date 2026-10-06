@@ -143,7 +143,7 @@ test('Fifth Pass: LiveExecutionAuthority fails closed without valid live credent
   );
 });
 
-test('Fifth Pass: Provider Capability Model independently exposes 15 fields and ignores unconfigured optional providers', () => {
+test('Fifth Pass: Provider Capability Model separates authentication state and requirement', () => {
   const tracker = new ProviderHealthTracker();
   const report = tracker.getReport();
 
@@ -152,6 +152,7 @@ test('Fifth Pass: Provider Capability Model independently exposes 15 fields and 
   assert.ok(pump);
   assert.equal(pump.configured, false);
   assert.equal(pump.enabled, false);
+  assert.equal(pump.authenticationRequirement, 'UNKNOWN');
   assert.equal(pump.authenticated, false);
   assert.equal(pump.capabilityAvailable, false);
   assert.equal(typeof pump.transportReachable, 'boolean');
@@ -173,9 +174,79 @@ test('Fifth Pass: Provider Capability Model independently exposes 15 fields and 
   assert.ok(report.activeAlerts.every(a => a.source !== 'HELIOS_DIRECT_TPU'));
 });
 
+test('provider authentication requirement is explicit and unknown requirements fail closed', () => {
+  const tracker = new ProviderHealthTracker();
+  // Legacy callers that omit the new classification remain unknown and fail closed.
+  tracker.setProviderConfiguration('PUMPPORTAL_WS', true, true, false);
+  tracker.setProviderConfiguration('SOLANA_RPC', true, true, false);
+  tracker.recordValidatedObservation('PUMPPORTAL_WS', 15);
+  tracker.recordValidatedObservation('SOLANA_RPC', 20);
+
+  let report = tracker.getReport();
+  assert.equal(report.providers.SOLANA_RPC.authenticationRequirement, 'UNKNOWN');
+  assert.equal(report.providers.SOLANA_RPC.authenticated, false);
+  assert.equal(report.providers.SOLANA_RPC.capabilityAvailable, false);
+  assert.equal(tracker.isMarketFeedStale(), true);
+
+  tracker.setProviderConfiguration('PUMPPORTAL_WS', true, true, false, 'NOT_REQUIRED');
+  tracker.setProviderConfiguration('SOLANA_RPC', true, true, false, 'NOT_REQUIRED');
+  report = tracker.getReport();
+  assert.equal(report.providers.SOLANA_RPC.authenticationRequirement, 'NOT_REQUIRED');
+  assert.equal(report.providers.SOLANA_RPC.authenticated, false);
+  assert.equal(report.providers.SOLANA_RPC.capabilityAvailable, true);
+  assert.equal(tracker.isMarketFeedStale(), false);
+
+  tracker.setProviderConfiguration('SOLANA_RPC', true, true, false, 'REQUIRED');
+  report = tracker.getReport();
+  assert.equal(report.providers.SOLANA_RPC.authenticationRequirement, 'REQUIRED');
+  assert.equal(report.providers.SOLANA_RPC.authenticated, false);
+  assert.equal(report.providers.SOLANA_RPC.capabilityAvailable, false);
+  assert.equal(tracker.isMarketFeedStale(), true);
+
+  tracker.setProviderConfiguration('SOLANA_RPC', true, true, true, 'REQUIRED');
+  assert.equal(tracker.getReport().providers.SOLANA_RPC.capabilityAvailable, true);
+  assert.equal(tracker.isMarketFeedStale(), false);
+
+  // Runtime callers cannot satisfy UNKNOWN/invalid requirements with any truthy auth claim.
+  for (const requirement of ['UNKNOWN', 'INVALID']) {
+    for (const authenticated of [false, true]) {
+      tracker.setProviderConfiguration('SOLANA_RPC', true, true, authenticated, requirement);
+      report = tracker.getReport();
+      assert.equal(report.providers.SOLANA_RPC.authenticationRequirement, 'UNKNOWN');
+      assert.equal(report.providers.SOLANA_RPC.capabilityAvailable, false);
+      assert.equal(tracker.isMarketFeedStale(), true);
+    }
+  }
+  // REQUIRED accepts only literal boolean true, never truthy strings or numbers.
+  for (const authenticated of ['true', 'false', 1]) {
+    tracker.setProviderConfiguration('SOLANA_RPC', true, true, authenticated, 'REQUIRED');
+    report = tracker.getReport();
+    assert.equal(report.providers.SOLANA_RPC.authenticated, false);
+    assert.equal(report.providers.SOLANA_RPC.capabilityAvailable, false);
+    assert.equal(tracker.isMarketFeedStale(), true);
+  }
+});
+
+test('explicit no-auth classification still respects observation, freshness, rate limit, and circuit gates', () => {
+  const tracker = new ProviderHealthTracker();
+  for (const providerId of ['PUMPPORTAL_WS', 'SOLANA_RPC']) tracker.setProviderConfiguration(providerId, true, true, false, 'NOT_REQUIRED');
+  tracker.recordValidatedObservation('PUMPPORTAL_WS', 15);
+  tracker.recordValidatedObservation('SOLANA_RPC', 20);
+  assert.equal(tracker.isMarketFeedStale(), false);
+
+  tracker.recordValidatedObservation('SOLANA_RPC', 20, undefined, Date.now() - 20_000);
+  assert.equal(tracker.isMarketFeedStale(), true, 'stale observation blocks public reads');
+  tracker.recordValidatedObservation('SOLANA_RPC', 20);
+  tracker.recordRateLimit('SOLANA_RPC');
+  assert.equal(tracker.isMarketFeedStale(), true, 'rate limiting blocks public reads');
+  tracker.recordRateLimit('SOLANA_RPC', 0);
+  for (let i = 0; i < 5; i++) tracker.recordFailure('SOLANA_RPC', 'TEST_FAILURE');
+  assert.equal(tracker.isMarketFeedStale(), true, 'open circuit blocks public reads');
+});
+
 test('Fifth Pass: Bounded Rolling-Window Circuit Breaker requires 3 consecutive observations to recover', () => {
   const tracker = new ProviderHealthTracker();
-  tracker.setProviderConfiguration('SOLANA_RPC', true, true, true);
+  tracker.setProviderConfiguration('SOLANA_RPC', true, true, true, 'REQUIRED');
 
   // Record initial successes
   tracker.recordSuccess('SOLANA_RPC', 50);
@@ -209,7 +280,7 @@ test('Fifth Pass: Bounded Rolling-Window Circuit Breaker requires 3 consecutive 
 
 test('Fifth Pass: Endpoint failover is only reported when an actual transition occurs', () => {
   const tracker = new ProviderHealthTracker();
-  tracker.setProviderConfiguration('SOLANA_RPC', true, true, true);
+  tracker.setProviderConfiguration('SOLANA_RPC', true, true, true, 'REQUIRED');
   assert.equal(tracker.getReport().providers.SOLANA_RPC.failoverActive, false);
 
   // Record transition

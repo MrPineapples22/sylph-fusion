@@ -101,7 +101,8 @@ test('canonical exact unsigned request and repeated non-authorizing audit inspec
   assert.equal(calls.length, 2); assert.ok(calls.every(c => c.url === 'https://pinned.invalid/rpc'));
   const sim = calls[1].parsed; const tx = VersionedTransaction.deserialize(Buffer.from(sim.params[0], 'base64'));
   assert.deepEqual(Buffer.from(tx.message.serialize()), original); assert.ok(tx.signatures.every(s => s.every(b => b === 0)));
-  assert.deepEqual(sim.params[1], { encoding: 'base64', sigVerify: false, replaceRecentBlockhash: false, commitment: 'confirmed', minContextSlot: 10 });
+  assert.deepEqual(sim.params[1], { encoding: 'base64', sigVerify: false, replaceRecentBlockhash: false,
+    commitment: 'confirmed', minContextSlot: 10, innerInstructions: true });
   const view = r.client.inspect(receipt); assert.equal(view.authorizesSigning, false); assert.equal(view.metadata.stage, 'FINAL');
   assert.equal(view.metadata.requestHash, createHash('sha256').update(calls[1].body).digest('hex'));
   assert.equal(view.metadata.unitsConsumed, 1000); assert.deepEqual(r.client.inspect(receipt), view);
@@ -182,6 +183,48 @@ test('compute lower boundary and decoded-message upper bound are enforced', asyn
     SystemProgram.transfer({ fromPubkey: payer, toPubkey: dest, lamports: 1 })]) });
   await r.client.observe(r.issueDisclosure(input)); units = 500; await r.client.observe(r.issueDisclosure(input));
   units = 501; await assert.rejects(r.client.observe(r.issueDisclosure(input)), /SIMULATION_RESPONSE_INVALID/);
+});
+test('simulation explicitly requests and records bounded RPC inner-instruction trace coverage', async t => {
+  const trace = [{ index: 1, instructions: [
+    { programId: SystemProgram.programId.toBase58(), accounts: [payer.toBase58()], data: 'abc', stackHeight: 2 },
+    { parsed: { type: 'transfer', info: {} }, program: 'system', programId: other.toBase58(), stackHeight: 3 },
+  ] }];
+  let mode = 'complete';
+  const calls = transport(t, () => ({ context: { slot: 12 }, value: { err: null, unitsConsumed: 1000,
+    ...(mode === 'complete' ? { innerInstructions: trace } : mode === 'partial' ? {
+      innerInstructions: [{ index: 1, instructions: [{ programId: other.toBase58(), accounts: [], data: '', stackHeight: null }] }],
+    } : {}) } }));
+  const r = root(); const receipt = await r.client.observe(r.issueDisclosure(request()));
+  const simulation = calls.find(call => call.parsed.method === 'simulateTransaction');
+  assert.equal(simulation.parsed.params[1].innerInstructions, true);
+  const metadata = r.client.inspect(receipt).metadata;
+  assert.equal(metadata.innerInstructionTraceStatus, 'COMPLETE');
+  assert.equal(metadata.innerInstructionGroupCount, 1);
+  assert.equal(metadata.innerInstructionCount, 2);
+  assert.match(metadata.innerInstructionsHash, /^[a-f0-9]{64}$/);
+  assert.match(metadata.responseHash, /^[a-f0-9]{64}$/);
+
+  mode = 'partial';
+  const partial = root();
+  const partialReceipt = await partial.client.observe(partial.issueDisclosure(request()));
+  assert.equal(partial.client.inspect(partialReceipt).metadata.innerInstructionTraceStatus, 'PARTIAL');
+
+  mode = 'unavailable';
+  const unavailable = root();
+  const unavailableReceipt = await unavailable.client.observe(unavailable.issueDisclosure(request()));
+  assert.equal(unavailable.client.inspect(unavailableReceipt).metadata.innerInstructionTraceStatus, 'UNAVAILABLE');
+  assert.equal(unavailable.client.inspect(unavailableReceipt).metadata.innerInstructionCount, 0);
+});
+for (const trace of [
+  'not-an-array', [{ index: 2, instructions: [] }], [{ index: 1, instructions: [] }, { index: 1, instructions: [] }],
+  [{ index: 1, instructions: [{ programId: '', accounts: [], stackHeight: 2 }] }],
+  [{ index: 1, instructions: [{ programId: other.toBase58(), accounts: [], stackHeight: 1 }] }],
+  [{ index: 1, instructions: [{ programId: other.toBase58(), stackHeight: 2 }] }],
+  [{ index: 1, instructions: [{ programId: other.toBase58(), accounts: ['not-a-pubkey'], data: '', stackHeight: 2 }] }],
+]) test('malformed inner-instruction evidence is rejected', async t => {
+  transport(t, () => ({ context: { slot: 12 }, value: { err: null, unitsConsumed: 1000, innerInstructions: trace } }));
+  const r = root();
+  await assert.rejects(r.client.observe(r.issueDisclosure(request())), /SIMULATION_INNER_INSTRUCTIONS_INVALID/);
 });
 test('genesis mismatch and redirect never fail over', async t => {
   let mode = 'genesis'; const calls = transport(t, () => mode === 'genesis' ? { genesis: other.toBase58() } : { http: 302 });

@@ -1,4 +1,7 @@
 // ../src/platform/ingestion/provider-health.ts
+function authSatisfied(requirement, authenticated) {
+  return requirement === "NOT_REQUIRED" || requirement === "REQUIRED" && authenticated === true;
+}
 var ProviderHealthTracker = class {
   metrics = /* @__PURE__ */ new Map();
   endpointTransitions = /* @__PURE__ */ new Map();
@@ -25,6 +28,7 @@ var ProviderHealthTracker = class {
         isAuthoritative: d.authoritative,
         configured: d.configured,
         enabled: d.enabled,
+        authenticationRequirement: "UNKNOWN",
         authenticated: d.authenticated,
         transportReachable: false,
         observationValidated: false,
@@ -46,12 +50,13 @@ var ProviderHealthTracker = class {
       });
     }
   }
-  setProviderConfiguration(providerId, configured, enabled, authenticated = false) {
+  setProviderConfiguration(providerId, configured, enabled, authenticated = false, authenticationRequirement = "UNKNOWN") {
     const entry = this.metrics.get(providerId);
     if (!entry) return;
-    entry.configured = configured;
-    entry.enabled = enabled;
-    entry.authenticated = authenticated;
+    entry.configured = configured === true;
+    entry.enabled = enabled === true;
+    entry.authenticationRequirement = authenticationRequirement === "REQUIRED" || authenticationRequirement === "NOT_REQUIRED" ? authenticationRequirement : "UNKNOWN";
+    entry.authenticated = authenticated === true;
   }
   recordTransportReachable(providerId, reachable = true) {
     const entry = this.metrics.get(providerId);
@@ -214,9 +219,9 @@ var ProviderHealthTracker = class {
   }
   isMarketFeedStale(now = Date.now(), thresholdMs = 1e4) {
     const pump = this.metrics.get("PUMPPORTAL_WS");
-    if (!pump || !pump.configured || !pump.enabled || !pump.authenticated || !pump.observationValidated || !pump.transportReachable || pump.lastSuccessMs === 0 || now - pump.lastSuccessMs > thresholdMs || pump.circuitState === "OPEN" || pump.rateLimitedUntilMs > now) return true;
+    if (!pump || !pump.configured || !pump.enabled || !authSatisfied(pump.authenticationRequirement, pump.authenticated) || !pump.observationValidated || !pump.transportReachable || pump.lastSuccessMs === 0 || now - pump.lastSuccessMs > thresholdMs || pump.circuitState === "OPEN" || pump.rateLimitedUntilMs > now) return true;
     const rpc = this.metrics.get("SOLANA_RPC");
-    if (!rpc || !rpc.configured || !rpc.enabled || !rpc.authenticated || !rpc.observationValidated || !rpc.transportReachable || rpc.lastSuccessMs === 0 || now - rpc.lastSuccessMs > thresholdMs || rpc.circuitState === "OPEN" || rpc.rateLimitedUntilMs > now) return true;
+    if (!rpc || !rpc.configured || !rpc.enabled || !authSatisfied(rpc.authenticationRequirement, rpc.authenticated) || !rpc.observationValidated || !rpc.transportReachable || rpc.lastSuccessMs === 0 || now - rpc.lastSuccessMs > thresholdMs || rpc.circuitState === "OPEN" || rpc.rateLimitedUntilMs > now) return true;
     return false;
   }
   getReport(now = Date.now()) {
@@ -231,6 +236,7 @@ var ProviderHealthTracker = class {
           role: m.role,
           configured: false,
           enabled: false,
+          authenticationRequirement: "UNKNOWN",
           transportReachable: false,
           authenticated: false,
           capabilityAvailable: false,
@@ -334,9 +340,10 @@ var ProviderHealthTracker = class {
         role: m.role,
         configured: m.configured,
         enabled: m.enabled,
+        authenticationRequirement: m.authenticationRequirement,
         transportReachable: m.transportReachable,
         authenticated: m.authenticated,
-        capabilityAvailable: m.configured && m.enabled && m.authenticated && m.transportReachable && m.observationValidated && freshness === "FRESH" && m.circuitState !== "OPEN" && now >= m.rateLimitedUntilMs,
+        capabilityAvailable: m.configured && m.enabled && authSatisfied(m.authenticationRequirement, m.authenticated) && m.transportReachable && m.observationValidated && freshness === "FRESH" && m.circuitState !== "OPEN" && now >= m.rateLimitedUntilMs,
         observationValidated: m.observationValidated,
         freshness,
         slotLag: m.slotLag,

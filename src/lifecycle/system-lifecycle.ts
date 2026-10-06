@@ -98,8 +98,8 @@ export class SystemLifecycleManager {
     }
 
     // Invariant Enforcement
-    if (to === 'READY' && (!this.isCertified || !this.isReconciled)) {
-      throw new Error(`Cannot transition to READY without prior successful certification and reconciliation`);
+    if ((to === 'READY' || to === 'HEALTHY') && (!this.isCertified || !this.isReconciled)) {
+      throw new Error(`Cannot transition to ${to} without prior successful certification and reconciliation`);
     }
     if (this.currentState === 'RECOVERING' && to === 'HEALTHY') {
       throw new Error(`Illegal shortcut: RECOVERING must proceed through RECONCILING and CERTIFYING before HEALTHY`);

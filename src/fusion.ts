@@ -32,6 +32,9 @@ import {
   type CandidateModelEvaluator,
   type ModelGateDecision,
 } from './candidate-snapshot.js';
+import { composePaperRuntime } from './runtime-composition.js';
+import { UnifiedPipelineUnit } from './platform/pipeline/unified-unit.js';
+import type { PaperAuthorityMode } from './platform/paper/paper-authority-policy.js';
 
 type Candidate = {
   mint: string;
@@ -157,6 +160,7 @@ export class Engine {
   private blockedExits = new Map<string, { blockedAt: number; reason: string; triggerValue: bigint; stage: number }>();
   private lastCheckpoint = Date.now();
   readonly feed: Feed;
+  readonly runtimeUnit: UnifiedPipelineUnit;
   constructor(
     readonly cfg: Config,
     readonly rpc: RpcPool,
@@ -166,9 +170,14 @@ export class Engine {
     readonly state: State,
     readonly sessionLogger?: SessionLogger,
     readonly modelEvaluator?: CandidateModelEvaluator,
-    readonly gateMode: 'ml_gated' | 'shadow' | 'deterministic_only' = modelEvaluator ? 'ml_gated' : 'deterministic_only'
+    readonly gateMode: 'ml_gated' | 'shadow' | 'deterministic_only' = modelEvaluator ? 'ml_gated' : 'deterministic_only',
+    runtimeUnit?: UnifiedPipelineUnit
   ) {
     this.feed = new Feed(cfg, rpc.connection, e => this.onEvent(e));
+    const paperMode: PaperAuthorityMode = ((state.mode as string) === 'paper_max_risk' || (state.mode as string) === 'paper_chaos' || (cfg.MODE as string) === 'paper_max_risk' || (cfg.MODE as string) === 'paper_chaos')
+      ? 'PAPER_MAX_RISK'
+      : 'PAPER_STANDARD';
+    this.runtimeUnit = runtimeUnit ?? new UnifiedPipelineUnit(paperMode);
   }
   private persistResearchJournal(
     method: 'saveCounterfactualEvaluation' | 'saveFalsificationReport',
@@ -499,6 +508,14 @@ export class Engine {
   }
   stop() { this.stopped = true; this.feed.stop(); }
   private canSubmitEntry(candidate: Candidate, s: Snapshot, entryAmount: bigint, now = Date.now()) {
+    const isMaxRisk = this.state.mode === 'paper_max_risk' || this.state.mode === 'paper_chaos' || this.runtimeUnit.paperPolicy.isMaxRisk();
+    if (isMaxRisk) {
+      const wouldNormalHalt = this.state.halted || this.state.operatorPaused || candidate.devSold || !!this.state.closed[candidate.mint];
+      if (wouldNormalHalt) {
+        log('paper_risk_bypass', { rule: 'ENTRY_RISK_GATES', normalResult: 'DENY', paperMaxRiskResult: 'ATTEMPT', mint: candidate.mint });
+      }
+      return !this.stopped && !this.state.pending && !this.entryBuildInFlight && !this.state.positions[candidate.mint] && !s.curve.complete && entryAmount > 0n;
+    }
     return !this.stopped && !this.state.operatorPaused && !this.state.halted && this.feed.healthy() && !this.state.pending && !this.entryBuildInFlight && !candidate.devSold && now >= candidate.next && !this.state.positions[candidate.mint] && !this.state.closed[candidate.mint] && !s.curve.complete && !s.curve.isMayhemMode && entryAmount > 0n;
   }
   async setPaused(paused: boolean) {
@@ -1336,7 +1353,17 @@ export async function runEngine(options: {
       if (!state.pending) state.cash = String(await rpc.connection.getBalance(key.publicKey, 'finalized'));
     }
     await store.save(state, 'startup');
-    const engine = new Engine(cfg, rpc, market, executor, store, state, sessionLogger);
+    const paperMode: PaperAuthorityMode = ((state.mode as string) === 'paper_max_risk' || (state.mode as string) === 'paper_chaos' || (cfg.MODE as string) === 'paper_max_risk' || (cfg.MODE as string) === 'paper_chaos')
+      ? 'PAPER_MAX_RISK'
+      : 'PAPER_STANDARD';
+    const paperRuntime = composePaperRuntime({
+      context: { mode: 'PAPER' } as any,
+      market,
+      execution: executor,
+      reconciliation: {},
+      unit: new UnifiedPipelineUnit(paperMode),
+    });
+    const engine = new Engine(cfg, rpc, market, executor, store, state, sessionLogger, undefined, undefined, paperRuntime.unit);
     dashboard = await startDashboard(engine, cfg.UI_PORT);
     log('dashboard_ready', { url: dashboard.url });
 

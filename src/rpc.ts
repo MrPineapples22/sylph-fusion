@@ -46,6 +46,7 @@ export type RpcEndpointStats = {
   p50LatencyMs?: number;
   p95LatencyMs?: number;
   calls: number;
+  localRateLimitDenials: number;
   drops: number;
   errorCount: number;
   http429Count: number;
@@ -103,6 +104,7 @@ export class RpcPool {
   private slots: number[];
   private lastSuccess: Array<number | null>;
   private calls: number[];
+  private localRateLimitDenials: number[];
   private latencyHistories: number[][];
   private quarantinedUntil: number[];
   private rateLimiters: TokenBucket[];
@@ -115,12 +117,72 @@ export class RpcPool {
     this.slots = cfg.RPC_URLS.map(() => 0);
     this.lastSuccess = cfg.RPC_URLS.map(() => null);
     this.calls = cfg.RPC_URLS.map(() => 0);
+    this.localRateLimitDenials = cfg.RPC_URLS.map(() => 0);
     this.latencyHistories = cfg.RPC_URLS.map(() => []);
     this.quarantinedUntil = cfg.RPC_URLS.map(() => 0);
     this.rateLimiters = cfg.RPC_URLS.map(() => new TokenBucket(60, 35));
 
     const boundedFetch: typeof fetch = (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(cfg.RPC_TIMEOUT_MS) });
-    this.endpoints = cfg.RPC_URLS.map(url => new Connection(url, { commitment: 'confirmed', disableRetryOnRateLimit: true, fetch: boundedFetch }));
+    const dispatchEndpoint = async (index: number, init: RequestInit): Promise<Response> => {
+      if (!await this.rateLimiters[index].acquire(1, 150)) {
+        this.localRateLimitDenials[index]++;
+        throw new Error('RPC endpoint locally rate limited');
+      }
+      this.calls[index]++;
+      const t0 = performance.now();
+      try {
+        const response = await boundedFetch(cfg.RPC_URLS[index], init);
+        if (response.status === 429) {
+          this.http429s[index]++;
+          this.failures[index]++;
+          // Exponential backoff quarantine on 429
+          this.quarantinedUntil[index] = Date.now() + Math.min(60_000, 5000 * 2 ** Math.min(this.failures[index] - 1, 4));
+        } else if (!response.ok) {
+          this.errors[index]++;
+          this.failures[index]++;
+        } else {
+          const data = await response.clone().json() as { error?: unknown; result?: unknown };
+          if (data.error) {
+            this.errors[index]++;
+            this.failures[index]++;
+          } else {
+            // Keep the endpoint slot watermark current from authoritative RPC
+            // responses, including calls made through direct endpoint clients.
+            const request = typeof init.body === 'string'
+              ? JSON.parse(init.body) as { method?: unknown }
+              : undefined;
+            const contextualSlot = data.result && typeof data.result === 'object'
+              ? (data.result as { context?: { slot?: unknown } }).context?.slot
+              : undefined;
+            const observedSlot = Number.isSafeInteger(contextualSlot)
+              ? contextualSlot as number
+              : request?.method === 'getSlot' && Number.isSafeInteger(data.result)
+                ? data.result as number
+                : 0;
+            if (observedSlot > 0) this.updateSlot(index, observedSlot);
+            this.failures[index] = 0;
+            this.quarantinedUntil[index] = 0;
+            const latencyMs = Math.round(performance.now() - t0);
+            this.latencies[index] = latencyMs;
+            this.latencyHistories[index].push(latencyMs);
+            if (this.latencyHistories[index].length > 50) this.latencyHistories[index].shift();
+            this.lastSuccess[index] = Date.now();
+          }
+        }
+        if (response.status !== 429 && this.failures[index] >= 3) this.quarantinedUntil[index] = Date.now() + 15_000;
+        return response;
+      } catch (error) {
+        this.errors[index]++;
+        this.failures[index]++;
+        if (this.failures[index] >= 3) this.quarantinedUntil[index] = Date.now() + 15_000;
+        throw error;
+      }
+    };
+    this.endpoints = cfg.RPC_URLS.map((url, index) => new Connection(url, {
+      commitment: 'confirmed',
+      disableRetryOnRateLimit: true,
+      fetch: (_url, init) => dispatchEndpoint(index, init ?? {}),
+    }));
     const pooledFetch: typeof fetch = async (_url, init) => {
       const now = Date.now();
       // Dynamic Endpoint Scoring: rank endpoints by latency + failure penalty + slot lag
@@ -133,69 +195,31 @@ export class RpcPool {
         return { index: i, score, isQuarantined };
       }).sort((a, b) => a.score - b.score).map(x => x.index);
 
+      let localRateLimitSkips = 0;
       for (const index of rankedIndices) {
         // Enforce rate limiter token pacing
-        await this.rateLimiters[index].acquire(1, 150);
-        this.calls[index]++;
-        const t0 = performance.now();
         try {
-          const res = await boundedFetch(cfg.RPC_URLS[index], init);
-          if (res.status === 429) {
-            this.http429s[index]++;
-            // Exponential backoff quarantine on 429
-            this.quarantinedUntil[index] = Date.now() + Math.min(60_000, 5000 * 2 ** Math.min(this.failures[index], 4));
-            throw new Error('HTTP 429');
-          }
-          if (!res.ok) {
-            this.errors[index]++;
-            throw new Error(`HTTP ${res.status}`);
-          }
+          const res = await dispatchEndpoint(index, init ?? {});
+          if (res.status === 429) throw new Error('HTTP 429');
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const data = await res.clone().json() as { error?: unknown };
-          if (data.error) {
-            this.errors[index]++;
-            throw new Error('RPC rejected request');
-          }
-          // Keep the endpoint slot watermark current from authoritative RPC
-          // responses. verifyCluster() only samples once at startup; without
-          // this, status and endpoint ranking silently use that old slot for
-          // the lifetime of the process.
-          const request = typeof init?.body === 'string'
-            ? JSON.parse(init.body) as { method?: unknown }
-            : undefined;
-          const result = (data as { result?: unknown }).result;
-          const contextualSlot = result && typeof result === 'object'
-            ? (result as { context?: { slot?: unknown } }).context?.slot
-            : undefined;
-          const observedSlot = Number.isSafeInteger(contextualSlot)
-            ? contextualSlot as number
-            : request?.method === 'getSlot' && Number.isSafeInteger(result)
-              ? result as number
-              : 0;
-          if (observedSlot > 0) this.updateSlot(index, observedSlot);
-          this.failures[index] = 0;
-          this.quarantinedUntil[index] = 0;
-          const lat = Math.round(performance.now() - t0);
-          this.latencies[index] = lat;
-          this.latencyHistories[index].push(lat);
-          if (this.latencyHistories[index].length > 50) this.latencyHistories[index].shift();
-          this.lastSuccess[index] = Date.now();
-          if (this.active !== index) log('rpc_failover', { endpointIndex: index, url: sanitizeRpcUrl(cfg.RPC_URLS[index]), latencyMs: lat });
+          if (data.error) throw new Error('RPC rejected request');
+          if (this.active !== index) log('rpc_failover', { endpointIndex: index, url: sanitizeRpcUrl(cfg.RPC_URLS[index]), latencyMs: this.latencies[index] });
           this.active = index;
           return res;
-        } catch (err) {
-          this.failures[index]++;
-          const msg = err instanceof Error ? err.message : String(err);
-          if (msg.includes('429')) {
-            this.http429s[index]++;
-          } else {
-            this.errors[index]++;
-          }
-          if (this.failures[index] >= 3) {
-            this.quarantinedUntil[index] = Date.now() + 15_000;
+        } catch (error) {
+          if (error instanceof Error && error.message === 'RPC endpoint locally rate limited') {
+            // Do not turn local queue saturation into an upstream request. Try
+            // another endpoint, then report local capacity exhaustion separately
+            // from provider failures if every endpoint is saturated.
+            localRateLimitSkips++;
+            continue;
           }
         }
       }
-      throw new Error('all RPC endpoints failed');
+      throw new Error(localRateLimitSkips === rankedIndices.length
+        ? 'all RPC endpoints locally rate limited'
+        : 'all RPC endpoints failed');
     };
     this.connection = new Connection(cfg.RPC_URLS[0], { commitment: 'confirmed', disableRetryOnRateLimit: true, fetch: pooledFetch });
   }
@@ -233,6 +257,7 @@ export class RpcPool {
         p50LatencyMs: p50,
         p95LatencyMs: p95,
         calls: this.calls[i],
+        localRateLimitDenials: this.localRateLimitDenials[i],
         drops,
         errorCount: this.errors[i],
         http429Count: this.http429s[i],

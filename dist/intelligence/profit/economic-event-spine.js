@@ -2,6 +2,14 @@ import { createHash } from 'node:crypto';
 const GENESIS_HASH = '0'.repeat(64);
 const canonicalize = (value) => JSON.stringify(value, (_, item) => typeof item === 'bigint' ? item.toString() : item);
 const hash = (value) => createHash('sha256').update(canonicalize(value)).digest('hex');
+function deepFreeze(value, seen = new WeakSet()) {
+    if (typeof value !== 'object' || value === null || seen.has(value))
+        return value;
+    seen.add(value);
+    for (const child of Object.values(value))
+        deepFreeze(child, seen);
+    return Object.freeze(value);
+}
 const timestamp = (name, value) => {
     if (!Number.isSafeInteger(value) || value <= 0)
         throw new Error(`${name}_MUST_BE_SAFE_POSITIVE_INTEGER`);
@@ -50,7 +58,8 @@ export function verifyOpportunitySetSnapshot(snapshot) {
 }
 export class EconomicEventSpine {
     eventsByCertificate = new Map();
-    append(input) {
+    preparedEvents = new WeakSet();
+    assertCanAppend(input) {
         if (!input.certificateId)
             throw new Error('CERTIFICATE_ID_REQUIRED');
         timestamp('OCCURRED_AT', input.occurredAtMs);
@@ -63,10 +72,43 @@ export class EconomicEventSpine {
             throw new Error('NON_MONOTONIC_ECONOMIC_EVENT_TIME');
         const sequence = existing.length + 1;
         const previousHash = prior?.integrityHash ?? GENESIS_HASH;
-        const payload = { ...input, sequence, previousHash };
-        const event = { ...payload, integrityHash: hash(payload) };
-        this.eventsByCertificate.set(input.certificateId, [...existing, event]);
+        // Preflight serialization too, so composed journals cannot partially
+        // commit when payload/provenance data is cyclic or otherwise unhashable.
+        hash({ ...input, sequence, previousHash });
+    }
+    prepareAppend(input) {
+        const snapshot = deepFreeze(structuredClone(input));
+        this.assertCanAppend(snapshot);
+        const existing = this.eventsByCertificate.get(snapshot.certificateId) ?? [];
+        const prior = existing.at(-1);
+        const sequence = existing.length + 1;
+        const previousHash = prior?.integrityHash ?? GENESIS_HASH;
+        const payload = { ...snapshot, sequence, previousHash };
+        const event = deepFreeze({ ...payload, integrityHash: hash(payload) });
+        this.preparedEvents.add(event);
         return event;
+    }
+    appendPrepared(event) {
+        if (typeof event !== 'object' || event === null || !this.preparedEvents.has(event)) {
+            throw new Error('ECONOMIC_EVENT_NOT_PREPARED_BY_THIS_SPINE');
+        }
+        const existing = this.eventsByCertificate.get(event.certificateId) ?? [];
+        const prior = existing.at(-1);
+        const expectedSequence = existing.length + 1;
+        const expectedPreviousHash = prior?.integrityHash ?? GENESIS_HASH;
+        const { integrityHash, ...payload } = event;
+        if (event.sequence !== expectedSequence || event.previousHash !== expectedPreviousHash || hash(payload) !== integrityHash) {
+            throw new Error('PREPARED_ECONOMIC_EVENT_STALE_OR_INVALID');
+        }
+        this.assertCanAppend(event);
+        const stored = this.eventsByCertificate.get(event.certificateId) ?? [];
+        const committed = Object.freeze([...stored, event]);
+        this.eventsByCertificate.set(event.certificateId, committed);
+        return event;
+    }
+    append(input) {
+        const event = this.prepareAppend(input);
+        return this.appendPrepared(event);
     }
     list(certificateId) {
         return this.eventsByCertificate.get(certificateId) ?? [];

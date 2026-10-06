@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "2.0.0",
+  "simulationLane": "SHADOW_SIMULATION",
+  "transactionVersion": "v0",
+  "messageHash": "message",
+  "wireTransactionHash": "",
+  "routeHash": "route",
+  "quoteHash": "quote",
+  "accountSetHash": "5b575f7727a4072c07b267988911f276b737ba5e110c51e4c667365cb8b8b9b8",
+  "provider": "rpc",
+  "runtimeRoot": {
+    "cluster": "mainnet-beta",
+    "genesisHash": "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d",
+    "epoch": 650,
+    "contextSlot": 280000000,
+    "agaveVersion": "v4.3.0",
+    "activeFeatureSetHash": "83505cdbf07e2611",
+    "transactionVersionSupported": "all",
+    "resourcePolicyVersion": "res_pol_2026_q4",
+    "runtimeRootHash": "38dc72daec28484ae24b08e767fb0a68fb24c451c782faffff0adbe75ec5fb40"
+  },
+  "programRoots": [],
+  "commitment": "confirmed",
+  "minContextSlot": 280000000,
+  "simulationSlot": 280000001,
+  "blockhash": "blockhash",
+  "lastValidBlockHeight": 9,
+  "sigVerify": false,
+  "replaceRecentBlockhash": true,
+  "error": null,
+  "simulationOutcome": "SUCCESS",
+  "logsHash": "5087d37cac7f9077fbeed2d6e14092d14439f49cfff5da0cdb7ce84a5c3697ea",
+  "cpiGraphHash": "5087d37cac7f9077fbeed2d6e14092d14439f49cfff5da0cdb7ce84a5c3697ea",
+  "invokedPrograms": [],
+  "unitsConsumed": 1,
+  "loadedAccountsDataSize": 0,
+  "requestedComputeLimit": 2,
+  "priorityFeeLamports": {
+    "$bigint": "0"
+  },
+  "simulatedFeeLamports": {
+    "$bigint": "0"
+  },
+  "preSolLamports": {
+    "$bigint": "0"
+  },
+  "postSolLamports": {
+    "$bigint": "0"
+  },
+  "preTokensRaw": {
+    "$bigint": "0"
+  },
+  "postTokensRaw": {
+    "$bigint": "1"
+  },
+  "simulatedOutputRaw": {
+    "$bigint": "1"
+  },
+  "criticalAccounts": [],
+  "isSimulationSuccess": true,
+  "evidenceHash": "aa28080109c878c591b130013b768a062abc24a720d0c76b69cc5460eb25402d"
+}

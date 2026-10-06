@@ -387,7 +387,7 @@ test('ConservationProofsDrawer: renders exact integer lot conservation and outco
   assert.match(populatedHtml, /MAINNET_TRUTH/);
 });
 
-test('SolanaArchitectureDrawer: renders 10 protocol leases, sensor tournament, transport lanes, and fail-closed notice', () => {
+test('SolanaArchitectureDrawer: shows supplied diagnostics as reported and leaves disconnected evidence unknown', () => {
   const html = renderToStaticMarkup(
     React.createElement(SolanaArchitectureDrawer, {
       isOpen: true,
@@ -406,9 +406,42 @@ test('SolanaArchitectureDrawer: renders 10 protocol leases, sensor tournament, t
   );
 
   assert.match(html, /SYLPH FUSION — SOLANA-ONLY ARCHITECTURE/);
-  assert.match(html, /FAIL-CLOSED/);
+  assert.match(html, /RESEARCH BLUEPRINT/);
   assert.match(html, /PUMP_FUN/);
   assert.match(html, /RAYDIUM_AMM/);
-  assert.match(html, /10 \/ 10 Protocols Cryptographically Bound/);
+  assert.match(html, /2 reported • certification unverified/);
+  assert.match(html, /REPORTED ONLY/);
+  assert.doesNotMatch(html, /CERTIFIED|FAIL-CLOSED|Cryptographically Bound/);
   assert.match(html, /UNKNOWN ≠ SAFE • PROFIT PREDICTED ≠ PROFIT REALIZED/);
+
+  const sensorHtml = renderToStaticMarkup(
+    React.createElement(SolanaArchitectureDrawer, {
+      isOpen: true,
+      initialTab: 'sensors',
+      sensorLeaderboard: [
+        { sensorType: 'SHREDS', coverageRatePct: 99.4, meanLatencyMs: 4.2, falseDecodeRatePct: 0.1, winsCount: 452 },
+      ],
+    })
+  );
+  assert.match(sensorHtml, /99\.4%/);
+  assert.match(sensorHtml, /Economic State[\s\S]*UNKNOWN/);
+
+  const transportHtml = renderToStaticMarkup(
+    React.createElement(SolanaArchitectureDrawer, {
+      isOpen: true,
+      initialTab: 'transport',
+      transportTelemetry: [
+        { lane: 'JITO_BUNDLE', landingRatePct: 94.5, meanLatencyMs: 120, meanTipLamports: '100000', instructionFailureRatePct: 0.5, netRealizedEdgeBps: 85 },
+      ],
+    })
+  );
+  assert.match(transportHtml, /94\.5% reported landing/);
+  assert.match(transportHtml, /85 bps reported/);
+
+  const emptyHtml = renderToStaticMarkup(
+    React.createElement(SolanaArchitectureDrawer, { isOpen: true, onClose: () => {} })
+  );
+  assert.match(emptyHtml, /No protocol lease observations are connected/);
+  assert.match(emptyHtml, /Execution Mode: <strong class="text-amber-400">UNKNOWN<\/strong>/);
+  assert.doesNotMatch(emptyHtml, /10 \/ 10|94\.5|\+85 bps|CERTIFIED|\$100 Notional/);
 });

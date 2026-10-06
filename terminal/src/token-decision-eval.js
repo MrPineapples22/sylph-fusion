@@ -4,6 +4,23 @@
 export const MAX_PRICE_DRIFT_BPS = 200;
 export const MAX_LIQUIDITY_DROP_BPS = 200;
 
+// Empirical alpha thresholds established from 523,351 Solana Pump.fun launches:
+// Median observation arrival gap < 1.0s marks genuine competing block-0/1 multi-buyer flow (2x win rate doubles from 14.0% to 28.9%).
+export const MAX_DISCOVERY_GAP_SECONDS = 1.0;
+// Entry quote must be <= 1.15x initial curve price (preventing frontrun / chasing already-pumped tokens).
+export const MAX_OPENING_PRICE_RATIO = 1.15;
+
+// Pre-committed exit contract (STAGED_DERISK_2X_TRAIL yielded Profit Factor 1.121 and +$119k out-of-sample).
+export const DEFAULT_EMPIRICAL_EXIT_POLICY = {
+  id: 'STAGED_DERISK_2X_TRAIL',
+  name: 'Staged Derisk (50% @ 2.0x, Trail -30%, 3m Max Hold)',
+  targetMultiple: 2.0,
+  deriskFractionBps: 5000, // 50% sell at 2.0x
+  stopLossBps: 2500,       // -25% stop
+  trailStopBps: 3000,      // -30% trailing stop on remaining runner
+  maxHoldSeconds: 180,     // 180s (3m) maximum hold before terminal decay
+};
+
 export function evaluateTokenDecision({
   asset,
   candidate = null,
@@ -118,6 +135,16 @@ export function evaluateTokenDecision({
 
   const isDevSold = candidate?.devSold === true || asset.devSold === true;
 
+  // 3b. Order Flow Velocity & Contemporaneous Microstructure (Empirical Alpha Filter)
+  const medianObsGapSec = candidate?.medianObsGapSec ?? candidate?.medianObservationGapSeconds ?? asset?.medianObsGapSec ?? asset?.medianObservationGapSeconds ?? null;
+  const initialPriceRatio = candidate?.initialPriceRatio ?? candidate?.openingPriceRatio ?? asset?.initialPriceRatio ?? asset?.openingPriceRatio ?? null;
+  const isConcentrationSuspect = candidate?.holderConcentrationSuspect === true || asset?.holderConcentrationSuspect === true;
+  const isMayhem = candidate?.isMayhemMode === true || asset?.isMayhemMode === true;
+  const isFrontrunSuspect = candidate?.firstPricePrecedesDetection === true || asset?.firstPricePrecedesDetection === true;
+
+  const isExcessiveObservationGap = medianObsGapSec != null && medianObsGapSec > MAX_DISCOVERY_GAP_SECONDS;
+  const isExcessiveOpeningPrice = initialPriceRatio != null && initialPriceRatio > MAX_OPENING_PRICE_RATIO;
+
   // 4. Token Age (from candidate creation or first verified tick)
   let ageSeconds = null;
   if (candidate?.age != null) {
@@ -166,9 +193,15 @@ export function evaluateTokenDecision({
   // state (MIGRATION_PENDING), not an economic or security rejection.
   const isMigrationPending = isCurveComplete === true && !isRaydiumActive;
   const isDevSoldViolated = isDevSold === true;
+  const isVelocityViolated = isExcessiveObservationGap;
+  const isChasingViolated = isExcessiveOpeningPrice;
+  const isConcentrationViolated = isConcentrationSuspect;
+  const isMayhemViolated = isMayhem;
+  const isFrontrunViolated = isFrontrunSuspect;
 
   const authorityViolated = isMintRevoked === false || isFreezeRevoked === false;
-  const blocked = isReserveViolated || isDriftViolated || isDevSoldViolated || authorityViolated;
+  const blocked = isReserveViolated || isDriftViolated || isDevSoldViolated || authorityViolated
+    || isVelocityViolated || isChasingViolated || isConcentrationViolated || isMayhemViolated || isFrontrunViolated;
   const isTelemetryPending = !blocked && (isMigrationPending || realSolReserve == null || driftPct == null || !isCurveKnown || isMintRevoked === null || isFreezeRevoked === null);
 
   let decisionBadge = 'DECISION: ELIGIBLE';
@@ -185,6 +218,16 @@ export function evaluateTokenDecision({
     blockedExplanation = `Rejection: EXCESSIVE_PRICE_DRIFT (+${driftPct.toFixed(2)}% > +2.00% limit / +200 BPS). Front-run defense.`;
   } else if (isExcessiveLiquidityDrop) {
     blockedExplanation = `Rejection: EXCESSIVE_LIQUIDITY_DROP (${driftPct.toFixed(2)}% < -2.00% limit / -200 BPS). Dump defense.`;
+  } else if (isConcentrationViolated) {
+    blockedExplanation = 'Rejection: SUSPECT_HOLDER_CONCENTRATION (insider cluster detected).';
+  } else if (isMayhemViolated) {
+    blockedExplanation = 'Rejection: MAYHEM_MODE_ACTIVE (predatory launch configuration).';
+  } else if (isFrontrunViolated) {
+    blockedExplanation = 'Rejection: FRONTRUN_SUSPECT (price preceded telemetry detection).';
+  } else if (isVelocityViolated) {
+    blockedExplanation = `Rejection: LOW_ORDER_FLOW_VELOCITY (median arrival gap ${medianObsGapSec.toFixed(2)}s > 1.0s limit; negative net EV).`;
+  } else if (isChasingViolated) {
+    blockedExplanation = `Rejection: OPENING_PRICE_CHASING (price ${initialPriceRatio.toFixed(2)}x initial curve quote > 1.15x limit).`;
   } else if (isMigrationPending) {
     if (isSniperCooldown) {
       blockedExplanation = 'Pending transition: CURVE_COMPLETED (SNIPER_COOLDOWN_ACTIVE: 30s AMM sniper dump defense active).';
@@ -244,5 +287,10 @@ export function evaluateTokenDecision({
     netEdge: asset.netEdgePct || asset.edge || '+0.0%',
     opportunityStage: asset.decision || 'WATCH',
     spieNetEv: asset.netEdgePct || asset.edge || '+0.0%',
+    medianObsGapSec,
+    initialPriceRatio,
+    isHighVelocity: medianObsGapSec != null ? !isVelocityViolated : null,
+    isPriceChasing: initialPriceRatio != null ? isChasingViolated : null,
+    empiricalExitPolicy: DEFAULT_EMPIRICAL_EXIT_POLICY,
   };
 }

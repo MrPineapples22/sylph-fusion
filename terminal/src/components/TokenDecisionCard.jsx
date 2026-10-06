@@ -79,6 +79,10 @@ export function TokenDecisionCard({
     executionRoute,
     isRaydiumActive,
     isSniperCooldown,
+    isMigrationPending,
+    medianObsGapSec,
+    isHighVelocity,
+    empiricalExitPolicy,
   } = evaluateTokenDecision({
     asset,
     candidate,
@@ -554,6 +558,19 @@ export function TokenDecisionCard({
           <span className={`check-chip ${driftPct != null ? (isDriftSafe ? 'chip-pass' : 'chip-fail') : 'chip-pending'}`}>
             {driftPct != null ? (isDriftSafe ? <CheckCircle2 size={12} /> : <XCircle size={12} />) : <Clock size={12} />}
             {driftPct != null ? (isDriftSafe ? 'Drift ≤ 200 BPS (±2.0%)' : 'Drift Breached') : 'Drift Pending (dual snapshot required)'}
+          </span>
+          <span className={`check-chip ${medianObsGapSec != null ? (isHighVelocity ? 'chip-pass' : 'chip-fail') : 'chip-pending'}`}>
+            {medianObsGapSec != null ? (isHighVelocity ? <CheckCircle2 size={12} /> : <XCircle size={12} />) : <Clock size={12} />}
+            {medianObsGapSec != null ? (isHighVelocity ? `Flow Gap ≤ 1.0s (${medianObsGapSec.toFixed(2)}s)` : `Low Velocity (${medianObsGapSec.toFixed(2)}s > 1.0s)`) : 'Flow Gap Pending (≤1.0s)'}
+          </span>
+        </div>
+        {/* Empirical Exit Contract Ribbon (Derived from 523k pump.fun backtest) */}
+        <div className="empirical-exit-contract font-mono text-[10px] text-muted flex items-center justify-between mt-2 pt-2 border-t border-[#1e293b]">
+          <span className="text-[#38bdf8] flex items-center gap-1 font-semibold">
+            <Zap size={11} /> PRE-COMMITTED EXIT: {empiricalExitPolicy?.name || 'STAGED_DERISK_2X_TRAIL'}
+          </span>
+          <span className="text-[#94a3b8]">
+            TP: 50% @ 2.0x | Stop: -25% | Trail: -30% | Max Hold: 180s
           </span>
         </div>
       </div>

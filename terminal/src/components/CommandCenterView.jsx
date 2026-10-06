@@ -20,6 +20,7 @@ export function CommandCenterView({
   onOpenCapsule,
   onOpenCouncil,
   onOpenConservation,
+  onOpenArchitecture,
 }) {
   const sourceRows = projection?.rows ?? projection?.tokens;
   const rows = Array.isArray(sourceRows) ? sourceRows.filter(Boolean) : null;
@@ -67,6 +68,7 @@ export function CommandCenterView({
           <p className="op-muted">Step 4.1 Shadow Parity · Hot-Path Proof Capsules · 15-Stage Flight Recorder · Dialectic Council · Conservation</p>
         </div>
         <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
+          {onOpenArchitecture && <button type="button" className="op-button" onClick={onOpenArchitecture}>Solana Blueprint <ArrowUpRight size={14} aria-hidden="true"/></button>}
           {onOpenFlightRecorder && <button type="button" className="op-button" onClick={onOpenFlightRecorder}>Flight Recorder <ArrowUpRight size={14} aria-hidden="true"/></button>}
           {onOpenCapsule && <button type="button" className="op-button" onClick={onOpenCapsule}>Proof Capsule <ArrowUpRight size={14} aria-hidden="true"/></button>}
           {onOpenDivergence && <button type="button" className="op-button" onClick={onOpenDivergence}>Shadow Parity <ArrowUpRight size={14} aria-hidden="true"/></button>}

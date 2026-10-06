@@ -18,6 +18,7 @@ import { SpieEngine, KellyAllocator } from './intelligence/spie/index.js';
 import { globalTradeLearningService, type AdaptiveLearningSnapshot } from './intelligence/attribution/trade-learning-service.js';
 import { decideExit, protectiveStop, type ExitPolicyDecision } from './exit-policy.js';
 import { calculateOptimalBuyPositionValue } from './intelligence/execution/position-sizer.js';
+import { PaperAuthorityPolicy, type PaperAuthorityMode } from './platform/paper/paper-authority-policy.js';
 
 export type CommandType =
   | 'SUBMIT_ORDER'
@@ -275,8 +276,17 @@ export class CommandGateway {
   private paperWinningFillCount = 0;
   private paperLosingFillCount = 0;
   private paperEntryEvidenceProvider: PaperEntryEvidenceProvider | null = null;
+  private paperPolicy: PaperAuthorityPolicy = new PaperAuthorityPolicy('PAPER_STANDARD');
   // This gateway owns paper state only. It never claims chain reconciliation.
   private lastReconciledAt: number = 0;
+
+  public setPaperPolicy(policy: PaperAuthorityPolicy): void {
+    this.paperPolicy = policy;
+  }
+
+  public getPaperPolicy(): PaperAuthorityPolicy {
+    return this.paperPolicy;
+  }
 
   public setCashUsd(amount: number): void {
     if (Number.isFinite(amount) && amount >= 0) {
@@ -638,6 +648,9 @@ export class CommandGateway {
       throw new Error('INVALID_ORDER: Amounts must be positive and decimals valid.');
     }
     const isBuy = payload.side === 'BUY';
+    if (isBuy && !globalLifecycle.isEntryPermitted()) {
+      throw new Error(`ENTRY_BLOCKED: Paper/shadow entries require lifecycle permission (${globalLifecycle.getState()}).`);
+    }
     const entryStopEpoch = this.stopEpoch;
     if (isBuy && (this.entryHalted() || entryStopEpoch !== this.stopEpoch)) {
       throw new Error('ENTRY_BLOCKED: Paper emergency stop is latched.');
@@ -654,9 +667,8 @@ export class CommandGateway {
       throw new Error(`DUPLICATE_INTENT: Order ${orderId} has already been executed or is in flight.`);
     }
 
-    // 2. Lifecycle & Entry Safety (Sections 10, 11)
-    // This handler already rejects live mode above. Paper/shadow orders are
-    // isolated simulator actions and must not inherit live certification gates.
+    // 2. Entry lifecycle safety (Sections 10, 11). Live authority remains
+    // unavailable; simulated BUYs still require explicit lifecycle permission.
 
     // 3. Concurrency / In-flight fence (Section 44)
     if (this.inFlight.has(payload.poolAddress)) {
@@ -713,7 +725,15 @@ export class CommandGateway {
     }
     let effectiveUsdAmount = payload.usdAmount;
     if (isBuy) {
-      if (this.positions.size + this.pendingBuys.size >= config.maxPositions) {
+      const posCapRule = this.paperPolicy.evaluateRule({
+        rule: 'MAX_POSITIONS_LIMIT',
+        check: () => ({
+          allowed: this.positions.size + this.pendingBuys.size < config.maxPositions,
+          reason: `Cannot open more than ${config.maxPositions} positions.`,
+        }),
+        mint: payload.mint,
+      });
+      if (!posCapRule.paperAllowed) {
         throw new Error(`MAX_POSITIONS_REACHED: Cannot open more than ${config.maxPositions} positions.`);
       }
       const reservedUsd = [...this.pendingBuys.values()].reduce((sum, value) => sum + value, 0);
@@ -732,9 +752,24 @@ export class CommandGateway {
       const incrementalRiskUsd = Math.max(0, maxSpeculativeRiskUsd - reservedStopRiskUsd);
       const riskSizedCapUsd = stopRate > 0 ? incrementalRiskUsd / stopRate : 0;
       const maxAuthorizedUsd = Math.min(riskSizedCapUsd, this.cashUsd - reservedUsd);
-      if (!(maxAuthorizedUsd > 0)) throw new Error('ENTRY_BLOCKED: Risk sizing returned no authorized position size.');
-      effectiveUsdAmount = effectiveUsdAmount === undefined ? maxAuthorizedUsd : Math.min(effectiveUsdAmount, maxAuthorizedUsd);
-      if (!(effectiveUsdAmount > 0)) throw new Error('ENTRY_BLOCKED: Requested size is outside the authorized risk budget.');
+
+      const riskCapRule = this.paperPolicy.evaluateRule({
+        rule: 'MAX_SPECULATIVE_RISK_LIMIT',
+        check: () => ({
+          allowed: maxAuthorizedUsd > 0,
+          reason: 'Risk sizing returned no authorized position size.',
+        }),
+        mint: payload.mint,
+      });
+
+      if (this.paperPolicy.isMaxRisk()) {
+        const availableCash = Math.max(0, this.cashUsd - reservedUsd);
+        effectiveUsdAmount = payload.usdAmount !== undefined ? Math.min(payload.usdAmount, availableCash) : availableCash;
+      } else {
+        if (!riskCapRule.paperAllowed) throw new Error('ENTRY_BLOCKED: Risk sizing returned no authorized position size.');
+        effectiveUsdAmount = effectiveUsdAmount === undefined ? maxAuthorizedUsd : Math.min(effectiveUsdAmount, maxAuthorizedUsd);
+        if (!(effectiveUsdAmount > 0)) throw new Error('ENTRY_BLOCKED: Requested size is outside the authorized risk budget.');
+      }
       const requiredUsd = effectiveUsdAmount;
       if (this.cashUsd - reservedUsd < requiredUsd) {
         throw new Error(`INSUFFICIENT_CASH: Available ${this.cashUsd.toFixed(2)} USD < required ${requiredUsd.toFixed(2)} USD.`);

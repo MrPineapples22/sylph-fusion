@@ -317,11 +317,30 @@ describe('SYLPH FUSION — Solana-Only Integration Blueprint', () => {
       ...passingCandidate,
       signalSignificanceSamples: [{ ...passingCandidate.signalSignificanceSamples[0], pValue: Number.POSITIVE_INFINITY }],
     }), /finite/);
-    const emptySampleClaim = firewall.evaluateCandidate({
+    const nestedExtra = { mutable: { value: 1 } };
+    const candidateWithNestedExtra = {
+      ...passingCandidate,
+      signalSignificanceSamples: [{ ...passingCandidate.signalSignificanceSamples[0], provenance: nestedExtra }],
+    };
+    assert.throws(() => firewall.evaluateCandidate(candidateWithNestedExtra), /unknown or missing properties/);
+    nestedExtra.mutable.value = 2;
+    assert.throws(() => firewall.evaluateCandidate(candidateWithNestedExtra), /unknown or missing properties/);
+
+    const accessorCandidate = { ...passingCandidate };
+    Object.defineProperty(accessorCandidate, 'temporalLeakageVerified', {
+      enumerable: true,
+      get() { throw new Error('getter must not run'); },
+    });
+    assert.throws(() => firewall.evaluateCandidate(accessorCandidate), /own data property/);
+    assert.throws(() => firewall.evaluateCandidate(new Proxy(passingCandidate, {})), /plain data object/);
+    assert.throws(() => firewall.evaluateCandidate({
+      ...passingCandidate,
+      signalSignificanceSamples: [new Proxy(passingCandidate.signalSignificanceSamples[0], {})],
+    }), /plain data object/);
+    assert.throws(() => firewall.evaluateCandidate({
       ...passingCandidate,
       signalSignificanceSamples: [{ ...passingCandidate.signalSignificanceSamples[0], sampleCount: 0 }],
-    });
-    assert.ok(emptySampleClaim.gateResults.some(g => g.gateId === 'SIGNAL_SIGNIFICANCE_GATE' && !g.passed));
+    }), /sampleCount must be a positive safe integer/);
   });
 
   test('Sections 5 & 6: SolanaSensorTournament reports telemetry without inventing economic value', () => {
@@ -589,26 +608,26 @@ describe('SYLPH FUSION — Solana-Only Integration Blueprint', () => {
     assert.equal(repriceEvalReject.shouldReprice, false);
   });
 
-  test('Sections 16–18: SolanaCapacityEngine verifies Exit Before Entry, capacity curves & capital-time alpha', () => {
-    // Section 16: Exit Before Entry with healthy deep liquidity
-    const healthyExit = SolanaCapacityEngine.simulateExitBeforeEntry({
+  test('Sections 16–18: SolanaCapacityEngine reports illustrative stress, capacity and capital-time heuristics only', () => {
+    const healthyStress = SolanaCapacityEngine.estimateLiquidityStress({
       proposedNotionalLamports: 1_000_000_000n, // 1 SOL
       poolLiquidityLamports: 500_000_000_000n, // 500 SOL
-      hasFallbackRoute: true,
-      jitoAvailable: true,
     });
-    assert.equal(healthyExit.entryPermitted, true);
-    assert.equal(healthyExit.canEvacuateAllTranches, true);
+    assert.equal(healthyStress.modelStatus, 'RESEARCH_ONLY');
+    assert.equal(healthyStress.allTranchesWithinModeledLimit, true);
+    assert.match(healthyStress.researchNote, /no route.*verified/i);
+    assert.equal('entryPermitted' in healthyStress, false);
 
-    // Hostile pool with paper-thin liquidity where 75% liquidation suffers catastrophic slippage
-    const dangerousExit = SolanaCapacityEngine.simulateExitBeforeEntry({
+    const stressed = SolanaCapacityEngine.estimateLiquidityStress({
       proposedNotionalLamports: 25_000_000_000n, // 25 SOL
       poolLiquidityLamports: 30_000_000_000n, // 30 SOL
-      hasFallbackRoute: false,
-      jitoAvailable: false,
     });
-    assert.equal(dangerousExit.entryPermitted, false);
-    assert.match(dangerousExit.refusalReason, /EXIT_STRESS_FAILURE/);
+    assert.equal(stressed.modelStatus, 'RESEARCH_ONLY');
+    assert.equal(stressed.allTranchesWithinModeledLimit, false);
+    assert.ok(stressed.worstModeledSlippageBps >= 2000);
+    assert.throws(() => SolanaCapacityEngine.estimateLiquidityStress({
+      proposedNotionalLamports: 0n, poolLiquidityLamports: 10_000n,
+    }), /LIQUIDITY_STRESS_INPUT_INVALID/);
 
     // Section 17: Capacity curve sizing
     const curve = SolanaCapacityEngine.calculateCapacityCurve({
@@ -616,22 +635,36 @@ describe('SYLPH FUSION — Solana-Only Integration Blueprint', () => {
       grossEdgeBps: 200,
       poolLiquidityUsd: 15_000,
     });
-    assert.ok(curve.maximumEdgePreservingSizeUsd > 0);
-    assert.ok(curve.optimalPositionUsd <= curve.maximumEdgePreservingSizeUsd);
+    assert.equal(curve.modelStatus, 'RESEARCH_ONLY');
+    assert.ok(curve.maximumModeledEdgePreservingSizeUsd > 0);
+    assert.ok(curve.heuristicPositionSizeUsd <= curve.maximumModeledEdgePreservingSizeUsd);
+    assert.equal('exitabilityVerified' in curve.curvePoints[0], false);
+    assert.throws(() => SolanaCapacityEngine.calculateCapacityCurve({
+      mint: 'mint', grossEdgeBps: 200, poolLiquidityUsd: Number.NaN,
+    }), /CAPACITY_CURVE_INPUT_INVALID/);
+    assert.throws(() => SolanaCapacityEngine.calculateCapacityCurve({
+      mint: 'mint', grossEdgeBps: 200, poolLiquidityUsd: Number.MIN_VALUE,
+    }), /CAPACITY_CURVE_INPUT_INVALID/);
 
-    // Section 18: Capital-Time Alpha
-    const fastTradeAlpha = SolanaCapacityEngine.computeCapitalTimeAlpha({
+    // Section 18: Descriptive capital-time ratio
+    const fastTradeAlpha = SolanaCapacityEngine.computeResearchCapitalTimeRatio({
       netPnLLamports: 50_000_000n, // +0.05 SOL
       capitalCommittedLamports: 1_000_000_000n, // 1 SOL
       holdingTimeSeconds: 30, // 30 seconds
     });
-    const slowTradeAlpha = SolanaCapacityEngine.computeCapitalTimeAlpha({
+    const slowTradeAlpha = SolanaCapacityEngine.computeResearchCapitalTimeRatio({
       netPnLLamports: 100_000_000n, // +0.10 SOL
       capitalCommittedLamports: 1_000_000_000n, // 1 SOL
       holdingTimeSeconds: 3600, // 1 hour
     });
     // Fast trade produces higher capital-time efficiency
     assert.ok(fastTradeAlpha > slowTradeAlpha);
+    assert.equal(SolanaCapacityEngine.computeResearchCapitalTimeRatio({
+      netPnLLamports: 1n, capitalCommittedLamports: 1n, holdingTimeSeconds: Number.MIN_VALUE,
+    }), null, 'unrepresentable ratios stay unavailable instead of collapsing into a real-looking zero');
+    assert.ok(Math.abs(SolanaCapacityEngine.computeResearchCapitalTimeRatio({
+      netPnLLamports: 1n, capitalCommittedLamports: 10n ** 308n, holdingTimeSeconds: 100,
+    }) - 1e-310) < 1e-320, 'sequential division preserves representable small ratios');
   });
 
   test('Sections 11–15 & 40–42: SolanaStrategyEcology computes fingerprints, Anti-Portfolio Shapley values, and luck adjustment', () => {
@@ -811,122 +844,46 @@ describe('SYLPH FUSION — Solana-Only Integration Blueprint', () => {
     assert.equal(engLedger.getUpgrades().length, 1);
   });
 
-  test('Section 45: SolanaAlphaFactory coordinates 17 Alpha species and arbitrates top verified opportunity', () => {
-    const protoReg = new ProtocolCompatibilityRegistry();
-    const raydiumLease = createProtocolLease({
-      protocolName: 'RAYDIUM_AMM',
-      programId: '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8',
-      programBinaryHash: 'raydium_certified_hash_v4',
-      idlVersion: '4.0.0',
-      feeModelVersion: '25bps_fixed',
-      swapMathVersion: 'cpmm_v1',
-      token2022Support: false,
-      testedVectorsCount: 150,
-      lastVerifiedSlot: 280_000_000n,
-      expirySlot: 290_000_000n,
-      isCertified: true,
-    });
-    protoReg.registerLease(raydiumLease);
-
-    const factory = new SolanaAlphaFactory(protoReg);
-
-    // Proposal 1: High return, reasonable risk (Momentum breakout on Raydium AMM)
-    factory.submitProposal({
+  test('Section 45: Alpha Factory ranks caller claims only and exposes no verified or executable winner', () => {
+    const factory = new SolanaAlphaFactory();
+    const submit = (overrides = {}) => factory.submitClaim({
       strategySpecies: 'MOMENTUM',
-      strategyName: 'Raydium Volume Acceleration Hunter',
-      targetMint: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
-      targetPoolId: 'pool_ray_bonk_sol',
-      expectedExecutableReturnBps: 140, // +1.40%
-      confidenceScorePct: 85,
-      recommendedNotionalLamports: 1_000_000_000n, // 1 SOL
-      holdingHorizonSeconds: 120, // 2 minutes
-      expectedTailLossBps: 200,
-      requiredCapacityLamports: 10_000_000_000n,
-      correlationRiskDiscountPct: 5,
+      strategyName: 'Unverified momentum claim',
+      targetMint: 'mint-under-research',
+      targetPoolId: 'pool-under-research',
+      claimedReturnBps: 140,
+      claimedConfidencePct: 85,
+      proposedNotionalLamports: 1_000_000_000n,
+      claimedHoldingHorizonSeconds: 120,
+      claimedTailLossBps: 200,
+      proposedCapacityLamports: 10_000_000_000n,
+      claimedCorrelationDiscountPct: 5,
+      ...overrides,
     });
 
-    // Proposal 2: Ultra-high return but excessive tail loss and long holding time (Launch continuation)
-    factory.submitProposal({
-      strategySpecies: 'LAUNCH_INTELLIGENCE',
-      strategyName: 'Pump.fun High-Risk Curve Scalper',
-      targetMint: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
-      targetPoolId: 'pool_ray_bonk_sol',
-      expectedExecutableReturnBps: 300,
-      confidenceScorePct: 40, // low confidence
-      recommendedNotionalLamports: 1_000_000_000n,
-      holdingHorizonSeconds: 3600, // 1 hour holding
-      expectedTailLossBps: 1200, // heavy tail risk
-      requiredCapacityLamports: 5_000_000_000n,
-      correlationRiskDiscountPct: 10,
-    });
+    submit();
+    submit({ strategySpecies: 'CROSS_DEX_ARBITRAGE', strategyName: 'Large but unverified claim', claimedReturnBps: 50_000 });
+    const verdict = factory.rankClaims();
 
-    // Proposal 3: Unregistered target without Market IR (must fail gating)
-    factory.submitProposal({
-      strategySpecies: 'CROSS_DEX_ARBITRAGE',
-      strategyName: 'Ghost Route Scalp',
-      targetMint: 'UnregisteredMintAddress111111111111111111111',
-      targetPoolId: 'pool_unregistered',
-      expectedExecutableReturnBps: 500,
-      confidenceScorePct: 99,
-      recommendedNotionalLamports: 1_000_000_000n,
-      holdingHorizonSeconds: 10,
-      expectedTailLossBps: 50,
-      requiredCapacityLamports: 1_000_000_000n,
-      correlationRiskDiscountPct: 0,
-    });
+    assert.equal(factory.getClaimCount(), 2);
+    assert.equal(verdict.decisionAuthority, 'NONE');
+    assert.equal(verdict.evidenceStatus, 'UNVERIFIED_CALLER_CLAIMS');
+    assert.equal(verdict.rankingBasis, 'CALLER_ASSERTED_RETURN_RISK_CAPITAL_AND_TIME');
+    assert.equal(verdict.rankedClaims[0].claim.strategyName, 'Large but unverified claim');
+    assert.equal(verdict.rankedClaims[0].claimStatus, 'UNVERIFIED_CALLER_CLAIM');
+    assert.match(verdict.answerSummary, /no opportunity is verified or executable/i);
+    assert.equal('winningProposal' in verdict, false);
+    assert.equal('executionEligible' in verdict, false);
 
-    const marketBonk = createSolanaMarketIR({
-      mint: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
-      tokenProgram: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
-      token2022Extensions: [],
-      programId: '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8',
-      poolId: 'pool_ray_bonk_sol',
-      poolType: 'RAYDIUM_AMM',
-      baseAsset: 'BONK',
-      quoteAsset: 'SOL',
-      reserves: {
-        base: 1_000_000_000_000_000n,
-        quote: 500_000_000_000n,
-      },
-      liquidityLamports: 50_000_000_000n,
-      priceSol: 0.0000005,
-      priceUsd: 0.000075,
-      feeModel: { baseFeeBps: 25, creatorFeeBps: 0, dynamicFeeBps: 0 },
-      transferFees: { feeBps: 0, maxFeeLamports: 0n },
-      creatorFees: { creatorBps: 0, recipient: '11111111111111111111111111111111' },
-      mintAuthority: null,
-      freezeAuthority: null,
-      delegates: [],
-      creator: 'creator_bonk',
-      funder: 'funder_bonk',
-      holders: { count: 5000, top10ConcentrationBps: 2500 },
-      walletClusters: ['cluster_organic'],
-      slot: 280_000_050n,
-      blockHeight: 250_000_050n,
-      observedAt: new Date().toISOString(),
-      receivedAt: new Date().toISOString(),
-      availableAt: new Date().toISOString(),
-      knownAt: new Date().toISOString(),
-      source: 'GEYSER_SHRED_RECONCILED',
-      freshnessMs: 50,
-    });
-
-    const verdict = factory.arbitrateOpportunities({
-      marketIRs: [marketBonk],
-      currentSlot: 280_000_050n,
-      solPriceUsd: 150,
-    });
-
-    assert.ok(verdict.winningProposal !== null);
-    assert.equal(verdict.winningProposal.strategySpecies, 'MOMENTUM');
-    assert.equal(verdict.winningProposal.strategyName, 'Raydium Volume Acceleration Hunter');
-    assert.ok(verdict.answerSummary.includes('Raydium Volume Acceleration Hunter'));
-
-    // Check that ghost proposal was blocked by missing Market IR gate
-    const ghostRank = verdict.rankedProposals.find(r => r.proposal.strategySpecies === 'CROSS_DEX_ARBITRAGE');
-    assert.ok(ghostRank !== undefined);
-    assert.equal(ghostRank.passGating, false);
-    assert.ok(ghostRank.rejectionReason?.includes('MISSING_MARKET_IR'));
+    for (const invalid of [
+      { claimedReturnBps: Number.NaN },
+      { claimedConfidencePct: 101 },
+      { claimedHoldingHorizonSeconds: 0 },
+      { proposedNotionalLamports: 0n },
+      { proposedCapacityLamports: BigInt(Number.MAX_SAFE_INTEGER) + 1n },
+    ]) {
+      assert.throws(() => submit(invalid), /ALPHA_CLAIM_INVALID/);
+    }
   });
 
 });

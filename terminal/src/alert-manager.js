@@ -127,10 +127,27 @@ export function getUnacknowledgedCount(alertState = []) {
   return alertState.filter(a => !a.acknowledged).length;
 }
 
+export function readSoakGateEvidence(soakData) {
+  // The selected session is a historical report and can remain available while
+  // the engine is disconnected. It must not be presented as current gate state.
+  const rpcHealth = soakData?.engineRunning === true && soakData?.liveEngine?.connected !== false
+    ? soakData?.liveEngine?.rpcHealth
+    : null;
+  return {
+    gatePassed: typeof rpcHealth?.gatePassed === 'boolean' ? rpcHealth.gatePassed : null,
+    rpcDropRate: typeof rpcHealth?.rateLimitPct === 'number' && Number.isFinite(rpcHealth.rateLimitPct) && rpcHealth.rateLimitPct >= 0
+      ? rpcHealth.rateLimitPct
+      : null,
+    rpcDropsCount: Number.isSafeInteger(rpcHealth?.failedRpcCount) && rpcHealth.failedRpcCount >= 0
+      ? rpcHealth.failedRpcCount
+      : null,
+  };
+}
+
 export function extractSystemAlerts({
-  gatePassed = true,
-  rpcDropRate = 0,
-  rpcDropsCount = 0,
+  gatePassed = null,
+  rpcDropRate = null,
+  rpcDropsCount = null,
   halted = false,
   haltReason = null,
   feedFresh = true,
@@ -140,16 +157,32 @@ export function extractSystemAlerts({
   blockedExits = [],
 }) {
   const alerts = [];
+  const gateStatus = gatePassed === true ? true : gatePassed === false ? false : null;
+  const dropRateText = typeof rpcDropRate === 'number' && Number.isFinite(rpcDropRate) && rpcDropRate >= 0
+    ? `${rpcDropRate.toFixed(1)}%`
+    : 'Unknown';
+  const dropsCountText = Number.isSafeInteger(rpcDropsCount) && rpcDropsCount >= 0
+    ? String(rpcDropsCount)
+    : 'Unknown';
 
   // 1. Quality Gate Blocked
-  if (!gatePassed) {
+  if (gateStatus === false) {
     alerts.push(createAlert({
       id: 'alert-gate-blocked',
       type: 'quality_gate_blocked',
       severity: ALERT_SEVERITIES.CRITICAL,
       title: 'QUALITY GATE BLOCKED — 24H SOAK PAUSED',
-      message: `${rpcDropRate.toFixed(1)}% candidate drop rate caused by RPC rate limits (${rpcDropsCount} drops).`,
+      message: `${dropRateText} candidate drop rate; ${dropsCountText} observed RPC-related drops.`,
       action: 'Configure dedicated/private RPC and WSS endpoints in .env, then rerun 5m smoke verification.',
+    }));
+  } else if (gateStatus === null) {
+    alerts.push(createAlert({
+      id: 'alert-gate-unverified',
+      type: 'quality_gate_unverified',
+      severity: ALERT_SEVERITIES.WARNING,
+      title: 'QUALITY GATE UNVERIFIED — 24H SOAK NOT CLEARED',
+      message: 'No explicit boolean gate result is available. Missing telemetry is not evidence that the gate passed.',
+      action: 'Restore session telemetry and rerun the quality gate before treating the 24-hour soak as cleared.',
     }));
   }
 
@@ -178,13 +211,13 @@ export function extractSystemAlerts({
   }
 
   // 4. RPC Throttling
-  if (rpcDropRate >= 5 && gatePassed) {
+  if (typeof rpcDropRate === 'number' && Number.isFinite(rpcDropRate) && rpcDropRate >= 5 && gateStatus === true) {
     alerts.push(createAlert({
       id: 'alert-rpc-throttling',
       type: 'rpc_throttle',
       severity: ALERT_SEVERITIES.WARNING,
       title: 'CLUSTER RPC RATE LIMITING (HTTP 429)',
-      message: `Snapshot requests encountering 429 throttling (${rpcDropsCount} drops).`,
+      message: `Snapshot requests report 429 throttling (${dropsCountText} observed drops).`,
       action: 'Switch to a private RPC endpoint or increase redundancy in .env.',
     }));
   }

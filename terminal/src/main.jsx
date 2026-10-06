@@ -18,7 +18,7 @@ import {OperatorEmergencyView} from './components/OperatorEmergencyView.jsx';
 import {formatTime, getFreshnessBadge} from './time-format.js';
 import {loadSavedLayout, saveLayout, LAYOUT_MODES} from './operator-layout.js';
 import {generateIncidentReport} from './incident-report.js';
-import {extractSystemAlerts, groupAlerts, acknowledgeAlert, acknowledgeAllAlerts, getUnacknowledgedCount} from './alert-manager.js';
+import {extractSystemAlerts, readSoakGateEvidence, groupAlerts, acknowledgeAlert, acknowledgeAllAlerts, getUnacknowledgedCount} from './alert-manager.js';
 import React, { useState, useReducer, useEffect, useRef, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Activity, ArrowUpRight, ArrowDownRight, AudioLines, Bell, ChartNoAxesCombined, ChevronRight, CircleHelp, CircleStop, Command, Download, FlaskConical, Gauge, Layers, PanelLeftClose, Play, Radar, RotateCcw, Scale, Settings2, ShieldCheck, Sparkles, Wallet, X, Zap } from 'lucide-react';
@@ -228,12 +228,10 @@ function App(){
  const driftTelemetry = driftMap.get(asset.id) || candidate?.drift || dualSnapshotDrift || null;
  const isFeedStale = Boolean(liveBasket.error) || (liveBasket.at ? Date.now() - liveBasket.at > 5000 : false);
  useEffect(() => {
-    const rpcDropsCount = soakData?.session?.rpcHealth?.failedRpcCount ?? 0;
+    const rpcGateEvidence = readSoakGateEvidence(soakData);
     const feedAge = liveBasket.at ? Math.max(0, Date.now() - liveBasket.at) : null;
     const raw = extractSystemAlerts({
-      gatePassed: soakData?.session?.rpcHealth?.gatePassed ?? (rpcDropsCount === 0),
-      rpcDropRate: soakData?.session?.rpcHealth?.rateLimitPct ?? 0,
-      rpcDropsCount,
+      ...rpcGateEvidence,
       halted: s.halted,
       haltReason: s.haltReason,
       feedFresh: !liveBasket.error && liveBasket.assets.length > 0 && liveBasket.at > 0,

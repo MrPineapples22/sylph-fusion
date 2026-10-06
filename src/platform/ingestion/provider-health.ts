@@ -3,7 +3,7 @@
  * Specifications: Sections 12, 14, 15, 34, 43, 51.
  *
  * Implements:
- * 1. Independent 15-field Provider Capability Model.
+ * 1. Provider Capability Model with separate authentication state and requirement.
  * 2. Strict separation: Transport Reachability != Market Observation Validity.
  * 3. Bounded Rolling-Window Circuit Breaker (CLOSED -> DEGRADED -> OPEN -> PROBING -> RECOVERING -> HEALTHY).
  *    Recovery requires at least 3 consecutive validated observations.
@@ -37,12 +37,20 @@ export type CircuitBreakerState =
   | 'RECOVERING'
   | 'HEALTHY';
 
+type AuthenticationRequirement = 'REQUIRED' | 'NOT_REQUIRED' | 'UNKNOWN';
+function authSatisfied(requirement: AuthenticationRequirement, authenticated: boolean): boolean {
+  return requirement === 'NOT_REQUIRED' || (requirement === 'REQUIRED' && authenticated === true);
+}
+
 export interface ProviderCapabilityStatus {
   readonly providerId: string;
   readonly role: ProviderServiceRole;
   readonly configured: boolean;
   readonly enabled: boolean;
   readonly transportReachable: boolean;
+  /** Unknown defaults fail closed until a provider operation is classified. */
+  readonly authenticationRequirement: AuthenticationRequirement;
+  /** True only when required credentials or identity were actually verified. */
   readonly authenticated: boolean;
   readonly capabilityAvailable: boolean;
   readonly observationValidated: boolean;
@@ -99,6 +107,7 @@ interface ProviderInternalState {
   isAuthoritative: boolean;
   configured: boolean;
   enabled: boolean;
+  authenticationRequirement: AuthenticationRequirement;
   authenticated: boolean;
   transportReachable: boolean;
   observationValidated: boolean;
@@ -164,6 +173,7 @@ export class ProviderHealthTracker {
         isAuthoritative: d.authoritative,
         configured: d.configured,
         enabled: d.enabled,
+        authenticationRequirement: 'UNKNOWN',
         authenticated: d.authenticated,
         transportReachable: false,
         observationValidated: false,
@@ -186,12 +196,21 @@ export class ProviderHealthTracker {
     }
   }
 
-  public setProviderConfiguration(providerId: string, configured: boolean, enabled: boolean, authenticated = false): void {
+  public setProviderConfiguration(
+    providerId: string,
+    configured: boolean,
+    enabled: boolean,
+    authenticated = false,
+    authenticationRequirement: AuthenticationRequirement = 'UNKNOWN',
+  ): void {
     const entry = this.metrics.get(providerId);
     if (!entry) return;
-    (entry as any).configured = configured;
-    (entry as any).enabled = enabled;
-    (entry as any).authenticated = authenticated;
+    (entry as any).configured = configured === true;
+    (entry as any).enabled = enabled === true;
+    entry.authenticationRequirement = authenticationRequirement === 'REQUIRED' || authenticationRequirement === 'NOT_REQUIRED'
+      ? authenticationRequirement
+      : 'UNKNOWN';
+    (entry as any).authenticated = authenticated === true;
   }
 
   public recordTransportReachable(providerId: string, reachable = true): void {
@@ -386,14 +405,14 @@ export class ProviderHealthTracker {
   public isMarketFeedStale(now = Date.now(), thresholdMs = 10_000): boolean {
     // Only check active, configured, authoritative discovery and RPC feeds
     const pump = this.metrics.get('PUMPPORTAL_WS');
-    if (!pump || !pump.configured || !pump.enabled || !pump.authenticated || !pump.observationValidated || !pump.transportReachable ||
+    if (!pump || !pump.configured || !pump.enabled || !authSatisfied(pump.authenticationRequirement, pump.authenticated) || !pump.observationValidated || !pump.transportReachable ||
       pump.lastSuccessMs === 0 ||
         now - pump.lastSuccessMs > thresholdMs ||
         pump.circuitState === 'OPEN' ||
         pump.rateLimitedUntilMs > now) return true;
 
     const rpc = this.metrics.get('SOLANA_RPC');
-    if (!rpc || !rpc.configured || !rpc.enabled || !rpc.authenticated || !rpc.observationValidated || !rpc.transportReachable ||
+    if (!rpc || !rpc.configured || !rpc.enabled || !authSatisfied(rpc.authenticationRequirement, rpc.authenticated) || !rpc.observationValidated || !rpc.transportReachable ||
         rpc.lastSuccessMs === 0 ||
         now - rpc.lastSuccessMs > thresholdMs ||
         rpc.circuitState === 'OPEN' ||
@@ -416,6 +435,7 @@ export class ProviderHealthTracker {
           role: m.role,
           configured: false,
           enabled: false,
+          authenticationRequirement: 'UNKNOWN',
           transportReachable: false,
           authenticated: false,
           capabilityAvailable: false,
@@ -528,9 +548,10 @@ export class ProviderHealthTracker {
         role: m.role,
         configured: m.configured,
         enabled: m.enabled,
+        authenticationRequirement: m.authenticationRequirement,
         transportReachable: m.transportReachable,
         authenticated: m.authenticated,
-        capabilityAvailable: m.configured && m.enabled && m.authenticated && m.transportReachable && m.observationValidated && freshness === 'FRESH' && m.circuitState !== 'OPEN' && now >= m.rateLimitedUntilMs,
+        capabilityAvailable: m.configured && m.enabled && authSatisfied(m.authenticationRequirement, m.authenticated) && m.transportReachable && m.observationValidated && freshness === 'FRESH' && m.circuitState !== 'OPEN' && now >= m.rateLimitedUntilMs,
         observationValidated: m.observationValidated,
         freshness,
         slotLag: m.slotLag,

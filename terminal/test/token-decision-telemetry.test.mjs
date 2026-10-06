@@ -252,3 +252,55 @@ test('syncAssetsToEngine pre-seeds consecutive snapshots from asset history', ()
   assert.equal(drift.passed, true);
   assert.ok(drift.priceDriftBps <= 200);
 });
+
+test('evaluateTokenDecision enforces empirical discovery arrival velocity (<= 1.0s gap)', () => {
+  const asset = {
+    id: 'POOL_VELOCITY',
+    mintAuthority: false,
+    freezeAuthority: false,
+    symbol: 'VELO',
+    price: 0.000015,
+  };
+
+  const validDrift = { passed: true, priceDriftBps: 10, liquidityDropBps: 0, driftBps: 10 };
+  const validCurve = { complete: false, realQuoteReserves: '5000000000' };
+
+  // 1. Slow arrival velocity (> 1.0s gap) must be blocked (expected negative EV from 523k tokens)
+  const slowCandidate = {
+    curve: validCurve,
+    drift: validDrift,
+    medianObsGapSec: 1.45,
+    initialPriceRatio: 1.02,
+  };
+  const slowDecision = evaluateTokenDecision({ asset, candidate: slowCandidate });
+  assert.equal(slowDecision.blocked, true);
+  assert.equal(slowDecision.isHighVelocity, false);
+  assert.equal(slowDecision.decisionBadge, 'DECISION: BLOCKED');
+  assert.match(slowDecision.blockedExplanation, /LOW_ORDER_FLOW_VELOCITY/);
+
+  // 2. Fast arrival velocity (<= 1.0s gap) passes velocity hurdle
+  const fastCandidate = {
+    curve: validCurve,
+    drift: validDrift,
+    medianObsGapSec: 0.62,
+    initialPriceRatio: 1.05,
+  };
+  const fastDecision = evaluateTokenDecision({ asset, candidate: fastCandidate });
+  assert.equal(fastDecision.blocked, false);
+  assert.equal(fastDecision.isHighVelocity, true);
+  assert.equal(fastDecision.decisionBadge, 'DECISION: ELIGIBLE');
+  assert.equal(fastDecision.empiricalExitPolicy.id, 'STAGED_DERISK_2X_TRAIL');
+
+  // 3. Opening price chasing (> 1.15x initial curve price) must be blocked
+  const chasingCandidate = {
+    curve: validCurve,
+    drift: validDrift,
+    medianObsGapSec: 0.50,
+    initialPriceRatio: 1.25,
+  };
+  const chasingDecision = evaluateTokenDecision({ asset, candidate: chasingCandidate });
+  assert.equal(chasingDecision.blocked, true);
+  assert.equal(chasingDecision.isPriceChasing, true);
+  assert.match(chasingDecision.blockedExplanation, /OPENING_PRICE_CHASING/);
+});
+

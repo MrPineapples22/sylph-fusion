@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {join} from 'node:path';
+import {pathToFileURL} from 'node:url';
 
 import { TokenSemanticEngine } from '../../dist/platform/truth/token-semantic-root.js';
 import { MarketAuthenticityEngine } from '../../dist/platform/authenticity/market-authenticity.js';
@@ -9,7 +11,10 @@ import { MarketGrammarEngine } from '../../dist/intelligence/grammar/market-gram
 import { MultiplierResearchHeuristicEngine } from '../../dist/intelligence/multiplier/competing-hazards-multiplier.js';
 import { ExitabilityEngine } from '../../dist/intelligence/exitability/exitability-certificate.js';
 import { MasterOpportunityDecisionEngine } from '../../dist/intelligence/decision/master-opportunity-decision.js';
-import { EnvironmentCertificationEngine } from '../../dist/platform/truth/runtime-program-root.js';
+const runtimeTestDist=process.env.RUNTIME_ROOT_SCHEMA_TEST_DIST;
+const runtimeModule=runtimeTestDist?pathToFileURL(join(runtimeTestDist,'platform/truth/runtime-program-root.js')).href:
+  new URL('../../dist/platform/truth/runtime-program-root.js',import.meta.url).href;
+const {EnvironmentCertificationEngine}=await import(runtimeModule);
 import { UltimateExecutionPermitAuthority } from '../../dist/intelligence/execution/ultimate-execution-permit.js';
 import { UltimateExecutionRecordLedger } from '../../dist/platform/evidence/ultimate-execution-record.js';
 

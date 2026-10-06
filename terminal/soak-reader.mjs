@@ -317,6 +317,29 @@ export async function exportSessionArtifact(sessionsDir, sessionName, format) {
 }
 
 let cachedEngineToken = '';
+function isCurrentEngineState(value) {
+  return Boolean(value && value.connected !== false && (value.limits || value.config));
+}
+
+export function buildRpcStatusPayload(soakData) {
+  const engineIsCurrent = soakData?.engineRunning === true && isCurrentEngineState(soakData?.liveEngine);
+  const rpcHealth = soakData?.liveEngine?.rpcHealth;
+  return {
+    ok: true,
+    engineRunning: engineIsCurrent,
+    rpcEndpoints: engineIsCurrent && Array.isArray(soakData.liveEngine.rpcEndpoints)
+      ? soakData.liveEngine.rpcEndpoints
+      : [],
+    rpcHealth: engineIsCurrent && rpcHealth && typeof rpcHealth === 'object' && !Array.isArray(rpcHealth)
+      ? rpcHealth
+      : null,
+    sessionId: typeof soakData?.session?.sessionDir === 'string' ? soakData.session.sessionDir : null,
+    sessionRpcHealth: soakData?.session?.rpcHealth && typeof soakData.session.rpcHealth === 'object' && !Array.isArray(soakData.session.rpcHealth)
+      ? soakData.session.rpcHealth
+      : null,
+  };
+}
+
 async function fetchLiveEngineState(engineUrl = 'http://127.0.0.1:8787') {
   try {
     if (!cachedEngineToken) {
@@ -364,9 +387,10 @@ export async function readRuntimeConfig(projectRoot, liveEngine = null) {
     }
   }
 
-  const hasLiveEngine = !!(liveEngine && liveEngine.connected !== false && (liveEngine.limits || liveEngine.config));
-  const limits = liveEngine?.limits || {};
-  const engineCfg = liveEngine?.config || {};
+  const hasLiveEngine = isCurrentEngineState(liveEngine);
+  const activeEngine = hasLiveEngine ? liveEngine : null;
+  const limits = activeEngine?.limits || {};
+  const engineCfg = activeEngine?.config || {};
 
   return {
     source: hasLiveEngine ? 'live_engine' : (Object.keys(envConfig).length > 0 ? 'project_env' : 'engine_defaults'),
@@ -388,7 +412,7 @@ export async function readRuntimeConfig(projectRoot, liveEngine = null) {
     MAX_EXPOSURE_LAMPORTS: limits.exposure ? Number(limits.exposure) : (envConfig.MAX_EXPOSURE_LAMPORTS ? Number(envConfig.MAX_EXPOSURE_LAMPORTS) : 100_000_000),
     MIN_BUYERS: envConfig.MIN_BUYERS ? Number(envConfig.MIN_BUYERS) : 5,
     MIN_REAL_RESERVE_LAMPORTS: envConfig.MIN_REAL_RESERVE_LAMPORTS ? Number(envConfig.MIN_REAL_RESERVE_LAMPORTS) : 1_000_000_000,
-    MODE: liveEngine?.mode || envConfig.MODE || 'paper',
+    MODE: activeEngine?.mode || envConfig.MODE || 'paper',
     EXIT_LADDER_STAGES: [12_000, 16_000, 25_000, 60_000, 160_000],
   };
 }
@@ -401,7 +425,7 @@ export async function getSoakTelemetry(projectRoot, requestedSession = null) {
 
   return {
     timestamp: Date.now(),
-    engineRunning: !!liveEngine,
+    engineRunning: isCurrentEngineState(liveEngine),
     liveEngine,
     session: sessionData,
     runtimeConfig,

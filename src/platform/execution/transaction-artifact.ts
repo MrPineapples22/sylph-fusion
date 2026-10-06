@@ -14,6 +14,14 @@ export const transactionHash = (bytes: Uint8Array): string => createHash('sha256
 
 export function decodeSingleSignerMessage(bytes: Uint8Array, signer: PublicKey) {
   const copy = Uint8Array.from(bytes);
+  // Versioned message prefixes set the high bit and store the version in the
+  // low seven bits. This execution boundary deliberately supports only legacy
+  // and v0 until the signer, simulator, and resource policy support v1 together.
+  // Reject unsupported formats before the pinned SDK can collapse them into a
+  // generic deserialization error.
+  if (copy.length > 0 && (copy[0] & 0x80) !== 0 && (copy[0] & 0x7f) !== 0) {
+    throw new Error('TRANSACTION_VERSION_UNSUPPORTED');
+  }
   let message: ReturnType<typeof VersionedMessage.deserialize>;
   try { message = VersionedMessage.deserialize(copy); }
   catch { throw new Error('TRANSACTION_MESSAGE_INVALID'); }

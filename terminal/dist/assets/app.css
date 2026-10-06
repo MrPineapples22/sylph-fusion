@@ -12,14 +12,26 @@
     --color-red-800: oklch(44.4% 0.177 26.899);
     --color-red-950: oklch(25.8% 0.092 26.042);
     --color-amber-400: oklch(82.8% 0.189 84.429);
+    --color-amber-500: oklch(76.9% 0.188 70.08);
+    --color-amber-800: oklch(47.3% 0.137 46.201);
+    --color-amber-950: oklch(27.9% 0.077 45.635);
     --color-emerald-400: oklch(76.5% 0.177 163.223);
     --color-emerald-500: oklch(69.6% 0.17 162.48);
+    --color-emerald-700: oklch(50.8% 0.118 165.612);
     --color-emerald-800: oklch(43.2% 0.095 166.913);
     --color-emerald-950: oklch(26.2% 0.051 172.552);
     --color-cyan-400: oklch(78.9% 0.154 211.53);
     --color-blue-400: oklch(70.7% 0.165 254.624);
     --color-purple-400: oklch(71.4% 0.203 305.504);
+    --color-rose-100: oklch(94.1% 0.03 12.58);
+    --color-rose-300: oklch(81% 0.117 11.638);
     --color-rose-400: oklch(71.2% 0.194 13.428);
+    --color-rose-500: oklch(64.5% 0.246 16.439);
+    --color-rose-600: oklch(58.6% 0.253 17.585);
+    --color-rose-700: oklch(51.4% 0.222 16.935);
+    --color-rose-800: oklch(45.5% 0.188 13.697);
+    --color-rose-900: oklch(41% 0.159 10.272);
+    --color-rose-950: oklch(27.1% 0.105 12.094);
     --color-slate-100: oklch(96.8% 0.007 247.896);
     --color-slate-200: oklch(92.9% 0.013 255.508);
     --color-slate-300: oklch(86.9% 0.022 252.894);
@@ -29,7 +41,6 @@
     --color-slate-700: oklch(37.2% 0.044 257.287);
     --color-slate-800: oklch(27.9% 0.041 260.031);
     --color-slate-900: oklch(20.8% 0.042 265.755);
-    --color-slate-950: oklch(12.9% 0.042 264.695);
     --color-black: #000;
     --color-white: #fff;
     --spacing: 0.25rem;
@@ -443,6 +454,11 @@
     margin-block-start: calc(calc(var(--spacing) * 4) * var(--tw-space-y-reverse));
     margin-block-end: calc(calc(var(--spacing) * 4) * calc(1 - var(--tw-space-y-reverse)));
   }
+  :where(.space-y-5 > :not(:last-child)) {
+    --tw-space-y-reverse: 0;
+    margin-block-start: calc(calc(var(--spacing) * 5) * var(--tw-space-y-reverse));
+    margin-block-end: calc(calc(var(--spacing) * 5) * calc(1 - var(--tw-space-y-reverse)));
+  }
   :where(.space-y-6 > :not(:last-child)) {
     --tw-space-y-reverse: 0;
     margin-block-start: calc(calc(var(--spacing) * 6) * var(--tw-space-y-reverse));
@@ -515,6 +531,9 @@
   .border-\[\#1A2335\] {
     border-color: #1A2335;
   }
+  .border-\[\#1e293b\] {
+    border-color: #1e293b;
+  }
   .border-\[\#1f2937\] {
     border-color: #1f2937;
   }
@@ -523,6 +542,15 @@
   }
   .border-\[\#233142\] {
     border-color: #233142;
+  }
+  .border-amber-500\/70 {
+    border-color: color-mix(in srgb, oklch(76.9% 0.188 70.08) 70%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      border-color: color-mix(in oklab, var(--color-amber-500) 70%, transparent);
+    }
+  }
+  .border-amber-800 {
+    border-color: var(--color-amber-800);
   }
   .border-emerald-500 {
     border-color: var(--color-emerald-500);
@@ -533,11 +561,20 @@
       border-color: color-mix(in oklab, var(--color-emerald-500) 30%, transparent);
     }
   }
+  .border-emerald-700 {
+    border-color: var(--color-emerald-700);
+  }
   .border-emerald-800 {
     border-color: var(--color-emerald-800);
   }
   .border-red-800 {
     border-color: var(--color-red-800);
+  }
+  .border-rose-600 {
+    border-color: var(--color-rose-600);
+  }
+  .border-rose-700 {
+    border-color: var(--color-rose-700);
   }
   .border-slate-700 {
     border-color: var(--color-slate-700);
@@ -587,10 +624,25 @@
   .bg-\[\#121824\] {
     background-color: #121824;
   }
+  .bg-amber-950 {
+    background-color: var(--color-amber-950);
+  }
+  .bg-amber-950\/70 {
+    background-color: color-mix(in srgb, oklch(27.9% 0.077 45.635) 70%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-amber-950) 70%, transparent);
+    }
+  }
   .bg-black\/70 {
     background-color: color-mix(in srgb, #000 70%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
       background-color: color-mix(in oklab, var(--color-black) 70%, transparent);
+    }
+  }
+  .bg-black\/75 {
+    background-color: color-mix(in srgb, #000 75%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-black) 75%, transparent);
     }
   }
   .bg-emerald-500\/10 {
@@ -608,10 +660,25 @@
       background-color: color-mix(in oklab, var(--color-emerald-950) 20%, transparent);
     }
   }
+  .bg-emerald-950\/80 {
+    background-color: color-mix(in srgb, oklch(26.2% 0.051 172.552) 80%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-emerald-950) 80%, transparent);
+    }
+  }
   .bg-red-950\/30 {
     background-color: color-mix(in srgb, oklch(25.8% 0.092 26.042) 30%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
       background-color: color-mix(in oklab, var(--color-red-950) 30%, transparent);
+    }
+  }
+  .bg-rose-900 {
+    background-color: var(--color-rose-900);
+  }
+  .bg-rose-950\/80 {
+    background-color: color-mix(in srgb, oklch(27.1% 0.105 12.094) 80%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-rose-950) 80%, transparent);
     }
   }
   .bg-slate-800 {
@@ -649,9 +716,6 @@
     @supports (color: color-mix(in lab, red, red)) {
       background-color: color-mix(in oklab, var(--color-slate-900) 90%, transparent);
     }
-  }
-  .bg-slate-950 {
-    background-color: var(--color-slate-950);
   }
   .bg-surface\/60 {
     background-color: color-mix(in srgb, #0E131F 60%, transparent);
@@ -808,6 +872,9 @@
   .text-\[\#38bdf8\] {
     color: #38bdf8;
   }
+  .text-\[\#94a3b8\] {
+    color: #94a3b8;
+  }
   .text-\[\#F3F4F6\] {
     color: #F3F4F6;
   }
@@ -844,8 +911,17 @@
   .text-red-300 {
     color: var(--color-red-300);
   }
+  .text-rose-100 {
+    color: var(--color-rose-100);
+  }
+  .text-rose-300 {
+    color: var(--color-rose-300);
+  }
   .text-rose-400 {
     color: var(--color-rose-400);
+  }
+  .text-rose-500 {
+    color: var(--color-rose-500);
   }
   .text-slate-100 {
     color: var(--color-slate-100);
@@ -909,9 +985,15 @@
     transition-timing-function: var(--tw-ease, var(--default-transition-timing-function));
     transition-duration: var(--tw-duration, var(--default-transition-duration));
   }
+  .block-0\/1 {
+    block-size: calc(0 / 1 * 100%);
+  }
   @media (hover: hover) {
     .hover\:bg-\[\#1A2335\]:hover {
       background-color: #1A2335;
+    }
+    .hover\:bg-rose-800:hover {
+      background-color: var(--color-rose-800);
     }
     .hover\:bg-slate-700:hover {
       background-color: var(--color-slate-700);
@@ -4469,6 +4551,14 @@ nav .active,.execution-tabs .active,.tape-tabs .active {
 .gate-blocked .gate-alert-icon {
   color: #FF3B69;
 }
+.gate-unverified {
+  background: linear-gradient(110deg,#FFB80018,#FFB80008);
+  border-color: #FFB8004d;
+  color: #F3F4F6;
+}
+.gate-unverified .gate-alert-icon {
+  color: #FFB800;
+}
 .gate-passed {
   background: linear-gradient(110deg,#14F19518,#14F19508);
   border-color: #14F1954d;
@@ -4636,6 +4726,14 @@ nav .active,.execution-tabs .active,.tape-tabs .active {
   background: #14F1951a;
   color: #14F195;
   border: 1px solid #14F19533;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 9px;
+}
+.tag-unverified {
+  background: #FFB80018;
+  color: #FFB800;
+  border: 1px solid #FFB80033;
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 9px;
@@ -5383,6 +5481,11 @@ nav .active,.execution-tabs .active,.tape-tabs .active {
   color: #FF7595;
   border: 1px solid #FF3B6933;
 }
+.score-unknown {
+  background: #A6B1C418;
+  color: #A6B1C4;
+  border: 1px solid #A6B1C433;
+}
 .clearance-badge-wrap {
   display: flex;
   align-items: center;
@@ -5405,6 +5508,11 @@ nav .active,.execution-tabs .active,.tape-tabs .active {
   background: #14F19518;
   color: #14F195;
   border: 1px solid #14F19533;
+}
+.clearance-unverified {
+  background: #FFB80018;
+  color: #FFB800;
+  border: 1px solid #FFB80033;
 }
 .clearance-blocked {
   background: #FF3B6918;

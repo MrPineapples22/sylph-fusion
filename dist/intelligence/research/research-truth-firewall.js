@@ -17,12 +17,13 @@
  * 3. Any gate failure demotes strategy strictly to RESEARCH_ONLY; zero production capital authority.
  */
 import { hashCanonical } from '../../platform/pipeline/canonical-hashing.js';
+import { types as utilTypes } from 'node:util';
 export class ResearchTruthFirewall {
     /**
      * Evaluates a candidate strategy through the 9 rigorous gates.
      */
     evaluateCandidate(candidate) {
-        this.validateCandidate(candidate);
+        candidate = this.snapshotCandidate(candidate);
         const gates = [];
         // Gate 1: Signal Significance Engine
         const significantCount = candidate.signalSignificanceSamples.filter(s => s.sampleCount > 0 && s.statisticallySignificant && s.pValue <= 0.05 && s.meanFutureReturnBps > s.randomBaselineReturnBps).length;
@@ -121,49 +122,114 @@ export class ResearchTruthFirewall {
             graduationHash,
         });
     }
-    validateCandidate(candidate) {
-        if (!candidate || typeof candidate !== 'object')
-            throw new TypeError('Candidate must be an object');
-        if (typeof candidate.strategyId !== 'string' || candidate.strategyId.trim().length === 0) {
+    snapshotCandidate(candidate) {
+        const candidateKeys = [
+            'strategyId', 'features', 'signalSignificanceSamples', 'temporalLeakageVerified',
+            'knowledgeCutValid', 'recursiveStateStable', 'clusterLeakageClean',
+            'protocolCompatibilityCertified', 'walkForwardFoldsPassed', 'sealedHoldoutPositive',
+            'monteCarloRuinProbabilityPct',
+        ];
+        const sampleKeys = [
+            'featureName', 'sampleCount', 'meanFutureReturnBps', 'randomBaselineReturnBps',
+            'pValue', 'maximumFavorableExcursionBps', 'maximumAdverseExcursionBps',
+            'rugAvoidanceRatePct', 'statisticallySignificant',
+        ];
+        const recordValues = (value, keys, name) => {
+            if (!value || typeof value !== 'object' || Array.isArray(value) || utilTypes.isProxy(value)) {
+                throw new TypeError(`${name} must be a plain data object`);
+            }
+            const prototype = Object.getPrototypeOf(value);
+            if (prototype !== Object.prototype && prototype !== null)
+                throw new TypeError(`${name} must have a plain object prototype`);
+            const ownKeys = Reflect.ownKeys(value);
+            if (ownKeys.length !== keys.length || ownKeys.some(key => typeof key !== 'string' || !keys.includes(key))) {
+                throw new TypeError(`${name} has unknown or missing properties`);
+            }
+            const result = Object.create(null);
+            for (const key of keys) {
+                const descriptor = Object.getOwnPropertyDescriptor(value, key);
+                if (!descriptor || !descriptor.enumerable || !('value' in descriptor)) {
+                    throw new TypeError(`${name}.${key} must be an enumerable own data property`);
+                }
+                result[key] = descriptor.value;
+            }
+            return result;
+        };
+        const arrayValues = (value, name) => {
+            if (!Array.isArray(value) || utilTypes.isProxy(value) || Object.getPrototypeOf(value) !== Array.prototype) {
+                throw new TypeError(`${name} must be a plain array`);
+            }
+            const keys = Reflect.ownKeys(value);
+            if (keys.length !== value.length + 1 || keys.some(key => key !== 'length' && (typeof key !== 'string' || !/^(0|[1-9]\d*)$/.test(key) || Number(key) >= value.length))) {
+                throw new TypeError(`${name} must be a dense array without extra properties`);
+            }
+            const values = [];
+            for (let i = 0; i < value.length; i += 1) {
+                const descriptor = Object.getOwnPropertyDescriptor(value, String(i));
+                if (!descriptor || !descriptor.enumerable || !('value' in descriptor))
+                    throw new TypeError(`${name}[${i}] must be an own data element`);
+                values.push(descriptor.value);
+            }
+            return values;
+        };
+        const candidateRecord = recordValues(candidate, candidateKeys, 'candidate');
+        const rawFeatures = arrayValues(candidateRecord.features, 'candidate.features');
+        if (typeof candidateRecord.strategyId !== 'string' || !candidateRecord.strategyId.trim())
             throw new TypeError('strategyId must be a non-empty string');
-        }
-        if (!Array.isArray(candidate.features) || candidate.features.some(feature => typeof feature !== 'string' || !feature.trim())) {
-            throw new TypeError('features must be an array of non-empty strings');
-        }
-        if (!Array.isArray(candidate.signalSignificanceSamples))
-            throw new TypeError('signalSignificanceSamples must be an array');
+        if (rawFeatures.some(feature => typeof feature !== 'string' || !feature.trim()))
+            throw new TypeError('features must contain non-empty strings');
         const finite = (value, name) => {
             if (typeof value !== 'number' || !Number.isFinite(value))
                 throw new TypeError(`${name} must be finite`);
         };
-        for (const [index, sample] of candidate.signalSignificanceSamples.entries()) {
-            if (!sample || typeof sample.featureName !== 'string' || !sample.featureName.trim())
+        const rawSamples = arrayValues(candidateRecord.signalSignificanceSamples, 'candidate.signalSignificanceSamples');
+        const samples = rawSamples.map((sample, index) => {
+            const record = recordValues(sample, sampleKeys, `sample ${index}`);
+            if (typeof record.featureName !== 'string' || !record.featureName.trim())
                 throw new TypeError(`sample ${index} featureName is invalid`);
-            if (!Number.isSafeInteger(sample.sampleCount) || sample.sampleCount < 0)
-                throw new TypeError(`sample ${index} sampleCount must be a non-negative safe integer`);
+            if (!Number.isSafeInteger(record.sampleCount) || record.sampleCount <= 0)
+                throw new RangeError(`sample ${index} sampleCount must be a positive safe integer`);
             for (const field of ['meanFutureReturnBps', 'randomBaselineReturnBps', 'pValue', 'maximumFavorableExcursionBps', 'maximumAdverseExcursionBps', 'rugAvoidanceRatePct']) {
-                finite(sample[field], `sample ${index} ${field}`);
+                finite(record[field], `sample ${index} ${field}`);
             }
-            if (sample.pValue < 0 || sample.pValue > 1)
+            const pValue = record.pValue;
+            const favorable = record.maximumFavorableExcursionBps;
+            const adverse = record.maximumAdverseExcursionBps;
+            const rugAvoidance = record.rugAvoidanceRatePct;
+            if (pValue < 0 || pValue > 1)
                 throw new RangeError(`sample ${index} pValue must be between 0 and 1`);
-            if (sample.maximumFavorableExcursionBps < 0)
+            if (favorable < 0)
                 throw new RangeError(`sample ${index} maximumFavorableExcursionBps cannot be negative`);
-            if (sample.maximumAdverseExcursionBps > 0)
+            if (adverse > 0)
                 throw new RangeError(`sample ${index} maximumAdverseExcursionBps cannot be positive`);
-            if (sample.rugAvoidanceRatePct < 0 || sample.rugAvoidanceRatePct > 100)
+            if (rugAvoidance < 0 || rugAvoidance > 100)
                 throw new RangeError(`sample ${index} rugAvoidanceRatePct must be between 0 and 100`);
-            if (typeof sample.statisticallySignificant !== 'boolean')
+            if (typeof record.statisticallySignificant !== 'boolean')
                 throw new TypeError(`sample ${index} statisticallySignificant must be boolean`);
-        }
-        for (const field of ['temporalLeakageVerified', 'knowledgeCutValid', 'recursiveStateStable', 'clusterLeakageClean', 'protocolCompatibilityCertified', 'sealedHoldoutPositive']) {
-            if (typeof candidate[field] !== 'boolean')
+            return Object.freeze({ ...record });
+        });
+        const booleans = ['temporalLeakageVerified', 'knowledgeCutValid', 'recursiveStateStable', 'clusterLeakageClean', 'protocolCompatibilityCertified', 'sealedHoldoutPositive'];
+        for (const field of booleans)
+            if (typeof candidateRecord[field] !== 'boolean')
                 throw new TypeError(`${field} must be boolean`);
-        }
-        if (!Number.isSafeInteger(candidate.walkForwardFoldsPassed) || candidate.walkForwardFoldsPassed < 0)
+        if (!Number.isSafeInteger(candidateRecord.walkForwardFoldsPassed) || candidateRecord.walkForwardFoldsPassed < 0)
             throw new RangeError('walkForwardFoldsPassed must be a non-negative safe integer');
-        finite(candidate.monteCarloRuinProbabilityPct, 'monteCarloRuinProbabilityPct');
-        if (candidate.monteCarloRuinProbabilityPct < 0 || candidate.monteCarloRuinProbabilityPct > 100)
+        finite(candidateRecord.monteCarloRuinProbabilityPct, 'monteCarloRuinProbabilityPct');
+        if (candidateRecord.monteCarloRuinProbabilityPct < 0 || candidateRecord.monteCarloRuinProbabilityPct > 100)
             throw new RangeError('monteCarloRuinProbabilityPct must be between 0 and 100');
+        return Object.freeze({
+            strategyId: candidateRecord.strategyId,
+            features: Object.freeze(rawFeatures),
+            signalSignificanceSamples: Object.freeze(samples),
+            temporalLeakageVerified: candidateRecord.temporalLeakageVerified,
+            knowledgeCutValid: candidateRecord.knowledgeCutValid,
+            recursiveStateStable: candidateRecord.recursiveStateStable,
+            clusterLeakageClean: candidateRecord.clusterLeakageClean,
+            protocolCompatibilityCertified: candidateRecord.protocolCompatibilityCertified,
+            walkForwardFoldsPassed: candidateRecord.walkForwardFoldsPassed,
+            sealedHoldoutPositive: candidateRecord.sealedHoldoutPositive,
+            monteCarloRuinProbabilityPct: candidateRecord.monteCarloRuinProbabilityPct,
+        });
     }
 }
 //# sourceMappingURL=research-truth-firewall.js.map

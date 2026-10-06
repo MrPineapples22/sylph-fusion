@@ -52,6 +52,36 @@ export class TxV1TruthEngine {
             throw new Error('TXV1_TRUTH_INVALID_ACCOUNT_KEYS');
         }
         const instructions = [];
+        const innerGroups = raw.innerInstructions ?? null;
+        let innerInstructionTraceStatus = 'UNAVAILABLE';
+        if (innerGroups !== null) {
+            if (!Array.isArray(innerGroups) || innerGroups.length > 256)
+                throw new Error('TXV1_TRUTH_INVALID_INNER_GROUPS');
+            const validatedInnerGroups = innerGroups;
+            const seenGroupIndexes = new Set();
+            let innerInstructionCount = 0;
+            let allStackHeightsKnown = true;
+            for (const group of validatedInnerGroups) {
+                if (!group || !Number.isSafeInteger(group.index) || group.index < 0 || group.index >= raw.compiledInstructions.length ||
+                    seenGroupIndexes.has(group.index) || !Array.isArray(group.instructions)) {
+                    throw new Error('TXV1_TRUTH_INVALID_INNER_GROUP');
+                }
+                seenGroupIndexes.add(group.index);
+                innerInstructionCount += group.instructions.length;
+                if (innerInstructionCount > 16_384)
+                    throw new Error('TXV1_TRUTH_INNER_TRACE_TOO_LARGE');
+                for (const inner of group.instructions) {
+                    const height = inner?.stackHeight;
+                    if (height === undefined || height === null) {
+                        allStackHeightsKnown = false;
+                    }
+                    else if (!Number.isSafeInteger(height) || height < 2 || height > 32) {
+                        throw new Error('TXV1_TRUTH_INVALID_INNER_STACK_HEIGHT');
+                    }
+                }
+            }
+            innerInstructionTraceStatus = allStackHeightsKnown ? 'COMPLETE' : 'PARTIAL';
+        }
         const resolveIndex = (index, kind) => {
             if (!Number.isSafeInteger(index) || index < 0 || index >= accounts.length) {
                 throw new Error(`TXV1_TRUTH_INVALID_${kind}_INDEX: ${String(index)}`);
@@ -111,6 +141,7 @@ export class TxV1TruthEngine {
                         programId: resolveIndex(inner.programIdIndex, 'INNER_PROGRAM'),
                         accounts: inner.accountIndices.map(idx => resolveIndex(idx, 'INNER_ACCOUNT')),
                         data: decodeData(inner),
+                        stackHeight: inner.stackHeight ?? null,
                     });
                 }
             }
@@ -131,6 +162,7 @@ export class TxV1TruthEngine {
             feeLamports: BigInt(feeValue),
             accounts,
             instructions,
+            innerInstructionTraceStatus,
             rawMessageBytes,
             messageHash,
             isSuccess: raw.meta.err === null,

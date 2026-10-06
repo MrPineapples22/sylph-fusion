@@ -118,6 +118,17 @@ import { ConservationProofAuthority, OutcomeMaturityGate } from './conservation-
 import { TradeLearningService } from '../../intelligence/attribution/trade-learning-service.js';
 import { DoubleEntryJournal } from '../ledger/double-entry.js';
 import { RealizedEdgeLedger } from './realized-edge-ledger.js';
+import {
+  PaperAuthorityPolicy,
+  type PaperAuthorityMode,
+  type PaperRiskBypassEvent,
+} from '../paper/paper-authority-policy.js';
+import {
+  ExecutablePaperSimulator,
+  type ExecutablePaperSimulatorInput,
+  type ExecutablePaperSimulatorResult,
+} from '../paper/executable-paper-simulator.js';
+import { AntiPortfolioEngine } from '../../intelligence/research/anti-portfolio.js';
 
 export interface UnifiedIngestInput<TPayload> {
   readonly eventType: string;
@@ -184,7 +195,12 @@ export class UnifiedPipelineUnit {
   public readonly learningService: TradeLearningService;
   public readonly rdGovernor: AutonomousRDGovernorX;
 
-  constructor() {
+  // 6. Paper Authority & Counterfactual Research
+  public paperPolicy: PaperAuthorityPolicy;
+  public readonly paperSimulator: ExecutablePaperSimulator;
+  public readonly antiPortfolio: AntiPortfolioEngine;
+
+  constructor(paperMode: PaperAuthorityMode = 'PAPER_STANDARD') {
     this.journal = new FusionJournal();
     this.certificateChain = new CertificateChain();
     this.revocationRegistry = new AssuranceRevocationRegistry();
@@ -206,6 +222,35 @@ export class UnifiedPipelineUnit {
       minMaturitySlotDelta: 100n,
     });
     this.rdGovernor = new AutonomousRDGovernorX();
+    this.paperPolicy = new PaperAuthorityPolicy(paperMode);
+    this.paperSimulator = new ExecutablePaperSimulator();
+    this.antiPortfolio = new AntiPortfolioEngine();
+  }
+
+  /**
+   * Records a paper risk bypass event in both the counterfactual ledger and canonical journal.
+   */
+  public recordPaperRiskBypass(event: PaperRiskBypassEvent): void {
+    this.paperPolicy.counterfactualLedger.recordBypass(event);
+    this.journal.append({
+      journalEntryId: `entry_bypass_${event.eventId}`,
+      envelopeId: `env_${event.mint ?? 'global'}`,
+      economicFactId: `fact_${event.eventId}`,
+      fromState: 'DECIDED',
+      toState: 'RISK_BYPASSED_PAPER',
+      previousStateRoot: '0000000000000000000000000000000000000000000000000000000000000000',
+      nextStateRoot: createHash('sha256').update(event.eventId).digest('hex'),
+      envelopeRoot: createHash('sha256').update(event.rule).digest('hex'),
+      certificateHash: '0000000000000000000000000000000000000000000000000000000000000000',
+      observedAt: new Date(event.timestamp).toISOString(),
+    });
+  }
+
+  /**
+   * Sets the active paper authority mode (e.g. switches to PAPER_MAX_RISK / PAPER_CHAOS).
+   */
+  public setPaperMode(mode: PaperAuthorityMode): void {
+    this.paperPolicy = new PaperAuthorityPolicy(mode, this.paperPolicy.counterfactualLedger);
   }
 
   /**

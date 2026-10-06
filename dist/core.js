@@ -8,7 +8,16 @@ export function recordResult(state, mint, side, signature, net, pnl) {
 }
 export const mulBps = (x, bps) => x * BigInt(bps) / 10000n;
 export const ceilDiv = (a, b) => (a + b - 1n) / b;
-export function exitDecision(p, value, stopBps) {
+export const EMPIRICAL_STAGED_DERISK_POLICY = {
+    id: 'STAGED_DERISK_2X_TRAIL',
+    name: 'Staged Derisk (50% @ 2.0x, Trail -30%, 3m Max Hold)',
+    targetBps: 20_000,
+    deriskFractionBps: 5000,
+    stopLossBps: 2500,
+    trailStopBps: 3000,
+    maxHoldMs: 180_000,
+};
+export function empiricalExitDecision(p, value, nowMs = Date.now(), policy = EMPIRICAL_STAGED_DERISK_POLICY, isMaxRisk = false) {
     const qty = BigInt(p.qty), initial = BigInt(p.initialQty);
     if (qty <= 0n)
         return null;
@@ -16,17 +25,57 @@ export function exitDecision(p, value, stopBps) {
     const cost = BigInt(p.originalCost), peak = BigInt(p.peak);
     if (p.panic)
         return { fraction: 10_000, stage: p.stage, reason: 'panic' };
-    if (normalized <= mulBps(cost, 10_000 - stopBps))
+    // 1. Time stop: Pre-committed maximum hold to exit before terminal 80.4% post-peak decay
+    if (p.opened && nowMs - p.opened >= policy.maxHoldMs) {
+        return { fraction: 10_000, stage: p.stage, reason: 'time-stop' };
+    }
+    // 2. Hard Stop loss: Sized to bound max loss to pre-committed limit
+    if (!isMaxRisk && normalized <= mulBps(cost, 10_000 - policy.stopLossBps)) {
         return { fraction: 10_000, stage: p.stage, reason: 'stop' };
-    if (p.stage > 0 && normalized <= cost)
+    }
+    // 3. Breakeven floor once stage > 0 (capital reclamation)
+    if (!isMaxRisk && p.stage > 0 && normalized <= cost) {
         return { fraction: 10_000, stage: p.stage, reason: 'breakeven-trigger' };
+    }
+    // 4. Staged Derisk Target: Sell exactly 50% at 2.0x (reclaiming 100% of initial SOL + friction)
+    if (p.stage === 0 && normalized >= mulBps(cost, policy.targetBps)) {
+        return { fraction: policy.deriskFractionBps, stage: 1, reason: 'staged-derisk-take-profit' };
+    }
+    // 5. Trailing stop on remaining runner (-30% from peak)
+    if (!isMaxRisk && p.stage > 0) {
+        const trailFloor = mulBps(peak, 10_000 - policy.trailStopBps);
+        if (normalized <= trailFloor) {
+            return { fraction: 10_000, stage: p.stage, reason: 'trailing-stop' };
+        }
+    }
+    return null;
+}
+export function exitDecision(p, value, stopBps, isMaxRisk = false, nowMs, policy) {
+    if (policy) {
+        return empiricalExitDecision(p, value, nowMs, policy, isMaxRisk);
+    }
+    const qty = BigInt(p.qty), initial = BigInt(p.initialQty);
+    if (qty <= 0n)
+        return null;
+    const normalized = value * initial / qty;
+    const cost = BigInt(p.originalCost), peak = BigInt(p.peak);
+    if (p.panic)
+        return { fraction: 10_000, stage: p.stage, reason: 'panic' };
+    if (!isMaxRisk) {
+        if (normalized <= mulBps(cost, 10_000 - stopBps))
+            return { fraction: 10_000, stage: p.stage, reason: 'stop' };
+        if (p.stage > 0 && normalized <= cost)
+            return { fraction: 10_000, stage: p.stage, reason: 'breakeven-trigger' };
+    }
     const thresholds = [12_000, 16_000, 25_000, 60_000, 160_000];
     if (p.stage < thresholds.length && normalized >= mulBps(cost, thresholds[p.stage]))
         return { fraction: p.stage === 4 ? 10_000 : 5000, stage: p.stage + 1, reason: 'take-profit' };
-    const trail = peak >= cost * 6n ? 4000 : peak >= mulBps(cost, 25_000) ? 3000 : peak >= mulBps(cost, 15_000) ? 2500 : 2000;
-    const floor = peak >= cost * 6n ? mulBps(cost, 20_000) : peak >= mulBps(cost, 25_000) ? mulBps(cost, 15_000) : peak >= mulBps(cost, 15_000) ? mulBps(cost, 12_000) : mulBps(cost, 10_500);
-    if (peak >= mulBps(cost, 12_000) && normalized <= (mulBps(peak, 10_000 - trail) > floor ? mulBps(peak, 10_000 - trail) : floor))
-        return { fraction: 10_000, stage: p.stage, reason: 'trailing-stop' };
+    if (!isMaxRisk) {
+        const trail = peak >= cost * 6n ? 4000 : peak >= mulBps(cost, 25_000) ? 3000 : peak >= mulBps(cost, 15_000) ? 2500 : 2000;
+        const floor = peak >= cost * 6n ? mulBps(cost, 20_000) : peak >= mulBps(cost, 25_000) ? mulBps(cost, 15_000) : peak >= mulBps(cost, 15_000) ? mulBps(cost, 12_000) : mulBps(cost, 10_500);
+        if (peak >= mulBps(cost, 12_000) && normalized <= (mulBps(peak, 10_000 - trail) > floor ? mulBps(peak, 10_000 - trail) : floor))
+            return { fraction: 10_000, stage: p.stage, reason: 'trailing-stop' };
+    }
     return null;
 }
 export function settle(state, tokenDelta, solDelta) {
@@ -144,8 +193,17 @@ export function recordFailure(state, now = Date.now(), windowMs = 3_600_000, lim
     risk.failures = risk.failures.filter(at => now - at <= windowMs);
     risk.failures.push(now);
     if (risk.failures.length >= limit) {
-        state.halted = true;
-        risk.haltReason = `${limit} transaction failures in ${Math.round(windowMs / 60_000)} minutes`;
+        const reason = `${limit} transaction failures in ${Math.round(windowMs / 60_000)} minutes`;
+        risk.haltReason = reason;
+        if (state.mode === 'paper_max_risk' || state.mode === 'paper_chaos') {
+            risk.shadowHalted = true;
+            risk.bypassedHalts ??= [];
+            risk.bypassedHalts.push(`FAILURE_BURST: ${reason}`);
+            log('paper_risk_bypass', { rule: 'TRANSACTION_FAILURE_LIMIT', normalResult: 'DENY', paperMaxRiskResult: 'ATTEMPT', reason });
+        }
+        else {
+            state.halted = true;
+        }
     }
     return state.halted;
 }
@@ -165,8 +223,17 @@ export function recordEquity(state, value, now = Date.now(), windowMs = 3_600_00
     risk.highWater = String(high);
     const water = high;
     if (water > 0n && current * 10000n <= water * BigInt(10_000 - drawdownBps)) {
-        state.halted = true;
-        risk.haltReason = `rolling drawdown reached ${drawdownBps} bps`;
+        const reason = `rolling drawdown reached ${drawdownBps} bps`;
+        risk.haltReason = reason;
+        if (state.mode === 'paper_max_risk' || state.mode === 'paper_chaos') {
+            risk.shadowHalted = true;
+            risk.bypassedHalts ??= [];
+            risk.bypassedHalts.push(`ROLLING_DRAWDOWN: ${reason}`);
+            log('paper_risk_bypass', { rule: 'ROLLING_DRAWDOWN_LIMIT', normalResult: 'DENY', paperMaxRiskResult: 'ATTEMPT', reason });
+        }
+        else {
+            state.halted = true;
+        }
     }
     return state.halted;
 }

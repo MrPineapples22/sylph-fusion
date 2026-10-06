@@ -8,7 +8,7 @@ import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { getPumpProgram, getBuyTokenAmountFromSolAmount, getSellSolAmountFromTokenAmount, PUMP_PROGRAM_ID } from '@pump-fun/pump-sdk';
 import BN from 'bn.js';
 import { config } from '../dist/config.js';
-import { settle, exitDecision, BoundedSet, mulBps, ceilDiv, recordFailure, recordEquity, pruneRiskState } from '../dist/core.js';
+import { settle, exitDecision, empiricalExitDecision, EMPIRICAL_STAGED_DERISK_POLICY, BoundedSet, mulBps, ceilDiv, recordFailure, recordEquity, pruneRiskState } from '../dist/core.js';
 import { atomicArbPreflight, curveScalpDecision, strategyStatuses } from '../dist/strategy.js';
 import { Store } from '../dist/store.js';
 import { Executor, transactionDeltas } from '../dist/execution.js';
@@ -75,6 +75,35 @@ test('runner trailing stop widens at six times original value', () => {
   const p = position(); p.stage = 4; p.peak = '7000';
   assert.equal(exitDecision(p, 4300n, 1200), null);
   assert.equal(exitDecision(p, 4100n, 1200).reason, 'trailing-stop');
+});
+test('empirical exit contract enforces staged 50% derisking at 2.0x, -25% stop, -30% trail, and 3m time-stop', () => {
+  const p = position();
+  p.opened = 100_000;
+  p.originalCost = '1000';
+  p.cost = '1000';
+  p.peak = '1000';
+  p.qty = '1000';
+  p.initialQty = '1000';
+  p.stage = 0;
+
+  // 1. Below -25% loss (value <= 750) triggers hard stop
+  assert.equal(empiricalExitDecision(p, 740n, 100_000).reason, 'stop');
+
+  // 2. Value below 2.0x (e.g. 1500) within 3 minutes returns null (hold)
+  assert.equal(empiricalExitDecision(p, 1500n, 150_000), null);
+
+  // 3. Time elapsed >= 180s (3 minutes) without reaching target triggers time-stop to exit before collapse
+  assert.equal(empiricalExitDecision(p, 1500n, 280_001).reason, 'time-stop');
+
+  // 4. Value reaches 2.0x (2000n) triggers staged derisk: sell exactly 50% (5000 bps)
+  const staged = empiricalExitDecision(p, 2000n, 120_000);
+  assert.deepEqual(staged, { fraction: 5000, stage: 1, reason: 'staged-derisk-take-profit' });
+
+  // 5. After stage advances to 1 and peak was 3000n, trailing stop triggers at -30% (<= 2100n)
+  p.stage = 1;
+  p.peak = '3000';
+  assert.equal(empiricalExitDecision(p, 2500n, 130_000), null); // -16% pull back, hold runner
+  assert.equal(empiricalExitDecision(p, 2050n, 140_000).reason, 'trailing-stop'); // -31% drop from peak, exit runner
 });
 test('basis points and CU fees round conservatively above floating-point precision', () => {
   assert.equal(mulBps(900719925474099312345n, 300), 27021597764222979370n);
@@ -218,6 +247,130 @@ test('RPC failover preserves method and request body', async () => {
   globalThis.fetch = async (url, init) => { calls.push({ url, body: init.body }); if (calls.length === 1) throw new Error('drop'); return new Response(JSON.stringify({ jsonrpc: '2.0', id: JSON.parse(init.body).id, result: 123 })); };
   try { const pool = new RpcPool(cfg()); assert.equal(await pool.connection.getSlot(), 123); assert.equal(calls.length, 2); assert.equal(calls[0].body, calls[1].body); }
   finally { globalThis.fetch = original; }
+});
+test('RPC local rate limiter never sends after every endpoint bucket is saturated', async () => {
+  const original = globalThis.fetch;
+  const pendingResponses = [];
+  const calls = [];
+  let announceStarted;
+  const firstBatchStarted = new Promise(resolve => { announceStarted = resolve; });
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url, body: init.body });
+    if (calls.length <= 60) {
+      if (calls.length === 60) announceStarted();
+      return new Promise(resolve => pendingResponses.push({ resolve, body: init.body }));
+    }
+    return new Response(JSON.stringify({ jsonrpc: '2.0', id: JSON.parse(init.body).id, result: 123 }));
+  };
+  const releasePendingResponses = () => {
+    for (const { resolve, body } of pendingResponses.splice(0)) {
+      resolve(new Response(JSON.stringify({ jsonrpc: '2.0', id: JSON.parse(body).id, result: 123 })));
+    }
+  };
+  try {
+    const pool = new RpcPool(cfg({ RPC_URLS: 'https://one.invalid' }));
+    const firstBatch = Array.from({ length: 60 }, () => pool.connection.getSlot());
+    await firstBatchStarted;
+    const overflow = await Promise.all(Array.from({ length: 20 }, () =>
+      pool.connection.getSlot().then(() => null, error => error)));
+
+    assert.ok(overflow.some(result => result instanceof Error && /locally rate limited/.test(result.message)));
+    assert.ok(calls.length < 80, 'locally denied requests must not reach fetch');
+    assert.equal(pool.getEndpointStats()[0].calls, calls.length);
+    assert.equal(pool.getEndpointStats()[0].errorCount, 0, 'local saturation is not a provider failure');
+    assert.equal(pool.getEndpointStats()[0].drops, 0);
+
+    releasePendingResponses();
+    await Promise.all(firstBatch);
+  } finally {
+    releasePendingResponses();
+    globalThis.fetch = original;
+  }
+});
+test('direct RPC endpoint clients share pacing and telemetry with pooled traffic', async () => {
+  const original = globalThis.fetch;
+  const pendingResponses = [];
+  const calls = [];
+  let announceStarted;
+  const firstBatchStarted = new Promise(resolve => { announceStarted = resolve; });
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url, body: init.body });
+    if (calls.length <= 60) {
+      if (calls.length === 60) announceStarted();
+      return new Promise(resolve => pendingResponses.push({ resolve, body: init.body }));
+    }
+    return new Response(JSON.stringify({ jsonrpc: '2.0', id: JSON.parse(init.body).id, result: 123 }));
+  };
+  const releasePendingResponses = () => {
+    for (const { resolve, body } of pendingResponses.splice(0)) {
+      resolve(new Response(JSON.stringify({ jsonrpc: '2.0', id: JSON.parse(body).id, result: 123 })));
+    }
+  };
+  try {
+    const pool = new RpcPool(cfg({ RPC_URLS: 'https://one.invalid' }));
+    const firstBatch = Array.from({ length: 60 }, () => pool.endpoints[0].getSlot());
+    await firstBatchStarted;
+    const overflow = await Promise.all(Array.from({ length: 20 }, () =>
+      pool.endpoints[0].getSlot().then(() => null, error => error)));
+
+    assert.ok(overflow.some(result => result instanceof Error && /locally rate limited/.test(result.message)));
+    assert.ok(calls.length < 80, 'locally denied direct endpoint calls must not reach fetch');
+    const [stats] = pool.getEndpointStats();
+    assert.equal(stats.calls, calls.length);
+    assert.ok(stats.localRateLimitDenials > 0);
+    assert.equal(stats.errorCount, 0, 'local saturation is not a provider failure');
+    assert.equal(stats.drops, 0);
+
+    releasePendingResponses();
+    await Promise.all(firstBatch);
+  } finally {
+    releasePendingResponses();
+    globalThis.fetch = original;
+  }
+});
+test('RPC 429 telemetry counts one rate-limit response once before failover', async () => {
+  const original = globalThis.fetch; const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push(url);
+    if (calls.length === 1) return new Response('rate limited', { status: 429 });
+    return new Response(JSON.stringify({ jsonrpc: '2.0', id: JSON.parse(init.body).id, result: 123 }));
+  };
+  try {
+    const pool = new RpcPool(cfg());
+    assert.equal(await pool.connection.getSlot(), 123);
+    const stats = pool.getEndpointStats();
+    assert.equal(stats[0].http429Count, 1);
+    assert.equal(stats[0].errorCount, 0);
+    assert.equal(stats[0].drops, 1);
+    assert.equal(stats[1].http429Count, 0);
+    assert.equal(calls.length, 2);
+  } finally { globalThis.fetch = original; }
+});
+test('RPC transport, HTTP, and JSON-RPC failures each count as one drop', async () => {
+  const original = globalThis.fetch;
+  for (const failure of ['transport', 'http', 'json-rpc']) {
+    const calls = [];
+    globalThis.fetch = async (url, init) => {
+      calls.push(url);
+      if (calls.length === 1) {
+        if (failure === 'transport') throw new Error('connection reset');
+        if (failure === 'http') return new Response('upstream error', { status: 503 });
+        return new Response(JSON.stringify({ jsonrpc: '2.0', id: JSON.parse(init.body).id, error: { code: -32000, message: 'node unavailable' } }));
+      }
+      return new Response(JSON.stringify({ jsonrpc: '2.0', id: JSON.parse(init.body).id, result: 123 }));
+    };
+    try {
+      const pool = new RpcPool(cfg());
+      assert.equal(await pool.connection.getSlot(), 123, failure);
+      const first = pool.getEndpointStats()[0];
+      assert.equal(first.errorCount, 1, failure);
+      assert.equal(first.http429Count, 0, failure);
+      assert.equal(first.drops, 1, failure);
+      assert.equal(calls.length, 2, failure);
+    } finally {
+      globalThis.fetch = original;
+    }
+  }
 });
 test('legacy Jito broadcast and identical-wire retries reject before transport', async () => {
   const original = globalThis.fetch; const payloads = [];

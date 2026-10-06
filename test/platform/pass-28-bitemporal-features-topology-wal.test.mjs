@@ -151,7 +151,7 @@ test('PASS-28 REQ-3: ProviderHealthTracker adaptive rate-limit & circuit breaker
 
   try {
     const tracker = new ProviderHealthTracker();
-    tracker.setProviderConfiguration('RUGCHECK_API', true, true, true);
+    tracker.setProviderConfiguration('RUGCHECK_API', true, true, true, 'REQUIRED');
     const now = Date.now();
 
     // 1. Record rate limit with 30s cooldown and persist
@@ -170,7 +170,7 @@ test('PASS-28 REQ-3: ProviderHealthTracker adaptive rate-limit & circuit breaker
 
     // 3. Simulate process restart: new instance hydrated from SQLite WAL
     const restartedTracker = new ProviderHealthTracker();
-    restartedTracker.setProviderConfiguration('RUGCHECK_API', true, true, true);
+    restartedTracker.setProviderConfiguration('RUGCHECK_API', true, true, true, 'REQUIRED');
 
     const allQuotas = await store.getAllProviderQuotas();
     const hydratedCount = restartedTracker.hydrateDurableState(allQuotas);

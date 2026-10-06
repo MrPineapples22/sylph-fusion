@@ -29,6 +29,7 @@ import { SessionReplayViewer } from './SessionReplayViewer.jsx';
 import { SessionComparison } from './SessionComparison.jsx';
 import { ModelDisagreementView } from './ModelDisagreementView.jsx';
 import { ArtifactManifestPanel } from './ArtifactManifestPanel.jsx';
+import { getSoakSessionGateLabel, readSoakQualityScore, readSoakSessionEvidence } from '../soak-session-evidence.js';
 
 const CATEGORY_COLORS = {
   rpc: '#FF3B69',
@@ -94,13 +95,15 @@ export function SoakTelemetry() {
   };
 
   const session = data?.session;
-  const rpcHealth = session?.rpcHealth;
+  const rpcHealth = readSoakSessionEvidence(session?.rpcHealth);
   const taxonomy = session?.rejections?.taxonomy || [];
-  const totalRejections = session?.rejections?.total || 0;
+  const totalRejections = Number.isSafeInteger(session?.rejections?.total) && session.rejections.total >= 0
+    ? session.rejections.total
+    : null;
   const blockedExits = session?.blockedExits;
   const fills = session?.fills;
   const latestCheckpoint = session?.latestCheckpoint;
-  const qualityScore = session?.baselineQualityScore ?? 0;
+  const qualityScore = readSoakQualityScore(session?.baselineQualityScore);
   const availableSessions = session?.availableSessions || [];
 
   const handleExport = (format) => {
@@ -187,29 +190,31 @@ export function SoakTelemetry() {
           <span className="score-label">QUALITY SCORE:</span>
           <b
             className={`font-mono score-val ${
-              qualityScore >= 80 ? 'score-high' : qualityScore >= 50 ? 'score-mid' : 'score-low'
+              qualityScore === null ? 'score-unknown' : qualityScore >= 80 ? 'score-high' : qualityScore >= 50 ? 'score-mid' : 'score-low'
             }`}
           >
-            {qualityScore.toFixed(1)} / 100
+            {qualityScore === null ? 'Unknown' : `${qualityScore.toFixed(1)} / 100`}
           </b>
         </div>
 
-        {/* 24-Hour Soak Clearance */}
+        {/* Session-scoped historical gate result; it is not live run permission. */}
         <div className="clearance-badge-wrap">
-          <span className="clearance-label">24H BASELINE:</span>
+          <span className="clearance-label">SESSION GATE RESULT:</span>
           <span
             className={`soak-clearance-pill ${
-              session?.soakStatus === 'APPROVED' ? 'clearance-approved' : 'clearance-blocked'
+              rpcHealth?.gatePassed === true ? 'clearance-approved' : rpcHealth?.gatePassed === false ? 'clearance-blocked' : 'clearance-unverified'
             }`}
           >
-            {session?.soakStatus === 'APPROVED' ? (
+            {rpcHealth?.gatePassed === true ? (
               <>
-                <CheckCircle2 size={12} /> APPROVED TO RUN
+                <CheckCircle2 size={12} /> PASSED · SESSION RESULT
+              </>
+            ) : rpcHealth?.gatePassed === false ? (
+              <>
+                <ShieldAlert size={12} /> BLOCKED · SESSION RESULT
               </>
             ) : (
-              <>
-                <ShieldAlert size={12} /> BLOCKED (429 DROPS)
-              </>
+              <><ShieldAlert size={12} /> UNVERIFIED</>
             )}
           </span>
         </div>
@@ -241,23 +246,23 @@ export function SoakTelemetry() {
       </div>
 
       {/* Quality Gate Status Alert */}
-      {rpcHealth && (
+      {(
         <div
-          className={`gate-alert ${rpcHealth.gatePassed ? 'gate-passed' : 'gate-blocked'}`}
+          className={`gate-alert ${rpcHealth?.gatePassed === true ? 'gate-passed' : rpcHealth?.gatePassed === false ? 'gate-blocked' : 'gate-unverified'}`}
           role="region"
-          aria-label="Soak quality gate status"
+          aria-label="Selected session quality gate result"
         >
           <div className="gate-alert-icon">
-            {rpcHealth.gatePassed ? <CheckCircle2 size={20} /> : <ShieldAlert size={20} />}
+            {rpcHealth?.gatePassed === true ? <CheckCircle2 size={20} /> : <ShieldAlert size={20} />}
           </div>
           <div className="gate-alert-content">
             <div className="gate-alert-title">
-              <b>{rpcHealth.gatePassed ? 'QUALITY GATE PASSED' : 'QUALITY GATE BLOCKED — PRIVATE RPC REQUIRED'}</b>
+              <b>{rpcHealth?.gatePassed === true ? 'SESSION GATE RESULT: PASSED' : rpcHealth?.gatePassed === false ? 'SESSION GATE RESULT: BLOCKED' : 'SESSION GATE RESULT: UNVERIFIED'}</b>
               <span className="gate-metric font-mono">
-                {rpcHealth.rateLimitPct}% Rate-Limit Rejections ({rpcHealth.failedRpcCount} / {totalRejections})
+                {rpcHealth?.rateLimitPct ?? 'Unknown'}{rpcHealth?.rateLimitPct != null ? '%' : ''} Rate-Limit Rejections ({rpcHealth?.failedRpcCount ?? 'Unknown'} / {totalRejections ?? 'Unknown'})
               </span>
             </div>
-            <p>{rpcHealth.alert}</p>
+            <p>{rpcHealth?.alert || 'This selected session has no explicit gate explanation. Session history is not live run permission.'}</p>
           </div>
         </div>
       )}
@@ -354,7 +359,7 @@ export function SoakTelemetry() {
           return (
             <RpcComparisonPanel
               rpcEndpoints={data?.liveEngine?.rpcEndpoints}
-              rpcHealth={session?.rpcHealth}
+              rpcHealth={rpcHealth}
               onRefresh={() => fetchTelemetry()}
               isDisconnected={isDisconnected}
             />
@@ -501,29 +506,29 @@ export function SoakTelemetry() {
               </div>
               <span
                 className={`tag font-mono ${
-                  rpcHealth?.failedRpcCount > 0 ? 'tag-warn' : 'tag-good'
+                  rpcHealth?.failedRpcCount > 0 ? 'tag-warn' : rpcHealth?.failedRpcCount === 0 ? 'tag-good' : 'tag-unverified'
                 }`}
               >
-                {rpcHealth?.failedRpcCount > 0 ? 'RATE LIMITED' : 'OPTIMAL'}
+                {rpcHealth?.failedRpcCount > 0 ? 'RATE LIMITED' : rpcHealth?.failedRpcCount === 0 ? 'NO RECORDED DROPS' : 'UNAVAILABLE'}
               </span>
             </header>
             <div className="rpc-stats-grid">
               <div className="rpc-stat">
                 <small>429 Drops</small>
-                <b className={rpcHealth?.failedRpcCount > 0 ? 'negative' : 'positive'}>
-                  {rpcHealth?.failedRpcCount ?? 0}
+                <b className={rpcHealth?.failedRpcCount > 0 ? 'negative' : rpcHealth?.failedRpcCount === 0 ? 'positive' : 'text-muted'}>
+                  {rpcHealth?.failedRpcCount ?? 'Unknown'}
                 </b>
               </div>
               <div className="rpc-stat">
                 <small>Drop Rate</small>
-                <b className={rpcHealth?.rateLimitPct >= 5 ? 'negative' : 'positive'}>
-                  {rpcHealth?.rateLimitPct ?? 0}%
+                <b className={rpcHealth?.rateLimitPct >= 5 ? 'negative' : rpcHealth?.rateLimitPct !== null && rpcHealth?.rateLimitPct !== undefined ? 'positive' : 'text-muted'}>
+                  {rpcHealth?.rateLimitPct ?? 'Unknown'}{rpcHealth?.rateLimitPct != null ? '%' : ''}
                 </b>
               </div>
               <div className="rpc-stat">
                 <small>24h Gate</small>
-                <b className={rpcHealth?.gatePassed ? 'positive' : 'negative'}>
-                  {rpcHealth?.gatePassed ? 'PASSED' : 'HELD'}
+                <b className={rpcHealth?.gatePassed === true ? 'positive' : rpcHealth?.gatePassed === false ? 'negative' : 'text-muted'}>
+                  {getSoakSessionGateLabel(rpcHealth?.gatePassed)}
                 </b>
               </div>
             </div>

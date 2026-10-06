@@ -1,0 +1,1 @@
+export * from '../../../../../dist/platform/truth/runtime-program-root.js';

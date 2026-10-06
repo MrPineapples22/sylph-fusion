@@ -24,8 +24,8 @@ test('economic event spine rejects impossible provenance and tampering', () => {
   const spine = new EconomicEventSpine();
   assert.throws(() => spine.append({ certificateId: 'cert-1', kind: 'QUOTE', occurredAtMs: 10, provenance: provenance(11), payload: {} }), /OCCURRED_BEFORE_OBSERVED/);
   const event = spine.append({ certificateId: 'cert-1', kind: 'QUOTE', occurredAtMs: 20, provenance: provenance(10), payload: {} });
-  event.payload.mutated = true;
-  assert.equal(spine.verify('cert-1'), false);
+  assert.throws(() => { event.payload.mutated = true; }, TypeError);
+  assert.equal(spine.verify('cert-1'), true);
 });
 
 test('opportunity set snapshots preserve cash, candidate identity, and integrity', () => {

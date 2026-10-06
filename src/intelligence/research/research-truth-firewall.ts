@@ -242,6 +242,9 @@ export class ResearchTruthFirewall {
     const rawFeatures = arrayValues(candidateRecord.features, 'candidate.features');
     if (typeof candidateRecord.strategyId !== 'string' || !candidateRecord.strategyId.trim()) throw new TypeError('strategyId must be a non-empty string');
     if (rawFeatures.some(feature => typeof feature !== 'string' || !feature.trim())) throw new TypeError('features must contain non-empty strings');
+    const finite = (value: unknown, name: string): void => {
+      if (typeof value !== 'number' || !Number.isFinite(value)) throw new TypeError(`${name} must be finite`);
+    };
     const rawSamples = arrayValues(candidateRecord.signalSignificanceSamples, 'candidate.signalSignificanceSamples');
     const samples = rawSamples.map((sample, index) => {
       const record = recordValues(sample, sampleKeys, `sample ${index}`);
@@ -261,9 +264,6 @@ export class ResearchTruthFirewall {
       if (typeof record.statisticallySignificant !== 'boolean') throw new TypeError(`sample ${index} statisticallySignificant must be boolean`);
       return Object.freeze({ ...record }) as unknown as SignalSignificanceMetrics;
     });
-    const finite = (value: number, name: string): void => {
-      if (typeof value !== 'number' || !Number.isFinite(value)) throw new TypeError(`${name} must be finite`);
-    };
     const booleans = ['temporalLeakageVerified', 'knowledgeCutValid', 'recursiveStateStable', 'clusterLeakageClean', 'protocolCompatibilityCertified', 'sealedHoldoutPositive'] as const;
     for (const field of booleans) if (typeof candidateRecord[field] !== 'boolean') throw new TypeError(`${field} must be boolean`);
     if (!Number.isSafeInteger(candidateRecord.walkForwardFoldsPassed) || (candidateRecord.walkForwardFoldsPassed as number) < 0) throw new RangeError('walkForwardFoldsPassed must be a non-negative safe integer');

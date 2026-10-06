@@ -7,6 +7,7 @@ import {
   acknowledgeAllAlerts,
   getUnacknowledgedCount,
   extractSystemAlerts,
+  readSoakGateEvidence,
   ALERT_SEVERITIES,
 } from '../src/alert-manager.js';
 
@@ -107,4 +108,38 @@ test('extractSystemAlerts maps engine state to correct alert severities', () => 
   const curveComp = alerts.find(a => a.type === 'curve_completed');
   assert.ok(curveComp);
   assert.equal(curveComp.severity, ALERT_SEVERITIES.INFO);
+});
+
+test('missing or malformed gate telemetry stays unverified instead of becoming a pass or measured zero', () => {
+  for (const gatePassed of [undefined, null, 'true', 0]) {
+    const alerts = extractSystemAlerts({ gatePassed });
+    const gateAlert = alerts.find(alert => alert.type.startsWith('quality_gate_'));
+    assert.equal(gateAlert?.type, 'quality_gate_unverified');
+    assert.match(gateAlert.message, /Missing telemetry is not evidence/);
+    assert.doesNotMatch(gateAlert.message, /0\.0%|0 observed/);
+  }
+  const explicitPass = extractSystemAlerts({ gatePassed: true });
+  assert.equal(explicitPass.some(alert => alert.type.startsWith('quality_gate_')), false);
+  const measuredFailure = extractSystemAlerts({ gatePassed: false, rpcDropRate: 2.5, rpcDropsCount: 4 });
+  const blocked = measuredFailure.find(alert => alert.type === 'quality_gate_blocked');
+  assert.match(blocked.message, /2\.5%/);
+  assert.match(blocked.message, /4 observed/);
+  const unknownFailureMetrics = extractSystemAlerts({ gatePassed: false })
+    .find(alert => alert.type === 'quality_gate_blocked');
+  assert.match(unknownFailureMetrics.message, /Unknown candidate drop rate; Unknown observed RPC-related drops/);
+});
+
+test('soak gate extraction preserves only explicit boolean and valid numeric evidence', () => {
+  assert.deepEqual(readSoakGateEvidence(null), {gatePassed:null,rpcDropRate:null,rpcDropsCount:null});
+  assert.deepEqual(readSoakGateEvidence({session:{rpcHealth:{}}}), {gatePassed:null,rpcDropRate:null,rpcDropsCount:null});
+  assert.deepEqual(readSoakGateEvidence({engineRunning:false,session:{rpcHealth:{gatePassed:true,rateLimitPct:0,failedRpcCount:0}}}),
+    {gatePassed:null,rpcDropRate:null,rpcDropsCount:null});
+  assert.deepEqual(readSoakGateEvidence({engineRunning:true,liveEngine:{connected:false,rpcHealth:{gatePassed:true,rateLimitPct:0,failedRpcCount:0}}}),
+    {gatePassed:null,rpcDropRate:null,rpcDropsCount:null});
+  assert.deepEqual(readSoakGateEvidence({engineRunning:true,liveEngine:{rpcHealth:{gatePassed:true,rateLimitPct:0,failedRpcCount:0}}}),
+    {gatePassed:true,rpcDropRate:0,rpcDropsCount:0});
+  for (const bad of ['0',-1,Infinity,NaN]) {
+    assert.deepEqual(readSoakGateEvidence({engineRunning:true,liveEngine:{rpcHealth:{gatePassed:'true',rateLimitPct:bad,failedRpcCount:bad}}}),
+      {gatePassed:null,rpcDropRate:null,rpcDropsCount:null});
+  }
 });

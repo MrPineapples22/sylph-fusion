@@ -1,0 +1,26 @@
+{
+  "provenance": {
+    "classification": "LOCAL_CANDIDATE_COMPATIBILITY_BASELINE_NOT_RELEASED_HISTORICAL_FIXTURE",
+    "repositoryHead": "f997114562617348fca58bec8db0174546d4d8a7",
+    "workingTree": "dirty; exact source fixture is identified by source and compiled output hashes below",
+    "sourcePath": "src/platform/simulation/simulation-certificate.ts",
+    "sourceSha256": "FE072C2D69ACB3B63F41CFBE54B6956588537E89A09640442A8897E43963A259",
+    "compiledVerifierPath": "dist/platform/simulation/simulation-certificate.js",
+    "compiledVerifierSha256": "767FA04DFDF5220836438498EDC1A6CF9CF80E89DB6318AAA0AD490F8D59D2A6",
+    "generatedWith": "SimulationCertificateBuilder from the identified local candidate. The 2.0.0 fixture is the candidate's 2.1.0 output with schemaVersion changed to 2.0.0, cpiTraceStatus removed, and evidenceHash recomputed using the candidate's existing canonical codec. It is a compatibility vector only, not evidence of a historical 2.0 producer.",
+    "oldVerifierOracleResult": "Both fixtures returned true under the exact compiled verifier identified above before any 2.2 implementation.",
+    "historicalCompatibility": "UNVERIFIED; GitHub main at the recorded HEAD is schema 1.0.0 and no released 2.0.0/2.1.0 fixtures were located."
+  },
+  "fixtures": {
+    "2.0.0": {
+      "path": "simulation-certificate-local-v2.0.0.json",
+      "sha256": "80091AA65C5D2B184617A3020C248782F55AC317A5D558C2BAD9A54EBFC61E13",
+      "evidenceHash": "aa28080109c878c591b130013b768a062abc24a720d0c76b69cc5460eb25402d"
+    },
+    "2.1.0": {
+      "path": "simulation-certificate-local-v2.1.0.json",
+      "sha256": "FEDFB4EF8765D1902B152E06CDB27BE033E80CFA5A426EA564907F440A3016CF",
+      "evidenceHash": "e90c65cccf6351c15faf9c84412dd61e366187eb7c2c1f89da50e5cd51c469d0"
+    }
+  }
+}
