@@ -45,6 +45,7 @@ import type {
   ValidatedFusionEnvelope,
   ValidatedFusionEnvelopeData,
 } from './types.js';
+import { isObservationCreatedByFactory } from './observation-factory.js';
 
 export interface FusionEnvelopeCompiler {
   compile(observation: UnvalidatedObservation): Promise<CompiledFusionEnvelope> | CompiledFusionEnvelope;
@@ -70,7 +71,7 @@ export interface IngressDurableJournal {
 
 export interface AuditEventJournal {
   appendAuditEvent(event: string, payload: Readonly<Record<string, unknown>>, stableEventId?: string): Promise<{ inserted: boolean; auditId?: number }>;
-  getAuditEvents(event: string, limit?: number): Promise<readonly { id: number; at: number; event: string; body: string }[]>;
+  getAuditEventByStableId(stableEventId: string): Promise<{ id: number; at: number; event: string | null; body: string | null; pruned?: boolean; eventHash?: string } | null>;
 }
 
 export interface CanonicalIngressOptions {
@@ -93,6 +94,7 @@ export class CanonicalIngress implements ObservationIngressPort {
   private readonly subscribers: Array<(committed: CommittedEnvelope) => Promise<void> | void> = [];
   private readonly seenObservations = new Set<string>();
   private readonly pendingDeliveries = new Map<string, CommittedEnvelope>();
+  private readonly authenticCommittedEnvelopes = new WeakSet<object>();
   private deliveryCursor = 0;
   private deliveryMutex: Promise<void> = Promise.resolve();
 
@@ -110,8 +112,12 @@ export class CanonicalIngress implements ObservationIngressPort {
     this.subscribers.push(subscriber);
   }
 
+  public issued(committed: unknown): committed is CommittedEnvelope {
+    return !!committed && typeof committed === 'object' && this.authenticCommittedEnvelopes.has(committed as object);
+  }
+
   public async submit(observation: UnvalidatedObservation): Promise<IngressReceipt> {
-    if (!observation || typeof observation !== 'object') {
+    if (!isObservationCreatedByFactory(observation)) {
       return {
         status: 'REJECTED',
         observationId: '0'.repeat(64) as Hash256,
@@ -222,6 +228,7 @@ export class CanonicalIngress implements ObservationIngressPort {
     };
 
     const committed = Object.freeze(committedData) as CommittedEnvelope;
+    this.authenticCommittedEnvelopes.add(committed);
 
     // 7. Authoritatively commit deduplication state
     this.seenObservations.add(observation.observationId);
@@ -229,13 +236,17 @@ export class CanonicalIngress implements ObservationIngressPort {
     // 8. Downstream Authoritative Notification
     // Invariant: Strictly executed ONLY AFTER durable journal commit.
     this.pendingDeliveries.set(observation.observationId, committed);
-    await this.deliverPending(observation.observationId);
+    const delivered = await this.deliverPending(observation.observationId);
 
-    return {
+    return delivered ? {
       status: 'ACCEPTED',
       observationId: observation.observationId,
       journalSeq: committed.journalSeq,
       envelopeHash: committed.envelopeHash,
+    } : {
+      status: 'REJECTED',
+      observationId: observation.observationId,
+      reason: 'COMMITTED_DELIVERY_PENDING_RETRY',
     };
   }
 
@@ -348,9 +359,9 @@ export class DefaultTruthValidator implements TruthValidator {
       validatorVersion: this.validatorVersion,
       validatedAtMs: Date.now(),
       rawPayloadHash: obs.rawPayloadHash,
-      signatureVerified: obs.signature !== null && obs.signature.length >= 16,
+      signatureVerified: false,
       schemaCompliant: true,
-      verificationMethod: 'PAYLOAD_DIGEST_AND_METADATA_INTEGRITY',
+      verificationMethod: 'OBSERVATION_HASH_AND_LOG_DECODING_ONLY',
     };
 
     const validationId = createHash('sha256')
@@ -407,8 +418,17 @@ export class SolanaLogFusionEnvelopeCompiler implements FusionEnvelopeCompiler {
     } catch {
       throw new Error('SOLANA_LOGS_INVALID_JSON: Failed to parse raw logs JSON');
     }
-    if (!Array.isArray(logs)) {
-      throw new Error('SOLANA_LOGS_INVALID_PAYLOAD: Expected string array of logs');
+    if (observation.schemaVersion === 'yellowstone-update-json/v1') {
+      logs = logs?.transaction?.transaction?.meta?.logMessages;
+    } else if (observation.schemaVersion === 'solana-json-rpc-frame/v1') {
+      logs = logs?.params?.result?.value?.logs;
+    } else if (observation.schemaVersion !== 'solana-program-logs/v1' || !Array.isArray(logs)) {
+      logs = null;
+    } else {
+      // Canonical logs representation used by explicit replay fixtures.
+    }
+    if (!Array.isArray(logs) || logs.length > 100_000 || logs.some(line => typeof line !== 'string')) {
+      throw new Error('SOLANA_LOGS_INVALID_PAYLOAD: Expected bounded string array of logs');
     }
 
     const decodedEvents: any[] = [];
@@ -447,8 +467,6 @@ export interface CreateCanonicalSolanaIngressOptions {
   durability?: DurabilityBarrier;
   onCommitted?: (committed: CommittedEnvelope) => Promise<void> | void;
 }
-
-export const TEST_INGRESS_JOURNAL = new InMemoryIngressJournal();
 
 /** Adapts the Store audit transaction to the ingress journal contract. The resolved Store
  * acknowledgement follows SQLite COMMIT with WAL + synchronous=FULL, so downstream work
@@ -496,7 +514,15 @@ export class StoreIngressJournal implements IngressDurableJournal {
     const stableEventId = `ingress:${observation.observationId}`;
     const canonicalPayload = JSON.stringify(payload);
     const entryHash = createHash('sha256').update(canonicalPayload).digest('hex') as Hash256;
-    const result = await this.store.appendAuditEvent('canonical_ingress_committed_v1', { ...payload, entryHash }, stableEventId);
+    let result: { inserted: boolean; auditId?: number };
+    try {
+      result = await this.store.appendAuditEvent('canonical_ingress_committed_v1', { ...payload, entryHash }, stableEventId);
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== 'DUPLICATE_EVENT_ID_CONTENT_CONFLICT') throw error;
+      const existing = await this.findByObservationId(observation.observationId);
+      if (!existing) throw error;
+      return existing;
+    }
     if (!result.inserted && result.auditId === undefined) throw new Error('INGRESS_JOURNAL_ID_MISSING');
     const sequence = result.auditId;
     if (!Number.isSafeInteger(sequence) || sequence! <= 0) throw new Error('INGRESS_JOURNAL_SEQUENCE_INVALID');
@@ -504,15 +530,20 @@ export class StoreIngressJournal implements IngressDurableJournal {
   }
 
   async findByObservationId(observationId: string): Promise<IngressJournalRecord | null> {
-    const rows = await this.store.getAuditEvents('canonical_ingress_committed_v1', 10_000);
-    for (const row of rows) {
+    const row = await this.store.getAuditEventByStableId(`ingress:${observationId}`);
+    if (row?.pruned) {
+      if (typeof row.eventHash !== 'string' || !/^[a-f0-9]{64}$/.test(row.eventHash)) throw new Error('INGRESS_JOURNAL_DEDUPE_ROW_INVALID');
+      return { sequence: BigInt(row.id), entryHash: row.eventHash as Hash256 };
+    }
+    for (const candidate of row ? [row] : []) {
+      if (candidate.body === null) continue;
       let payload: any;
-      try { payload = JSON.parse(row.body); } catch { throw new Error('INGRESS_JOURNAL_ROW_INVALID'); }
+      try { payload = JSON.parse(candidate.body); } catch { throw new Error('INGRESS_JOURNAL_ROW_INVALID'); }
       if (payload?.observationId === observationId) {
         if (typeof payload.entryHash !== 'string' || !/^[a-f0-9]{64}$/.test(payload.entryHash)) throw new Error('INGRESS_JOURNAL_ROW_INVALID');
         const { entryHash, ...entryPayload } = payload;
         if (createHash('sha256').update(JSON.stringify(entryPayload)).digest('hex') !== entryHash) throw new Error('INGRESS_JOURNAL_HASH_MISMATCH');
-        return { sequence: BigInt(row.id), entryHash: payload.entryHash as Hash256 };
+        return { sequence: BigInt(candidate.id), entryHash: payload.entryHash as Hash256 };
       }
     }
     return null;
@@ -520,7 +551,7 @@ export class StoreIngressJournal implements IngressDurableJournal {
 }
 
 export function createCanonicalSolanaIngress(
-  options: CreateCanonicalSolanaIngressOptions = { journal: TEST_INGRESS_JOURNAL }
+  options: CreateCanonicalSolanaIngressOptions
 ): CanonicalIngress {
   const compiler = new SolanaLogFusionEnvelopeCompiler(options.connectionOrCoder);
   const validator = new DefaultTruthValidator();
@@ -556,3 +587,5 @@ export class InMemoryIngressJournal implements IngressDurableJournal {
     };
   }
 }
+
+export const TEST_INGRESS_JOURNAL = new InMemoryIngressJournal();

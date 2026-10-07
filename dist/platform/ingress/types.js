@@ -10,5 +10,5 @@
  * 4. Only FSYNC_COMMITTED durability creates a CommittedEnvelope.
  * 5. General callers cannot construct authoritative types through exported constructors.
  */
-export {};
+export const FSYNC_COMMITTED = 'FSYNC_COMMITTED';
 //# sourceMappingURL=types.js.map

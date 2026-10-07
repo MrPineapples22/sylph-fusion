@@ -76,6 +76,12 @@ export class Store {
         const text = await this.call('get-audit-events', JSON.stringify({ event, limit }));
         return Object.freeze(text ? JSON.parse(text) : []);
     }
+    async getAuditEventByStableId(stableEventId) {
+        if (typeof stableEventId !== 'string' || !/^[a-zA-Z0-9_\-:]{1,128}$/.test(stableEventId))
+            throw new Error('Invalid audit event id');
+        const text = await this.call('get-audit-event-by-stable-id', stableEventId);
+        return text ? JSON.parse(text) : null;
+    }
     async registerInitialGeneration(input) {
         const request = snapshotRegistration(input);
         return JSON.parse((await this.call('register-initial-generation', JSON.stringify(request))));

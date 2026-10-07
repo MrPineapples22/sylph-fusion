@@ -13,8 +13,9 @@ import { exitDecision, log, mulBps, settle, recordFailure, recordEquity, pruneRi
 import { startDashboard } from './dashboard.js';
 import { RpcPool } from './rpc.js';
 import { Feed, type MarketEvent } from './feed.js';
-import { CanonicalIngress, createCanonicalSolanaIngress, StoreIngressJournal, TEST_INGRESS_JOURNAL } from './platform/ingress/canonical-ingress.js';
+import { CanonicalIngress, createCanonicalSolanaIngress, StoreIngressJournal } from './platform/ingress/canonical-ingress.js';
 import type { CommittedEnvelope, UnvalidatedObservation } from './platform/ingress/types.js';
+import { CanonicalReducer, type FusionStateRootV2, type StateTransitionProof } from './platform/reducer/index.js';
 import { Market, type Snapshot } from './market.js';
 import { Executor } from './execution.js';
 import { type ExecutionAuthority, SimulationExecutionAuthority, LiveExecutionAuthority, simulationExecutionCosts, simulationSellProceeds } from './platform/execution/authority.js';
@@ -216,6 +217,7 @@ export function checkCandidateReserveDrift(
   return { passed: true, priceDriftBps, liquidityDropBps, driftBps, direction };
 }
 export class Engine {
+  readonly #ingress: CanonicalIngress;
   private candidates = new Map<string, Candidate>();
   private stopped = false;
   private lastHealth = 0;
@@ -242,10 +244,20 @@ export class Engine {
   private lastCheckpoint = Date.now();
   private nextResearchSpoolDrainAt = 0;
   private nextResearchLossMarkerSaveAt = 0;
+  private canonicalState: FusionStateRootV2 = CanonicalReducer.createGenesisState();
+  private lastTransitionProof: StateTransitionProof | null = null;
   readonly feed: Feed;
-  readonly ingress: CanonicalIngress;
+  get ingress(): CanonicalIngress { return this.#ingress; }
   readonly runtimeUnit: UnifiedPipelineUnit;
   divergenceAuditor?: RuntimeDivergenceAuditor;
+
+  public getCanonicalState(): FusionStateRootV2 {
+    return this.canonicalState;
+  }
+
+  public getLastTransitionProof(): StateTransitionProof | null {
+    return this.lastTransitionProof;
+  }
   constructor(
     readonly cfg: Config,
     readonly rpc: RpcPool,
@@ -259,14 +271,20 @@ export class Engine {
     runtimeUnit?: UnifiedPipelineUnit,
     divergenceAuditor?: RuntimeDivergenceAuditor,
     readonly researchSpool?: DurableResearchSpool,
-    ingress: CanonicalIngress = createCanonicalSolanaIngress({ journal: TEST_INGRESS_JOURNAL }),
-    feed: Feed = new Feed(cfg, rpc.connection, ingress),
+    ingress?: CanonicalIngress,
+    feed?: Feed,
   ) {
-    this.ingress = ingress;
-    this.ingress.subscribe(async (committed: CommittedEnvelope) => {
+    if (ingress) {
+      this.#ingress = ingress;
+    } else if (store && typeof (store as any).appendAuditEvent === 'function') {
+      this.#ingress = createCanonicalSolanaIngress({ journal: new StoreIngressJournal(store as any) });
+    } else {
+      throw new Error('INGRESS_DURABLE_JOURNAL_REQUIRED');
+    }
+    this.#ingress.subscribe(async (committed: CommittedEnvelope) => {
       await this.onCommitted(committed);
     });
-    this.feed = feed;
+    this.feed = feed ?? new Feed(cfg, rpc.connection, this.#ingress);
     this.feed.gapReconciler.setRecoveryCertificateJournal({
       saveVerifiedRecoveryCertificate: certificate => {
         const journal = this.store as Store & { saveVerifiedRecoveryCertificate?: Store['saveVerifiedRecoveryCertificate'] };
@@ -883,7 +901,14 @@ export class Engine {
     };
   }
 
-  public async onCommitted(committed: CommittedEnvelope): Promise<void> {
+  private async onCommitted(committed: CommittedEnvelope): Promise<void> {
+    if (!this.#ingress.issued(committed)) {
+      throw new Error('COMMITTED_ENVELOPE_NOT_ISSUED_BY_CANONICAL_INGRESS');
+    }
+    const reduction = CanonicalReducer.reduce(this.canonicalState, committed);
+    this.canonicalState = reduction.nextState;
+    this.lastTransitionProof = reduction.proof;
+
     for (const event of committed.validatedEnvelope.compiledEnvelope.decodedEvents) {
       this.processCommittedEvent(event);
     }
@@ -1059,7 +1084,7 @@ export class Engine {
     }
   }
   private async tick() {
-    await this.ingress.retryPendingDeliveries();
+    await this.#ingress.retryPendingDeliveries();
     const today = new Date().toISOString().slice(0, 10);
     if (this.state.day !== today) { this.state.day = today; this.state.dayPnl = '0'; }
     for (const [mint, c] of this.candidates) {

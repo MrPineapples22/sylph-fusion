@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "project": "MrPineapples22/sylph-fusion",
+  "updatedAt": "2026-10-07",
+  "items": [
+    {
+      "id": "C1-INGRESS-001",
+      "title": "Canonical ingress must be durably journaled before authoritative delivery",
+      "status": "IMPLEMENTED_PENDING_INDEPENDENT_REVIEW",
+      "severity": "CRITICAL",
+      "evidence": [
+        "Production composition supplies StoreIngressJournal backed by Store.appendAuditEvent.",
+        "SQLite worker acknowledges append only after COMMIT; configured database uses WAL and synchronous=FULL.",
+        "test/platform/canonical-ingress-durability.test.mjs verifies downstream sees committed row and replay is recognized by a fresh ingress instance."
+      ],
+      "remaining": [
+        "Independent Astra review of exact worktree snapshot.",
+        "Crash-injection test at commit acknowledgement and downstream delivery boundary.",
+        "Runtime-source integration with an explicit owner and recovery policy for committed but undelivered entries."
+      ],
+      "owner": "Astra Verification",
+      "nextAction": "Resolve independent review findings, then rerun targeted and full repository tests."
+    },
+    {
+      "id": "C1-INGRESS-002",
+      "title": "Provider raw evidence is not uniformly wire-preserved",
+      "status": "PARTIALLY_CONTAINED",
+      "severity": "HIGH",
+      "evidence": [
+        "WebSocket path stores the received JSON-RPC frame bytes.",
+        "Yellowstone SDK exposes a decoded protobuf update; implementation stores a JSON serialization of that decoded update, not original protobuf wire bytes."
+      ],
+      "remaining": [
+        "Document protobuf SDK boundary and add a versioned canonical binary encoding or capture wire bytes before SDK decoding."
+      ],
+      "owner": "Sol Provider Integration",
+      "nextAction": "Determine whether Yellowstone transport API exposes original frame bytes; otherwise retain explicit decoded-evidence classification."
+    },
+    {
+      "id": "C1-INGRESS-003",
+      "title": "Current truth validator does not independently prove Solana transaction authenticity",
+      "status": "OPEN",
+      "severity": "CRITICAL",
+      "evidence": [
+        "DefaultTruthValidator verifies payload digest and metadata shape.",
+        "signatureVerified currently reflects signature string length rather than cryptographic verification or finalized transaction evidence."
+      ],
+      "remaining": [
+        "Replace this claim with independently verified transaction inclusion/execution evidence or mark authenticity unavailable and keep dependent authority gated."
+      ],
+      "owner": "Astra Protocol",
+      "nextAction": "Define and implement evidence semantics consistent with saved Solana Simulation Evidence and CPI trace research."
+    },
+    {
+      "id": "C1-ENGINE-001",
+      "title": "Legacy Engine constructor can still synthesize Feed and ingress defaults",
+      "status": "OPEN",
+      "severity": "HIGH",
+      "evidence": [
+        "runEngine explicitly constructs and injects Store-backed ingress and Feed.",
+        "Engine constructor retains fallback construction for compatibility fixtures."
+      ],
+      "remaining": [
+        "Move all Engine construction to RuntimeComposition and remove fallback once callers and tests inject explicit dependencies."
+      ],
+      "owner": "Astra Architecture",
+      "nextAction": "Inventory and migrate Engine constructors without introducing a test-only production fallback."
+    },
+    {
+      "id": "C1-DELIVERY-001",
+      "title": "Committed ingress delivery is memory-only and can be lost or partially replayed",
+      "status": "OPEN",
+      "severity": "CRITICAL",
+      "evidence": [
+        "Independent Astra review reproduced the design gap by inspecting CanonicalIngress pendingDeliveries and Engine.onCommitted.",
+        "A process restart after SQLite commit but before successful downstream completion leaves the journal record committed while the new ingress instance returns DUPLICATE without redispatch."
+      ],
+      "remaining": [
+        "Persist outbox delivery state and provide deterministic recovery on startup.",
+        "Make downstream state mutation idempotent or atomically checkpoint it with the delivery acknowledgement."
+      ],
+      "owner": "Astra Architecture",
+      "nextAction": "Design and independently review durable outbox/replay semantics before C1 can pass."
+    },
+    {
+      "id": "C1-AUDIT-001",
+      "title": "Physical auditor cannot yet certify C1 runtime delivery semantics",
+      "status": "PARTIALLY_CONTAINED",
+      "severity": "HIGH",
+      "evidence": [
+        "Auditor now checks public Engine.onCommitted methods and generates a non-passing status while runtime evidence and independent review are incomplete.",
+        "Static import and negative-compile checks cannot establish durable exactly-once or recoverable downstream effects."
+      ],
+      "remaining": [
+        "Bind auditor output to fresh source hashes, focused runtime evidence, full test results, and independent review receipt."
+      ],
+      "owner": "Astra Certification",
+      "nextAction": "Extend evidence contract after delivery recovery is implemented."
+    },
+    {
+      "id": "C1-TEST-001",
+      "title": "Current core suite is not green on shared worktree",
+      "status": "OPEN",
+      "severity": "HIGH",
+      "evidence": [
+        "npm run test:core: 456 passed, 39 failed in the current shared checkout.",
+        "Failures include uncommitted C2 reducer fixtures using unsupported REALTIME_INGRESS and Engine test double compositions that lack explicit ingress."
+      ],
+      "remaining": [
+        "Coordinate C1 API updates and concurrent C2 changes; rerun full core and repository suites after repairs."
+      ],
+      "owner": "Sol QA",
+      "nextAction": "Fix fixture/API mismatches and rerun tests against fresh dist output."
+    }
+  ],
+  "certification": {
+    "C1": "NOT PHYSICALLY VERIFIED",
+    "C2": "NOT PHYSICALLY VERIFIED",
+    "C3": "NOT PHYSICALLY VERIFIED",
+    "C4": "NOT PHYSICALLY VERIFIED",
+    "UNIFIED_PIPELINE_CERTIFIED": false,
+    "LIVE_CAPITAL_AUTHORITY": "BLOCKED"
+  }
+}

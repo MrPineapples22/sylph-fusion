@@ -55,7 +55,7 @@ function compileSnippet(snippetSource) {
   return diagnostics.map(d => ({
     code: d.code,
     message: ts.flattenDiagnosticMessageText(d.messageText, '\n'),
-  }));
+  }), /Cannot read private member #ingress/);
 }
 
 test('C1 Negative Compilation: new Feed with arbitrary consumer callback fails compilation', () => {
@@ -103,6 +103,18 @@ test('C1 Negative Compilation: engine.onEvent(rawObservation) fails compilation'
     d.message.includes("Property 'onEvent' does not exist on type 'Engine'")
   );
   assert.ok(hasExpectedError, 'Expected diagnostic regarding non-existent onEvent on Engine, got: ' + JSON.stringify(diagnostics));
+});
+
+test('C1 Negative Compilation: external engine.onCommitted access fails compilation', () => {
+  const snippet = `
+    import { Engine } from './fusion.js';
+    import type { CommittedEnvelope } from './platform/ingress/types.js';
+    declare const engine: Engine;
+    declare const forged: CommittedEnvelope;
+    engine.onCommitted(forged);
+  `;
+  const diagnostics = compileSnippet(snippet);
+  assert.ok(diagnostics.some(d => d.message.includes("Property 'onCommitted' is private")), JSON.stringify(diagnostics));
 });
 
 test('C1 Negative Compilation: UnvalidatedObservation cannot satisfy ValidatedFusionEnvelope', () => {
@@ -178,6 +190,21 @@ test('C1 Runtime Guard: new Feed with function callback throws FEED_CALLBACK_BYP
     },
     /FEED_CALLBACK_BYPASS_FORBIDDEN/
   );
+});
+
+test('C1 Runtime Guard: Engine rejects structurally forged committed envelopes', async () => {
+  const { Engine } = await import('../dist/fusion.js');
+  const ingress = new CanonicalIngress({ compiler: new DefaultFusionEnvelopeCompiler(), validator: new DefaultTruthValidator(), journal: new InMemoryIngressJournal() });
+  const engine = new Engine({ MODE: 'paper_standard' }, { connection: {} }, {}, {}, {}, { mode: 'paper_standard' }, undefined, undefined, 'deterministic_only', undefined, undefined, undefined, ingress);
+  const forged = {
+    journalSeq: 1n, envelopeHash: 'a'.repeat(64), durability: 'FSYNC_COMMITTED', committedAtMs: Date.now(),
+    validatedEnvelope: { compiledEnvelope: { decodedEvents: [] } },
+  };
+  await assert.rejects(() => engine.onCommitted({
+    ...forged,
+  }), /COMMITTED_ENVELOPE_NOT_ISSUED_BY_CANONICAL_INGRESS/);
+  assert.equal(typeof ingress.registerAuthenticForTesting, 'undefined');
+  assert.equal(ingress.issued(forged), false);
 });
 
 import { createUnvalidatedObservation } from '../dist/platform/ingress/observation-factory.js';

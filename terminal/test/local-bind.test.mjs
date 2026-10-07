@@ -4,7 +4,13 @@ import {readFile} from 'node:fs/promises';
 
 test('operator terminal is bound to loopback and does not advertise LAN access', async () => {
   const source = await readFile(new URL('../server.mjs', import.meta.url), 'utf8');
-  assert.match(source, /const host = '127\.0\.0\.1';/);
+  const binding = await readFile(new URL('../network-binding.mjs', import.meta.url), 'utf8');
+  const compose = await readFile(new URL('../../docker-compose.yml', import.meta.url), 'utf8');
+  assert.match(source, /const host = terminalNetworkBinding\.host;/);
+  assert.match(source, /allowForwardedPeer: terminalNetworkBinding\.allowForwardedPeer/);
+  assert.match(binding, /host: '127\.0\.0\.1', allowForwardedPeer: false/);
+  assert.match(compose, /127\.0\.0\.1:8793:8793/);
+  assert.match(compose, /SYLPH_DOCKER_LOOPBACK_PUBLISHED=true/);
   assert.doesNotMatch(source, /TERMINAL_HOST \|\| '0\.0\.0\.0'/);
   assert.doesNotMatch(source, /Phone \/ Local LAN/);
 });

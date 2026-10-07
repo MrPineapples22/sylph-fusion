@@ -13,7 +13,8 @@ import { exitDecision, log, mulBps, settle, recordFailure, recordEquity, pruneRi
 import { startDashboard } from './dashboard.js';
 import { RpcPool } from './rpc.js';
 import { Feed } from './feed.js';
-import { createCanonicalSolanaIngress } from './platform/ingress/canonical-ingress.js';
+import { createCanonicalSolanaIngress, StoreIngressJournal } from './platform/ingress/canonical-ingress.js';
+import { CanonicalReducer } from './platform/reducer/index.js';
 import { Market } from './market.js';
 import { SimulationExecutionAuthority, LiveExecutionAuthority, simulationExecutionCosts, simulationSellProceeds } from './platform/execution/authority.js';
 import { Store } from './store.js';
@@ -163,6 +164,7 @@ export class Engine {
     modelEvaluator;
     gateMode;
     researchSpool;
+    #ingress;
     candidates = new Map();
     stopped = false;
     lastHealth = 0;
@@ -183,10 +185,18 @@ export class Engine {
     lastCheckpoint = Date.now();
     nextResearchSpoolDrainAt = 0;
     nextResearchLossMarkerSaveAt = 0;
+    canonicalState = CanonicalReducer.createGenesisState();
+    lastTransitionProof = null;
     feed;
-    ingress;
+    get ingress() { return this.#ingress; }
     runtimeUnit;
     divergenceAuditor;
+    getCanonicalState() {
+        return this.canonicalState;
+    }
+    getLastTransitionProof() {
+        return this.lastTransitionProof;
+    }
     constructor(cfg, rpc, market, executor, store, state, sessionLogger, modelEvaluator, gateMode = modelEvaluator ? 'ml_gated' : 'deterministic_only', runtimeUnit, divergenceAuditor, researchSpool, ingress, feed) {
         this.cfg = cfg;
         this.rpc = rpc;
@@ -198,14 +208,19 @@ export class Engine {
         this.modelEvaluator = modelEvaluator;
         this.gateMode = gateMode;
         this.researchSpool = researchSpool;
-        this.ingress = ingress ?? createCanonicalSolanaIngress({
-            connectionOrCoder: rpc.connection,
-            durability: 'FSYNC_COMMITTED',
-        });
-        this.ingress.subscribe(async (committed) => {
+        if (ingress) {
+            this.#ingress = ingress;
+        }
+        else if (store && typeof store.appendAuditEvent === 'function') {
+            this.#ingress = createCanonicalSolanaIngress({ journal: new StoreIngressJournal(store) });
+        }
+        else {
+            throw new Error('INGRESS_DURABLE_JOURNAL_REQUIRED');
+        }
+        this.#ingress.subscribe(async (committed) => {
             await this.onCommitted(committed);
         });
-        this.feed = feed ?? new Feed(cfg, rpc.connection, this.ingress);
+        this.feed = feed ?? new Feed(cfg, rpc.connection, this.#ingress);
         this.feed.gapReconciler.setRecoveryCertificateJournal({
             saveVerifiedRecoveryCertificate: certificate => {
                 const journal = this.store;
@@ -825,6 +840,12 @@ export class Engine {
         };
     }
     async onCommitted(committed) {
+        if (!this.#ingress.issued(committed)) {
+            throw new Error('COMMITTED_ENVELOPE_NOT_ISSUED_BY_CANONICAL_INGRESS');
+        }
+        const reduction = CanonicalReducer.reduce(this.canonicalState, committed);
+        this.canonicalState = reduction.nextState;
+        this.lastTransitionProof = reduction.proof;
         for (const event of committed.validatedEnvelope.compiledEnvelope.decodedEvents) {
             this.processCommittedEvent(event);
         }
@@ -1017,6 +1038,7 @@ export class Engine {
         }
     }
     async tick() {
+        await this.#ingress.retryPendingDeliveries();
         const today = new Date().toISOString().slice(0, 10);
         if (this.state.day !== today) {
             this.state.day = today;
@@ -1999,6 +2021,7 @@ export async function runEngine(options = {}) {
         });
         const ingress = createCanonicalSolanaIngress({
             connectionOrCoder: rpc.connection,
+            journal: new StoreIngressJournal(store),
             durability: 'FSYNC_COMMITTED',
         });
         const feed = new Feed(cfg, rpc.connection, ingress);

@@ -37,6 +37,17 @@ test('local requests reject hostile or null origins even with loopback Host', ()
   assert.equal(isLocalRequest({headers: {...req.headers, origin: 'http://127.0.0.1:8793'}}, 8793), true);
 });
 
+test('Docker forwarding is opt-in and still requires the loopback host and origin', () => {
+  const forwarded = {
+    socket: {remoteAddress: '172.20.0.1'},
+    headers: {host: '127.0.0.1:8793', origin: 'http://127.0.0.1:8793'},
+  };
+  assert.equal(isLocalRequest(forwarded, 8793), false);
+  assert.equal(isLocalRequest(forwarded, 8793, {allowForwardedPeer: true}), true);
+  assert.equal(isLocalRequest({...forwarded, headers: {...forwarded.headers, host: '192.168.1.9:8793'}}, 8793, {allowForwardedPeer: true}), false);
+  assert.equal(isLocalRequest({...forwarded, headers: {...forwarded.headers, origin: 'https://attacker.example'}}, 8793, {allowForwardedPeer: true}), false);
+});
+
 test('local request boundary never expands to tunnel or LAN hostnames', () => {
   for (const host of ['192.168.1.8:8793', 'safe.trycloudflare.com', 'eviltrycloudflare.com', 'x.ngrok-free.app']) {
     assert.equal(isLocalRequest({headers: {host}}, 8793), false);

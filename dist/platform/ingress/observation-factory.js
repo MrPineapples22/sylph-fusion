@@ -22,6 +22,10 @@ const VALID_PROCESSING_INTENTS = new Set([
     'DETERMINISTIC_REPLAY',
     'SHADOW_REPLAY',
 ]);
+const factoryObservations = new WeakSet();
+export function isObservationCreatedByFactory(value) {
+    return !!value && typeof value === 'object' && factoryObservations.has(value);
+}
 /**
  * Validates observation parameters and constructs a branded UnvalidatedObservation.
  * Throws immediately on any contract or invariant violation.
@@ -74,6 +78,10 @@ export function createUnvalidatedObservation(params) {
     if (!VALID_PROCESSING_INTENTS.has(params.processingIntent)) {
         throw new Error(`OBSERVATION_INVALID_INTENT: Unknown processing intent '${params.processingIntent}'`);
     }
+    if (params.transactionVersion !== undefined && params.transactionVersion !== 'legacy' && params.transactionVersion !== 'unknown' &&
+        (!Number.isSafeInteger(params.transactionVersion) || params.transactionVersion < 0)) {
+        throw new Error(`OBSERVATION_INVALID_TRANSACTION_VERSION: Invalid transaction version '${params.transactionVersion}'`);
+    }
     // 10. Copy and Hash Raw Payload Bytes
     if (!params.rawPayload || !(params.rawPayload instanceof Uint8Array || Buffer.isBuffer(params.rawPayload))) {
         throw new Error('OBSERVATION_INVALID_PAYLOAD: Raw payload must be a non-empty Uint8Array or Buffer');
@@ -90,9 +98,11 @@ export function createUnvalidatedObservation(params) {
         sourceId: params.sourceId,
         providerId: params.providerId,
         transport: params.transport,
+        observedAtMs,
         slot,
         commitment,
         signature,
+        transactionVersion: params.transactionVersion ?? 'unknown',
         rawPayloadHash,
         schemaVersion: params.schemaVersion,
         processingIntent: params.processingIntent,
@@ -116,6 +126,8 @@ export function createUnvalidatedObservation(params) {
         schemaVersion: params.schemaVersion,
         processingIntent: params.processingIntent,
     };
-    return Object.freeze(data);
+    const observation = Object.freeze(data);
+    factoryObservations.add(observation);
+    return observation;
 }
 //# sourceMappingURL=observation-factory.js.map

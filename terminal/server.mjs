@@ -12,6 +12,7 @@ import {createAstraFeed} from './astra-feed.mjs';
 import {getSoakTelemetry, buildRpcStatusPayload, exportSessionArtifact, readSessionEvents, compareSoakSessions} from './soak-reader.mjs';
 import {capitalEvidence, marketContextEvidence, tokenEvidence} from './evidence-view.mjs';
 import {isLocalRequest, readCommand} from './local-request.mjs';
+import {resolveTerminalNetworkBinding} from './network-binding.mjs';
 import {globalProviderHealthTracker} from '../dist/platform/ingestion/provider-health.js';
 import {discoverySnapshot} from '../dist/discovery.js';
 import {MarketHub, validMint} from '../dist/market-hub.js';
@@ -284,6 +285,7 @@ try {
   // If .env is missing, unreadable, or already loaded, proceed with process.env
 }
 const port=Number(process.env.TERMINAL_PORT||8793);
+const terminalNetworkBinding = resolveTerminalNetworkBinding(process.env);
 globalCommandGateway.setEmergencyStopPersistence(emergencyStopStore);
 const restoredEmergencyStop = await emergencyStopStore.load();
 if (restoredEmergencyStop) {
@@ -950,7 +952,7 @@ const server=createServer((req,res)=>{
 async function handleRequest(req,res){
   res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');
   res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'");
-  if (!isLocalRequest(req, port)) {res.writeHead(403);res.end('Local terminal only');return;}
+  if (!isLocalRequest(req, port, {allowForwardedPeer: terminalNetworkBinding.allowForwardedPeer})) {res.writeHead(403);res.end('Local terminal only');return;}
   if(req.method!=='GET'&&req.method!=='HEAD'&&req.method!=='POST'){res.writeHead(405);res.end();return;}
   const reqUrl=new URL(req.url,`http://127.0.0.1:${port}`);
   if (req.method === 'GET' && reqUrl.pathname === '/api/metrics') {
@@ -2274,7 +2276,7 @@ server.requestTimeout = 15_000;
 server.headersTimeout = 10_000;
 // The terminal exposes operator commands. Keep it private to this machine until
 // a separately reviewed authentication and remote-access design exists.
-const host = '127.0.0.1';
+const host = terminalNetworkBinding.host;
 server.listen(port, host,()=>console.log(`SYLPH paper terminal: http://127.0.0.1:${port}`));
 const gracefulShutdown = createGracefulShutdown({
   server,

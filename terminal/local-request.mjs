@@ -1,7 +1,7 @@
-export function isLocalRequest(req, port) {
+export function isLocalRequest(req, port, {allowForwardedPeer = false} = {}) {
   const remoteIp = req.socket?.remoteAddress;
   const loopbackIps = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
-  if (remoteIp && !loopbackIps.has(remoteIp)) return false;
+  if (remoteIp && !loopbackIps.has(remoteIp) && allowForwardedPeer !== true) return false;
   const authorities = new Set([`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`]);
   const host = req.headers.host || '';
   if (!authorities.has(host) || req.headers['sec-fetch-site'] === 'cross-site') return false;

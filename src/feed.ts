@@ -122,7 +122,7 @@ export class Feed implements ObservationSource {
         rawPayload,
         schemaVersion: source.transport === 'yellowstone.transaction.logs'
           ? 'yellowstone-update-json/v1'
-          : 'solana-json-rpc-frame/v1',
+          : source.rawPayload ? 'solana-json-rpc-frame/v1' : 'solana-program-logs/v1',
         processingIntent: intent,
       });
     } catch (err) {
@@ -144,7 +144,11 @@ export class Feed implements ObservationSource {
 
     if (receipt.status !== 'ACCEPTED') {
       if (receipt.status === 'REJECTED') {
-        if (receipt.reason !== 'NO_MATCHING_PROGRAM_EVENTS') {
+        if (receipt.reason === 'COMMITTED_DELIVERY_PENDING_RETRY') {
+          this.last = 0;
+          this.readySince = now;
+          log('feed_delivery_pending');
+        } else if (receipt.reason !== 'NO_MATCHING_PROGRAM_EVENTS') {
           this.last = 0;
           this.readySince = now;
           log('feed_consumer_rejected', { reason: receipt.reason });
@@ -205,7 +209,8 @@ export class Feed implements ObservationSource {
             if (m.error) { ws.terminate(); return; }
             if (m.method === 'logsNotification' && m.params?.result?.value?.err === null) {
               const r = m.params.result;
-              void this.accept(r.value.signature, r.context.slot, r.value.logs, { sourceId: `solana-ws-${index}`, providerId: providerLabel(url), transport: 'websocket.logsSubscribe', commitment: 'confirmed', rawPayload: Buffer.from(raw) });
+              const frameBytes = typeof raw === 'string' ? Buffer.from(raw) : Buffer.from(raw as Buffer);
+              void this.accept(r.value.signature, r.context.slot, r.value.logs, { sourceId: `solana-ws-${index}`, providerId: providerLabel(url), transport: 'websocket.logsSubscribe', commitment: 'confirmed', rawPayload: frameBytes });
             }
           } catch { log('websocket_message_rejected', { endpointIndex: index }); }
         });

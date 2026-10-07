@@ -97,6 +97,8 @@ export type DurabilityBarrier =
   | 'WRITE_COMPLETE'
   | 'FSYNC_DATA';
 
+export const FSYNC_COMMITTED = 'FSYNC_COMMITTED' as const;
+
 export interface CommittedEnvelopeData {
   readonly journalSeq: bigint;
   readonly envelopeHash: Hash256;
@@ -109,6 +111,7 @@ export interface CommittedEnvelopeData {
 export type CommittedEnvelope = CommittedEnvelopeData & {
   readonly [_committedBrand]: 'CommittedEnvelope';
 };
+
 
 export type IngressReceiptStatus = 'ACCEPTED' | 'DUPLICATE' | 'REJECTED';
 

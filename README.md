@@ -122,6 +122,8 @@ An exclusive loopback socket prevents another instance using the same wallet on 
 
 The supplied Docker Compose configuration stores the engine database at `/app/data/fusion.sqlite` under its `./data:/app/data` mount. Keep that host-side `./data` directory on verified local persistent storage; the container's writable OverlayFS layer is not an approved database location. Docker Desktop bind mounts that appear as FUSE, 9P, OverlayFS, or an unknown type may be refused; do not set the paper-only attestation until the actual host-backed mount and SQLite locking behavior have been verified.
 
+Compose publishes the operator terminal only on host loopback (`127.0.0.1:8793`). Its explicit `SYLPH_DOCKER_LOOPBACK_PUBLISHED=true` setting lets the paper-mode process bind inside a Docker container so Docker's forwarding path can reach it; startup also requires Docker's `/.dockerenv` marker. The request guard still requires a loopback Host/Origin, and non-container launches remain bound to `127.0.0.1`. Do not change the published host address to `0.0.0.0` or enable this setting in another deployment without a separately reviewed authentication and network-boundary design.
+
 Logs are newline-delimited JSON. Monitor `health`, `feed_decode_rejected`, `position_snapshot_unavailable`, `order_build_rejected`, `bundle_submission_uncertain`, `fill_finalized`, and `balance_reconciliation_mismatch`. `transaction_prepared` includes measured build time, compute units, tip, and priority cost. Endpoint URLs, provider tokens, and private keys are not intentionally logged.
 
 ## Files

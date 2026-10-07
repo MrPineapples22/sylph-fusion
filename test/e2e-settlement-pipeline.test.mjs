@@ -20,6 +20,8 @@ import {
   exportSessionArtifact,
 } from '../terminal/soak-reader.mjs';
 import { aggregateSessionStats } from '../terminal/src/paper-baseline-eval.js';
+import { CanonicalIngress, DefaultFusionEnvelopeCompiler, DefaultTruthValidator, InMemoryIngressJournal } from '../dist/platform/ingress/canonical-ingress.js';
+import { createUnvalidatedObservation } from '../dist/platform/ingress/observation-factory.js';
 
 const makeKey = (seed) => Keypair.fromSeed(Buffer.alloc(32, seed));
 const key = makeKey(42);
@@ -175,6 +177,24 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
     assert.equal(gateMissingEval.confidence, null);
 
     // 4. Initialize Engine in paper mode with deterministic gate
+    const e2eIngress = new CanonicalIngress({
+      compiler: {
+        compile(observation) {
+          const compiled = new DefaultFusionEnvelopeCompiler().compile(observation);
+          const decodedEvents = compiled.decodedEvents.map(event => ({
+            ...event,
+            observation,
+            data: Object.fromEntries(Object.entries(event.data ?? {}).map(([key, value]) =>
+              ['mint', 'user', 'creator'].includes(key) && typeof value === 'string'
+                ? [key, new PublicKey(value)] : [key, value]
+            )),
+          }));
+          return { ...compiled, decodedEvents };
+        },
+      },
+      validator: new DefaultTruthValidator(),
+      journal: new InMemoryIngressJournal(),
+    });
     const engine = new Engine(
       cfg,
       rpc,
@@ -184,7 +204,8 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
       state,
       logger,
       null, // evaluator
-      'deterministic_only' // gateMode
+      'deterministic_only', // gateMode
+      undefined, undefined, undefined, e2eIngress
     );
 
     // Mark feed as healthy and warmed up
@@ -198,17 +219,17 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
     const eventTime = Date.now() - 15_000;
 
     const feedCommitted = async (engineInstance, event) => {
-      await engineInstance.onCommitted({
-        journalSeq: 1n,
-        envelopeHash: '0'.repeat(64),
-        durability: 'FSYNC_COMMITTED',
-        committedAtMs: Date.now(),
-        validatedEnvelope: {
-          compiledEnvelope: {
-            decodedEvents: [event]
-          }
-        }
-      });
+      const { observation: _testOnlyObservation, ...eventPayload } = event;
+      const rawPayload = Buffer.from(JSON.stringify(eventPayload, (_key, value) =>
+        typeof value === 'bigint' ? value.toString() : value?.toBase58?.() ?? value
+      ));
+      const receipt = await engineInstance.ingress.submit(createUnvalidatedObservation({
+        sourceId: 'test-provider', providerId: 'prov-test', transport: 'test_feed',
+        receivedAtMs: Number(event.received ?? Date.now()), observedAtMs: Number(event.received ?? Date.now()),
+        slot: Number(event.slot ?? 100), commitment: 'confirmed', signature: event.signature || 'sig-1',
+        transactionVersion: 0, rawPayload, schemaVersion: 'test-event-json/v1', processingIntent: 'LIVE',
+      }));
+      assert.equal(receipt.status, 'ACCEPTED', `event must pass the canonical ingress: ${receipt.reason ?? receipt.status}`);
     };
 
     // Create event
@@ -261,8 +282,8 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
     const discoveryRecord = JSON.parse(discoveryAudit[0].body);
     assert.equal(discoveryRecord.candidateId, candidate.candidateGenerationId);
     assert.equal(discoveryRecord.observedAtMs, eventTime + 250);
-    assert.equal(discoveryRecord.sourceObservation.observationId, 'obs-create-sig-1');
-    assert.equal(discoveryRecord.sourceObservation.rawPayloadHash, 'a'.repeat(64));
+    assert.equal(discoveryRecord.sourceObservation.observationId, candidate.sourceObservation.observationId);
+    assert.match(discoveryRecord.sourceObservation.rawPayloadHash, /^[a-f0-9]{64}$/);
 
     // Raw create events with unusable chain timestamps stay visible in the
     // denominator while their price outcomes remain explicitly unresolved.
@@ -641,7 +662,12 @@ test('Engine paper marks match executable simulation sell proceeds and disappear
         cash: String(initialCash), day: new Date().toISOString().slice(0, 10),
         dayPnl: '0', closed: {}, halted: false,
       };
-      const engine = new Engine(cfg, rpc, market, authority, store, state);
+      const ingress = new CanonicalIngress({
+        compiler: new DefaultFusionEnvelopeCompiler(),
+        validator: new DefaultTruthValidator(),
+        journal: new InMemoryIngressJournal(),
+      });
+      const engine = new Engine(cfg, rpc, market, authority, store, state, undefined, undefined, undefined, undefined, undefined, undefined, ingress);
       engine.feed.last = Date.now();
       engine.feed.readySince = Date.now() - 20_000;
       engine.feed.slot = 100;

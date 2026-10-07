@@ -2,11 +2,12 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {Feed} from '../dist/feed.js';
 import {config} from '../dist/config.js';
-import {createCanonicalSolanaIngress} from '../dist/platform/ingress/canonical-ingress.js';
+import {createCanonicalSolanaIngress,InMemoryIngressJournal} from '../dist/platform/ingress/canonical-ingress.js';
 
 const cfg = () => config({RPC_URLS:'https://rpc.invalid',WS_URLS:'wss://rpc.invalid'});
 const feed = consume => {
   const ingress = createCanonicalSolanaIngress({
+    journal: new InMemoryIngressJournal(),
     onCommitted: (committed) => {
       if (consume) {
         for (const ev of committed.validatedEnvelope.compiledEnvelope.decodedEvents) {
@@ -51,7 +52,7 @@ test('decoded transaction event count is bounded before any consumer mutation', 
 test('accepted provider observations carry immutable provenance and a payload hash', async () => {
   const events=[];const f=feed(e=>events.push(e));
   f.parser={*parseLogs(){yield {name:'tradeEvent',data:{}};}};
-  await f.accept('signature-provenance',101,['Program log: valid'],{sourceId:'geyser-a',providerId:'https://provider.invalid',transport:'yellowstone.transaction.logs',commitment:'confirmed'});
+  await f.accept('signature-provenance',101,['Program log: valid'],{sourceId:'geyser-a',providerId:'https://provider.invalid',transport:'websocket.logsSubscribe',commitment:'confirmed'});
   const observation=events[0].observation;
   assert.equal(observation.signature,'signature-provenance');
   assert.equal(observation.slot,101);
@@ -60,6 +61,7 @@ test('accepted provider observations carry immutable provenance and a payload ha
   assert.match(observation.rawPayloadHash,/^[a-f0-9]{64}$/);
   assert.equal(Object.isFrozen(observation),true);
   assert.equal(observation.transactionVersion,'unknown');
+  assert.equal(observation.schemaVersion,'solana-program-logs/v1');
 });
 
 test('observation identity binds provider and transport, and unsafe source metadata is rejected', async () => {

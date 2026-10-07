@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Feed } from '../dist/feed.js';
 import { Connection } from '@solana/web3.js';
-import { createCanonicalSolanaIngress } from '../dist/platform/ingress/canonical-ingress.js';
+import { createCanonicalSolanaIngress, InMemoryIngressJournal } from '../dist/platform/ingress/canonical-ingress.js';
 
 test('Feed: accepts bounded late slots for historical repair without renewing execution freshness', async () => {
   const events = [];
@@ -14,6 +14,7 @@ test('Feed: accepts bounded late slots for historical repair without renewing ex
   };
   const conn = new Connection('https://api.mainnet-beta.solana.com', 'confirmed');
   const ingress = createCanonicalSolanaIngress({
+    journal: new InMemoryIngressJournal(),
     onCommitted: (committed) => {
       for (const ev of committed.validatedEnvelope.compiledEnvelope.decodedEvents) {
         events.push(ev);

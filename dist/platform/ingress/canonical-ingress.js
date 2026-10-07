@@ -30,6 +30,7 @@
 import { createHash } from 'node:crypto';
 import { EventParser } from '@coral-xyz/anchor';
 import { getPumpProgram, PUMP_PROGRAM_ID } from '@pump-fun/pump-sdk';
+import { isObservationCreatedByFactory } from './observation-factory.js';
 /**
  * Canonical single-door ingress implementation enforcing the strict type-state progression
  * and durability barrier.
@@ -41,6 +42,10 @@ export class CanonicalIngress {
     durability;
     subscribers = [];
     seenObservations = new Set();
+    pendingDeliveries = new Map();
+    authenticCommittedEnvelopes = new WeakSet();
+    deliveryCursor = 0;
+    deliveryMutex = Promise.resolve();
     constructor(options) {
         this.compiler = options.compiler;
         this.validator = options.validator;
@@ -53,8 +58,11 @@ export class CanonicalIngress {
     subscribe(subscriber) {
         this.subscribers.push(subscriber);
     }
+    issued(committed) {
+        return !!committed && typeof committed === 'object' && this.authenticCommittedEnvelopes.has(committed);
+    }
     async submit(observation) {
-        if (!observation || typeof observation !== 'object') {
+        if (!isObservationCreatedByFactory(observation)) {
             return {
                 status: 'REJECTED',
                 observationId: '0'.repeat(64),
@@ -69,6 +77,34 @@ export class CanonicalIngress {
                 reason: 'OBSERVATION_ALREADY_COMMITTED',
             };
         }
+        if (this.journal.findByObservationId) {
+            try {
+                const existing = await this.journal.findByObservationId(observation.observationId);
+                if (existing) {
+                    this.seenObservations.add(observation.observationId);
+                    return { status: 'DUPLICATE', observationId: observation.observationId, reason: 'OBSERVATION_ALREADY_COMMITTED' };
+                }
+            }
+            catch (err) {
+                return { status: 'REJECTED', observationId: observation.observationId, reason: `JOURNAL_LOOKUP_FAILED: ${err instanceof Error ? err.message : String(err)}` };
+            }
+        }
+        if (observation.rawPayloadHash !== createHash('sha256').update(observation.rawPayload).digest('hex')) {
+            return { status: 'REJECTED', observationId: observation.observationId, reason: 'RAW_PAYLOAD_HASH_MISMATCH' };
+        }
+        if (this.inFlightObservations.has(observation.observationId)) {
+            return { status: 'DUPLICATE', observationId: observation.observationId, reason: 'OBSERVATION_IN_FLIGHT' };
+        }
+        this.inFlightObservations.add(observation.observationId);
+        try {
+            return await this.processObservation(observation);
+        }
+        finally {
+            this.inFlightObservations.delete(observation.observationId);
+        }
+    }
+    inFlightObservations = new Set();
+    async processObservation(observation) {
         // 2. Compile: UnvalidatedObservation -> CompiledFusionEnvelope
         let compiled;
         try {
@@ -127,19 +163,61 @@ export class CanonicalIngress {
             durability: 'FSYNC_COMMITTED',
         };
         const committed = Object.freeze(committedData);
+        this.authenticCommittedEnvelopes.add(committed);
         // 7. Authoritatively commit deduplication state
         this.seenObservations.add(observation.observationId);
         // 8. Downstream Authoritative Notification
         // Invariant: Strictly executed ONLY AFTER durable journal commit.
-        for (const sub of this.subscribers) {
-            await sub(committed);
-        }
-        return {
+        this.pendingDeliveries.set(observation.observationId, committed);
+        const delivered = await this.deliverPending(observation.observationId);
+        return delivered ? {
             status: 'ACCEPTED',
             observationId: observation.observationId,
             journalSeq: committed.journalSeq,
             envelopeHash: committed.envelopeHash,
+        } : {
+            status: 'REJECTED',
+            observationId: observation.observationId,
+            reason: 'COMMITTED_DELIVERY_PENDING_RETRY',
         };
+    }
+    async retryPendingDeliveries() {
+        let delivered = 0;
+        for (const observationId of this.pendingDeliveries.keys()) {
+            if (await this.deliverPending(observationId))
+                delivered++;
+        }
+        return delivered;
+    }
+    async deliverPending(observationId) {
+        let resolveMutex;
+        const previous = this.deliveryMutex;
+        this.deliveryMutex = new Promise(resolve => { resolveMutex = resolve; });
+        await previous;
+        try {
+            return await this.deliverPendingExclusive(observationId);
+        }
+        finally {
+            resolveMutex();
+        }
+    }
+    async deliverPendingExclusive(observationId) {
+        const committed = this.pendingDeliveries.get(observationId);
+        if (!committed)
+            return true;
+        try {
+            while (this.deliveryCursor < this.subscribers.length) {
+                await this.subscribers[this.deliveryCursor](committed);
+                this.deliveryCursor++;
+            }
+            this.pendingDeliveries.delete(observationId);
+            this.deliveryCursor = 0;
+            return true;
+        }
+        catch {
+            // Keep the exact durable envelope available for explicit retry.
+            return false;
+        }
     }
 }
 /**
@@ -190,7 +268,7 @@ export class DefaultTruthValidator {
                 reason: `RAW_PAYLOAD_HASH_MISMATCH: Computed ${recalculatedHash} != Claimed ${obs.rawPayloadHash}`,
             };
         }
-        if (obs.schemaVersion === 'solana-program-logs/v1' && compiled.decodedEvents.length === 0) {
+        if (compiled.compilerVersion.startsWith('solana-pump-') && compiled.decodedEvents.length === 0) {
             return {
                 valid: false,
                 reason: 'NO_MATCHING_PROGRAM_EVENTS',
@@ -203,9 +281,9 @@ export class DefaultTruthValidator {
             validatorVersion: this.validatorVersion,
             validatedAtMs: Date.now(),
             rawPayloadHash: obs.rawPayloadHash,
-            signatureVerified: obs.signature !== null && obs.signature.length >= 16,
+            signatureVerified: false,
             schemaCompliant: true,
-            verificationMethod: 'PAYLOAD_DIGEST_AND_METADATA_INTEGRITY',
+            verificationMethod: 'OBSERVATION_HASH_AND_LOG_DECODING_ONLY',
         };
         const validationId = createHash('sha256')
             .update(`val:${compiled.envelopeId}:${truthEvidence.evidenceId}`)
@@ -260,8 +338,20 @@ export class SolanaLogFusionEnvelopeCompiler {
         catch {
             throw new Error('SOLANA_LOGS_INVALID_JSON: Failed to parse raw logs JSON');
         }
-        if (!Array.isArray(logs)) {
-            throw new Error('SOLANA_LOGS_INVALID_PAYLOAD: Expected string array of logs');
+        if (observation.schemaVersion === 'yellowstone-update-json/v1') {
+            logs = logs?.transaction?.transaction?.meta?.logMessages;
+        }
+        else if (observation.schemaVersion === 'solana-json-rpc-frame/v1') {
+            logs = logs?.params?.result?.value?.logs;
+        }
+        else if (observation.schemaVersion !== 'solana-program-logs/v1' || !Array.isArray(logs)) {
+            logs = null;
+        }
+        else {
+            // Canonical logs representation used by explicit replay fixtures.
+        }
+        if (!Array.isArray(logs) || logs.length > 100_000 || logs.some(line => typeof line !== 'string')) {
+            throw new Error('SOLANA_LOGS_INVALID_PAYLOAD: Expected bounded string array of logs');
         }
         const decodedEvents = [];
         for (const event of this.parser.parseLogs(logs, false)) {
@@ -289,10 +379,104 @@ export class SolanaLogFusionEnvelopeCompiler {
         return Object.freeze(data);
     }
 }
-export function createCanonicalSolanaIngress(options = {}) {
+/** Adapts the Store audit transaction to the ingress journal contract. The resolved Store
+ * acknowledgement follows SQLite COMMIT with WAL + synchronous=FULL, so downstream work
+ * cannot run before the durable transaction completes. */
+export class StoreIngressJournal {
+    store;
+    constructor(store) {
+        this.store = store;
+        if (!store || typeof store.appendAuditEvent !== 'function')
+            throw new Error('INGRESS_DURABLE_JOURNAL_REQUIRED');
+    }
+    async append(validated) {
+        const { observation, envelopeId, compilerVersion, decodedEvents } = validated.compiledEnvelope;
+        const { truthEvidence, validationId, validatorVersion } = validated;
+        const payload = {
+            schemaVersion: 1,
+            observationId: observation.observationId,
+            sourceId: observation.sourceId,
+            providerId: observation.providerId,
+            transport: observation.transport,
+            receivedAtMs: observation.receivedAtMs,
+            observedAtMs: observation.observedAtMs,
+            slot: observation.slot,
+            commitment: observation.commitment,
+            signature: observation.signature,
+            transactionVersion: observation.transactionVersion,
+            rawPayloadBase64: Buffer.from(observation.rawPayload).toString('base64'),
+            rawPayloadHash: observation.rawPayloadHash,
+            schema: observation.schemaVersion,
+            processingIntent: observation.processingIntent,
+            envelopeId,
+            compilerVersion,
+            validatedAtMs: validated.validatedAtMs,
+            validatorVersion,
+            validationId,
+            truthEvidence,
+            decodedEvents: decodedEvents.map(event => ({
+                name: String(event?.name ?? ''),
+                signature: String(event?.signature ?? ''),
+                slot: Number.isSafeInteger(event?.slot) ? event.slot : null,
+                received: Number.isFinite(event?.received) ? event.received : null,
+                data: JSON.parse(JSON.stringify(event?.data ?? null, (_key, value) => typeof value === 'bigint' ? value.toString() : value?.toBase58?.() ?? value)),
+            })),
+        };
+        const stableEventId = `ingress:${observation.observationId}`;
+        const canonicalPayload = JSON.stringify(payload);
+        const entryHash = createHash('sha256').update(canonicalPayload).digest('hex');
+        let result;
+        try {
+            result = await this.store.appendAuditEvent('canonical_ingress_committed_v1', { ...payload, entryHash }, stableEventId);
+        }
+        catch (error) {
+            if (!(error instanceof Error) || error.message !== 'DUPLICATE_EVENT_ID_CONTENT_CONFLICT')
+                throw error;
+            const existing = await this.findByObservationId(observation.observationId);
+            if (!existing)
+                throw error;
+            return existing;
+        }
+        if (!result.inserted && result.auditId === undefined)
+            throw new Error('INGRESS_JOURNAL_ID_MISSING');
+        const sequence = result.auditId;
+        if (!Number.isSafeInteger(sequence) || sequence <= 0)
+            throw new Error('INGRESS_JOURNAL_SEQUENCE_INVALID');
+        return { sequence: BigInt(sequence), entryHash };
+    }
+    async findByObservationId(observationId) {
+        const row = await this.store.getAuditEventByStableId(`ingress:${observationId}`);
+        if (row?.pruned) {
+            if (typeof row.eventHash !== 'string' || !/^[a-f0-9]{64}$/.test(row.eventHash))
+                throw new Error('INGRESS_JOURNAL_DEDUPE_ROW_INVALID');
+            return { sequence: BigInt(row.id), entryHash: row.eventHash };
+        }
+        for (const candidate of row ? [row] : []) {
+            if (candidate.body === null)
+                continue;
+            let payload;
+            try {
+                payload = JSON.parse(candidate.body);
+            }
+            catch {
+                throw new Error('INGRESS_JOURNAL_ROW_INVALID');
+            }
+            if (payload?.observationId === observationId) {
+                if (typeof payload.entryHash !== 'string' || !/^[a-f0-9]{64}$/.test(payload.entryHash))
+                    throw new Error('INGRESS_JOURNAL_ROW_INVALID');
+                const { entryHash, ...entryPayload } = payload;
+                if (createHash('sha256').update(JSON.stringify(entryPayload)).digest('hex') !== entryHash)
+                    throw new Error('INGRESS_JOURNAL_HASH_MISMATCH');
+                return { sequence: BigInt(candidate.id), entryHash: payload.entryHash };
+            }
+        }
+        return null;
+    }
+}
+export function createCanonicalSolanaIngress(options) {
     const compiler = new SolanaLogFusionEnvelopeCompiler(options.connectionOrCoder);
     const validator = new DefaultTruthValidator();
-    const journal = options.journal ?? new InMemoryIngressJournal();
+    const journal = options.journal;
     return new CanonicalIngress({
         compiler,
         validator,
@@ -302,7 +486,8 @@ export function createCanonicalSolanaIngress(options = {}) {
     });
 }
 /**
- * In-memory implementation of IngressDurableJournal for testing and synchronous execution.
+ * In-memory implementation of IngressDurableJournal for tests only. Production composition
+ * must pass the SQLite-backed audit journal explicitly.
  */
 export class InMemoryIngressJournal {
     seqCounter = 0n;
@@ -319,4 +504,5 @@ export class InMemoryIngressJournal {
         };
     }
 }
+export const TEST_INGRESS_JOURNAL = new InMemoryIngressJournal();
 //# sourceMappingURL=canonical-ingress.js.map

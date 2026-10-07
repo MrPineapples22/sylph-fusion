@@ -82,7 +82,9 @@ export class Feed {
         const intent = source.processingIntent ?? (isHistoricalRepair ? 'HISTORICAL_REPAIR' : 'LIVE');
         let observation;
         try {
-            const rawPayload = Buffer.from(JSON.stringify(logs));
+            // WebSocket supplies the original JSON-RPC frame. Yellowstone exposes decoded
+            // protobuf updates, so its payload is explicitly a canonical observation encoding.
+            const rawPayload = source.rawPayload ?? Buffer.from(JSON.stringify(logs));
             observation = createUnvalidatedObservation({
                 sourceId: source.sourceId,
                 providerId: source.providerId,
@@ -94,7 +96,9 @@ export class Feed {
                 signature,
                 transactionVersion: 'unknown',
                 rawPayload,
-                schemaVersion: 'solana-program-logs/v1',
+                schemaVersion: source.transport === 'yellowstone.transaction.logs'
+                    ? 'yellowstone-update-json/v1'
+                    : source.rawPayload ? 'solana-json-rpc-frame/v1' : 'solana-program-logs/v1',
                 processingIntent: intent,
             });
         }
@@ -116,7 +120,12 @@ export class Feed {
         }
         if (receipt.status !== 'ACCEPTED') {
             if (receipt.status === 'REJECTED') {
-                if (receipt.reason !== 'NO_MATCHING_PROGRAM_EVENTS') {
+                if (receipt.reason === 'COMMITTED_DELIVERY_PENDING_RETRY') {
+                    this.last = 0;
+                    this.readySince = now;
+                    log('feed_delivery_pending');
+                }
+                else if (receipt.reason !== 'NO_MATCHING_PROGRAM_EVENTS') {
                     this.last = 0;
                     this.readySince = now;
                     log('feed_consumer_rejected', { reason: receipt.reason });
@@ -140,7 +149,9 @@ export class Feed {
         return receipt;
     }
     async start(sink, signal) {
-        signal.addEventListener('abort', () => this.stop(), { once: true });
+        if (sink !== this.ingress)
+            throw new Error('OBSERVATION_INGRESS_MISMATCH');
+        signal.addEventListener('abort', () => { void this.stop(); }, { once: true });
         await this.run();
     }
     async run() {
@@ -186,7 +197,8 @@ export class Feed {
                         }
                         if (m.method === 'logsNotification' && m.params?.result?.value?.err === null) {
                             const r = m.params.result;
-                            this.accept(r.value.signature, r.context.slot, r.value.logs, { sourceId: `solana-ws-${index}`, providerId: providerLabel(url), transport: 'websocket.logsSubscribe', commitment: 'confirmed' });
+                            const frameBytes = typeof raw === 'string' ? Buffer.from(raw) : Buffer.from(raw);
+                            void this.accept(r.value.signature, r.context.slot, r.value.logs, { sourceId: `solana-ws-${index}`, providerId: providerLabel(url), transport: 'websocket.logsSubscribe', commitment: 'confirmed', rawPayload: frameBytes });
                         }
                     }
                     catch {
@@ -235,7 +247,7 @@ export class Feed {
                         stream.write({ ...request, ping: { id: 1 } });
                     const tx = update.transaction?.transaction;
                     if (tx?.meta && !tx.meta.err)
-                        this.accept(bs58.encode(tx.signature), Number(update.transaction.slot), tx.meta.logMessages, { sourceId: 'yellowstone-grpc', providerId: providerLabel(this.cfg.YELLOWSTONE_URL), transport: 'yellowstone.transaction.logs', commitment: 'confirmed' });
+                        await this.accept(bs58.encode(tx.signature), Number(update.transaction.slot), tx.meta.logMessages, { sourceId: 'yellowstone-grpc', providerId: providerLabel(this.cfg.YELLOWSTONE_URL), transport: 'yellowstone.transaction.logs', commitment: 'confirmed', rawPayload: Buffer.from(JSON.stringify(update)) });
                 }
             }
             catch {

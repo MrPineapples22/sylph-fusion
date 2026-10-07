@@ -31,6 +31,11 @@ const VALID_PROCESSING_INTENTS = new Set<ProcessingIntent>([
   'DETERMINISTIC_REPLAY',
   'SHADOW_REPLAY',
 ]);
+const factoryObservations = new WeakSet<object>();
+
+export function isObservationCreatedByFactory(value: unknown): value is UnvalidatedObservation {
+  return !!value && typeof value === 'object' && factoryObservations.has(value as object);
+}
 
 export interface CreateObservationParams {
   readonly sourceId: string;
@@ -111,6 +116,11 @@ export function createUnvalidatedObservation(params: CreateObservationParams): U
     throw new Error(`OBSERVATION_INVALID_INTENT: Unknown processing intent '${params.processingIntent}'`);
   }
 
+  if (params.transactionVersion !== undefined && params.transactionVersion !== 'legacy' && params.transactionVersion !== 'unknown' &&
+      (!Number.isSafeInteger(params.transactionVersion) || params.transactionVersion < 0)) {
+    throw new Error(`OBSERVATION_INVALID_TRANSACTION_VERSION: Invalid transaction version '${params.transactionVersion}'`);
+  }
+
   // 10. Copy and Hash Raw Payload Bytes
   if (!params.rawPayload || !(params.rawPayload instanceof Uint8Array || Buffer.isBuffer(params.rawPayload))) {
     throw new Error('OBSERVATION_INVALID_PAYLOAD: Raw payload must be a non-empty Uint8Array or Buffer');
@@ -134,9 +144,11 @@ export function createUnvalidatedObservation(params: CreateObservationParams): U
     sourceId: params.sourceId,
     providerId: params.providerId,
     transport: params.transport,
+    observedAtMs,
     slot,
     commitment,
     signature,
+    transactionVersion: params.transactionVersion ?? 'unknown',
     rawPayloadHash,
     schemaVersion: params.schemaVersion,
     processingIntent: params.processingIntent,
@@ -163,5 +175,7 @@ export function createUnvalidatedObservation(params: CreateObservationParams): U
     processingIntent: params.processingIntent,
   };
 
-  return Object.freeze(data) as UnvalidatedObservation;
+  const observation = Object.freeze(data) as UnvalidatedObservation;
+  factoryObservations.add(observation);
+  return observation;
 }

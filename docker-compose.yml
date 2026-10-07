@@ -5,14 +5,15 @@ services:
       dockerfile: Dockerfile
     container_name: sylph-autonomous-server
     restart: unless-stopped
-    # Bind only to the Docker host. Remote operator access needs a separately
-    # reviewed authenticated proxy; the terminal itself is intentionally local.
+    # Keep the host publication loopback-only. The paper-only opt-in below is
+    # required because Docker forwards to the container interface, not its loopback.
     ports:
       - "127.0.0.1:8793:8793"
     environment:
       - MODE=paper
       - DB_PATH=/app/data/fusion.sqlite
       - TERMINAL_PORT=8793
+      - SYLPH_DOCKER_LOOPBACK_PUBLISHED=true
       - RUNTIME_MINUTES=0
     volumes:
       - ./data:/app/data

@@ -100,6 +100,13 @@ parentPort!.on('message', (m: { id: number; op: string; body?: string; event?: s
           !Number.isSafeInteger(query.limit) || query.limit < 1 || query.limit > 10_000) throw new Error('invalid audit query');
       const rows = db.prepare('SELECT id,at,event,body FROM audit WHERE event=? ORDER BY id ASC LIMIT ?').all(query.event, query.limit);
       parentPort!.postMessage({ id: m.id, value: JSON.stringify(rows) });
+    } else if (m.op === 'get-audit-event-by-stable-id') {
+      if (typeof m.body !== 'string' || !/^[a-zA-Z0-9_\-:]{1,128}$/.test(m.body)) throw new Error('invalid audit event id');
+      const dedupeTable = db.prepare("SELECT 1 AS present FROM sqlite_schema WHERE type='table' AND name='audit_event_dedupe'").get();
+      const row = dedupeTable ? db.prepare(`SELECT COALESCE(a.id,d.audit_id) AS id,COALESCE(a.at,d.created_at_ms) AS at,
+        a.event,a.body,d.event_hash AS eventHash,(a.id IS NULL) AS pruned FROM audit_event_dedupe d
+        LEFT JOIN audit a ON a.id=d.audit_id WHERE d.event_id=?`).get(m.body) : undefined;
+      parentPort!.postMessage({ id: m.id, value: row ? JSON.stringify(row) : null });
     } else if (m.op === 'prepare-signing') {
       const intent = JSON.parse(m.body!);
       if (!intent.economicIntentId || !intent.grantId || !intent.wallet || !/^[a-f0-9]{64}$/.test(intent.messageSha256) ||
