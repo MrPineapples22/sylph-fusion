@@ -50,6 +50,18 @@ test('SoakTelemetry labels the selected session and missing RPC data as unverifi
   assert.doesNotMatch(source, /baselineQualityScore \?\? 0/);
 });
 
+test('SoakTelemetry exposes cumulative spool pressure and explicit append histogram states', async () => {
+  const source = await readFile(new URL('../src/components/SoakTelemetry.jsx', import.meta.url), 'utf8');
+  assert.match(source, /Research spool records:/);
+  assert.match(source, /Research spool payload:/);
+  assert.match(source, /Durable append latency · p50 \/ p95 \/ p99:/);
+  assert.match(source, /Checkpoint window append p50 \/ p95 \/ p99:/);
+  assert.match(source, /since the previous checkpoint/);
+  assert.match(source, /HISTOGRAM OVERFLOW/);
+  assert.match(source, /NO SAMPLES/);
+  assert.match(source, /conservative bucket upper bounds/);
+});
+
 test('RPC status endpoint uses source-qualified live and session health fields', async () => {
   const source = await readFile(new URL('../server.mjs', import.meta.url), 'utf8');
   assert.match(source, /buildRpcStatusPayload\(liveData\)/);

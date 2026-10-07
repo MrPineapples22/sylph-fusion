@@ -325,7 +325,7 @@ test('8. Capital authorization fails if reservation/commitment/lease evidence is
   assert.ok(invalidLease.violated_invariants.some(v => v.invariant_id === 'INV_9_PROOF_NOT_REVOKED'));
 });
 
-test('9. Recovery from reduce-only requires verified recovery evidence', () => {
+test('9. Caller-asserted recovery fields cannot restore capital authority', () => {
   const kernel = new CapitalKernel({ maxOpenPositions: 3, maxUnknownCapitalSol: 5.0, initialAuthority: 'A5_NORMAL' });
   kernel.downgradeAuthority('A2_REDUCE_ONLY', 'Test reduce-only');
   assert.equal(kernel.getAuthorityMode(), 'A2_REDUCE_ONLY');
@@ -351,7 +351,7 @@ test('9. Recovery from reduce-only requires verified recovery evidence', () => {
   assert.equal(failedRecovery, false);
   assert.equal(kernel.getAuthorityMode(), 'A2_REDUCE_ONLY');
 
-  // Recovery with fully verified RecoveryCertificate
+  // A complete-looking object is still caller input; this class has no trusted verifier.
   const passedRecovery = kernel.restoreAuthorityWithCertificate({
     recovery_id: 'rec_valid_001',
     cause: 'Test outage resolved',
@@ -369,8 +369,15 @@ test('9. Recovery from reduce-only requires verified recovery evidence', () => {
     evidence_hashes: ['hash1'],
     verification_result: true,
   });
-  assert.equal(passedRecovery, true);
-  assert.equal(kernel.getAuthorityMode(), 'A5_NORMAL');
+  assert.equal(passedRecovery, false);
+  assert.equal(kernel.restoreAuthority({
+    recovery_id: 'rec_valid_generic',
+    target_authority: 'A5_NORMAL',
+    provider_status: 'HEALTHY',
+    signer_state: 'READY',
+    settlement_state: 'CLEAN',
+  }), false);
+  assert.equal(kernel.getAuthorityMode(), 'A2_REDUCE_ONLY');
 });
 
 test('10. UI distinguishes token safety from capital authority', () => {

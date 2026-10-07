@@ -8,59 +8,68 @@
  *    SBOM, model manifest, protocol schema manifest, test evidence, and certification evidence.
  * 3. Runtime signs only if active ReleaseRoot is authorized and bytecode hashes match.
  */
-import { createHash } from 'node:crypto';
+import { hashCanonical } from '../pipeline/canonical-hashing.js';
 export class BuildSealAuthority {
-    authorizedReleaseRoots = new Map();
-    registeredCertificates = new Map();
-    registerReleaseCertificate(cert) {
-        if (cert.status === 'PRODUCTION_CERTIFIED' && cert.signature && cert.signature.length > 0) {
-            this.registeredCertificates.set(cert.releaseRootDigest, cert);
-        }
+    candidateReleaseRoots = new Map();
+    /**
+     * A status string and non-empty signature are not certificate verification.
+     * This build has no provisioned release trust root or verifier, so it cannot
+     * register a certificate as signing authority.
+     */
+    registerReleaseCertificate(_cert) {
+        return false;
     }
     /**
-     * Attests and registers a sealed ReleaseRoot.
-     * Authorization is derived from an independent ReleaseCertificate, not caller declaration alone.
+     * Computes and registers an immutable candidate root. This class has no
+     * trusted release verifier, so a candidate can never authorize live signing.
      */
     attestReleaseRoot(params) {
-        const sortedArtifacts = Object.keys(params.compiledArtifactHashes)
-            .sort()
-            .map((k) => `${k}:${params.compiledArtifactHashes[k]}`)
-            .join(';');
-        const payload = `${params.gitCommit}:${params.treeHash}:${params.dependencyRootHash}:${params.nodeVersion}:${params.typeScriptVersion}:${sortedArtifacts}:${params.sbomHash}:${params.modelManifestHash}:${params.protocolSchemaManifestHash}:${params.testEvidenceHash}:${params.certificationEvidenceHash}:${params.isAuthorized}`;
-        const releaseRootDigest = createHash('sha256').update(payload).digest('hex');
+        const payload = {
+            schema: 'SYLPH_BUILDSEAL_ROOT_V1',
+            gitCommit: params.gitCommit,
+            treeHash: params.treeHash,
+            dependencyRootHash: params.dependencyRootHash,
+            nodeVersion: params.nodeVersion,
+            typeScriptVersion: params.typeScriptVersion,
+            compiledArtifactHashes: params.compiledArtifactHashes,
+            sbomHash: params.sbomHash,
+            modelManifestHash: params.modelManifestHash,
+            protocolSchemaManifestHash: params.protocolSchemaManifestHash,
+            testEvidenceHash: params.testEvidenceHash,
+            certificationEvidenceHash: params.certificationEvidenceHash,
+            builtAtMs: params.builtAtMs,
+        };
+        const releaseRootDigest = hashCanonical(payload);
         const releaseRootId = `RELEASE-ROOT-${releaseRootDigest.slice(0, 16)}`;
-        const isAuthorized = params.releaseCertificate
-            ? (params.releaseCertificate.status === 'PRODUCTION_CERTIFIED' && params.releaseCertificate.signature.length > 0)
-            : (params.isAuthorized ?? false);
         const releaseRoot = {
             ...params,
-            isAuthorized,
+            compiledArtifactHashes: Object.freeze({ ...params.compiledArtifactHashes }),
+            releaseCertificate: params.releaseCertificate
+                ? Object.freeze({ ...params.releaseCertificate })
+                : undefined,
+            isAuthorized: false,
             releaseRootId,
             releaseRootDigest
         };
-        if (params.releaseCertificate) {
-            this.registerReleaseCertificate(params.releaseCertificate);
-        }
-        if (releaseRoot.isAuthorized) {
-            this.authorizedReleaseRoots.set(releaseRootDigest, releaseRoot);
-        }
-        return releaseRoot;
+        this.candidateReleaseRoots.set(releaseRootDigest, Object.freeze(releaseRoot));
+        return this.candidateReleaseRoots.get(releaseRootDigest);
     }
     /**
      * Authoritatively verifies whether a running system with observed bytecode
      * is authorized for live signing authority.
      */
     verifyRuntimeSigningAuthority(params) {
-        // 1. Authorization check: must be actively authorized and registered with authority
-        const hasRegisteredCert = this.registeredCertificates.has(params.releaseRoot.releaseRootDigest);
-        const hasAuthorizedRoot = this.authorizedReleaseRoots.has(params.releaseRoot.releaseRootDigest);
-        if (!params.releaseRoot.isAuthorized || (!hasRegisteredCert && !hasAuthorizedRoot)) {
+        // Caller-provided isAuthorized/certificate fields are descriptive data,
+        // not trusted verifier output. No release trust root is configured here.
+        const registeredCandidate = this.candidateReleaseRoots.get(params.releaseRoot.releaseRootDigest);
+        if (!registeredCandidate || registeredCandidate !== params.releaseRoot || params.releaseRoot.isAuthorized !== false) {
             return {
                 allowed: false,
-                reason: `ReleaseRoot ${params.releaseRoot.releaseRootId} is NOT authorized for production live signing`
+                reason: `ReleaseRoot ${params.releaseRoot.releaseRootId} is not an unchanged candidate registered by this authority`
             };
         }
-        // 2. Node version parity
+        // Preserve useful runtime diagnostics even though this class cannot grant
+        // authorization without an independently configured verifier.
         if (params.currentNodeVersion !== params.releaseRoot.nodeVersion) {
             return {
                 allowed: false,
@@ -83,7 +92,10 @@ export class BuildSealAuthority {
                 };
             }
         }
-        return { allowed: true };
+        return {
+            allowed: false,
+            reason: 'No trusted release-certificate verifier or provisioned release trust root is configured'
+        };
     }
 }
 //# sourceMappingURL=build-seal.js.map

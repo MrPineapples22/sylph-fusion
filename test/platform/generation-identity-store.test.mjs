@@ -176,6 +176,26 @@ test('legacy signing and registration share one namespace across processes and c
   assert.equal(signerCalls,0);
 });
 
+test('read-only signing intent lookup preserves message, wallet, state, and signature across reopen',async t=>{
+  const f=await fixture(t),store=f.store();await store.load();
+  const absent=await store.getSigningIntent('not-present');assert.equal(absent,null);
+  await store.prepareSigningIntent(prepared('read-signing'));
+  assert.deepEqual(await store.getSigningIntent('read-signing'),{
+    economicIntentId:'read-signing',wallet:'fixture-wallet',messageSha256:digest,state:'PREPARED',signatureBase64:null,
+  });
+  const signature=Buffer.alloc(64,7).toString('base64');
+  await store.markSigningIntentSigned('read-signing',digest,signature);
+  const expected={economicIntentId:'read-signing',wallet:'fixture-wallet',messageSha256:digest,state:'SIGNED',signatureBase64:signature};
+  assert.deepEqual(await store.getSigningIntent('read-signing'),expected);
+  await store.close();
+  const reopened=f.store();await reopened.load();
+  assert.deepEqual(await reopened.getSigningIntent('read-signing'),expected);
+  await reopened.registerInitialGeneration(request('read-registered'));
+  assert.equal(await reopened.getSigningIntent('read-registered'),null);
+  await assert.rejects(reopened.getSigningIntent(''),/Invalid signing intent lookup/);
+  assert.equal(Object.isFrozen(await reopened.getSigningIntent('read-signing')),true);
+});
+
 test('legacy migration preserves all columns, NUL keys, tombstones and consistent fixture backup',async t=>{
   const f=await fixture(t),before=legacyFixture(f.path);
   const old=new DatabaseSync(f.path),backup=join(f.dir,'backup.sqlite');

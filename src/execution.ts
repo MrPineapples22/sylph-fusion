@@ -9,8 +9,30 @@ import { Market, type Snapshot } from './market.js';
 import { log, mulBps, type Pending } from './core.js';
 import type { Config } from './config.js';
 import type { SigningFirewall } from './platform/signing/signing-firewall.js';
+import { AssetDeltaEngine } from './platform/execution/asset-delta-engine.js';
+import { canonicalJson } from './platform/pipeline/canonical-hashing.js';
 
 const JUPITER_PROGRAM = new PublicKey('JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4');
+const COMPUTE_BUDGET_PROGRAM = new PublicKey('ComputeBudget111111111111111111111111111111');
+const JUPITER_ROUTE_DISCRIMINATORS = new Set([
+  'e517cb977ae3ad2a', // route
+  'c1209b3341d69c81', // sharedAccountsRoute
+]);
+
+function validateJupiterExactInInstruction(data: Buffer, amount: bigint, output: bigint, slippageBps: number): void {
+  if (data.length < 31 || !JUPITER_ROUTE_DISCRIMINATORS.has(data.subarray(0, 8).toString('hex'))) {
+    throw new Error('unsupported Jupiter exact-in route instruction');
+  }
+  // Both exact-in V6 route variants end with inAmount:u64, quotedOutAmount:u64,
+  // slippageBps:u16 and platformFeeBps:u8. Bind this suffix to the HTTP result.
+  const inAmount = data.readBigUInt64LE(data.length - 19);
+  const quotedOutAmount = data.readBigUInt64LE(data.length - 11);
+  const encodedSlippageBps = data.readUInt16LE(data.length - 3);
+  const platformFeeBps = data[data.length - 1];
+  if (inAmount !== amount || quotedOutAmount !== output || encodedSlippageBps !== slippageBps || platformFeeBps !== 0) {
+    throw new Error('Jupiter instruction economics do not match build response');
+  }
+}
 
 export interface ExecutionSignerGateway {
   readonly publicKey: PublicKey;
@@ -77,33 +99,91 @@ export class Executor {
     } catch { this.floor = this.cfg.MIN_TIP_LAMPORTS; }
   }
   private tip(panic: boolean) { return Math.min(this.cfg.MAX_TIP_LAMPORTS, Math.max(this.cfg.MIN_TIP_LAMPORTS, this.floor * (panic ? 2 : 1))); }
-  async graduatedSell(mint: string, amount: bigint, slippage: number): Promise<{ instructions: TransactionInstruction[]; alts: AddressLookupTableAccount[]; output: bigint }> {
+  async graduatedSell(mint: string, amount: bigint, slippage: number): Promise<{ instructions: TransactionInstruction[]; alts: AddressLookupTableAccount[]; output: bigint; minimumOutput: bigint; quoteTimestamp: number; lastValidBlockHeight: number }> {
     if (!this.cfg.JUPITER_URL) throw new Error('Jupiter routing adapter is not explicitly configured');
-    const headers = { 'content-type': 'application/json', ...(this.cfg.JUPITER_API_KEY ? { 'x-api-key': this.cfg.JUPITER_API_KEY } : {}) };
-    const url = `${this.cfg.JUPITER_URL}/quote?inputMint=${mint}&outputMint=${NATIVE_MINT}&amount=${amount}&slippageBps=${slippage}&restrictIntermediateTokens=true&maxAccounts=32`;
-    const quote = await httpJson<any>(url, this.cfg.RPC_TIMEOUT_MS, { headers });
-    if (quote.inputMint !== mint || quote.outputMint !== NATIVE_MINT.toBase58() || quote.swapMode !== 'ExactIn' || BigInt(quote.inAmount) !== amount || BigInt(quote.outAmount) <= 0n || BigInt(quote.otherAmountThreshold) < mulBps(BigInt(quote.outAmount), 10_000 - slippage)) throw new Error('invalid Jupiter quote');
-    const result = await httpJson<any>(`${this.cfg.JUPITER_URL}/swap-instructions`, this.cfg.RPC_TIMEOUT_MS, { method: 'POST', headers,
-      body: JSON.stringify({ quoteResponse: quote, userPublicKey: this.key.publicKey.toBase58(), wrapAndUnwrapSol: true, dynamicComputeUnitLimit: false, useSharedAccounts: false }) });
-    if (result.error || !result.swapInstruction || (result.otherInstructions?.length ?? 0) > 0 || result.tokenLedgerInstruction) throw new Error('unsupported Jupiter instruction response');
-    const decode = (x: any) => new TransactionInstruction({ programId: new PublicKey(x.programId), data: Buffer.from(x.data, 'base64'), keys: x.accounts.map((a: any) => ({ pubkey: new PublicKey(a.pubkey), isSigner: a.isSigner, isWritable: a.isWritable })) });
-    const setup: TransactionInstruction[] = (result.setupInstructions ?? []).map(decode);
+    if (!this.cfg.JUPITER_API_KEY) throw new Error('Jupiter Swap API V2 requires an explicitly configured API key');
+    if (amount <= 0n || !Number.isSafeInteger(slippage) || slippage < 0 || slippage > 10_000) throw new Error('invalid Jupiter quote inputs');
+    const headers = { 'content-type': 'application/json', 'x-api-key': this.cfg.JUPITER_API_KEY };
+    const url = new URL(`${this.cfg.JUPITER_URL.replace(/\/+$/, '')}/build`);
+    url.search = new URLSearchParams({
+      inputMint: mint,
+      outputMint: NATIVE_MINT.toBase58(),
+      amount: String(amount),
+      taker: this.key.publicKey.toBase58(),
+      slippageBps: String(slippage),
+      maxAccounts: '32',
+    }).toString();
+    const build = await httpJson<any>(url.toString(), this.cfg.RPC_TIMEOUT_MS, { headers });
+    const isIntegerString = (value: unknown): value is string => typeof value === 'string' && /^(?:0|[1-9][0-9]*)$/.test(value);
+    if (!build || build.inputMint !== mint || build.outputMint !== NATIVE_MINT.toBase58() || build.swapMode !== 'ExactIn' ||
+      !isIntegerString(build.inAmount) || BigInt(build.inAmount) !== amount || !isIntegerString(build.outAmount) || BigInt(build.outAmount) <= 0n ||
+      !isIntegerString(build.otherAmountThreshold) || BigInt(build.otherAmountThreshold) <= 0n || BigInt(build.otherAmountThreshold) > BigInt(build.outAmount) ||
+      build.slippageBps !== slippage || !Array.isArray(build.setupInstructions) || !Array.isArray(build.computeBudgetInstructions) ||
+      !Array.isArray(build.otherInstructions) || !build.swapInstruction || build.tipInstruction != null || build.otherInstructions.length !== 0 ||
+      !Array.isArray(build.routePlan) || build.routePlan.length === 0 || build.routePlan.length > 32 ||
+      !build.blockhashWithMetadata || !Array.isArray(build.blockhashWithMetadata.blockhash) || build.blockhashWithMetadata.blockhash.length !== 32 ||
+      build.blockhashWithMetadata.blockhash.some((byte: unknown) => !Number.isInteger(byte) || (byte as number) < 0 || (byte as number) > 255) ||
+      !Number.isSafeInteger(build.blockhashWithMetadata.lastValidBlockHeight) || build.blockhashWithMetadata.lastValidBlockHeight <= 0) {
+      throw new Error('invalid or unsupported Jupiter V2 build response');
+    }
+    const quoteTimestamp = Date.now();
+    // Jupiter's threshold is the executable minimum. Validate it against the
+    // requested tolerance with integer rounding, then preserve that exact
+    // provider bound for paper settlement instead of recomputing a second one.
+    const minimumOutput = BigInt(build.otherAmountThreshold);
+    if (minimumOutput !== mulBps(BigInt(build.outAmount), 10_000 - slippage)) throw new Error('invalid Jupiter V2 minimum output');
+    const decode = (x: any) => {
+      if (!x || typeof x !== 'object' || typeof x.programId !== 'string' || typeof x.data !== 'string' ||
+        !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(x.data) || !Array.isArray(x.accounts) || x.accounts.length > 64) {
+        throw new Error('unsupported Jupiter V2 instruction response');
+      }
+      const data = Buffer.from(x.data, 'base64');
+      if (data.toString('base64') !== x.data) throw new Error('unsupported Jupiter V2 instruction response');
+      return new TransactionInstruction({ programId: new PublicKey(x.programId), data, keys: x.accounts.map((a: any) => {
+        if (!a || typeof a.pubkey !== 'string' || typeof a.isSigner !== 'boolean' || typeof a.isWritable !== 'boolean') throw new Error('unsupported Jupiter V2 account response');
+        return { pubkey: new PublicKey(a.pubkey), isSigner: a.isSigner, isWritable: a.isWritable };
+      }) });
+    };
+    const computeBudget: TransactionInstruction[] = build.computeBudgetInstructions.map(decode);
+    for (const ix of computeBudget) {
+      if (!ix.programId.equals(COMPUTE_BUDGET_PROGRAM) || ix.keys.length !== 0 || ix.data.length !== 9 || ix.data[0] !== 3) {
+        throw new Error('unsupported Jupiter V2 compute budget instruction');
+      }
+      const microLamports = ix.data.readBigUInt64LE(1);
+      if ((microLamports * 1_400_000n + 999_999n) / 1_000_000n > BigInt(this.cfg.MAX_PRIORITY_LAMPORTS)) {
+        throw new Error('Jupiter V2 priority fee exceeds configured cap');
+      }
+    }
+    const setup: TransactionInstruction[] = build.setupInstructions.map(decode);
     if (setup.some(ix => !ix.programId.equals(ASSOCIATED_TOKEN_PROGRAM_ID) || !ix.keys[0]?.pubkey.equals(this.key.publicKey) || !ix.keys[2]?.pubkey.equals(this.key.publicKey))) throw new Error('unexpected Jupiter setup');
-    const swap = decode(result.swapInstruction);
+    const swap = decode(build.swapInstruction);
     if (!swap.programId.equals(JUPITER_PROGRAM) || swap.keys.some(k => k.isSigner && !k.pubkey.equals(this.key.publicKey))) throw new Error('unexpected Jupiter swap signer/program');
+    validateJupiterExactInInstruction(swap.data, amount, BigInt(build.outAmount), slippage);
     const instructions = [...setup, swap];
-    if (result.cleanupInstruction) {
-      const cleanup = decode(result.cleanupInstruction);
+    if (build.cleanupInstruction) {
+      const cleanup = decode(build.cleanupInstruction);
       const nativeAta = getAssociatedTokenAddressSync(NATIVE_MINT, this.key.publicKey);
       if (!cleanup.programId.equals(TOKEN_PROGRAM_ID) || cleanup.data.length !== 1 || cleanup.data[0] !== 9 || !cleanup.keys[0]?.pubkey.equals(nativeAta) || !cleanup.keys[1]?.pubkey.equals(this.key.publicKey) || !cleanup.keys[2]?.pubkey.equals(this.key.publicKey)) throw new Error('unexpected Jupiter cleanup');
       instructions.push(cleanup);
     }
-    const alts = await Promise.all((result.addressLookupTableAddresses ?? []).map(async (address: string) => {
+    const lookupTables = build.addressesByLookupTableAddress;
+    if (lookupTables !== null && (typeof lookupTables !== 'object' || Array.isArray(lookupTables))) throw new Error('invalid Jupiter V2 lookup table response');
+    const alts = await Promise.all(Object.entries(lookupTables ?? {}).map(async ([address, addresses]) => {
+      if (!Array.isArray(addresses) || addresses.length > 256 || addresses.some(value => typeof value !== 'string')) throw new Error('invalid Jupiter V2 lookup table addresses');
       const table = await this.rpc.connection.getAddressLookupTable(new PublicKey(address));
       if (!table.value) throw new Error('missing lookup table');
+      const liveAddresses = new Set(table.value.state.addresses.map(value => value.toBase58()));
+      if (addresses.some(value => !liveAddresses.has(value))) throw new Error('Jupiter V2 lookup table contents changed');
       return table.value;
     }));
-    return { instructions, alts, output: BigInt(quote.outAmount) };
+    return {
+      instructions: [...computeBudget, ...instructions],
+      alts,
+      output: BigInt(build.outAmount),
+      minimumOutput,
+      quoteTimestamp,
+      lastValidBlockHeight: build.blockhashWithMetadata.lastValidBlockHeight,
+    };
   }
   /** Paper-only compatibility builder; direct live authority is quarantined. */
   async build(s: Snapshot, side: 'buy' | 'sell', amount: bigint, creator: string, stage: number, reason: string, panic: boolean): Promise<Built> {
@@ -112,10 +192,17 @@ export class Executor {
     const slippage = panic ? this.cfg.PANIC_SLIPPAGE_BPS : this.cfg.SLIPPAGE_BPS;
     let instructions: TransactionInstruction[], alts: AddressLookupTableAccount[] = [];
     let output: bigint;
+    let minimumOutput: bigint | undefined;
+    let quoteTimestamp = s.at;
+    let lastValidBlockHeight = 0;
     if (s.curve.complete) {
       if (side === 'buy') throw new Error('graduated entries disabled');
       const route = await this.graduatedSell(s.mint.toBase58(), amount, slippage);
+      if (Date.now() - s.at > this.cfg.QUOTE_MAX_AGE_MS) throw new Error('quote expired');
       instructions = route.instructions; alts = route.alts; output = route.output;
+      minimumOutput = route.minimumOutput;
+      quoteTimestamp = route.quoteTimestamp;
+      lastValidBlockHeight = route.lastValidBlockHeight;
     } else {
       output = side === 'buy' ? this.market.buyQuote(s, amount) : this.market.sellQuote(s, amount);
       if (output <= 0n) throw new Error('zero executable output');
@@ -129,14 +216,14 @@ export class Executor {
     const tip = this.tip(panic);
     const baseFee = 5000n;
     const fee = BigInt(tip + this.cfg.MAX_PRIORITY_LAMPORTS) + baseFee;
-    const executedSol = side === 'sell' ? mulBps(output, 10_000 - slippage) : 0n;
+    const executedSol = side === 'sell' ? (minimumOutput ?? mulBps(output, 10_000 - slippage)) : 0n;
     const slippageLamports = side === 'sell' ? output - executedSol : 0n;
     return {
-      pending: { id: randomUUID(), mint: s.mint.toBase58(), side, signature: 'paper', wire: '', lastValidBlockHeight: 0, created: Date.now(), creator, tokenProgram: s.tokenProgram.toBase58(), stage, reserve: s.curve.realQuoteReserves.toString(), reason, requested: String(amount), creatorTokens: s.creatorTokens },
+      pending: { id: randomUUID(), mint: s.mint.toBase58(), side, signature: 'paper', wire: '', lastValidBlockHeight, created: Date.now(), creator, tokenProgram: s.tokenProgram.toBase58(), stage, reserve: s.curve.realQuoteReserves.toString(), reason, requested: String(amount), creatorTokens: s.creatorTokens },
       tokenDelta: side === 'buy' ? mulBps(output, 10_000 - slippage) : -amount,
       solDelta: side === 'buy' ? -amount - fee - 3_000_000n : executedSol - fee,
       quotedOutput: output,
-      quoteTimestamp: s.at,
+      quoteTimestamp,
       overhead: {
         tipLamports: String(tip),
         priorityLamports: String(this.cfg.MAX_PRIORITY_LAMPORTS),
@@ -160,34 +247,79 @@ export class Executor {
     if (bundleId) {
       const report = await this.jitoCoordinator.checkInflightStatus(bundleId, order.signature);
       if (report.status === 'AUCTION_LOST' || report.status === 'SIMULATION_FAILED') {
-        log('jito_bundle_terminal_drop', { bundleId, reason: report.failureReason });
-        return { status: 'failed' };
+        // Relay status is useful diagnostics, but only finalized chain evidence
+        // can decide whether this signature failed or landed.
+        log('jito_bundle_terminal_observation', { bundleId, signature: order.signature, status: report.status, reason: report.failureReason });
       }
     }
     const results = await Promise.allSettled(this.rpc.endpoints.map(async c => {
-      // Support legacy, v0 and v1 transactions; opt into version 1 on RPC
-      const tx = await c.getTransaction(order.signature, { commitment: 'finalized', maxSupportedTransactionVersion: 1 });
+      // The pinned web3.js 1.98.4 decoder supports legacy/v0 only.
+      // A v1 response must remain unresolved until a v1-capable reader is adopted.
+      const tx = await c.getTransaction(order.signature, { commitment: 'finalized', maxSupportedTransactionVersion: 0 });
       const height = tx ? 0 : await c.getBlockHeight('finalized');
       return { tx, height };
     }));
     const found = results.flatMap(r => r.status === 'fulfilled' && r.value.tx ? [r.value.tx] : []);
     if (found.length) {
-      const tx = found[0];
-      if (!tx.meta) return { status: 'pending' };
-      if (tx.meta.err) return { status: 'failed', fee: BigInt(tx.meta.fee) };
-      const delta = transactionDeltas(tx, this.key.publicKey.toBase58(), order.mint);
-      return { status: 'filled', ...delta };
+      // A single RPC result, missing endpoint, or found/not-found disagreement
+      // is insufficient to mutate the local economic ledger.
+      if (found.length !== results.length || found.length < 2) return { status: 'pending' };
+      if (found.some(tx => !isFinalizedTransactionFor(tx, order.signature))) return { status: 'pending' };
+      const first = found[0]!;
+      if (first.meta!.err !== null) {
+        const encodedError = safeJson(first.meta!.err);
+        const fee = first.meta!.fee;
+        if (encodedError === null || first.meta!.err === undefined || !Number.isSafeInteger(fee) || fee < 0 || found.some(tx =>
+          tx.meta!.err === null || safeJson(tx.meta!.err) !== encodedError || tx.meta!.fee !== fee)) return { status: 'pending' };
+        return { status: 'failed', fee: BigInt(fee) };
+      }
+      const firstOutcome = finalizedEconomicSnapshot(first);
+      if (firstOutcome === null || found.some(tx => tx.meta!.err !== null || finalizedEconomicSnapshot(tx) !== firstOutcome)) return { status: 'pending' };
+      try {
+        const deltas = found.map(tx => transactionDeltas(tx, this.key.publicKey.toBase58(), order.mint, order.signature));
+        const firstDelta = deltas[0]!;
+        if (deltas.some(delta => delta.solDelta !== firstDelta.solDelta || delta.tokenDelta !== firstDelta.tokenDelta)) return { status: 'pending' };
+        return { status: 'filled', ...firstDelta };
+      } catch {
+        return { status: 'pending' };
+      }
     }
     if (results.length > 0 && results.every(r => r.status === 'fulfilled' && Number.isSafeInteger(r.value.height) && r.value.height > order.lastValidBlockHeight + 32)) return { status: 'expired' };
     return { status: 'pending' };
   }
 }
-export function transactionDeltas(tx: VersionedTransactionResponse, wallet: string, mint: string): { tokenDelta: bigint; solDelta: bigint } {
-  const meta = tx.meta;
-  if (!meta || meta.err) throw new Error('missing successful transaction metadata');
-  const keys = tx.transaction.message.getAccountKeys({ accountKeysFromLookups: meta.loadedAddresses });
-  const index = [...Array(keys.length).keys()].find(i => keys.get(i)?.toBase58() === wallet);
-  if (index === undefined || !Number.isSafeInteger(meta.preBalances[index]) || !Number.isSafeInteger(meta.postBalances[index])) throw new Error('invalid wallet balance metadata');
-  const sum = (rows: typeof meta.preTokenBalances) => (rows ?? []).filter(r => r.owner === wallet && r.mint === mint).reduce((n, r) => n + BigInt(r.uiTokenAmount.amount), 0n);
-  return { tokenDelta: sum(meta.postTokenBalances) - sum(meta.preTokenBalances), solDelta: BigInt(meta.postBalances[index]) - BigInt(meta.preBalances[index]) };
+function safeJson(value: unknown): string | null {
+  try { return JSON.stringify(value) ?? null; } catch { return null; }
+}
+
+function isFinalizedTransactionFor(tx: VersionedTransactionResponse, signature: string): boolean {
+  return !!tx && Array.isArray(tx.transaction?.signatures) && tx.transaction.signatures[0] === signature &&
+    Number.isSafeInteger(tx.slot) && tx.slot > 0 && !!tx.meta &&
+    Object.prototype.hasOwnProperty.call(tx.meta, 'err') && tx.meta.err !== undefined;
+}
+
+function finalizedEconomicSnapshot(tx: VersionedTransactionResponse): string | null {
+  try {
+    const meta = tx.meta!;
+    return canonicalJson({
+      signature: tx.transaction.signatures[0], slot: tx.slot, error: meta.err, fee: meta.fee,
+      preBalances: meta.preBalances, postBalances: meta.postBalances,
+      preTokenBalances: meta.preTokenBalances, postTokenBalances: meta.postTokenBalances,
+      loadedAddresses: meta.loadedAddresses,
+    });
+  } catch { return null; }
+}
+
+export function transactionDeltas(
+  tx: VersionedTransactionResponse,
+  wallet: string,
+  mint: string,
+  expectedSignature?: string
+): { tokenDelta: bigint; solDelta: bigint } {
+  if (!tx.meta || tx.meta.err !== null || (expectedSignature !== undefined && tx.transaction.signatures[0] !== expectedSignature)) {
+    throw new Error('missing successful transaction metadata or signature mismatch');
+  }
+  const report = AssetDeltaEngine.computeAssetDeltas(tx, wallet, mint);
+  if (!report.isConservationValid) throw new Error('transaction balance conservation failed');
+  return { tokenDelta: report.tokenDelta, solDelta: report.grossSolDelta };
 }

@@ -1662,13 +1662,12 @@ export class MasterIntelligenceEngine {
         const einsteinBundle = this.einstein.normalizeContext({
             mint: event.mint,
             token_age_sec: context.tokenAgeSec,
-            tx_count: context.txCount,
-            liquidity_sol: context.liquiditySol,
-            market_cap_sol: context.marketCapSol,
-            volume_sol: context.liquiditySol * 1.5,
-            token_return_1h_pct: 5.2,
-            sol_return_1h_pct: 1.2,
-            slippage_bps: 80,
+            decision_at_ms: event.receivedTimestampMs,
+            velocity_observation: context.velocityObservation,
+            liquidity_market_cap_observation: context.liquidityMarketCapObservation,
+            volume_observation: context.volumeObservation,
+            relative_return_1h: context.relativeReturn1h,
+            slippage_quote: context.slippageQuote,
         });
         const activeGenomes = this.darwin.getActivePopulation();
         const primaryGenome = activeGenomes[0] || this.darwin.getGenome('breakout_momentum_v1');
@@ -2070,7 +2069,8 @@ export class MasterIntelligenceEngine {
                     velocityByAgeNormalized: einsteinBundle.velocity_by_age.normalized_value,
                     liquidityToMcapRatio: einsteinBundle.liquidity_by_mcap.normalized_value,
                     volumeTurnoverNormalized: einsteinBundle.volume_by_liquidity.normalized_value,
-                    excessReturnOverSol: einsteinBundle.price_by_sol.normalized_value,
+                    excessReturnOverSol: einsteinBundle.price_by_sol.absolute_value,
+                    excessReturnOverSolNormalized: einsteinBundle.price_by_sol.normalized_value,
                 },
                 darwin: {
                     activeStrategyId: primaryGenome?.strategy_id || 'breakout_momentum_v1',

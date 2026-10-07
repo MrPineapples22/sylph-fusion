@@ -5,6 +5,7 @@ import {LiveReadinessEvaluator} from '../dist/platform/execution/live-readiness.
 import {ProtocolCompatibilityManager} from '../dist/platform/execution/protocol-compatibility-lease.js';
 import {createServer} from 'node:http';
 import {mkdirSync} from 'node:fs';
+import {readEngineResearchAudit, resolveEngineDatabasePath} from './engine-research-audit.mjs';
 import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
 import {createAstraFeed} from './astra-feed.mjs';
@@ -26,12 +27,15 @@ import {globalReleaseCertificationAuthority} from '../dist/platform/certificatio
 import {globalGoalLoopMonitor} from './goal-loop-health.mjs';
 import {OperatorReadModel} from '../dist/operator-read-model.js';
 import {createRuntimeContext} from '../dist/runtime-context.js';
+import {assertDatabaseFilesystemPolicy} from '../dist/platform/storage/filesystem-policy.js';
 import {serveStaticRequest} from './static-files.mjs';
 import {createDiscoveryRiskCache} from './discovery-risk-cache.mjs';
 import {isBasketEntryAuthorized, resolvePaperMarketEvidence} from './paper-market-evidence.mjs';
 import {serveNexusResearchUnavailable} from './nexus-research-response.mjs';
 import {enterPaperStartupDegraded, PAPER_ACCOUNT_RECOVERY_UNAVAILABLE_REASON} from './startup-readiness.mjs';
 import {deriveSystemOverallStatus} from './health-status.mjs';
+import {createGracefulShutdown} from './server-shutdown.mjs';
+import {createRuntimeIdentity} from './runtime-identity.mjs';
 import {
   HardRuleRegistry,
   TokenSafetyMicrokernel,
@@ -122,8 +126,22 @@ const vetoRegistry = new HardRuleRegistry();
 const vetoVault = new ProofVault();
 const vetoMicrokernel = new TokenSafetyMicrokernel(vetoRegistry);
 const project=fileURLToPath(new URL('../',import.meta.url));
+const runtimeIdentity = await createRuntimeIdentity(project);
 const projectDataDir=resolve(project,'data');
 mkdirSync(projectDataDir,{recursive:true});
+const databaseFilesystemAttestation=process.env.DATABASE_FILESYSTEM_OPERATOR_ATTESTATION;
+const databaseRuntimeMode=process.env.SYLPH_RUNTIME_MODE??process.env.MODE??'paper';
+if(databaseFilesystemAttestation==='LOCAL_SINGLE_HOST_WAL_COMPATIBLE'&&databaseRuntimeMode!=='paper'){
+  throw new Error('DATABASE_FILESYSTEM_OPERATOR_ATTESTATION_PAPER_ONLY');
+}
+const databaseFilesystem=assertDatabaseFilesystemPolicy(
+  projectDataDir, process.platform, undefined, undefined, undefined,
+  {allowUnclassified: databaseFilesystemAttestation === 'LOCAL_SINGLE_HOST_WAL_COMPATIBLE'},
+);
+if(databaseFilesystem.status==='UNCLASSIFIED_FILESYSTEM'||databaseFilesystem.status==='PLATFORM_UNCLASSIFIED'){
+  console.warn(JSON.stringify({event:'database_filesystem_operator_attestation',status:databaseFilesystem.status,filesystemType:databaseFilesystem.filesystemType,verified:false,mode:databaseRuntimeMode}));
+}
+const engineAuditDatabasePath=resolveEngineDatabasePath(project);
 
 // Real-World Scaling Blueprint Singletons
 const flightRecorderStore = new SQLiteExecutionAttemptStore(resolve(projectDataDir,'economic-flight-recorder.sqlite'));
@@ -1168,10 +1186,28 @@ async function handleRequest(req,res){
   }
 
   // Real-World Scaling Blueprint Endpoints
+  if (req.method === 'GET' && reqUrl.pathname === '/api/engine/research-audit') {
+    const evidence = readEngineResearchAudit(engineAuditDatabasePath);
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(evidence));
+    return;
+  }
+
+  if (req.method === 'GET' && reqUrl.pathname === '/api/runtime/identity') {
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(await runtimeIdentity.getReport()));
+    return;
+  }
+
   if (req.method === 'GET' && reqUrl.pathname === '/api/flight-recorder/attempts') {
     const attempts = flightRecorderStore.getAllHistory();
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ ok: true, attempts }, (_, v) => typeof v === 'bigint' ? v.toString() : v));
+    res.end(JSON.stringify({
+      ok: true,
+      recordStatus: attempts.length > 0 ? 'RECORDED' : 'EMPTY',
+      revisionCount: attempts.length,
+      attempts,
+    }, (_, v) => typeof v === 'bigint' ? v.toString() : v));
     return;
   }
 
@@ -1989,16 +2025,20 @@ async function handleRequest(req,res){
     const readinessReport = LiveReadinessEvaluator.evaluate({
       hasIsolatedSigner: false, // Quarantined until certified isolated KMS hardware gateway is configured
       signerPublicKeyBase58: undefined,
-      hasActiveProtocolLease: true,
-      protocolLeaseExpired: false,
-      exactBytesAuthorityReady: true,
-      terminalityWitnessCount: 2,
-      noLandSearchEngineReady: true,
-      reservationEngineReady: true,
-      reconciliationLedgerClean: true,
-      executionHurdleCalibrated: true,
-      canaryRiskLimitsEnforced: true,
-      releaseRootDigest: certReport.releaseStatus === 'CERTIFIED' ? certReport.releaseDigest : undefined,
+      // These production evidence sources are not wired to this paper terminal.
+      // Missing runtime observations remain UNKNOWN instead of caller-asserted PASS.
+      hasActiveProtocolLease: undefined,
+      protocolLeaseExpired: undefined,
+      exactBytesAuthorityReady: undefined,
+      terminalityWitnessCount: undefined,
+      noLandSearchEngineReady: undefined,
+      reservationEngineReady: undefined,
+      reconciliationLedgerClean: undefined,
+      executionHurdleCalibrated: undefined,
+      canaryRiskLimitsEnforced: undefined,
+      releaseCertificateVerified: certReport.isProductionPermitted === true && certReport.releaseStatus === 'CERTIFIED',
+      releaseRootDigest: certReport.isProductionPermitted === true && certReport.releaseStatus === 'CERTIFIED'
+        ? certReport.releaseDigest : undefined,
     });
 
     res.setHeader('Content-Type', 'application/json');
@@ -2236,4 +2276,14 @@ server.headersTimeout = 10_000;
 // a separately reviewed authentication and remote-access design exists.
 const host = '127.0.0.1';
 server.listen(port, host,()=>console.log(`SYLPH paper terminal: http://127.0.0.1:${port}`));
-for(const signal of ['SIGINT','SIGTERM'])process.once(signal,()=>{clearInterval(guardianInterval);discoveryRiskCache.stop();hub.stop();server.close();});
+const gracefulShutdown = createGracefulShutdown({
+  server,
+  stopServices: () => {
+    clearInterval(guardianInterval);
+    discoveryRiskCache.stop();
+    hub.stop();
+  },
+  closeStores: () => flightRecorderStore.close(),
+  onError: (error, phase) => console.error(`Terminal shutdown ${phase} failed:`, error?.stack || error?.message || error),
+});
+for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, gracefulShutdown);

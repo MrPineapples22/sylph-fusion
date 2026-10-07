@@ -9,7 +9,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {PaperAccountV3BootstrapStore} from '../../dist/platform/storage/paper-account-v3-store.js';
 import {bootstrapPaperAccountV3,verifyPaperAccountV3Bootstrap} from '../../dist/platform/storage/paper-account-v3-bootstrap.js';
 import {serializeSylphJcs1} from '../../dist/platform/storage/paper-account-v3-codec.js';
-import {initializePaperAccountV3Schema,verifyPaperAccountV3Schema,paperAccountV3SchemaSha256} from '../../dist/platform/storage/paper-account-v3-schema.js';
+import {initializePaperAccountV3Schema,inspectPaperAccountV3Source,verifyPaperAccountV3Schema,paperAccountV3SchemaSha256} from '../../dist/platform/storage/paper-account-v3-schema.js';
 import {initializePaperLedgerSchema,migratePaperLedgerV1ToV2,verifyPaperLedgerV1,verifyPaperLedgerV2} from '../../dist/platform/storage/paper-ledger-schema.js';
 
 async function dbPath(t,name='ledger.sqlite') {
@@ -106,6 +106,42 @@ test('invalid v0, malformed v1, and marker v2 data refuse before WAL/schema muta
   assert.equal(db.prepare('PRAGMA user_version').get().user_version,2); db.close();
 });
 
+test('source inspection uses a consistent read snapshot and leaves no transaction open',async t=>{
+  const path=await dbPath(t);const db=open(path);
+  try {
+    assert.equal(inspectPaperAccountV3Source(db),0);
+    assert.equal(db.isTransaction,false);
+    assert.equal(initializePaperAccountV3Schema(db).targetUserVersion,3);
+    assert.equal(inspectPaperAccountV3Source(db),3);
+    assert.equal(db.isTransaction,false);
+  } finally {db.close();}
+});
+
+test('source inspection closes a poisoned handle when snapshot rollback fails',()=>{
+  const runtimeDb=new DatabaseSync(':memory:');
+  const version=runtimeDb.prepare('SELECT sqlite_version() AS version').get().version;
+  runtimeDb.close();
+  let transaction=false;let closed=false;
+  const db={
+    get isTransaction(){return transaction;},
+    exec(sql){
+      if(sql==='BEGIN'){transaction=true;return;}
+      if(sql==='COMMIT')throw new Error('injected commit failure');
+      if(sql==='ROLLBACK')throw new Error('injected rollback failure');
+    },
+    prepare(sql){
+      if(sql.includes('sqlite_version'))return {get:()=>({version})};
+      if(sql==='PRAGMA user_version')return {get:()=>({user_version:0})};
+      if(sql.includes('sqlite_schema'))return {all:()=>[]};
+      throw new Error(`unexpected SQL: ${sql}`);
+    },
+    close(){closed=true;transaction=false;},
+  };
+  assert.throws(()=>inspectPaperAccountV3Source(db),/PAPER_ACCOUNT_V3_SOURCE_INSPECTION_ROLLBACK_FAILED/);
+  assert.equal(closed,true);
+  assert.equal(transaction,false);
+});
+
 test('v3 exact schema verifier rejects forged same-name trigger and leaves source unchanged',async t=>{
   const path=await dbPath(t); let db=open(path); initializePaperAccountV3Schema(db); db.close();
   db=open(path); db.exec("DROP TRIGGER pa2_events_no_update; CREATE TRIGGER pa2_events_no_update BEFORE UPDATE ON pa2_events BEGIN SELECT 1; END;");
@@ -188,13 +224,16 @@ test('abrupt child termination and reopen preserve v1/v2 before commit and recov
 });
 
 test('two independent schema workers converge on one empty v3 database',async t=>{
-  const path=await dbPath(t); const a=new PaperAccountV3BootstrapStore(path); const b=new PaperAccountV3BootstrapStore(path);
-  try {
-    const [as,bs]=await Promise.all([a.ready(),b.ready()]);
-    assert.equal(as.userVersion,3); assert.equal(bs.userVersion,3);
-    assert.equal((await a.inspect()).accountCount,0);
-    assert.equal((await b.inspect()).generationCount,0);
-  } finally {await Promise.all([a.close(),b.close()]);}
+  await Promise.all(Array.from({length:6},async(_,index)=>{
+    const path=await dbPath(t,`concurrent-${index}.sqlite`);
+    const a=new PaperAccountV3BootstrapStore(path); const b=new PaperAccountV3BootstrapStore(path);
+    try {
+      const [as,bs]=await Promise.all([a.ready(),b.ready()]);
+      assert.equal(as.userVersion,3); assert.equal(bs.userVersion,3);
+      assert.equal((await a.inspect()).accountCount,0);
+      assert.equal((await b.inspect()).generationCount,0);
+    } finally {await Promise.all([a.close(),b.close()]);}
+  }));
 });
 
 test('explicit bootstrap creates only blocked epoch-zero state and exact retries are no-ops',async t=>{

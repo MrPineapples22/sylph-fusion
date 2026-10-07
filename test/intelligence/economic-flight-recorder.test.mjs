@@ -205,6 +205,8 @@ test('ECONOMIC FLIGHT RECORDER: file-backed revisions survive a close and reopen
   const path = join(directory, 'attempts.sqlite');
   try {
     const firstStore = new SQLiteExecutionAttemptStore(path);
+    assert.equal(firstStore.db.prepare('PRAGMA journal_mode').get().journal_mode, 'wal');
+    assert.equal(firstStore.db.prepare('PRAGMA synchronous').get().synchronous, 2);
     const recorder = new EconomicFlightRecorder(firstStore);
     const initial = recorder.recordDiscovery({ economicFactId: 'fact_flt_restart', mint: 'mint', creator: 'creator' });
     recorder.advanceLifecycle('fact_flt_restart', initial.executionGenerationId, 'FILTER_EVALUATED', {});

@@ -57,7 +57,9 @@ export function normalizeCanonical(val: unknown): unknown {
     return val.map(normalizeCanonical);
   }
   if (typeof val === 'object') {
-    const sortedObj: Record<string, unknown> = {};
+    // A null-prototype map preserves an own `__proto__` JSON property as data
+    // instead of invoking Object.prototype's legacy prototype setter.
+    const sortedObj = Object.create(null) as Record<string, unknown>;
     const keys = Object.keys(val as Record<string, unknown>).sort();
     for (const key of keys) {
       const v = (val as Record<string, unknown>)[key];

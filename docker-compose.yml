@@ -11,8 +11,8 @@ services:
       - "127.0.0.1:8793:8793"
     environment:
       - MODE=paper
+      - DB_PATH=/app/data/fusion.sqlite
       - TERMINAL_PORT=8793
-      - TERMINAL_HOST=127.0.0.1
       - RUNTIME_MINUTES=0
     volumes:
       - ./data:/app/data

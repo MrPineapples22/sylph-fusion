@@ -99,7 +99,7 @@ test('PASS-26 REQ-1 (Target 1): ActorKnowledgeGraph reversible edge contribution
   assert.strictEqual(akg.getActorProfile(actorAlpha), undefined, 'Profile must be cleaned up when 0 active launches remain');
 });
 
-test('PASS-26 REQ-2 (Target 2): IngestionGapReconciler boot-time coverage frontier ingestion & pre-seeding', async () => {
+test('PASS-26 REQ-2 (Target 2): unverified persisted frontier rows cannot pre-seed continuous coverage', async () => {
   const tempDir = await mkdtemp(join(tmpdir(), 'sylph-pass26-frontier-'));
   const dbPath = join(tempDir, 'reconciler-frontier.db');
   const store = new Store(dbPath);
@@ -118,17 +118,16 @@ test('PASS-26 REQ-2 (Target 2): IngestionGapReconciler boot-time coverage fronti
     assert.ok(persisted);
     assert.strictEqual(persisted.continuous_slot, 50_000);
 
-    // 2. Initialize IngestionGapReconciler and load persisted frontier on boot
+    // 2. A legacy slot/root row is not bound to a verified range certificate,
+    // so the reconciler must fail closed instead of treating it as continuity proof.
     const reconciler = new IngestionGapReconciler();
     assert.strictEqual(reconciler.getContinuousSlot(), 0, 'Before loading frontier, continuousSlot is 0');
+    await assert.rejects(reconciler.loadPersistedFrontier(store, 'CHAIN_BLOCK'), /PERSISTED_COVERAGE_FRONTIER_UNVERIFIED/);
+    assert.strictEqual(reconciler.getContinuousSlot(), 0, 'Unverified database rows never advance the in-memory frontier');
 
-    const loadedSlot = await reconciler.loadPersistedFrontier(store, 'CHAIN_BLOCK');
-    assert.strictEqual(loadedSlot, 50_000);
-    assert.strictEqual(reconciler.getContinuousSlot(), 50_000, 'Continuous slot must be pre-seeded to 50,000');
-
-    // 3. Stream slot 50,001: must NOT create a pseudo-gap [0, 50000]!
+    // 3. The first live contiguous receipt establishes a fresh local baseline.
     const gap1 = reconciler.observeSlot(50_001);
-    assert.strictEqual(gap1, null, 'Continuous slot 50,001 following frontier 50,000 must NOT detect any gap');
+    assert.strictEqual(gap1, null, 'The first contiguous live receipt establishes a baseline');
     assert.strictEqual(reconciler.getContinuousSlot(), 50_001);
 
     // 4. Stream slot 50,005 (slots 50,002, 50,003, 50,004 dropped by provider)

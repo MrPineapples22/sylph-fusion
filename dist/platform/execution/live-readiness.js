@@ -19,112 +19,143 @@
  * - PRODUCTION_CAPITAL_AUTHORITY_BLOCKED = false ONLY when liveReady is true
  * - Never hardcoded; always derived dynamically from live runtime verification
  */
+function booleanStatus(value) {
+    return value === true ? 'PASS' : value === false ? 'FAIL' : 'UNKNOWN';
+}
 export class LiveReadinessEvaluator {
     /**
-     * Evaluates all 10 production gates against active system dependencies.
+     * Aggregates caller-supplied gate observations. Inputs are not independently
+     * authenticated here; callers must only report PASS from trusted evidence.
      */
     static evaluate(deps) {
         const now = Date.now();
         // 1. Signing Authority Gate
-        const signingPass = deps.hasIsolatedSigner && Boolean(deps.signerPublicKeyBase58);
+        const signingStatus = deps.hasIsolatedSigner === false ? 'FAIL'
+            : deps.hasIsolatedSigner === undefined ? 'UNKNOWN'
+                : deps.signerPublicKeyBase58 ? 'PASS' : 'FAIL';
+        const signingPass = signingStatus === 'PASS';
         const signingAuthority = {
             gateName: 'signingAuthority',
-            status: signingPass ? 'PASS' : 'FAIL',
+            status: signingStatus,
             evidence: signingPass
                 ? `IsolatedSignerGateway active with pubkey ${deps.signerPublicKeyBase58}`
-                : 'IsolatedSignerGateway not configured or missing public key',
+                : deps.hasIsolatedSigner === false
+                    ? 'IsolatedSignerGateway is known to be unavailable'
+                    : deps.hasIsolatedSigner === true
+                        ? 'IsolatedSignerGateway is asserted but its public key is missing'
+                        : 'IsolatedSignerGateway status is unknown',
             checkedAtMs: now,
         };
         // 2. Protocol Compatibility Gate
-        const protoPass = deps.hasActiveProtocolLease && !deps.protocolLeaseExpired;
+        const protoStatus = deps.hasActiveProtocolLease === true && deps.protocolLeaseExpired === false ? 'PASS'
+            : deps.hasActiveProtocolLease === false || deps.protocolLeaseExpired === true ? 'FAIL'
+                : 'UNKNOWN';
+        const protoPass = protoStatus === 'PASS';
         const protocolCompatibility = {
             gateName: 'protocolCompatibility',
-            status: protoPass ? 'PASS' : 'FAIL',
+            status: protoStatus,
             evidence: protoPass
                 ? 'Protocol compatibility lease active and unexpired'
-                : deps.protocolLeaseExpired
+                : deps.protocolLeaseExpired === true
                     ? 'Protocol compatibility lease has expired'
-                    : 'No active protocol compatibility lease found',
+                    : deps.hasActiveProtocolLease === false
+                        ? 'No active protocol compatibility lease found'
+                        : 'Protocol compatibility lease status is unknown',
             checkedAtMs: now,
         };
         // 3. Exact Bytes Authority Gate
-        const exactBytesPass = deps.exactBytesAuthorityReady;
+        const exactBytesStatus = booleanStatus(deps.exactBytesAuthorityReady);
+        const exactBytesPass = exactBytesStatus === 'PASS';
         const exactBytesAuthority = {
             gateName: 'exactBytesAuthority',
-            status: exactBytesPass ? 'PASS' : 'FAIL',
+            status: exactBytesStatus,
             evidence: exactBytesPass
                 ? 'ExactBytesAuthority 5-stage byte identity verification active'
-                : 'ExactBytesAuthority not initialized',
+                : exactBytesStatus === 'FAIL' ? 'ExactBytesAuthority not initialized' : 'ExactBytesAuthority status is unknown',
             checkedAtMs: now,
         };
         // 4. Terminality Authority Gate
-        const terminalityPass = deps.terminalityWitnessCount >= 2;
+        const terminalityStatus = deps.terminalityWitnessCount === undefined ? 'UNKNOWN'
+            : Number.isSafeInteger(deps.terminalityWitnessCount) && deps.terminalityWitnessCount >= 2 ? 'PASS' : 'FAIL';
+        const terminalityPass = terminalityStatus === 'PASS';
         const terminalityAuthority = {
             gateName: 'terminalityAuthority',
-            status: terminalityPass ? 'PASS' : 'FAIL',
+            status: terminalityStatus,
             evidence: terminalityPass
                 ? `Multi-provider witness quorum active (${deps.terminalityWitnessCount} independent providers)`
-                : `Insufficient terminality witnesses (${deps.terminalityWitnessCount} < 2 required)`,
+                : deps.terminalityWitnessCount === undefined
+                    ? 'Terminality witness count is unknown'
+                    : `Insufficient or invalid terminality witnesses (${deps.terminalityWitnessCount} < 2 required)`,
             checkedAtMs: now,
         };
         // 5. NoLand Certification Gate
-        const noLandPass = deps.noLandSearchEngineReady;
+        const noLandStatus = booleanStatus(deps.noLandSearchEngineReady);
+        const noLandPass = noLandStatus === 'PASS';
         const noLandCertification = {
             gateName: 'noLandCertification',
-            status: noLandPass ? 'PASS' : 'FAIL',
+            status: noLandStatus,
             evidence: noLandPass
                 ? 'Authoritative history search and slot-bounded NoLand certification active'
-                : 'NoLand search engine unavailable',
+                : noLandStatus === 'FAIL' ? 'NoLand search engine unavailable' : 'NoLand search engine status is unknown',
             checkedAtMs: now,
         };
         // 6. Capital Authority Gate
-        const capitalPass = deps.reservationEngineReady;
+        const capitalStatus = booleanStatus(deps.reservationEngineReady);
+        const capitalPass = capitalStatus === 'PASS';
         const capitalAuthority = {
             gateName: 'capitalAuthority',
-            status: capitalPass ? 'PASS' : 'FAIL',
+            status: capitalStatus,
             evidence: capitalPass
                 ? 'HierarchicalReservationEngine active with exact worst-case bigint lamports'
-                : 'Reservation engine unavailable',
+                : capitalStatus === 'FAIL' ? 'Reservation engine unavailable' : 'Reservation engine status is unknown',
             checkedAtMs: now,
         };
         // 7. Economic Reconciliation Gate
-        const econPass = deps.reconciliationLedgerClean;
+        const econStatus = booleanStatus(deps.reconciliationLedgerClean);
+        const econPass = econStatus === 'PASS';
         const economicReconciliation = {
             gateName: 'economicReconciliation',
-            status: econPass ? 'PASS' : 'FAIL',
+            status: econStatus,
             evidence: econPass
                 ? 'Economic reconciliation ledger clean with zero unexplained discrepancies'
-                : 'Reconciliation discrepancies or ledger uninitialized',
+                : econStatus === 'FAIL' ? 'Reconciliation discrepancies or ledger uninitialized' : 'Reconciliation ledger status is unknown',
             checkedAtMs: now,
         };
         // 8. Execution Calibration Gate
-        const execPass = deps.executionHurdleCalibrated;
+        const execStatus = booleanStatus(deps.executionHurdleCalibrated);
+        const execPass = execStatus === 'PASS';
         const executionCalibration = {
             gateName: 'executionCalibration',
-            status: execPass ? 'PASS' : 'FAIL',
+            status: execStatus,
             evidence: execPass
                 ? 'Execution friction fully calibrated (priority fees, base fees, slippage, and tips)'
-                : 'Execution calibration incomplete',
+                : execStatus === 'FAIL' ? 'Execution calibration incomplete' : 'Execution calibration status is unknown',
             checkedAtMs: now,
         };
         // 9. Canary Certification Gate
-        const canaryPass = deps.canaryRiskLimitsEnforced;
+        const canaryStatus = booleanStatus(deps.canaryRiskLimitsEnforced);
+        const canaryPass = canaryStatus === 'PASS';
         const canaryCertification = {
             gateName: 'canaryCertification',
-            status: canaryPass ? 'PASS' : 'FAIL',
+            status: canaryStatus,
             evidence: canaryPass
                 ? 'Canary risk limits enforced (0.05 SOL max, 1 concurrent position, strict daily loss budget)'
-                : 'Canary risk constraints unverified',
+                : canaryStatus === 'FAIL' ? 'Canary risk constraints failed' : 'Canary risk constraints are unknown',
             checkedAtMs: now,
         };
         // 10. Release Certification Gate
-        const releasePass = Boolean(deps.releaseRootDigest && deps.releaseRootDigest.length >= 32);
+        const releaseStatus = deps.releaseCertificateVerified === undefined ? 'UNKNOWN'
+            : deps.releaseCertificateVerified === false ? 'FAIL'
+                : typeof deps.releaseRootDigest === 'string' && /^[a-f0-9]{64}$/.test(deps.releaseRootDigest) ? 'PASS' : 'FAIL';
+        const releasePass = releaseStatus === 'PASS';
         const releaseCertification = {
             gateName: 'releaseCertification',
-            status: releasePass ? 'PASS' : 'FAIL',
+            status: releaseStatus,
             evidence: releasePass
                 ? `Release root digest certified: ${deps.releaseRootDigest}`
-                : 'Release root digest missing or uncertified',
+                : releaseStatus === 'UNKNOWN'
+                    ? 'Release certificate verification status is unknown'
+                    : 'Release certificate is unverified or its root digest is malformed',
             checkedAtMs: now,
         };
         const allGates = [
@@ -140,6 +171,8 @@ export class LiveReadinessEvaluator {
             releaseCertification,
         ];
         const passedCount = allGates.filter(g => g.status === 'PASS').length;
+        const failedCount = allGates.filter(g => g.status === 'FAIL').length;
+        const unknownCount = allGates.filter(g => g.status === 'UNKNOWN').length;
         const liveReady = passedCount === allGates.length;
         // Derived states (NEVER hardcoded):
         const liveSigningUnavailable = !signingPass;
@@ -149,6 +182,8 @@ export class LiveReadinessEvaluator {
             liveSigningUnavailable,
             productionCapitalAuthorityBlocked,
             passedGatesCount: passedCount,
+            failedGatesCount: failedCount,
+            unknownGatesCount: unknownCount,
             totalGatesCount: allGates.length,
             gates: {
                 signingAuthority,

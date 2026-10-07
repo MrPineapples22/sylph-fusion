@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash, generateKeyPairSync, sign } from 'node:crypto';
+import { types as utilTypes } from 'node:util';
 import {
   AssuranceRevocationRegistry,
+  computeProofArtifactDigest,
   createProofArtifact,
   verifyProofArtifact,
   validateActionProofBundle,
@@ -68,6 +71,50 @@ test('SECTION 64 MATRIX: 2. Missing or tampered payload fails closed', () => {
   assert.match(verification.reason, /PAYLOAD_TAMPERED/);
 });
 
+test('Proof artifacts reject accessors and proxies without reading attacker-controlled properties', () => {
+  const artifact = createProofArtifact({
+    artifactType: 'MARKET_TRUTH_CERTIFICATE', subject: 'SubjectMint123', claim: 'TRUTH_CERTIFIED',
+    evidenceClass: 'DIRECT_OBSERVATION', issuer: 'issuer_node_01', issuerRole: 'TruthAuthority',
+    validDurationMs: 60_000, stateRoot: 'state_root_001', policyRoot: 'policy_root_001',
+    configRoot: 'config_root_001', releaseRoot: 'release_root_001', controlEpoch: 1, revocationEpoch: 0,
+    payload: { price: 1.25 }, signingKey: TEST_KEY,
+  });
+  let getterCalls = 0;
+  const accessorPayload = {};
+  Object.defineProperty(accessorPayload, 'price', { enumerable: true, get() { getterCalls += 1; return 1.25; } });
+  assert.equal(verifyProofArtifact({ ...artifact, payload: accessorPayload }, TEST_KEY).isValid, false);
+  assert.equal(getterCalls, 0);
+
+  let proxyTrapCalls = 0;
+  const proxied = new Proxy(artifact, { ownKeys() { proxyTrapCalls += 1; return Reflect.ownKeys(artifact); } });
+  assert.equal(utilTypes.isProxy(proxied), true);
+  assert.equal(verifyProofArtifact(proxied, TEST_KEY).isValid, false);
+  assert.equal(proxyTrapCalls, 0);
+});
+
+test('Proof artifact digest canonicalizes nested JSON field order and distinguishes delimiter collisions', () => {
+  const artifact = createProofArtifact({
+    artifactType: 'MARKET_TRUTH_CERTIFICATE', subject: 'SubjectMint123', claim: { alpha: 1, beta: 2 },
+    evidenceClass: 'DIRECT_OBSERVATION', issuer: 'issuer_node_01', issuerRole: 'TruthAuthority',
+    validDurationMs: 60_000, stateRoot: 'state_root_001', policyRoot: 'policy_root_001',
+    configRoot: 'config_root_001', releaseRoot: 'release_root_001', controlEpoch: 1, revocationEpoch: 0,
+    payload: { x: 'a|b', y: 'c' }, signingKey: TEST_KEY,
+  });
+  const digestInput = ({ claim, payload }) => ({
+    schemaVersion: artifact.schemaVersion, artifactType: artifact.artifactType, subject: artifact.subject,
+    claim, evidenceClass: artifact.evidenceClass, issuer: artifact.issuer, issuerRole: artifact.issuerRole,
+    issuedAt: artifact.issuedAt, validFrom: artifact.validFrom, validUntil: artifact.validUntil,
+    stateRoot: artifact.stateRoot, policyRoot: artifact.policyRoot, configRoot: artifact.configRoot,
+    releaseRoot: artifact.releaseRoot, controlEpoch: artifact.controlEpoch, revocationEpoch: artifact.revocationEpoch,
+    dependencies: [...artifact.dependencies], evidenceRoots: [...artifact.evidenceRoots], payload,
+  });
+  const first = computeProofArtifactDigest(digestInput(artifact));
+  const reordered = computeProofArtifactDigest(digestInput({ claim: { beta: 2, alpha: 1 }, payload: { y: 'c', x: 'a|b' } }));
+  const collisionCandidate = computeProofArtifactDigest(digestInput({ claim: { alpha: 1, beta: 2 }, payload: { x: 'a', y: 'b|c' } }));
+  assert.equal(first, reordered);
+  assert.notEqual(first, collisionCandidate);
+});
+
 test('SECTION 64 MATRIX: 3. UNKNOWN evidence never promotes to authority or frees capital', () => {
   const store = new EconomicAuthorityStore(10_000_000_000n);
   const res = store.acquireReservation('intent_001', 25_000_000n, 100);
@@ -83,9 +130,42 @@ test('SECTION 64 MATRIX: 3. UNKNOWN evidence never promotes to authority or free
 });
 
 test('SECTION 64 MATRIX: 4. Conflicting evidence rejected (signature verification fails on altered payload digest)', () => {
-  const issuerRegistry = new AuthorityIssuerRegistry();
+  const emptyRegistry = new AuthorityIssuerRegistry();
+  assert.throws(() => emptyRegistry.getIdentity('TruthAuthority'), /No pinned identity/);
+  assert.throws(() => emptyRegistry.signPayload('TruthAuthority', 'a'.repeat(64)), /No pinned identity/);
+
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+  const publicKeyFingerprint = createHash('sha256')
+    .update(publicKey.export({ type: 'spki', format: 'der' }))
+    .digest('hex');
+  const issuerRegistry = new AuthorityIssuerRegistry([{
+    identity: {
+      issuerId: 'issuer_truth_test',
+      role: 'TruthAuthority',
+      keyId: 'truth_test_01',
+      publicKeyHex: publicKeyFingerprint,
+      signatureAlgorithm: 'Ed25519',
+    },
+    publicKey,
+    signDigest: digest => sign(null, digest, privateKey),
+  }]);
   const digestA = 'a'.repeat(64);
   const sigA = issuerRegistry.signPayload('TruthAuthority', digestA);
+  assert.equal(issuerRegistry.verifySignature(sigA, 'TruthAuthority').isValid, true);
+  const identity = issuerRegistry.getIdentity('TruthAuthority');
+  assert.throws(() => new AuthorityIssuerRegistry([
+    { identity, publicKey },
+    {
+      identity: { ...identity, issuerId: 'issuer_risk_test', role: 'RiskAuthority', keyId: 'risk_test_01' },
+      publicKey,
+    },
+  ]), /ISSUER_IDENTITY_REUSED_ACROSS_ROLES/);
+  const badSigner = new AuthorityIssuerRegistry([{
+    identity,
+    publicKey,
+    signDigest: () => new Uint8Array(64),
+  }]);
+  assert.throws(() => badSigner.signPayload('TruthAuthority', digestA), /ISSUER_SIGNATURE_SELF_CHECK_FAILED/);
 
   // Verifying sigA against conflicting digest B must fail
   const digestB = 'b'.repeat(64);
@@ -94,6 +174,16 @@ test('SECTION 64 MATRIX: 4. Conflicting evidence rejected (signature verificatio
     payloadDigestHex: digestB,
   });
   assert.equal(verification.isValid, false);
+
+  const impersonated = issuerRegistry.verifySignature({ ...sigA, issuerId: 'attacker' });
+  assert.equal(impersonated.isValid, false);
+  assert.match(impersonated.reason, /ISSUER_IDENTITY_MISMATCH/);
+
+  assert.equal(issuerRegistry.verifySignature({ ...sigA, issuerKeyId: 'attacker_key' }).isValid, false);
+  assert.equal(issuerRegistry.verifySignature({ ...sigA, extra: true }).isValid, false);
+  assert.equal(issuerRegistry.verifySignature(new Proxy(sigA, {})).isValid, false);
+  assert.equal(issuerRegistry.verifySignature(sigA, 'RiskAuthority').isValid, false);
+  assert.throws(() => issuerRegistry.signPayload('TruthAuthority', 'a'.repeat(63)), /PAYLOAD_DIGEST_INVALID/);
 });
 
 test('SECTION 64 MATRIX: 5. Expired certificate rejected', () => {
@@ -220,8 +310,14 @@ test('SECTION 64 MATRIX: 8. ActionProofBundle rejects unfavorable evidence, stal
     currentTime: Date.now(),
   };
 
-  // Valid bundle passes
-  const validRes = validateActionProofBundle(validBundle, activeRoots);
+  // Shape and caller-supplied signatures cannot authorize without a trusted verifier capability.
+  const unverifiedRes = validateActionProofBundle(validBundle, activeRoots);
+  assert.equal(unverifiedRes.isAuthorized, false);
+  assert.equal(unverifiedRes.reasons.filter(reason => reason.includes('CERTIFICATE_SIGNATURE_UNVERIFIED')).length, 12);
+
+  // A test-only verifier checks every certificate with its known test key.
+  const verifyTestCertificate = cert => verifyProofArtifact(cert, TEST_KEY, activeRoots.currentTime);
+  const validRes = validateActionProofBundle(validBundle, activeRoots, verifyTestCertificate);
   assert.equal(validRes.isAuthorized, true);
   assert.equal(validRes.reasons.length, 0);
 
@@ -229,7 +325,7 @@ test('SECTION 64 MATRIX: 8. ActionProofBundle rejects unfavorable evidence, stal
   const staleEpochRes = validateActionProofBundle(validBundle, {
     ...activeRoots,
     controlEpoch: 2, // Advanced
-  });
+  }, verifyTestCertificate);
   assert.equal(staleEpochRes.isAuthorized, false);
   assert.ok(staleEpochRes.reasons.some((r) => r.includes('STALE_CONTROL_EPOCH')));
 
@@ -237,7 +333,7 @@ test('SECTION 64 MATRIX: 8. ActionProofBundle rejects unfavorable evidence, stal
   const badReleaseRes = validateActionProofBundle(validBundle, {
     ...activeRoots,
     releaseRoot: 'release_v2_rotated',
-  });
+  }, verifyTestCertificate);
   assert.equal(badReleaseRes.isAuthorized, false);
   assert.ok(badReleaseRes.reasons.some((r) => r.includes('RELEASE_ROOT_MISMATCH')));
 
@@ -246,9 +342,17 @@ test('SECTION 64 MATRIX: 8. ActionProofBundle rejects unfavorable evidence, stal
     ...validBundle,
     marketTruthCertificate: makeCert('MARKET_TRUTH_CERTIFICATE', 'TruthAuthority', 'UNKNOWN'),
   };
-  const unknownRes = validateActionProofBundle(bundleWithUnknown, activeRoots);
+  const unknownRes = validateActionProofBundle(bundleWithUnknown, activeRoots, verifyTestCertificate);
   assert.equal(unknownRes.isAuthorized, false);
   assert.ok(unknownRes.reasons.some((r) => r.includes('UNFAVORABLE_EVIDENCE')));
+
+  const invalidSignatureBundle = {
+    ...validBundle,
+    marketTruthCertificate: { ...validBundle.marketTruthCertificate, signature: 'f'.repeat(64) },
+  };
+  const invalidSignatureRes = validateActionProofBundle(invalidSignatureBundle, activeRoots, verifyTestCertificate);
+  assert.equal(invalidSignatureRes.isAuthorized, false);
+  assert.ok(invalidSignatureRes.reasons.some((r) => r.includes('CERTIFICATE_SIGNATURE_INVALID')));
 });
 
 test('SECTION 64 MATRIX: 9. Duplicate / replay of execution fence or reservation blocked', () => {

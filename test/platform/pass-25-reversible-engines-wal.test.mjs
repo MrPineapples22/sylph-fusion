@@ -174,6 +174,11 @@ test('PASS-25 REQ-4 (Target 3): Store SQLite WAL durable recovery certificate & 
     const retrievedByGap = await store.getRecoveryCertificate('gap-100-110');
     assert.ok(retrievedByGap);
     assert.strictEqual(retrievedByGap.certificateId, 'cert-wal-001');
+    await store.saveRecoveryCertificate(cert);
+    await assert.rejects(
+      store.saveRecoveryCertificate({...cert, stateRoot: 'conflicting-content'}),
+      /RECOVERY_CERTIFICATE_CONTENT_CONFLICT/,
+    );
 
     // 4. Save and retrieve multi-lane coverage frontier
     const frontier = {
@@ -193,5 +198,47 @@ test('PASS-25 REQ-4 (Target 3): Store SQLite WAL durable recovery certificate & 
   } finally {
     await store.close();
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('Store: verified range certificates persist append-only in the current schema', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'sylph-verified-recovery-'));
+  const dbPath = join(dir, 'state.sqlite');
+  const store = new Store(dbPath);
+  const secondStore = new Store(dbPath);
+  const certificate = Object.freeze({
+    certificateId: 'verified-cert-v2-001',
+    gapId: 'gap-v2-10-11',
+    startSlot: 10,
+    endSlot: 11,
+    providerId: 'archival-provider-a',
+    classification: 'MISSING_OBSERVATION',
+    lane: 'CHAIN_BLOCK',
+    recoveredEventIds: Object.freeze(['event-v2-10']),
+    perSlotStatus: Object.freeze({'10': 'RECOVERED', '11': 'EMPTY'}),
+    stateRoot: 'a'.repeat(64),
+    coverageRoot: 'b'.repeat(64),
+    isVerified: true,
+    certifiedAtMs: Date.now(),
+  });
+  try {
+    await Promise.all([
+      store.saveVerifiedRecoveryCertificate(certificate),
+      secondStore.saveVerifiedRecoveryCertificate(certificate),
+    ]);
+    await store.saveVerifiedRecoveryCertificate(certificate);
+    assert.equal(JSON.stringify(await store.getVerifiedRecoveryCertificate(certificate.certificateId)), JSON.stringify(certificate));
+    assert.equal(JSON.stringify(await store.getVerifiedRecoveryCertificate(certificate.gapId)), JSON.stringify(certificate));
+    await assert.rejects(
+      store.saveVerifiedRecoveryCertificate({...certificate, stateRoot: 'c'.repeat(64)}),
+      /RECOVERY_CERTIFICATE_CONTENT_CONFLICT/,
+    );
+    await assert.rejects(
+      store.saveVerifiedRecoveryCertificate({...certificate, certificateId: 'unverified', isVerified: false}),
+      /RECOVERY_CERTIFICATE_INVALID/,
+    );
+  } finally {
+    await Promise.all([store.close(), secondStore.close()]);
+    await rm(dir, {recursive: true, force: true});
   }
 });

@@ -37,6 +37,16 @@ export interface ActionProofBundle {
   readonly proofGraphRoot: string;
 }
 
+export interface ProofArtifactVerificationResult {
+  readonly isValid: boolean;
+  readonly reason?: string;
+}
+
+/** A trusted verifier capability provided by runtime composition, never by evidence authors. */
+export type TrustedProofArtifactVerifier = (
+  artifact: ProofArtifact
+) => ProofArtifactVerificationResult;
+
 export function computeActionProofBundleHash(bundle: ActionProofBundle): string {
   const parts = [
     bundle.actionId,
@@ -79,7 +89,8 @@ export function validateActionProofBundle(
     fenceEpoch: number;
     currentSlot: bigint;
     currentTime: number;
-  }
+  },
+  verifyArtifact?: TrustedProofArtifactVerifier,
 ): { isAuthorized: boolean; reasons: string[] } {
   const reasons: string[] = [];
 
@@ -154,6 +165,19 @@ export function validateActionProofBundle(
 
     if (item.cert.evidenceClass === 'UNKNOWN' || item.cert.evidenceClass === 'INSUFFICIENT_EVIDENCE' || item.cert.evidenceClass === 'MISSING') {
       reasons.push(`UNFAVORABLE_EVIDENCE: Certificate ${item.name} contains invalid evidenceClass '${item.cert.evidenceClass}'`);
+    }
+
+    if (!verifyArtifact) {
+      reasons.push(`CERTIFICATE_SIGNATURE_UNVERIFIED: No trusted verifier is configured for ${item.name}`);
+    } else {
+      try {
+        const verification = verifyArtifact(item.cert);
+        if (verification?.isValid !== true) {
+          reasons.push(`CERTIFICATE_SIGNATURE_INVALID: ${item.name}${verification?.reason ? ` (${verification.reason})` : ''}`);
+        }
+      } catch {
+        reasons.push(`CERTIFICATE_SIGNATURE_INVALID: Trusted verifier failed for ${item.name}`);
+      }
     }
   }
 

@@ -1,21 +1,4 @@
-/**
- * SOL-SYLPH Intelligence Fabric - Counterfactual Regret Store & Alpha Decomposition
- * Specifications: 500-Item Roadmap Layer I (#3, #10), Layer II (#185-#188), Layer III (#299), Layer V (#483, #484).
- *
- * Implements:
- * 1. AlphaDecomposition: Disentangles edge destruction into 4 orthogonal buckets:
- *    - Discovery Regret (stale ingress, delayed discovery)
- *    - Pricing Regret (model mispricing, optimistic upside, understated downside)
- *    - Execution Regret (scheduler drag, adverse slippage, suboptimal tip/fee policy)
- *    - Exit Regret (premature exit, round-trip giving back gains, failure to cut)
- * 2. CounterfactualScenario: Evaluates "what would have happened" across:
- *    - Timing: entry -1 slot vs +1 slot
- *    - Execution: 2x tip (faster block) vs 0.5x tip (cheaper fee)
- *    - Sizing: 0.5x risk size vs 1.5x risk size
- *    - Action: ACT vs WAIT vs ABSTAIN
- * 3. ExecutionRegretEngine: Computes quantitative counterfactual deltas.
- * 4. CounterfactualRegretStore: Immutable ring-buffer journal providing rolling forensic attribution.
- */
+import { createHash } from 'node:crypto';
 export class ExecutionRegretEngine {
     /**
      * Disentangles realized trade performance into orthogonal regret components
@@ -134,9 +117,7 @@ export class ExecutionRegretEngine {
         else if (primaryFailureSubsystem === 'EXIT') {
             actionablePolicyTuning = 'Tighten trailing stop trajectory or dynamic half-life horizon.';
         }
-        const evaluationId = `cfr_${opportunityId}_${slot}`;
-        return {
-            evaluationId,
+        const evaluation = {
             decisionId,
             opportunityId,
             tokenId,
@@ -167,12 +148,18 @@ export class ExecutionRegretEngine {
                 ]),
             },
         };
+        // Keep each immutable observation distinct when the same opportunity is
+        // re-evaluated in a slot. Replaying the same object remains idempotent.
+        const digest = createHash('sha256').update(JSON.stringify(evaluation)).digest('hex');
+        return { ...evaluation, evaluationId: `cfr_${digest}` };
     }
 }
 export class CounterfactualRegretStore {
     records = new Map();
     maxCapacity;
     journal;
+    journalFailureCount = 0;
+    lastJournalError = null;
     constructor(maxCapacity = 2000, journal) {
         this.maxCapacity = maxCapacity;
         this.journal = journal;
@@ -186,8 +173,21 @@ export class CounterfactualRegretStore {
         }
         this.records.set(evalResult.evaluationId, evalResult);
         if (this.journal) {
-            void this.journal.saveCounterfactualEvaluation(evalResult);
+            try {
+                void Promise.resolve(this.journal.saveCounterfactualEvaluation(evalResult))
+                    .catch(error => this.recordJournalFailure(error));
+            }
+            catch (error) {
+                this.recordJournalFailure(error);
+            }
         }
+    }
+    recordJournalFailure(error) {
+        this.journalFailureCount += 1;
+        this.lastJournalError = error instanceof Error ? error.message : String(error);
+    }
+    getJournalHealth() {
+        return Object.freeze({ failureCount: this.journalFailureCount, lastError: this.lastJournalError });
     }
     getEvaluation(evaluationId) {
         return this.records.get(evaluationId);

@@ -368,6 +368,37 @@ function verifySource(db, version) {
     }
     throw unsupported();
 }
+function inspectSourceSnapshot(db) {
+    db.exec('BEGIN');
+    try {
+        const version = Number(db.prepare('PRAGMA user_version').get()?.user_version);
+        // user_version and sqlite_schema must be read from one SQLite snapshot.
+        // Otherwise a concurrent initializer can commit between these queries,
+        // pairing the old version with the new schema and falsely rejecting v3.
+        verifySource(db, version);
+        db.exec('COMMIT');
+        return version;
+    }
+    catch (error) {
+        let rollbackFailed = false;
+        try {
+            if (db.isTransaction)
+                db.exec('ROLLBACK');
+            rollbackFailed = db.isTransaction;
+        }
+        catch {
+            rollbackFailed = true;
+        }
+        if (rollbackFailed) {
+            try {
+                db.close();
+            }
+            catch { /* the handle is poisoned even if close also fails */ }
+            throw new Error('PAPER_ACCOUNT_V3_SOURCE_INSPECTION_ROLLBACK_FAILED', { cause: error });
+        }
+        throw error;
+    }
+}
 function configureDurability(db) {
     db.exec('PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
     const deadline = performance.now() + 5000;
@@ -396,8 +427,7 @@ function configureDurability(db) {
  */
 export function initializePaperAccountV3Schema(db, hook = noop) {
     checkRuntime(db);
-    let sourceVersion = Number(db.prepare('PRAGMA user_version').get()?.user_version);
-    verifySource(db, sourceVersion);
+    let sourceVersion = inspectSourceSnapshot(db);
     if (sourceVersion === 3) {
         configureDurability(db);
         verifyPaperAccountV3Schema(db);
@@ -470,9 +500,7 @@ export function initializePaperAccountV3Schema(db, hook = noop) {
 /** Verify a canonical v0/v1/v2/v3 source without changing journal mode or schema. */
 export function inspectPaperAccountV3Source(db) {
     checkRuntime(db);
-    const version = Number(db.prepare('PRAGMA user_version').get()?.user_version);
-    verifySource(db, version);
-    return version;
+    return inspectSourceSnapshot(db);
 }
 /** Read-only gates for isolated state-changing operations after schema provisioning. */
 export function verifyPaperAccountV3WritePreconditions(db) {

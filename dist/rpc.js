@@ -36,6 +36,7 @@ class TokenBucket {
 }
 import { Connection } from '@solana/web3.js';
 import { log } from './core.js';
+import { auditFinalizedBlockRange } from './platform/ingestion/finalized-block-auditor.js';
 export function sanitizeRpcUrl(rawUrl) {
     if (!rawUrl)
         return '';
@@ -275,6 +276,18 @@ export class RpcPool {
         if (index >= 0 && index < this.slots.length && Number.isFinite(slot) && slot > 0) {
             this.slots[index] = Math.max(this.slots[index], slot);
         }
+    }
+    /** Read-only research audit. This intentionally does not authorize recovery certificates/frontiers. */
+    auditFinalizedBlockRange(startSlot, endSlot, options = {}) {
+        const providers = this.endpoints.map((endpoint, index) => ({
+            providerId: `endpoint-${index}:${sanitizeRpcUrl(this.cfg.RPC_URLS[index])}`,
+            getGenesisHash: () => endpoint.getGenesisHash(),
+            getFinalizedSlot: () => endpoint.getSlot('finalized'),
+            getFirstAvailableBlock: () => endpoint.getFirstAvailableBlock(),
+            getBlocks: (start, end, commitment) => endpoint.getBlocks(start, end, commitment),
+            getBlock: (slot, config) => endpoint.getBlock(slot, config),
+        }));
+        return auditFinalizedBlockRange(providers, startSlot, endSlot, options);
     }
     async verifyCluster() {
         const results = await Promise.all(this.endpoints.map(c => c.getGenesisHash()));

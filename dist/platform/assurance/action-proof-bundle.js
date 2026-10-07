@@ -36,7 +36,7 @@ export function computeActionProofBundleHash(bundle) {
     ].join(':');
     return createHash('sha256').update(parts).digest('hex');
 }
-export function validateActionProofBundle(bundle, activeRoots) {
+export function validateActionProofBundle(bundle, activeRoots, verifyArtifact) {
     const reasons = [];
     // 1. Temporal & Slot Validity
     if (activeRoots.currentTime > bundle.validUntilTime) {
@@ -99,6 +99,20 @@ export function validateActionProofBundle(bundle, activeRoots) {
         }
         if (item.cert.evidenceClass === 'UNKNOWN' || item.cert.evidenceClass === 'INSUFFICIENT_EVIDENCE' || item.cert.evidenceClass === 'MISSING') {
             reasons.push(`UNFAVORABLE_EVIDENCE: Certificate ${item.name} contains invalid evidenceClass '${item.cert.evidenceClass}'`);
+        }
+        if (!verifyArtifact) {
+            reasons.push(`CERTIFICATE_SIGNATURE_UNVERIFIED: No trusted verifier is configured for ${item.name}`);
+        }
+        else {
+            try {
+                const verification = verifyArtifact(item.cert);
+                if (verification?.isValid !== true) {
+                    reasons.push(`CERTIFICATE_SIGNATURE_INVALID: ${item.name}${verification?.reason ? ` (${verification.reason})` : ''}`);
+                }
+            }
+            catch {
+                reasons.push(`CERTIFICATE_SIGNATURE_INVALID: Trusted verifier failed for ${item.name}`);
+            }
         }
     }
     return {

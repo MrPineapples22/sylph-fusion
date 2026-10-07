@@ -1,10 +1,10 @@
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createServer, type Server } from 'node:net';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Keypair, PublicKey } from '@solana/web3.js';
 import { bondingCurvePda } from '@pump-fun/pump-sdk';
@@ -40,6 +40,22 @@ import type { PaperAuthorityMode } from './platform/paper/paper-authority-policy
 import { StartupHealthAuditor } from './platform/assurance/startup-health-audit.js';
 import type { RawObservationEnvelope } from './platform/ingestion/types.js';
 import { DurableResearchSpool, stableResearchEventId } from './platform/audit/durable-research-spool.js';
+import { assertDatabaseFilesystemPolicy } from './platform/storage/filesystem-policy.js';
+
+const RESEARCH_SPOOL_DRAIN_INTERVAL_MS = 5_000;
+const RESEARCH_LOSS_MARKER_RETRY_INTERVAL_MS = 1_000;
+// These low-volume execution lifecycle events must survive a process crash
+// between the producer and the asynchronous SQLite worker acknowledgement.
+// High-rate feed observations stay on the non-blocking Store path.
+const CRASH_RECOVERABLE_RESEARCH_OBSERVATIONS = new Set([
+  'candidate_entry_gates_passed_v1',
+  'candidate_submission_blocked_v1',
+  'candidate_order_build_started_v1',
+  'candidate_order_build_failed_v1',
+  'candidate_order_built_v1',
+  'candidate_order_build_abandoned_v1',
+  'candidate_paper_fill_v1',
+]);
 
 type Candidate = {
   mint: string;
@@ -106,6 +122,29 @@ function candidateEvaluationRetryDelayMs(reason: string, maxAgeMs: number): numb
   }
   return Math.min(30_000, maxAgeMs);
 }
+
+const ORDER_BUILD_FAILURE_CLASSES = [
+  'STALE_MARKET_SNAPSHOT',
+  'ENTRY_DISABLED_AFTER_GRADUATION',
+  'ROUTE_NOT_CONFIGURED',
+  'QUOTE_REJECTED',
+  'ROUTE_ASSEMBLY_REJECTED',
+  'LOCAL_QUOTE_INPUT_INVALID',
+  'UNCLASSIFIED_BUILD_FAILURE',
+] as const;
+type OrderBuildFailureClass = typeof ORDER_BUILD_FAILURE_CLASSES[number];
+
+function classifyOrderBuildFailure(error: unknown): OrderBuildFailureClass {
+  const message = error instanceof Error ? error.message : '';
+  if (message === 'quote expired') return 'STALE_MARKET_SNAPSHOT';
+  if (message === 'graduated entries disabled') return 'ENTRY_DISABLED_AFTER_GRADUATION';
+  if (message === 'Jupiter routing adapter is not explicitly configured') return 'ROUTE_NOT_CONFIGURED';
+  if (message === 'invalid Jupiter quote') return 'QUOTE_REJECTED';
+  if (message === 'unsupported Jupiter instruction response' || message === 'missing lookup table' ||
+      message.startsWith('unexpected Jupiter ')) return 'ROUTE_ASSEMBLY_REJECTED';
+  if (message === 'invalid buy quote inputs' || message === 'invalid sell quote inputs') return 'LOCAL_QUOTE_INPUT_INVALID';
+  return 'UNCLASSIFIED_BUILD_FAILURE';
+}
 function meetsBuySellFlow(buy: bigint, sell: bigint, minimumRatioBps: number): boolean {
   return buy * 10_000n > sell * BigInt(minimumRatioBps);
 }
@@ -125,6 +164,21 @@ function isResearchEvidenceLoss(value: unknown): value is ResearchEvidenceLoss {
 function researchEventKey(event: string): string {
   const normalized = event.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase().replace(/[^a-z0-9_]/g, '_');
   return /^[a-z]/.test(normalized) ? normalized.slice(0, 64) : `unknown_${normalized.slice(0, 56)}`;
+}
+const RESEARCH_RESTRICTION_REASON_CODES = new Set([
+  'insufficient_buyers', 'insufficient_buy_volume_ratio', 'CURVE_COMPLETED', 'ZERO_RESERVES',
+  'EXCESSIVE_LIQUIDITY_DROP', 'EXCESSIVE_PRICE_DRIFT', 'reserve_drift', 'curve_complete_transition',
+  'mayhem_mode', 'developer_disposition_unverified', 'feed_unhealthy', 'engine_stopped',
+  'insufficient_cash_or_reserve', 'reconciliation_blocked', 'entry_guard_rejected',
+  'capital_barrier_denied', 'model_rejected', 'TRUTH_DEBT_BREACH', 'MAX_DRAWDOWN_BREACH',
+  'DAILY_LOSS_BREACH', 'CLUSTER_EXPOSURE_BREACH', 'ROUTE_SATURATION_BREACH',
+  'ZERO_STRESSED_EXIT_CAPACITY', 'ECONOMIC_MINIMUM_UNMET',
+]);
+function researchRestrictionReasonCode(reason: string): string {
+  if (reason.startsWith('candidate_evaluation_error:')) return 'candidate_evaluation_error';
+  const prefix = reason.split(':', 1)[0];
+  if (RESEARCH_RESTRICTION_REASON_CODES.has(prefix)) return prefix;
+  return 'other';
 }
 export function checkCandidateReserveDrift(
   s1: Snapshot,
@@ -184,6 +238,8 @@ export class Engine {
   rejectionCounts = new Map<string, number>();
   private blockedExits = new Map<string, { blockedAt: number; reason: string; triggerValue: bigint; stage: number }>();
   private lastCheckpoint = Date.now();
+  private nextResearchSpoolDrainAt = 0;
+  private nextResearchLossMarkerSaveAt = 0;
   readonly feed: Feed;
   readonly runtimeUnit: UnifiedPipelineUnit;
   divergenceAuditor?: RuntimeDivergenceAuditor;
@@ -202,6 +258,15 @@ export class Engine {
     readonly researchSpool?: DurableResearchSpool,
   ) {
     this.feed = new Feed(cfg, rpc.connection, e => this.onEvent(e));
+    this.feed.gapReconciler.setRecoveryCertificateJournal({
+      saveVerifiedRecoveryCertificate: certificate => {
+        const journal = this.store as Store & { saveVerifiedRecoveryCertificate?: Store['saveVerifiedRecoveryCertificate'] };
+        if (typeof journal.saveVerifiedRecoveryCertificate !== 'function') {
+          return Promise.reject(new Error('RECOVERY_CERTIFICATE_JOURNAL_UNAVAILABLE'));
+        }
+        return journal.saveVerifiedRecoveryCertificate.call(journal, certificate);
+      },
+    });
     if (state.researchEvidenceLoss !== undefined) {
       if (isResearchEvidenceLoss(state.researchEvidenceLoss)) {
         this.researchPersistenceFailures = state.researchEvidenceLoss.failureCount;
@@ -232,19 +297,21 @@ export class Engine {
     payload: Readonly<Record<string, unknown>>,
     recordId: string,
     failureEvent: string
-  ): void {
-    if (!this.researchSpool) return;
+  ): boolean {
+    if (!this.researchSpool) return false;
     try {
       const result = this.researchSpool.enqueue(eventType, eventName, payload, recordId);
-      if (result.accepted || result.reason === 'DUPLICATE_ALREADY_SPOOLED' || result.reason === 'DUPLICATE_ALREADY_DRAINED') return;
+      if (result.accepted || result.reason === 'DUPLICATE_ALREADY_SPOOLED' || result.reason === 'DUPLICATE_ALREADY_DRAINED') return true;
       this.noteResearchPersistenceFailure(failureEvent, recordId, 'spool_enqueue_failed');
       try {
         this.sessionLogger?.writeEvent('research_spool_enqueue_failed', {
           event: failureEvent, recordId, reason: result.reason, spoolEventId: result.eventId,
         });
       } catch { /* spool failure remains visible in the Engine loss counter */ }
+      return false;
     } catch {
       this.noteResearchPersistenceFailure(failureEvent, recordId, 'spool_enqueue_failed');
+      return false;
     }
   }
   private persistResearchJournal(
@@ -254,9 +321,12 @@ export class Engine {
   ): void {
     // Research evidence is useful but cannot change a paper fill or exit.
     // Older injected Store implementations may have only the core state API.
-    const failed = (reason: 'method_unavailable' | 'write_rejected') => {
+    const failed = (fallback: 'method_unavailable' | 'write_rejected', error?: unknown) => {
+      const code = error instanceof Error ? error.message : '';
+      const immutableConflict = /(?:COUNTERFACTUAL|FALSIFICATION)_ID_CONTENT_CONFLICT|(?:COUNTERFACTUAL|FALSIFICATION)_ROW_INCONSISTENT|RESEARCH_EVENT_ID_CONTENT_CONFLICT/.test(code);
+      const reason = immutableConflict ? 'immutable_identity_conflict' : fallback;
       this.noteResearchPersistenceFailure(method, recordId, reason);
-      if (reason === 'write_rejected') {
+      if (fallback === 'write_rejected' && !immutableConflict) {
         this.enqueueResearchSpool(
           method === 'saveCounterfactualEvaluation' ? 'JOURNAL_COUNTERFACTUAL' : 'JOURNAL_FALSIFICATION',
           method, record, recordId, method
@@ -274,9 +344,9 @@ export class Engine {
       return;
     }
     try {
-      void Promise.resolve(save.call(this.store, record)).catch(() => failed('write_rejected'));
-    } catch {
-      failed('write_rejected');
+      void Promise.resolve(save.call(this.store, record)).catch(error => failed('write_rejected', error));
+    } catch (error) {
+      failed('write_rejected', error);
     }
   }
   private persistResearchObservation(event: string, payload: Record<string, unknown>, recordId: string): void {
@@ -287,9 +357,12 @@ export class Engine {
       this.noteResearchPersistenceFailure(event, recordId, 'invalid_research_identity');
       return;
     }
+    const backedByDurableSpool = CRASH_RECOVERABLE_RESEARCH_OBSERVATIONS.has(event)
+      ? this.enqueueResearchSpool('AUDIT_EVENT', event, payload, recordId, event)
+      : false;
     const failed = (reason: 'method_unavailable' | 'write_rejected') => {
       this.noteResearchPersistenceFailure(event, recordId, reason);
-      if (reason === 'write_rejected') this.enqueueResearchSpool('AUDIT_EVENT', event, payload, recordId, event);
+      if (reason === 'write_rejected' && !backedByDurableSpool) this.enqueueResearchSpool('AUDIT_EVENT', event, payload, recordId, event);
       try { this.sessionLogger?.writeEvent('research_observation_persist_failed', { event, recordId, reason }); } catch { /* telemetry failure remains non-authorizing */ }
     };
     if (typeof append !== 'function') {
@@ -321,6 +394,22 @@ export class Engine {
       };
     }
     log('research_persistence_failed', { event, recordId, reason, failureCount: this.researchLossMarkerInvalid ? null : this.researchPersistenceFailures });
+  }
+  private recordCandidateTrackingEnded(candidate: Candidate, reason: 'INVALID_CHAIN_TIMESTAMP' | 'FUTURE_CHAIN_TIMESTAMP' | 'STALE_AT_DISCOVERY' | 'TRACKING_CAPACITY_EVICTION' | 'MAX_AGE_EXPIRED', includeSnapshot: boolean): void {
+    const snapshot = includeSnapshot
+      ? this.snapshotCandidate(candidate, 'notEvaluated', `tracking_ended:${reason}`)
+      : null;
+    this.persistResearchObservation('candidate_tracking_ended_v1', {
+      schemaVersion: 1,
+      candidateGenerationId: candidate.candidateGenerationId,
+      mint: candidate.mint,
+      endedAtMs: Date.now(),
+      reason,
+      outcomeStatus: 'UNRESOLVED',
+      lastObservedSlot: candidate.slot,
+      sourceObservationId: candidate.sourceObservation?.observationId ?? null,
+      snapshotId: snapshot?.candidateId ?? null,
+    }, `${candidate.candidateGenerationId}:${reason}`);
   }
   private async saveState(event?: string): Promise<void> {
     const markerCount = this.state.researchEvidenceLoss?.failureCount;
@@ -470,6 +559,7 @@ export class Engine {
         scope,
         effect,
         reason: reason.slice(0, 256),
+        reasonCode: researchRestrictionReasonCode(reason),
         decisionAtMs: Date.now(),
         sourceObservationId: c.sourceObservation?.observationId ?? null,
         eventSlot: c.slot,
@@ -643,6 +733,8 @@ export class Engine {
       panic: p.panic,
       mark: this.marks?.get(p.mint)?.value ?? null,
     }));
+    const spool = this.researchSpool?.getSnapshot() ?? null;
+    const appendLatencyInterval = this.researchSpool?.getAppendLatencyIntervalSnapshot() ?? null;
     const data = {
       uptimeMs,
       uptimeHours: +(uptimeMs / 3_600_000).toFixed(2),
@@ -666,9 +758,28 @@ export class Engine {
       researchEvidenceLossMarkerStatus: this.researchLossMarkerInvalid ? 'INVALID' :
         this.state?.researchEvidenceLoss === undefined ? 'NONE_RECORDED' :
         this.persistedResearchLossCount >= this.state.researchEvidenceLoss.failureCount ? 'PERSISTED' : 'PENDING_STATE_SAVE',
+      researchSpool: spool ? {
+        pendingCount: spool.pendingCount,
+        capacityLimit: spool.capacityLimit,
+        pendingPayloadBytes: spool.pendingPayloadBytes,
+        aggregateByteLimit: spool.aggregateByteLimit,
+        totalSpooledCount: spool.totalSpooledCount,
+        totalDrainedCount: spool.totalDrainedCount,
+        totalDroppedCount: spool.totalDroppedCount,
+        diskFailureCount: spool.diskFailureCount,
+        durableAppendCount: spool.durableAppendCount,
+        durableAppendTotalMs: spool.durableAppendTotalMs,
+        durableAppendMaxMs: spool.durableAppendMaxMs,
+        durableAppendP50UpperBoundMs: spool.durableAppendP50UpperBoundMs,
+        durableAppendP95UpperBoundMs: spool.durableAppendP95UpperBoundMs,
+        durableAppendP99UpperBoundMs: spool.durableAppendP99UpperBoundMs,
+        durableAppendLatencyOverflowCount: spool.durableAppendLatencyOverflowCount,
+        appendLatencyInterval,
+      } : null,
     };
     log('soak_checkpoint', data);
     this.sessionLogger?.writeEvent('soak_checkpoint', data);
+    if (this.sessionLogger && appendLatencyInterval) this.researchSpool?.resetAppendLatencyIntervalSnapshot();
   }
   stop() { this.stopped = true; this.feed.stop(); }
   private canSubmitEntry(candidate: Candidate, s: Snapshot, entryAmount: bigint, now = Date.now()) {
@@ -772,8 +883,6 @@ export class Engine {
       const creator = d.creator?.toBase58?.() ?? '';
       const launchUser = d.user?.toBase58?.() ?? null;
       const chainTime = Number(d.timestamp?.toString()) * 1000;
-      if (!Number.isFinite(chainTime) || chainTime > e.received + 10_000 || e.received - chainTime > this.cfg.MAX_AGE_MS) return;
-      if (this.candidates.size >= this.cfg.MAX_TRACKED) this.candidates.delete(this.candidates.keys().next().value!);
       const candidate: Candidate = {
         mint, creator, launchUser,
         creationSlot: e.slot, creationSignature: e.signature,
@@ -786,7 +895,10 @@ export class Engine {
         slot: e.slot, eventSignature: e.signature, buyers: new Map(), buy: 0n, sell: 0n,
         buyCount: 0, sellCount: 0, devSold: false, next: 0,
       };
-      this.candidates.set(mint, candidate);
+      const discoveryRejection = !Number.isFinite(chainTime) ? 'INVALID_CHAIN_TIMESTAMP'
+        : chainTime > e.received + 10_000 ? 'FUTURE_CHAIN_TIMESTAMP'
+        : e.received - chainTime > this.cfg.MAX_AGE_MS ? 'STALE_AT_DISCOVERY'
+        : null;
       this.persistResearchObservation('candidate_discovered_v1', {
         schemaVersion: 1,
         candidateId: candidate.candidateGenerationId,
@@ -797,7 +909,22 @@ export class Engine {
         sourceObservation: candidate.sourceObservation ?? null,
         observedAtMs: candidate.firstObservedAtMs,
         chainCreatedAtMs: candidate.chainCreatedAtMs,
+        discoveryDisposition: discoveryRejection ? 'REJECTED_AT_DISCOVERY' : 'TRACKED',
       }, candidate.candidateGenerationId);
+      if (discoveryRejection) {
+        this.recordCandidateTrackingEnded(candidate, discoveryRejection, false);
+        return;
+      }
+      if (this.candidates.size >= this.cfg.MAX_TRACKED) {
+        const oldestMint = this.candidates.keys().next().value;
+        const evicted = oldestMint === undefined ? undefined : this.candidates.get(oldestMint);
+        if (oldestMint !== undefined && evicted) {
+          this.recordCandidateTrackingEnded(evicted, 'TRACKING_CAPACITY_EVICTION', true);
+          this.candidates.delete(oldestMint);
+          this.counterfactualObservations.delete(oldestMint);
+        }
+      }
+      this.candidates.set(mint, candidate);
     }
     if (name === 'tradeevent') {
       const user = d.user?.toBase58?.(), p = this.state.positions[mint], c = this.candidates.get(mint);
@@ -824,9 +951,16 @@ export class Engine {
     this.loopLag.enable();
     const feedTask = this.feed.run().catch(() => { log('feed_fatal'); this.stop(); });
     try {
+      await this.drainResearchSpoolSafely('startup');
+      this.nextResearchSpoolDrainAt = Date.now() + RESEARCH_SPOOL_DRAIN_INTERVAL_MS;
       while (!this.stopped) {
         const started = Date.now();
         await this.tick();
+        await this.persistPendingResearchLossMarkerSafely();
+        if (this.researchSpool && Date.now() >= this.nextResearchSpoolDrainAt) {
+          await this.drainResearchSpoolSafely('periodic');
+          this.nextResearchSpoolDrainAt = Date.now() + RESEARCH_SPOOL_DRAIN_INTERVAL_MS;
+        }
         if (Date.now() - this.lastHealth > 30_000) {
           this.lastHealth = Date.now();
           log('health', { feedFresh: this.feed.healthy(), positions: Object.keys(this.state.positions).length, pending: this.state.pending?.signature ?? null,
@@ -863,8 +997,49 @@ export class Engine {
           exitStage: p.stage,
         }));
       }
-      await this.sessionLogger?.close();
-      await this.saveState('shutdown');
+      try {
+        await this.sessionLogger?.close();
+        await this.saveState('shutdown');
+      } finally {
+        await this.drainResearchSpoolSafely('shutdown');
+      }
+    }
+  }
+  private async drainResearchSpoolSafely(reason: 'startup' | 'periodic' | 'shutdown'): Promise<void> {
+    if (!this.researchSpool) return;
+    try {
+      const result = await this.drainResearchSpool();
+      if (result.error || result.replayedCount > 0) {
+        log('research_spool_drain', {
+          reason,
+          replayedCount: result.replayedCount,
+          remainingCount: result.remainingCount,
+          failedEventId: result.failedEventId ?? null,
+          error: result.error ?? null,
+        });
+      }
+    } catch (error) {
+      // Research recovery must remain visible without becoming an execution gate.
+      log('research_spool_drain_failed', {
+        reason,
+        error: error instanceof Error ? error.message.slice(0, 256) : 'unknown_error',
+      });
+    }
+  }
+  private async persistPendingResearchLossMarkerSafely(): Promise<void> {
+    const marker = this.state.researchEvidenceLoss;
+    if (this.researchLossMarkerInvalid || !marker || this.persistedResearchLossCount >= marker.failureCount ||
+        Date.now() < this.nextResearchLossMarkerSaveAt) return;
+    this.nextResearchLossMarkerSaveAt = Date.now() + RESEARCH_LOSS_MARKER_RETRY_INTERVAL_MS;
+    try {
+      // Avoid coupling marker durability to an additional audit-table insert;
+      // the marker itself is part of the state row committed by Store.save().
+      await this.saveState();
+    } catch (error) {
+      log('research_evidence_loss_marker_save_failed', {
+        failureCount: marker.failureCount,
+        error: error instanceof Error ? error.message.slice(0, 256) : 'unknown_error',
+      });
     }
   }
   private async tick() {
@@ -872,7 +1047,7 @@ export class Engine {
     if (this.state.day !== today) { this.state.day = today; this.state.dayPnl = '0'; }
     for (const [mint, c] of this.candidates) {
       if (Date.now() - c.born > this.cfg.MAX_AGE_MS) {
-        this.snapshotCandidate(c, 'notEvaluated', 'max_age_expired');
+        this.recordCandidateTrackingEnded(c, 'MAX_AGE_EXPIRED', true);
         this.candidates.delete(mint);
         this.counterfactualObservations.delete(mint);
       }
@@ -1397,7 +1572,8 @@ export class Engine {
       attemptNumber: researchAttempt.attemptNumber,
       mint: s.mint.toBase58(),
       side,
-      requestedAmountLamports: amount.toString(),
+      requestedAmountRaw: amount.toString(),
+      requestedAmountUnit: side === 'buy' ? 'LAMPORTS' : 'TOKEN_RAW',
       startedAtMs: Date.now(),
       sourceObservationId: researchAttempt.sourceObservationId,
       marketSnapshotAtMs: s.at,
@@ -1418,6 +1594,7 @@ export class Engine {
         mint: s.mint.toBase58(),
         side,
         failedAtMs: Date.now(),
+        failureClass: classifyOrderBuildFailure(error),
         error: message,
       }, researchAttempt.attemptId);
       return;
@@ -1432,11 +1609,20 @@ export class Engine {
       side,
       pendingOrderId: built.pending.id,
       builtAtMs: Date.now(),
-      requestedAmountLamports: built.pending.requested,
+      requestedAmountRaw: built.pending.requested,
+      requestedAmountUnit: side === 'buy' ? 'LAMPORTS' : 'TOKEN_RAW',
       quotedOutput: built.quotedOutput?.toString() ?? null,
-      quoteTimestampMs: built.quoteTimestamp ?? null,
-      quoteAgeMs: built.quoteTimestamp === undefined ? null : Math.max(0, Date.now() - built.quoteTimestamp),
-      overhead: built.overhead ?? null,
+      quotedOutputUnit: side === 'buy' ? 'TOKEN_RAW' : 'LAMPORTS',
+      marketSnapshotAtMs: built.quoteTimestamp ?? null,
+      marketSnapshotAgeMs: built.quoteTimestamp === undefined ? null : Math.max(0, Date.now() - built.quoteTimestamp),
+      baseFeeLamports: built.overhead?.baseFeeLamports ?? null,
+      priorityFeeLamports: built.overhead?.priorityLamports ?? null,
+      jitoTipLamports: built.overhead?.tipLamports ?? null,
+      rentLamports: built.overhead?.rentLamports ?? null,
+      slippageLamports: built.overhead?.slippageLamports ?? null,
+      modeledSlippageBps: built.overhead?.slippageBps ?? null,
+      estimatedSellSlippageLamports: side === 'sell' ? built.overhead?.slippageLamports ?? null : undefined,
+      costEvidenceClass: 'PAPER_BUILD_ESTIMATE',
       outcomeEvidenceClass: 'PAPER_BUILD_RESULT',
     }, researchAttempt.attemptId);
     if (side === 'buy' && (this.stopped || this.state.operatorPaused || this.state.halted || this.candidates.get(s.mint.toBase58())?.devSold || !this.feed.healthy())) {
@@ -1554,11 +1740,20 @@ export class Engine {
         mint: built.pending.mint,
         side,
         settledAtMs: Date.now(),
-        requestedAmountLamports: built.pending.requested,
+        requestedAmountRaw: built.pending.requested,
+        requestedAmountUnit: side === 'buy' ? 'LAMPORTS' : 'TOKEN_RAW',
         quotedOutput: String(built.quotedOutput ?? 0n),
+        quotedOutputUnit: side === 'buy' ? 'TOKEN_RAW' : 'LAMPORTS',
         tokenDelta: String(built.tokenDelta),
         simulatedLamportDelta: String(built.solDelta),
-        overhead: built.overhead ?? null,
+        baseFeeLamports: built.overhead?.baseFeeLamports ?? null,
+        priorityFeeLamports: built.overhead?.priorityLamports ?? null,
+        jitoTipLamports: built.overhead?.tipLamports ?? null,
+        rentLamports: built.overhead?.rentLamports ?? null,
+        slippageLamports: built.overhead?.slippageLamports ?? null,
+        modeledSlippageBps: built.overhead?.slippageBps ?? null,
+        estimatedSellSlippageLamports: side === 'sell' ? built.overhead?.slippageLamports ?? null : undefined,
+        costEvidenceClass: 'PAPER_SIMULATED_FILL',
         outcomeEvidenceClass: 'PAPER_SIMULATED_FILL_NOT_CHAIN_EVIDENCE',
       }, researchAttempt.attemptId);
       log('paper_fill', fillData);
@@ -1628,6 +1823,22 @@ export function derivePaperExecutionWallet(cfg: Pick<Config, 'MODE'>, paperWalle
 export function engineLockPort(walletPublicKey: PublicKey): number {
   return 20_000 + walletPublicKey.toBuffer().readUInt16LE(0) % 30_000;
 }
+/** Stable same-host lease for the spool's single-writer file path. */
+export function researchSpoolLockPort(spoolPath: string): number {
+  if (typeof spoolPath !== 'string' || spoolPath.length < 1 || spoolPath.length > 4096) {
+    throw new TypeError('RESEARCH_SPOOL_LOCK_PATH_INVALID');
+  }
+  let resolved = resolve(spoolPath);
+  try { resolved = realpathSync.native(resolved); }
+  catch {
+    try { resolved = join(realpathSync.native(dirname(resolved)), basename(resolved)); }
+    catch { /* parent creation happens before production acquires this lease */ }
+  }
+  const identity = process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+  const bucket = createHash('sha256').update(identity, 'utf8').digest().readUInt32LE(0) % 10_000;
+  // Disjoint from engineLockPort's 20,000–49,999 wallet lease range.
+  return 50_000 + bucket;
+}
 
 async function wallet(cfg: Config, paperWalletSeed?: Uint8Array): Promise<Keypair> {
   if (cfg.MODE === 'paper') return derivePaperExecutionWallet(cfg, paperWalletSeed);
@@ -1640,6 +1851,42 @@ async function acquire(wallet: PublicKey): Promise<Server> {
   const server = createServer(socket => socket.destroy());
   await new Promise<void>((done, reject) => { server.once('error', reject); server.listen({ host: '127.0.0.1', port, exclusive: true }, done); });
   return server;
+}
+export async function acquireResearchSpoolLock(spoolPath: string): Promise<Server> {
+  const server = createServer(socket => socket.destroy());
+  const port = researchSpoolLockPort(spoolPath);
+  await new Promise<void>((done, reject) => { server.once('error', reject); server.listen({ host: '127.0.0.1', port, exclusive: true }, done); });
+  return server;
+}
+type AsyncClosable = { close(): Promise<void> | void };
+export async function closeEngineResources(resources: {
+  dashboard?: AsyncClosable;
+  store?: AsyncClosable;
+  sessionLogger?: AsyncClosable;
+  researchSpoolLock?: Server;
+  walletLock: Server;
+  stopSignalHandler?: () => void;
+}): Promise<void> {
+  const failures: unknown[] = [];
+  const attempt = async (close: () => Promise<void> | void) => {
+    try { await close(); } catch (error) { failures.push(error); }
+  };
+  const releaseServer = (server: Server | undefined) => {
+    if (!server?.listening) return Promise.resolve();
+    return new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  };
+  await attempt(async () => { await resources.dashboard?.close(); });
+  await attempt(async () => { await resources.store?.close(); });
+  await attempt(async () => { await resources.sessionLogger?.close(); });
+  await attempt(() => releaseServer(resources.researchSpoolLock));
+  await attempt(() => releaseServer(resources.walletLock));
+  await attempt(() => {
+    if (resources.stopSignalHandler) {
+      process.removeListener('SIGINT', resources.stopSignalHandler);
+      process.removeListener('SIGTERM', resources.stopSignalHandler);
+    }
+  });
+  if (failures.length > 0) throw new AggregateError(failures, 'ENGINE_RESOURCE_CLEANUP_FAILED');
 }
 export async function runEngine(options: {
   durationSec?: number;
@@ -1661,6 +1908,8 @@ export async function runEngine(options: {
   let store: Store | undefined;
   let dashboard: Awaited<ReturnType<typeof startDashboard>> | undefined;
   let sessionLogger: SessionLogger | undefined;
+  let researchSpoolLock: Server | undefined;
+  let stopSignalHandler: (() => void) | undefined;
   try {
     if (process.argv.includes('--check')) {
       const healthReport = await StartupHealthAuditor.performHealthAudit();
@@ -1698,8 +1947,24 @@ export async function runEngine(options: {
       executor = new SimulationExecutionAuthority(cfg, market, key.publicKey);
       await executor.warm();
     }
+    const researchSpoolPath = `${resolve(cfg.DB_PATH)}.research-spool.jsonl`;
+    // Wallet leases do not serialize different paper wallets sharing a DB_PATH.
     await mkdir(dirname(resolve(cfg.DB_PATH)), { recursive: true });
+    const databaseFilesystem = assertDatabaseFilesystemPolicy(
+      dirname(resolve(cfg.DB_PATH)), process.platform, undefined, undefined, undefined,
+      { allowUnclassified: cfg.DATABASE_FILESYSTEM_OPERATOR_ATTESTATION === 'LOCAL_SINGLE_HOST_WAL_COMPATIBLE' },
+    );
+    if (databaseFilesystem.status === 'UNCLASSIFIED_FILESYSTEM' || databaseFilesystem.status === 'PLATFORM_UNCLASSIFIED') {
+      log('database_filesystem_operator_attestation', {
+        status: databaseFilesystem.status,
+        filesystemType: databaseFilesystem.filesystemType,
+        verified: false,
+        mode: cfg.MODE,
+      });
+    }
+    researchSpoolLock = await acquireResearchSpoolLock(researchSpoolPath);
     store = new Store(resolve(cfg.DB_PATH));
+    const researchSpool = new DurableResearchSpool({ spoolFilePath: researchSpoolPath });
     if (cfg.SESSION_DIR) {
       sessionLogger = new SessionLogger(resolve(cfg.SESSION_DIR));
       await sessionLogger.init();
@@ -1740,8 +2005,19 @@ export async function runEngine(options: {
       undefined,
       undefined,
       paperRuntime.unit,
-      paperRuntime.divergenceAuditor
+      paperRuntime.divergenceAuditor,
+      researchSpool
     );
+    const spoolRecovery = await engine.drainResearchSpool();
+    if (spoolRecovery.error || spoolRecovery.replayedCount > 0) {
+      log('research_spool_drain', {
+        reason: 'startup',
+        replayedCount: spoolRecovery.replayedCount,
+        remainingCount: spoolRecovery.remainingCount,
+        failedEventId: spoolRecovery.failedEventId ?? null,
+        error: spoolRecovery.error ?? null,
+      });
+    }
     dashboard = await startDashboard(engine, cfg.UI_PORT);
     log('dashboard_ready', { url: dashboard.url });
 
@@ -1754,17 +2030,14 @@ export async function runEngine(options: {
       durationTimer.unref();
     }
 
-    const stopFn = () => engine.stop();
-    process.once('SIGINT', stopFn); process.once('SIGTERM', stopFn);
+    stopSignalHandler = () => engine.stop();
+    process.once('SIGINT', stopSignalHandler); process.once('SIGTERM', stopSignalHandler);
     log('started', { mode: cfg.MODE, wallet: key.publicKey.toBase58(), positions: Object.keys(state.positions).length });
     await engine.run();
     if (durationTimer) clearTimeout(durationTimer);
     return { engine, state, sessionDir: cfg.SESSION_DIR };
   } finally {
-    await dashboard?.close();
-    await store?.close();
-    await sessionLogger?.close();
-    await new Promise<void>(done => lock.close(() => done()));
+    await closeEngineResources({ dashboard, store, sessionLogger, researchSpoolLock, walletLock: lock, stopSignalHandler });
   }
 }
 

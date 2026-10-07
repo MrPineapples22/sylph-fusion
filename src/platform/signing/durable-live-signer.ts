@@ -21,6 +21,14 @@ export interface PreparedSigningIntent {
   readonly preparedAtMs: number;
 }
 
+export interface PersistedSigningIntent {
+  readonly economicIntentId: string;
+  readonly wallet: string;
+  readonly messageSha256: string;
+  readonly state: 'PREPARED' | 'SIGNED';
+  readonly signatureBase64: string | null;
+}
+
 export interface DurableSigningJournal {
   /** Must durably commit or reject a duplicate before returning. */
   prepareSigningIntent(intent: PreparedSigningIntent): Promise<void>;

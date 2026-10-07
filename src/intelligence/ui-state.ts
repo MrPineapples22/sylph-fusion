@@ -286,10 +286,11 @@ export interface TokenUIState {
         readonly causalUncertainty: number;
       };
       readonly einstein: {
-        readonly velocityByAgeNormalized: number;
-        readonly liquidityToMcapRatio: number;
-        readonly volumeTurnoverNormalized: number;
-        readonly excessReturnOverSol: number;
+        readonly velocityByAgeNormalized: number | null;
+        readonly liquidityToMcapRatio: number | null;
+        readonly volumeTurnoverNormalized: number | null;
+        readonly excessReturnOverSol: number | null;
+        readonly excessReturnOverSolNormalized: number | null;
       };
       readonly darwin: {
         readonly activeStrategyId: string;

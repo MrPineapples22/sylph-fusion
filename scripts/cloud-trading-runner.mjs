@@ -30,7 +30,6 @@ const durationMinutes = Number(getArg('--duration', process.env.RUNTIME_MINUTES 
 const mode = getArg('--mode', process.env.MODE || 'paper');
 const auditIntervalSeconds = Number(getArg('--audit-interval', process.env.AUDIT_INTERVAL_SECONDS || '600'));
 const port = Number(getArg('--port', process.env.TERMINAL_PORT || '8793'));
-const host = getArg('--host', process.env.TERMINAL_HOST || '0.0.0.0');
 
 console.log('\n' + '='.repeat(70));
 console.log('   SYLPH AUTONOMOUS CLOUD TRADING RUNNER');
@@ -38,8 +37,8 @@ console.log('='.repeat(70));
 console.log(`  Target Mode:           ${mode.toUpperCase()}`);
 console.log(`  Session Duration:      ${durationMinutes > 0 ? durationMinutes + ' minutes' : 'Continuous (unbounded)'}`);
 console.log(`  Audit Interval:        ${auditIntervalSeconds} seconds`);
-console.log(`  Bind Host & Port:      ${host}:${port}`);
-console.log(`  Remote Operator:       ENABLED (GitHub Cloud & Codespaces)`);
+console.log(`  Bind Host & Port:      127.0.0.1:${port}`);
+console.log('  Operator Access:       Local-only; authenticated remote access is not configured');
 console.log('='.repeat(70) + '\n');
 
 mkdirSync(join(root, 'data'), { recursive: true });
@@ -87,8 +86,8 @@ if (alreadyRunning) {
     ...process.env,
     MODE: mode,
     TERMINAL_PORT: String(port),
-    TERMINAL_HOST: host,
-    ALLOW_REMOTE_OPERATOR: 'true',
+    TERMINAL_HOST: '127.0.0.1',
+    ALLOW_REMOTE_OPERATOR: 'false',
     GITHUB_ACTIONS: process.env.GITHUB_ACTIONS || 'true'
   };
 

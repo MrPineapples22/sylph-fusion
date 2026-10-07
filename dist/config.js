@@ -1,5 +1,17 @@
 import { z } from 'zod';
 const integer = (fallback, min, max) => z.coerce.number().int().min(min).max(max).default(fallback);
+function isWindowsUncPath(value) {
+    const normalized = value.replaceAll('/', '\\');
+    if (/^(?:\\\\\?\\UNC\\|\\\\\.\\UNC\\|\\\?\?\\UNC\\|\\\\\?\\GLOBALROOT\\Device\\Mup\\)/i.test(normalized))
+        return true;
+    if (!normalized.startsWith('\\\\'))
+        return false;
+    // Extended local paths (\\?\C:\...) are still local; extended UNC paths
+    // (\\?\UNC\server\share\...) are network paths and must be rejected.
+    if (/^\\\\\?\\/i.test(normalized))
+        return !/^\\\\\?\\(?:[A-Za-z]:\\|Volume\{[0-9a-f-]+\}\\)/i.test(normalized);
+    return true;
+}
 const secureUrls = (protocols) => z.string().transform(s => s.split(',').map(x => x.trim())).pipe(z.array(z.string().url().refine(s => protocols.includes(new URL(s).protocol), 'secure URL required')).min(1));
 export const schema = z.object({
     MODE: z.enum(['paper', 'live']).default('paper'),
@@ -8,7 +20,8 @@ export const schema = z.object({
     YELLOWSTONE_URL: z.union([z.literal(''), z.string().url().startsWith('https://')]).default(''),
     YELLOWSTONE_TOKEN: z.string().default(''),
     KEYPAIR_PATH: z.string().default(''),
-    DB_PATH: z.string().default('fusion.sqlite'),
+    DB_PATH: z.string().default('fusion.sqlite').refine(value => process.platform !== 'win32' || !isWindowsUncPath(value), 'DB_PATH must use a local filesystem; Windows network/device paths are unsupported for SQLite WAL'),
+    DATABASE_FILESYSTEM_OPERATOR_ATTESTATION: z.enum(['', 'LOCAL_SINGLE_HOST_WAL_COMPATIBLE']).default(''),
     UI_PORT: integer(8787, 1024, 65535),
     BUY_LAMPORTS: integer(10_000_000, 100_000, 10_000_000_000),
     PAPER_CASH_LAMPORTS: integer(1_000_000_000, 100_000_000, 1_000_000_000_000),
@@ -63,6 +76,9 @@ export const schema = z.object({
         fail('live mode requires KEYPAIR_PATH');
     if (c.MODE === 'live' && new Set(c.RPC_URLS).size < 2)
         fail('live mode requires two distinct RPC URLs');
+    if (c.MODE === 'live' && c.DATABASE_FILESYSTEM_OPERATOR_ATTESTATION !== '') {
+        fail('unclassified database filesystem attestation is paper-only');
+    }
     if (c.MIN_TIP_LAMPORTS > c.MAX_TIP_LAMPORTS)
         fail('tip minimum exceeds maximum');
     if (c.MIN_AGE_MS >= c.MAX_AGE_MS)

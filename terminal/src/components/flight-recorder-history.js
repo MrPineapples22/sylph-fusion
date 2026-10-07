@@ -7,6 +7,32 @@ export const FLIGHT_RECORDER_STAGES = Object.freeze([
 
 const keyOf = record => `${record.economicFactId}\u0000${record.executionGenerationId}`;
 
+export function parseFlightRecorderResponse(data) {
+  if (!data || typeof data !== 'object' || !Array.isArray(data.attempts)) {
+    return { status: 'UNKNOWN', revisions: [] };
+  }
+
+  const revisions = data.attempts;
+  if (!Number.isSafeInteger(data.revisionCount) || data.revisionCount !== revisions.length) {
+    return { status: 'UNKNOWN', revisions: [] };
+  }
+  if (revisions.some(record => !record || typeof record !== 'object'
+    || typeof record.economicFactId !== 'string' || record.economicFactId.length === 0
+    || typeof record.executionGenerationId !== 'string' || record.executionGenerationId.length === 0
+    || !Number.isSafeInteger(record.revision) || record.revision < 0
+    || !FLIGHT_RECORDER_STAGES.includes(record.stage))) {
+    return { status: 'UNKNOWN', revisions: [] };
+  }
+
+  if (data.recordStatus === 'EMPTY' && revisions.length === 0) {
+    return { status: 'EMPTY', revisions };
+  }
+  if (data.recordStatus === 'RECORDED' && revisions.length > 0) {
+    return { status: 'RECORDED', revisions };
+  }
+  return { status: 'UNKNOWN', revisions: [] };
+}
+
 export function latestFlightRecords(records = []) {
   const latest = new Map();
   for (const record of records) {

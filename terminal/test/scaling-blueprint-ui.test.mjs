@@ -13,6 +13,8 @@ const temp = mkdtempSync(join(tmpdir(), 'sylph-scaling-test-'));
 
 const files = [
   'components/EconomicFlightRecorderDrawer.jsx',
+  'components/EngineResearchAuditPanel.jsx',
+  'components/engine-research-audit.js',
   'components/flight-recorder-history.js',
   'components/RuntimeDivergenceInspector.jsx',
   'components/HotPathProofCapsuleMonitor.jsx',
@@ -55,7 +57,9 @@ const {
   EconomicFlightRecorderDrawer,
   FLIGHT_RECORDER_STAGES,
 } = require(output('components/EconomicFlightRecorderDrawer.jsx'));
-const {latestFlightRecords, revisionsForFlight} = require(output('components/flight-recorder-history.js'));
+const {latestFlightRecords, parseFlightRecorderResponse, revisionsForFlight} = require(output('components/flight-recorder-history.js'));
+const {parseEngineResearchAuditResponse, summarizeEngineResearchCosts, ENGINE_RESEARCH_AUDIT_EVENTS} = require(output('components/engine-research-audit.js'));
+const {EngineResearchAuditPanel} = require(output('components/EngineResearchAuditPanel.jsx'));
 const {
   RuntimeDivergenceInspector,
 } = require(output('components/RuntimeDivergenceInspector.jsx'));
@@ -118,6 +122,122 @@ test('EconomicFlightRecorderDrawer: renders drawer markup and empty state when o
   assert.match(html, /RECORDED REVISIONS/);
   const drawerSource = readFileSync(join(directory, 'src', 'components', 'EconomicFlightRecorderDrawer.jsx'), 'utf8');
   assert.match(drawerSource, /Stage transition timestamps are not stored/);
+  assert.match(drawerSource, /parseFlightRecorderResponse\(data\)/);
+  assert.match(drawerSource, /does not establish that no candidate or order attempts occurred/);
+  assert.doesNotMatch(drawerSource, /will be captured in the append-only SQLite WAL/);
+  const serverSource = readFileSync(join(directory, 'server.mjs'), 'utf8');
+  assert.match(serverSource, /recordStatus: attempts\.length > 0 \? 'RECORDED' : 'EMPTY'/);
+  assert.match(serverSource, /revisionCount: attempts\.length/);
+  assert.match(serverSource, /readEngineResearchAudit\(engineAuditDatabasePath\)/);
+  assert.match(readFileSync(join(directory, 'engine-research-audit.mjs'), 'utf8'), /new DatabaseSync\(databasePath, \{readOnly: true\}\)/);
+});
+
+test('flight recorder response distinguishes a verified empty store from unknown or inconsistent data', () => {
+  assert.deepEqual(parseFlightRecorderResponse({ recordStatus: 'EMPTY', revisionCount: 0, attempts: [] }), {
+    status: 'EMPTY', revisions: [],
+  });
+  const attempt = { economicFactId: 'fact-a', executionGenerationId: 'gen-1', revision: 1, stage: 'DISCOVERED' };
+  assert.deepEqual(parseFlightRecorderResponse({ recordStatus: 'RECORDED', revisionCount: 1, attempts: [attempt] }), {
+    status: 'RECORDED', revisions: [attempt],
+  });
+  for (const invalid of [
+    null,
+    {},
+    { recordStatus: 'EMPTY', revisionCount: 0, attempts: [attempt] },
+    { recordStatus: 'RECORDED', revisionCount: 0, attempts: [attempt] },
+    { recordStatus: 'UNKNOWN', revisionCount: 0, attempts: [] },
+    { recordStatus: 'EMPTY', revisionCount: 1, attempts: [] },
+    { recordStatus: 'RECORDED', revisionCount: 0, attempts: [] },
+    { recordStatus: 'RECORDED', revisionCount: 1, attempts: [null] },
+    { recordStatus: 'RECORDED', revisionCount: 1, attempts: [{ ...attempt, revision: -1 }] },
+    { recordStatus: 'RECORDED', revisionCount: 1, attempts: [{ ...attempt, stage: 'INVENTED' }] },
+    { recordStatus: 'RECORDED', revisionCount: 1, attempts: [{ ...attempt, economicFactId: '' }] },
+  ]) {
+    assert.deepEqual(parseFlightRecorderResponse(invalid), { status: 'UNKNOWN', revisions: [] });
+  }
+});
+
+test('Engine audit response is a separate incomplete event view and rejects malformed evidence', () => {
+  const event = {
+    sequence: '17', recordedAtMs: 1_800_000_000_000, eventType: 'candidate_paper_fill_v1',
+    payloadStatus: 'PROJECTABLE', fields: {attemptId: 'attempt-1', candidateGenerationId: 'candidate-1', mint: 'mint-1', side: 'buy', outcomeEvidenceClass: 'PAPER_SIMULATED_FILL_NOT_CHAIN_EVIDENCE'},
+  };
+  const response = {
+    ok: true, source: 'ENGINE_AUDIT_STORE', recordStatus: 'RECORDED', completeness: 'UNKNOWN',
+    returnedEventCount: 1, invalidEventCount: 0, truncated: false, knownPrunedAuditRows: 0,
+    researchEvidenceLossMarker: 'NONE_RECORDED', events: [event],
+  };
+  assert.deepEqual(parseEngineResearchAuditResponse(response), {
+    status: 'RECORDED', events: [event], returnedEventCount: 1, invalidEventCount: 0, truncated: false,
+    knownPrunedAuditRows: 0, researchEvidenceLossMarker: 'NONE_RECORDED',
+  });
+  assert.equal(ENGINE_RESEARCH_AUDIT_EVENTS.includes('candidate_paper_fill_v1'), true);
+  assert.equal(ENGINE_RESEARCH_AUDIT_EVENTS.includes('candidate_tracking_ended_v1'), true);
+  const trackingEnded = {...event, eventType: 'candidate_tracking_ended_v1', fields: {
+    candidateGenerationId: 'candidate-1', mint: 'mint-1', endedAtMs: 1_800_000_000_004,
+    reason: 'MAX_AGE_EXPIRED', outcomeStatus: 'UNRESOLVED',
+  }};
+  assert.equal(parseEngineResearchAuditResponse({...response, events: [trackingEnded]}).events[0].fields.outcomeStatus,
+    'UNRESOLVED');
+  const buildFailure = {...event, eventType: 'candidate_order_build_failed_v1', fields: {
+    attemptId: 'attempt-2', candidateGenerationId: 'candidate-1', mint: 'mint-1', failureClass: 'STALE_MARKET_SNAPSHOT',
+  }};
+  assert.equal(parseEngineResearchAuditResponse({...response, events: [buildFailure]}).events[0].fields.failureClass,
+    'STALE_MARKET_SNAPSHOT');
+  const restriction = {...event, eventType: 'candidate_restriction_v1', fields: {
+    candidateGenerationId: 'candidate-1', mint: 'mint-1', scope: 'MARKET', effect: 'WAIT',
+    reasonCode: 'EXCESSIVE_PRICE_DRIFT',
+  }};
+  assert.equal(parseEngineResearchAuditResponse({...response, events: [restriction]}).events[0].fields.reasonCode,
+    'EXCESSIVE_PRICE_DRIFT');
+  assert.equal(parseEngineResearchAuditResponse({...response, events: [{...restriction, fields: {
+    ...restriction.fields, reason: 'raw provider error https://private.invalid/token=secret',
+  }}]}).status, 'UNKNOWN');
+  const html = renderToStaticMarkup(React.createElement(EngineResearchAuditPanel));
+  assert.match(html, /Engine Candidate Audit/);
+  assert.match(html, /completeness remains UNKNOWN/);
+  assert.match(html, /never chain settlement/);
+  for (const invalid of [
+    null,
+    {...response, completeness: 'COMPLETE'},
+    {...response, source: 'FLIGHT_RECORDER'},
+    {...response, recordStatus: 'EMPTY'},
+    {...response, returnedEventCount: 2},
+    {...response, invalidEventCount: 2},
+    {...response, events: [{...event, eventType: 'LANDED_SUCCESS'}]},
+    {...response, invalidEventCount: 1},
+    {...response, events: [{...event, payloadStatus: 'UNPROJECTABLE'}]},
+    {...response, events: [{...event, fields: {...event.fields, mint: ''}}]},
+    {...response, events: [{...event, fields: {...event.fields, attemptId: 7}}]},
+    {...response, events: [{...buildFailure, fields: {...buildFailure.fields, failureClass: 'UNRECOGNIZED'}}]},
+    {...response, events: [{...restriction, fields: {...restriction.fields, reasonCode: 'secret-detail'}}]},
+    {...response, events: [{...restriction, fields: {...restriction.fields, scope: 'UNRECOGNIZED'}}]},
+    {...response, events: [{...event, fields: {...event.fields, baseFeeLamports: '5e3'}}]},
+    {...response, events: [{...event, fields: {...event.fields, requestedAmountUnit: 'USD'}}]},
+    {...response, events: [{...event, fields: {...event.fields, side: 'sell', requestedAmountUnit: 'LAMPORTS'}}]},
+    {...response, events: [{...event, fields: {...event.fields, slippageBps: '300'}}]},
+    {...response, events: [{...event, fields: {...event.fields, costEvidenceClass: 'PAPER_BUILD_ESTIMATE'}}]},
+    {...response, events: [{...event, recordedAtMs: Number.MAX_SAFE_INTEGER}]},
+    {...response, events: [{...event, fields: {attemptId: {toJSON: 'unsafe'}}}]},
+  ]) assert.equal(parseEngineResearchAuditResponse(invalid).status, 'UNKNOWN');
+});
+
+test('candidate audit cost summary preserves paper evidence class, raw units and exact lamport values', () => {
+  const summary = summarizeEngineResearchCosts({
+    costEvidenceClass: 'PAPER_BUILD_ESTIMATE', requestedAmountRaw: '10000000', requestedAmountUnit: 'LAMPORTS',
+    quotedOutput: '1250000', quotedOutputUnit: 'TOKEN_RAW', quoteAgeMs: 8,
+    baseFeeLamports: '5000', priorityFeeLamports: '200000', jitoTipLamports: '10000',
+    rentLamports: '3000000', modeledSlippageBps: 300, estimatedSellSlippageLamports: '0',
+  });
+  assert.match(summary, /^Paper quote estimate/);
+  assert.match(summary, /Input 10000000 LAMPORTS/);
+  assert.match(summary, /Quoted output 1250000 TOKEN_RAW/);
+  assert.match(summary, /Priority fee 200000 lamports/);
+  assert.match(summary, /Modeled slippage 300 bps/);
+  assert.match(summary, /Estimated sell slippage 0 lamports/);
+  assert.equal(summarizeEngineResearchCosts({costEvidenceClass: 'PAPER_SIMULATED_FILL', simulatedLamportDelta: '-9000'}),
+    'Simulated paper fill · Simulated SOL delta -9000 lamports');
+  assert.equal(summarizeEngineResearchCosts(null), '');
 });
 
 test('RuntimeDivergenceInspector: renders side-by-side comparison and parity status', () => {

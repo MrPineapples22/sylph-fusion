@@ -8,7 +8,13 @@ Double-click **Start SYLPH.lnk** or **Start-App.cmd** in the parent project. The
 
 The older public-market dashboard is still accessible with **Start-Legacy-App.cmd**. The new terminal runs separately and does not modify its data or execution engine.
 
+The Flight Recorder drawer shows two distinct evidence sources. **Engine Candidate Audit** reads a fixed allowlist of retained candidate, gate, order-build, and paper-fill events from the Engine's SQLite audit database using a read-only connection. It uses `SYLPH_ENGINE_DB_PATH`, then `DB_PATH`, then the project-root `.env` value, and finally the Engine default `fusion.sqlite`; relative paths resolve from the project root. It displays at most the newest 250 events, validates a minimal event-specific candidate/attempt identity shape, and reports unprojectable rows, database-wide known prune counts, and the persisted research-loss marker. Build and paper-fill rows expose requested/quoted raw amounts with explicit `LAMPORTS` or `TOKEN_RAW` units, market-snapshot age, and allowlisted modeled fee/slippage estimates. These fields are explicitly paper evidence, not observed chain costs or fills. “Projectable” means only that the row has the minimum identity fields and supported allowlisted field types; unknown payload fields are intentionally omitted. Completeness remains **UNKNOWN** because event-write failures, earlier pruning, and pre-discovery candidates may leave gaps. The projection omits raw observations and error strings.
+
+**Economic Flight Recorder** is a separate legacy lifecycle database under `terminal/data`; production Engine events do not write into it. An empty legacy recorder therefore says nothing about whether Engine candidates or order attempts occurred. Engine paper fills remain simulation-only and do not establish submitted, landed, finalized, or settled Solana transactions. A standalone source-package copy without the Engine database shows audit status as unavailable.
+
 For a standalone source package, extract the ZIP and double-click **Start-App.cmd**. Built assets are included, so no dependency installation is needed to run it.
+
+The terminal's file-backed flight-recorder database uses SQLite WAL and checks its data directory before opening. Windows must provide a supported fixed local volume. Linux permits only the explicitly classified local filesystem types documented in the project README. Unknown types and non-Windows/non-Linux platforms fail by default; the `DATABASE_FILESYSTEM_OPERATOR_ATTESTATION=LOCAL_SINGLE_HOST_WAL_COMPATIBLE` override is accepted only when `SYLPH_RUNTIME_MODE` and `MODE` do not select live mode. Set it in the process environment after an operator verifies local, single-host WAL behavior. The terminal launcher does not load `.env`. An attestation is not proof of power-loss durability.
 
 ## Development
 
@@ -67,6 +73,8 @@ Prices follow geometric Brownian motion with zero drift, configurable per-asset 
 | `src/main.jsx` | React state ownership, timers, chart lifecycle, controls, tables, export, persistence |
 | `src/style.css` | Solana tokens, Tailwind import and utilities, dense responsive component styling |
 | `server.mjs` | Loopback-only static serving, content types, host validation, security headers |
+| `engine-research-audit.mjs` | Read-only, bounded projection of retained Engine audit events |
+| `src/components/EngineResearchAuditPanel.jsx` | Candidate/attempt event view with explicit completeness and evidence labels |
 | `test/engine.test.mjs` | Deterministic accounting and strategy regression tests |
 | `Build.cmd`, `build-assets.mjs` | Verified Windows production build |
 

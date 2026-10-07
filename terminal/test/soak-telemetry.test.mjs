@@ -82,7 +82,8 @@ test('readLatestSoakSession parses session events and fills correctly', async ()
       JSON.stringify({ time: '2026-09-16T12:00:04.000Z', event: 'entry_rejected', reason: 'creator dev concentration > 20%', mint: 'MINT4' }),
       JSON.stringify({ time: '2026-09-16T12:00:05.000Z', event: 'exit_blocked_by_pending', mint: 'MINT5', orderId: 'ord-1' }),
       JSON.stringify({ time: '2026-09-16T12:00:06.000Z', event: 'exit_block_cleared', mint: 'MINT5', orderId: 'ord-1' }),
-      JSON.stringify({ time: '2026-09-16T12:00:07.000Z', event: 'soak_checkpoint', candidates: 4, memoryMb: 85, balanceSol: 50.0 }),
+      JSON.stringify({ time: '2026-09-16T12:00:07.000Z', event: 'soak_checkpoint', candidates: 4, memoryMb: 85, balanceSol: 50.0,
+        researchSpool: { pendingCount: 2, capacityLimit: 1000, durableAppendCount: 7, durableAppendP95UpperBoundMs: 2.048 } }),
     ];
     await writeFile(join(sessionDir, 'session.jsonl'), jsonlLines.join('\n') + '\n');
 
@@ -123,6 +124,9 @@ test('readLatestSoakSession parses session events and fills correctly', async ()
     // Latest checkpoint
     assert.ok(res.latestCheckpoint);
     assert.equal(res.latestCheckpoint.memoryMb, 85);
+    assert.deepEqual(res.latestCheckpoint.researchSpool, {
+      pendingCount: 2, capacityLimit: 1000, durableAppendCount: 7, durableAppendP95UpperBoundMs: 2.048,
+    });
 
     // Fills
     assert.equal(res.fills.count, 1);

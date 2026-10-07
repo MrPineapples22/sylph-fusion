@@ -80,8 +80,12 @@ export interface RecoveryCertificate {
   readonly certifiedAtMs: number;
 }
 
-export type BackfillResult = boolean | RecoveryCertificate;
+export type BackfillResult = RecoveryCertificate;
 export type BackfillHandler = (gap: SlotGap) => Promise<BackfillResult>;
+
+export interface RecoveryCertificateJournal {
+  saveVerifiedRecoveryCertificate(certificate: RecoveryCertificate): Promise<void>;
+}
 
 export interface ReconciliationReport {
   readonly unresolvedHistoryTruncated: boolean;

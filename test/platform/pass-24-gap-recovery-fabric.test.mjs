@@ -260,7 +260,11 @@ test('PASS-24 REQ-5 (Invariants 1, 2, 5 & 8): IngestionGapReconciler dynamic int
   assert.ok(unresolved[0].gapId);
 
   // Late-arriving slot 105 lands inside [101, 109] -> splits into [101, 104] and [106, 109]!
-  reconciler.registerSlot(105, 1, true, { providerId: 'prov-b' });
+  reconciler.registerSlot(105, 1, true, {
+    providerId: 'prov-a',
+    classification: 'MISSING_OBSERVATION',
+    lane: 'CHAIN_BLOCK',
+  });
   unresolved = reconciler.getUnresolvedGaps();
   assert.strictEqual(unresolved.length, 2, 'Gap should split into two intervals around slot 105');
   assert.strictEqual(unresolved[0].startSlot, 101);
@@ -270,22 +274,16 @@ test('PASS-24 REQ-5 (Invariants 1, 2, 5 & 8): IngestionGapReconciler dynamic int
 
   // Mark gap [106, 109] resolved with structured RecoveryCertificate
   const gapId = unresolved[1].gapId;
-  const cert = {
-    certificateId: 'cert-gap-001',
-    gapId,
-    fromSlot: 106,
-    toSlot: 109,
-    providerId: 'archival-helios-1',
-    recoveredEventIds: ['evt-106-1', 'evt-107-1', 'evt-108-1', 'evt-109-1'],
-    skippedSlots: [],
-    deadForkSlots: [],
-    coverageRoot: 'cov-root-hash-999',
-    stateRoot: 'state-root-hash-888',
-    resolvedAtMs: Date.now(),
-    signature: 'sig-cert-ed25519-valid',
-  };
+  const perSlotStatus = Object.freeze({106: 'RECOVERED', 107: 'RECOVERED', 108: 'RECOVERED', 109: 'RECOVERED'});
+  const cert = Object.freeze({
+    certificateId: 'cert-gap-001', gapId, startSlot: 106, endSlot: 109,
+    providerId: 'prov-a', classification: 'MISSING_OBSERVATION', lane: 'CHAIN_BLOCK',
+    recoveredEventIds: Object.freeze(['evt-106-1', 'evt-107-1', 'evt-108-1', 'evt-109-1']),
+    perSlotStatus, coverageRoot: 'c'.repeat(64), stateRoot: 'd'.repeat(64),
+    isVerified: true, certifiedAtMs: Date.now(),
+  });
 
-  reconciler.markGapResolved(106, 109, cert);
+  assert.equal(reconciler.markGapResolved(106, 109, cert), true);
 
   // Remaining unresolved gap is [101, 104]
   assert.strictEqual(reconciler.getUnresolvedGaps().length, 1);
@@ -296,6 +294,6 @@ test('PASS-24 REQ-5 (Invariants 1, 2, 5 & 8): IngestionGapReconciler dynamic int
   const storedCert = reconciler.getRecoveryCertificate(gapId);
   assert.ok(storedCert);
   assert.strictEqual(storedCert.certificateId, 'cert-gap-001');
-  assert.strictEqual(storedCert.stateRoot, 'state-root-hash-888');
+  assert.strictEqual(storedCert.stateRoot, 'd'.repeat(64));
   assert.strictEqual(reconciler.getAllRecoveryCertificates().length, 1);
 });

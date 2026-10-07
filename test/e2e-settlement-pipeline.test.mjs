@@ -249,6 +249,30 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
     assert.equal(discoveryRecord.observedAtMs, eventTime + 250);
     assert.equal(discoveryRecord.sourceObservation.observationId, 'obs-create-sig-1');
     assert.equal(discoveryRecord.sourceObservation.rawPayloadHash, 'a'.repeat(64));
+
+    // Raw create events with unusable chain timestamps stay visible in the
+    // denominator while their price outcomes remain explicitly unresolved.
+    const invalidTimestampMint = Keypair.generate().publicKey;
+    engine['onEvent']({
+      name: 'create_event', signature: 'create-sig-invalid-time', slot: 101,
+      received: Date.now(),
+      observation: {observationId: 'obs-invalid-time', sourceId: 'test-provider',
+        providerId: 'https://provider.example', transport: 'test.feed', receivedAt: Date.now(),
+        slot: 101, commitment: 'confirmed', signature: 'create-sig-invalid-time',
+        rawPayloadHash: 'b'.repeat(64), schemaVersion: 'solana-program-logs/v1', processingIntent: 'LIVE'},
+      data: {mint: invalidTimestampMint, creator: creatorPub, user: creatorPub, timestamp: 'not-a-time'},
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(engine['candidates'].has(invalidTimestampMint.toBase58()), false);
+    const invalidTimeDiscovery = (await store.getAuditEvents('candidate_discovered_v1', 10))
+      .map(event => JSON.parse(event.body)).find(event => event.mint === invalidTimestampMint.toBase58());
+    assert.equal(invalidTimeDiscovery.discoveryDisposition, 'REJECTED_AT_DISCOVERY');
+    assert.equal(invalidTimeDiscovery.chainCreatedAtMs, null);
+    const invalidTimeEnd = (await store.getAuditEvents('candidate_tracking_ended_v1', 10))
+      .map(event => JSON.parse(event.body)).find(event => event.mint === invalidTimestampMint.toBase58());
+    assert.equal(invalidTimeEnd.reason, 'INVALID_CHAIN_TIMESTAMP');
+    assert.equal(invalidTimeEnd.outcomeStatus, 'UNRESOLVED');
+
     assert.equal(candidate.buyCount, 6, 'Genuine buy count must be tracked');
     assert.equal(candidate.sellCount, 0, 'Genuine sell count must be tracked');
     assert.equal(candidate.buyers.size, 6, 'Genuine distinct buyers tracked');
@@ -282,6 +306,13 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
     const noLoggerAudit = await store.getAuditEvents('candidate_snapshot_v1', 10);
     assert.equal(noLoggerAudit.length, 2, 'SQLite evidence capture is independent of optional session logging');
     assert.equal(JSON.parse(noLoggerAudit[1].body).snapshot.dispositionReason, 'logger_disabled');
+    engine['recordRestriction'](candidateMint, 'MARKET', 'WAIT', 'EXCESSIVE_PRICE_DRIFT');
+    await new Promise(resolve => setImmediate(resolve));
+    const restrictionEvents = await store.getAuditEvents('candidate_restriction_v1', 10);
+    const restriction = JSON.parse(restrictionEvents[0].body);
+    assert.equal(restriction.scope, 'MARKET');
+    assert.equal(restriction.effect, 'WAIT');
+    assert.equal(restriction.reasonCode, 'EXCESSIVE_PRICE_DRIFT');
 
     // Counterfactual market sampling records near-miss prices without touching
     // paper cash, positions, or the performance ledger.
@@ -308,19 +339,32 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
 
     // An executor build failure is a recorded attempt, not a missing candidate.
     const originalBuild = executor.build.bind(executor);
-    executor.build = async () => { throw new Error('fixture quote unavailable'); };
+    executor.build = async () => { throw new Error('quote expired'); };
     candidate.next = 0;
     engine['nextSafetyScanAt'] = 0;
     await engine['tick']();
     executor.build = originalBuild;
+    candidate.next = 0;
+    engine['nextSafetyScanAt'] = 0;
+    executor.build = async () => { throw new Error('provider fixture failure'); };
+    await engine['tick']();
+    executor.build = originalBuild;
     const buildFailures = await store.getAuditEvents('candidate_order_build_failed_v1', 10);
-    assert.equal(buildFailures.length, 1, 'failed quote/build attempt is durably captured');
-    const failedAttempt = JSON.parse(buildFailures[0].body);
-    assert.equal(failedAttempt.candidateGenerationId, discoveryRecord.candidateId);
-    assert.match(failedAttempt.error, /fixture quote unavailable/);
+    assert.equal(buildFailures.length, 2, 'both recognized and unclassified build failures remain in retained attempt events');
+    const failurePayloads = buildFailures.map(event => JSON.parse(event.body));
+    const staleFailure = failurePayloads.find(event => event.failureClass === 'STALE_MARKET_SNAPSHOT');
+    const unclassifiedFailure = failurePayloads.find(event => event.failureClass === 'UNCLASSIFIED_BUILD_FAILURE');
+    assert.ok(staleFailure);
+    assert.ok(unclassifiedFailure);
+    assert.equal(staleFailure.failureClass, 'STALE_MARKET_SNAPSHOT');
+    assert.equal(unclassifiedFailure.failureClass, 'UNCLASSIFIED_BUILD_FAILURE');
+    assert.equal(staleFailure.candidateGenerationId, discoveryRecord.candidateId);
+    assert.equal(unclassifiedFailure.candidateGenerationId, discoveryRecord.candidateId);
     const startedAttempts = await store.getAuditEvents('candidate_order_build_started_v1', 10);
-    assert.equal(startedAttempts.length, 1);
-    assert.equal(JSON.parse(startedAttempts[0].body).attemptId, failedAttempt.attemptId);
+    assert.equal(startedAttempts.length, 2);
+    const startedIds = new Set(startedAttempts.map(event => JSON.parse(event.body).attemptId));
+    assert.ok(startedIds.has(staleFailure.attemptId));
+    assert.ok(startedIds.has(unclassifiedFailure.attemptId));
     engine['nextSafetyScanAt'] = 0;
     candidate.next = 0;
 
@@ -332,18 +376,25 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
     const pos = engine.state.positions[candidateMint];
     assert.ok(pos, 'Position should exist after all entry checks pass');
     const gatePasses = await store.getAuditEvents('candidate_entry_gates_passed_v1', 10);
-    assert.equal(gatePasses.length, 2, 'each local entry-gate evaluation is durably observable, including attempts that later fail to build');
-    const gatePass = JSON.parse(gatePasses[1].body);
+    assert.equal(gatePasses.length, 3, 'each local entry-gate evaluation is durably observable, including attempts that later fail to build');
+    const gatePass = JSON.parse(gatePasses[2].body);
     assert.equal(gatePass.candidateGenerationId, discoveryRecord.candidateId);
-    assert.equal(gatePass.attemptNumber, 2);
-    assert.notEqual(gatePass.attemptId, failedAttempt.attemptId, 'retry receives a distinct identity that does not depend on process-local counters');
+    assert.equal(gatePass.attemptNumber, 3);
+    assert.ok(!startedIds.has(gatePass.attemptId), 'successful retry receives an identity distinct from both failed attempts');
     assert.equal(gatePass.executionAuthority, 'NOT_ASSERTED', 'research record does not imply execution authorization');
     const builtAttempts = await store.getAuditEvents('candidate_order_built_v1', 10);
-    assert.equal(builtAttempts.length, 1, 'successful built order retains the second attempt identity');
-    assert.equal(JSON.parse(builtAttempts[0].body).attemptId, gatePass.attemptId);
+    assert.equal(builtAttempts.length, 1, 'successful built order retains the final retry identity');
+    const builtPayload = JSON.parse(builtAttempts[0].body);
+    assert.equal(builtPayload.attemptId, gatePass.attemptId);
+    assert.equal(builtPayload.requestedAmountRaw, '10000000');
+    assert.equal(builtPayload.requestedAmountUnit, 'LAMPORTS');
+    assert.equal(builtPayload.quotedOutputUnit, 'TOKEN_RAW');
+    assert.equal(builtPayload.costEvidenceClass, 'PAPER_BUILD_ESTIMATE');
+    assert.ok(Number.isSafeInteger(builtPayload.marketSnapshotAtMs) && builtPayload.marketSnapshotAtMs >= 0);
+    assert.ok(Number.isSafeInteger(builtPayload.marketSnapshotAgeMs) && builtPayload.marketSnapshotAgeMs >= 0);
     const allStartedAttempts = await store.getAuditEvents('candidate_order_build_started_v1', 10);
-    assert.equal(allStartedAttempts.length, 2);
-    assert.equal(JSON.parse(allStartedAttempts[1].body).attemptId, gatePass.attemptId);
+    assert.equal(allStartedAttempts.length, 3);
+    assert.equal(JSON.parse(allStartedAttempts[2].body).attemptId, gatePass.attemptId);
     assert.equal(pos.qty, '970000000');
     assert.equal(pos.initialQty, '970000000');
     assert.equal(pos.candidateGenerationId, discoveryRecord.candidateId, 'position retains stable generation identity for later exits');
@@ -387,6 +438,32 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
     const sellBuilds = allBuiltAttempts.map(row => JSON.parse(row.body)).filter(row => row.side === 'sell');
     assert.equal(sellBuilds.length, 2, 'partial and full exits retain candidate-linked build identities after their entry');
     assert.ok(sellBuilds.every(row => row.candidateGenerationId === discoveryRecord.candidateId));
+    assert.ok(sellBuilds.every(row => row.requestedAmountUnit === 'TOKEN_RAW' && row.quotedOutputUnit === 'LAMPORTS'),
+      'sell evidence labels token raw input and SOL lamport output without unit ambiguity');
+    assert.ok(sellBuilds.every(row => row.costEvidenceClass === 'PAPER_BUILD_ESTIMATE'));
+    const paperFillPayloads = paperFills.map(row => JSON.parse(row.body));
+    assert.ok(paperFillPayloads.filter(row => row.side === 'sell').every(row =>
+      row.requestedAmountUnit === 'TOKEN_RAW' && row.quotedOutputUnit === 'LAMPORTS'
+      && row.costEvidenceClass === 'PAPER_SIMULATED_FILL'));
+
+    // Capacity eviction is visible as the end of tracking, not as a resolved
+    // performance outcome. Keep the test isolated after execution assertions.
+    engine.cfg.MAX_TRACKED = 1;
+    const nextMint = Keypair.generate().publicKey;
+    const nextReceivedAt = Date.now();
+    engine['onEvent']({
+      name: 'create_event', signature: 'create-sig-capacity', slot: 200, received: nextReceivedAt,
+      observation: {observationId: 'obs-capacity', sourceId: 'test-provider', providerId: 'https://provider.example',
+        transport: 'test.feed', receivedAt: nextReceivedAt, slot: 200, commitment: 'confirmed',
+        signature: 'create-sig-capacity', rawPayloadHash: 'c'.repeat(64),
+        schemaVersion: 'solana-program-logs/v1', processingIntent: 'LIVE'},
+      data: {mint: nextMint, creator: creatorPub, user: creatorPub, timestamp: Math.floor(nextReceivedAt / 1000)},
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    const capacityEnd = (await store.getAuditEvents('candidate_tracking_ended_v1', 10))
+      .map(event => JSON.parse(event.body)).find(event => event.candidateGenerationId === candidate.candidateGenerationId);
+    assert.equal(capacityEnd.reason, 'TRACKING_CAPACITY_EVICTION');
+    assert.equal(capacityEnd.outcomeStatus, 'UNRESOLVED');
 
     // 8. Verify Engine Internal Realized PnL Accounting
     const engineRealizedLamports = BigInt(engine.state.performance?.realized || '0');

@@ -112,10 +112,10 @@ test('STARTSEAL: executes full sequence and conducts whole-wallet inventory cens
   assert.equal(cert.discrepancyCount, 3);
   // Entry is NOT permitted because discrepancies exist!
   assert.equal(cert.isEntryPermitted, false);
-  assert.match(cert.reason, /Startup locked to REDUCE_ONLY/);
+  assert.match(cert.reason, /3 wallet inventory discrepancies requiring manual reconciliation/);
 });
 
-test('STARTSEAL: clean wallet inventory permits entry after ENTRY_READY', () => {
+test('STARTSEAL: caller-asserted clean inventory and phase sequence cannot permit entry', () => {
   const startSeal = new StartSealAuthority();
   const wallet = 'Wallet222222222222222222222222222222222222';
 
@@ -148,6 +148,6 @@ test('STARTSEAL: clean wallet inventory permits entry after ENTRY_READY', () => 
 
   const cert = startSeal.generateSealCertificate(wallet, 20_000_000_000n);
   assert.equal(cert.discrepancyCount, 0);
-  assert.equal(cert.isEntryPermitted, true);
-  assert.match(cert.reason, /Startup reconciliation complete/);
+  assert.equal(cert.isEntryPermitted, false);
+  assert.match(cert.reason, /trusted evidence verification is unavailable/);
 });

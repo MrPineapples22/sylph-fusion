@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 /**
  * SOL-SYLPH Intelligence Fabric - Counterfactual Regret Store & Alpha Decomposition
  * Specifications: 500-Item Roadmap Layer I (#3, #10), Layer II (#185-#188), Layer III (#299), Layer V (#483, #484).
@@ -261,10 +263,7 @@ export class ExecutionRegretEngine {
       actionablePolicyTuning = 'Tighten trailing stop trajectory or dynamic half-life horizon.';
     }
 
-    const evaluationId = `cfr_${opportunityId}_${slot}`;
-
-    return {
-      evaluationId,
+    const evaluation = {
       decisionId,
       opportunityId,
       tokenId,
@@ -294,7 +293,11 @@ export class ExecutionRegretEngine {
           'subsequentSlotPriceDeltasBps',
         ]),
       },
-    };
+    } as const;
+    // Keep each immutable observation distinct when the same opportunity is
+    // re-evaluated in a slot. Replaying the same object remains idempotent.
+    const digest = createHash('sha256').update(JSON.stringify(evaluation)).digest('hex');
+    return { ...evaluation, evaluationId: `cfr_${digest}` };
   }
 }
 
@@ -304,6 +307,8 @@ export class CounterfactualRegretStore {
   private readonly records = new Map<string, CounterfactualEvaluation>();
   private readonly maxCapacity: number;
   private readonly journal?: DurableRegretJournal;
+  private journalFailureCount = 0;
+  private lastJournalError: string | null = null;
 
   constructor(maxCapacity: number = 2000, journal?: DurableRegretJournal) {
     this.maxCapacity = maxCapacity;
@@ -319,8 +324,22 @@ export class CounterfactualRegretStore {
     }
     this.records.set(evalResult.evaluationId, evalResult);
     if (this.journal) {
-      void this.journal.saveCounterfactualEvaluation(evalResult as unknown as Record<string, unknown>);
+      try {
+        void Promise.resolve(this.journal.saveCounterfactualEvaluation(evalResult as unknown as Record<string, unknown>))
+          .catch(error => this.recordJournalFailure(error));
+      } catch (error) {
+        this.recordJournalFailure(error);
+      }
     }
+  }
+
+  private recordJournalFailure(error: unknown): void {
+    this.journalFailureCount += 1;
+    this.lastJournalError = error instanceof Error ? error.message : String(error);
+  }
+
+  public getJournalHealth(): Readonly<{ failureCount: number; lastError: string | null }> {
+    return Object.freeze({ failureCount: this.journalFailureCount, lastError: this.lastJournalError });
   }
 
   public getEvaluation(evaluationId: string): CounterfactualEvaluation | undefined {

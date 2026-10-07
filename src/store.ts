@@ -1,6 +1,8 @@
 import { Worker } from 'node:worker_threads';
 import type { State } from './core.js';
-import type { DurableSigningJournal, PreparedSigningIntent } from './platform/signing/durable-live-signer.js';
+import type { DurableSigningJournal, PersistedSigningIntent, PreparedSigningIntent } from './platform/signing/durable-live-signer.js';
+import type { RecoveryCertificate } from './platform/ingestion/types.js';
+import { serializeRecoveryCertificate } from './platform/ingestion/recovery-certificate.js';
 import { GenerationStorageError, snapshotRegistration, validateGenerationId, storageErrorCodes,
   type InitialGenerationRegistration, type RegistrationResult, type GenerationIdentityRead,
   type LocalGenerationIdentityStore, type StorageErrorCode } from './platform/storage/generation-identity.js';
@@ -89,6 +91,31 @@ export class Store implements
   async markSigningIntentSigned(economicIntentId: string, messageSha256: string, signatureBase64: string): Promise<void> {
     await this.call('mark-signed', JSON.stringify({ economicIntentId, messageSha256, signatureBase64 }));
   }
+  async getSigningIntent(economicIntentId: string): Promise<PersistedSigningIntent | null> {
+    if (typeof economicIntentId !== 'string' || economicIntentId.length < 1 || economicIntentId.length > 256) {
+      throw new Error('Invalid signing intent lookup');
+    }
+    const text = await this.call('get-signing-intent', economicIntentId);
+    if (!text) return null;
+    let row: unknown;
+    try { row = JSON.parse(text); } catch { throw new Error('SIGNING_INTENT_ROW_INCONSISTENT'); }
+    if (row === null) return null;
+    if (!row || typeof row !== 'object' || Array.isArray(row)) throw new Error('SIGNING_INTENT_ROW_INCONSISTENT');
+    const value = row as Record<string, unknown>;
+    if (value.economicIntentId !== economicIntentId || typeof value.wallet !== 'string' || value.wallet.length < 1 ||
+        typeof value.messageSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(value.messageSha256) ||
+        (value.state !== 'PREPARED' && value.state !== 'SIGNED') ||
+        (value.state === 'PREPARED' && value.signatureBase64 !== null) ||
+        (value.state === 'SIGNED' && (typeof value.signatureBase64 !== 'string' ||
+          Buffer.from(value.signatureBase64, 'base64').byteLength !== 64 ||
+          Buffer.from(value.signatureBase64, 'base64').toString('base64') !== value.signatureBase64))) {
+      throw new Error('SIGNING_INTENT_ROW_INCONSISTENT');
+    }
+    return Object.freeze({
+      economicIntentId, wallet: value.wallet, messageSha256: value.messageSha256,
+      state: value.state, signatureBase64: value.signatureBase64,
+    }) as PersistedSigningIntent;
+  }
   async saveCapitalCommit(commit: { intentId: string; reservationId: string; certificateId: string; capitalStateRoot: string; certificateHash: string }): Promise<void> {
     await this.call('save-capital-commit', JSON.stringify(commit, (_, v) => typeof v === 'bigint' ? v.toString() : v));
   }
@@ -96,7 +123,28 @@ export class Store implements
     await this.call('append-capital-event', JSON.stringify(event, (_, v) => typeof v === 'bigint' ? v.toString() : v));
   }
   async saveRecoveryCertificate(cert: Record<string, unknown>): Promise<void> {
+    // Legacy signed-row format; new range-bound certificates use the v2 journal below.
     await this.call('save-recovery-certificate', JSON.stringify(cert));
+  }
+  async saveVerifiedRecoveryCertificate(certificate: RecoveryCertificate): Promise<void> {
+    const serialized = serializeRecoveryCertificate(certificate);
+    if (!serialized) throw new Error('RECOVERY_CERTIFICATE_INVALID');
+    await this.call('save-verified-recovery-certificate', JSON.stringify({
+      certificateJson: serialized.certificateJson,
+      certificateSha256: serialized.certificateSha256,
+    }));
+  }
+  async getVerifiedRecoveryCertificate(certificateIdOrGapId: string): Promise<RecoveryCertificate | null> {
+    if (typeof certificateIdOrGapId !== 'string' || certificateIdOrGapId.length < 1 || certificateIdOrGapId.length > 256) {
+      throw new Error('RECOVERY_CERTIFICATE_LOOKUP_INVALID');
+    }
+    const text = await this.call('get-verified-recovery-certificate', certificateIdOrGapId);
+    if (!text) return null;
+    let certificate: unknown;
+    try { certificate = JSON.parse(text); } catch { throw new Error('RECOVERY_CERTIFICATE_ROW_INCONSISTENT'); }
+    const serialized = serializeRecoveryCertificate(certificate);
+    if (!serialized || serialized.certificateJson !== text) throw new Error('RECOVERY_CERTIFICATE_ROW_INCONSISTENT');
+    return serialized.certificate;
   }
   async getRecoveryCertificate(certificateIdOrGapId: string): Promise<Record<string, unknown> | null> {
     const text = await this.call('get-recovery-certificate', certificateIdOrGapId);
@@ -190,6 +238,8 @@ export interface DurableCapitalJournal {
 export interface DurableRecoveryJournal {
   saveRecoveryCertificate(cert: Record<string, unknown>): Promise<void>;
   getRecoveryCertificate(certificateIdOrGapId: string): Promise<Record<string, unknown> | null>;
+  saveVerifiedRecoveryCertificate(certificate: RecoveryCertificate): Promise<void>;
+  getVerifiedRecoveryCertificate(certificateIdOrGapId: string): Promise<RecoveryCertificate | null>;
   saveCoverageFrontier(frontier: { lane: string; continuousSlot: number; sealedSlot: number; coverageRoot: string }): Promise<void>;
   getCoverageFrontier(lane: string): Promise<{ lane: string; continuousSlot: number; sealedSlot: number; coverageRoot: string } | null>;
 }

@@ -198,7 +198,7 @@ test('simulation explicitly requests and records bounded RPC inner-instruction t
   const simulation = calls.find(call => call.parsed.method === 'simulateTransaction');
   assert.equal(simulation.parsed.params[1].innerInstructions, true);
   const metadata = r.client.inspect(receipt).metadata;
-  assert.equal(metadata.innerInstructionTraceStatus, 'COMPLETE');
+  assert.equal(metadata.innerInstructionTraceStatus, 'STRUCTURALLY_VALID');
   assert.equal(metadata.innerInstructionGroupCount, 1);
   assert.equal(metadata.innerInstructionCount, 2);
   assert.match(metadata.innerInstructionsHash, /^[a-f0-9]{64}$/);
@@ -217,6 +217,7 @@ test('simulation explicitly requests and records bounded RPC inner-instruction t
 });
 for (const trace of [
   'not-an-array', [{ index: 2, instructions: [] }], [{ index: 1, instructions: [] }, { index: 1, instructions: [] }],
+  [{ index: 1, instructions: [{ programId: other.toBase58(), accounts: [], data: '', stackHeight: 4 }] }],
   [{ index: 1, instructions: [{ programId: '', accounts: [], stackHeight: 2 }] }],
   [{ index: 1, instructions: [{ programId: other.toBase58(), accounts: [], stackHeight: 1 }] }],
   [{ index: 1, instructions: [{ programId: other.toBase58(), stackHeight: 2 }] }],
@@ -224,7 +225,7 @@ for (const trace of [
 ]) test('malformed inner-instruction evidence is rejected', async t => {
   transport(t, () => ({ context: { slot: 12 }, value: { err: null, unitsConsumed: 1000, innerInstructions: trace } }));
   const r = root();
-  await assert.rejects(r.client.observe(r.issueDisclosure(request())), /SIMULATION_INNER_INSTRUCTIONS_INVALID/);
+  await assert.rejects(r.client.observe(r.issueDisclosure(request())), /CPI_TRACE_/);
 });
 test('genesis mismatch and redirect never fail over', async t => {
   let mode = 'genesis'; const calls = transport(t, () => mode === 'genesis' ? { genesis: other.toBase58() } : { http: 302 });

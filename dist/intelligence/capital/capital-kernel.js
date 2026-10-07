@@ -52,42 +52,12 @@ export class CapitalKernel {
         return false;
     }
     /**
-     * Verified recovery machine using cryptographic RecoveryCertificate (Part XI).
-     * Restores authority only when explicit evidence proves the underlying fault is resolved.
-     * Invariant INV_AUTH_012: No authority-bearing decision depends on descriptive caller booleans (cert.verification_result removed).
+     * Recovery is disabled until a trusted cryptographic verifier is connected.
+     * The current certificate shape is caller supplied and has no signature,
+     * canonical evidence binding, or verification authority; its fields cannot
+     * safely promote the authority lattice.
      */
-    restoreAuthorityWithCertificate(cert) {
-        if (!cert.recovery_id || cert.recovery_id.length < 8)
-            return false;
-        if (cert.provider_status !== 'HEALTHY')
-            return false;
-        if (cert.settlement_state !== 'CLEAN')
-            return false;
-        if (cert.signer_state !== 'READY')
-            return false;
-        if (cert.market_freshness_ms > 30_000 || cert.market_freshness_ms < 0)
-            return false;
-        if (!cert.capital_state_root || cert.capital_state_root.length < 16)
-            return false;
-        if (!cert.position_reconciliation_hash || cert.position_reconciliation_hash.length < 8)
-            return false;
-        if (!cert.evidence_hashes || cert.evidence_hashes.length === 0)
-            return false;
-        // Validate upward progression step in recovery lattice
-        const rank = (m) => {
-            switch (m) {
-                case 'A0_OBSERVE_ONLY': return 0;
-                case 'A1_CANCEL_ONLY': return 1;
-                case 'A2_REDUCE_ONLY': return 2;
-                case 'A3_MAINTAIN': return 3;
-                case 'A4_LIMITED_INCREASE': return 4;
-                case 'A5_NORMAL': return 5;
-            }
-        };
-        if (rank(cert.target_authority) > rank(this.authorityMode)) {
-            this.authorityMode = cert.target_authority;
-            return true;
-        }
+    restoreAuthorityWithCertificate(_cert) {
         return false;
     }
     /**

@@ -2,7 +2,7 @@
  * SYLPH FUSION — STARTSEAL: Reconcile-First Startup Sequence & Inventory Census
  * Specifications: Sections 20, 42, 60, 103 (Invariants 2, 4, 11, 15, 18)
  *
- * Enforces the strict 12-stage startup sequence:
+ * Research-only sequence model for the strict 12-stage startup sequence:
  * BOOT -> RELEASE_VERIFY -> FENCE_ACQUIRE -> PROVIDER_SYNC -> JOURNAL_RECOVERY ->
  * PENDING_TX_RECONCILIATION -> FULL_WALLET_INVENTORY_CENSUS -> CAPITAL_CONSERVATION ->
  * TOKEN_SEMANTICS_REFRESH -> EVENT_CATCHUP -> REDUCE_ONLY -> ENTRY_READY
@@ -245,7 +245,9 @@ export class StartSealAuthority {
      */
     generateSealCertificate(wallet, solBalanceLamports) {
         const discrepancies = this.inventoryCensus.filter(i => i.requiresManualReview).length;
-        const isEntryPermitted = this.isEntryReady && discrepancies === 0;
+        // This sequence model accepts caller-supplied phase details/certificates and
+        // has no trusted runtime evidence verifier. It must never grant entry readiness.
+        const isEntryPermitted = false;
         const certId = createHash('sha256')
             .update(`${wallet}:${this.fenceEpoch}:${this.currentPhase}:${discrepancies}:${Date.now()}`)
             .digest('hex')
@@ -262,8 +264,10 @@ export class StartSealAuthority {
             auditHistory: [...this.auditHistory],
             sealedAtMs: Date.now(),
             reason: discrepancies > 0
-                ? `Startup locked to REDUCE_ONLY due to ${discrepancies} wallet inventory discrepancies requiring manual reconciliation`
-                : 'Startup reconciliation complete. All invariants satisfied.',
+                ? `Startup checks report ${discrepancies} wallet inventory discrepancies requiring manual reconciliation`
+                : this.isEntryReady
+                    ? 'Startup sequence assertions completed; trusted evidence verification is unavailable, so entry remains blocked'
+                    : 'Startup sequence is incomplete; entry remains blocked',
         };
     }
 }

@@ -134,10 +134,11 @@ function cloneRuntimeRoot(value) {
     const hashSchemaVersion = Object.prototype.hasOwnProperty.call(root, 'runtimeRootHashSchemaVersion')
         ? root.runtimeRootHashSchemaVersion
         : 1;
-    if (!['mainnet-beta', 'devnet', 'testnet', 'localnet'].includes(String(root.cluster)) ||
+    if (typeof root.cluster !== 'string' || !['mainnet-beta', 'devnet', 'testnet', 'localnet'].includes(root.cluster) ||
         typeof root.genesisHash !== 'string' || typeof root.agaveVersion !== 'string' ||
         typeof root.activeFeatureSetHash !== 'string' || typeof root.resourcePolicyVersion !== 'string' ||
-        typeof root.runtimeRootHash !== 'string' || !['legacy', 'v0', 'all'].includes(String(root.transactionVersionSupported)) ||
+        typeof root.runtimeRootHash !== 'string' || typeof root.transactionVersionSupported !== 'string' ||
+        !['legacy', 'v0', 'all'].includes(root.transactionVersionSupported) ||
         (hashSchemaVersion !== 1 && hashSchemaVersion !== 2) ||
         (hashSchemaVersion === 1 && !/^[a-f0-9]{16}$/.test(root.activeFeatureSetHash)) ||
         (hashSchemaVersion === 2 && (!/^[a-f0-9]{64}$/.test(root.activeFeatureSetHash) ||

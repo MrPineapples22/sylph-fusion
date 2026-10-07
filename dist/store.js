@@ -1,4 +1,5 @@
 import { Worker } from 'node:worker_threads';
+import { serializeRecoveryCertificate } from './platform/ingestion/recovery-certificate.js';
 import { GenerationStorageError, snapshotRegistration, validateGenerationId, storageErrorCodes } from './platform/storage/generation-identity.js';
 export class Store {
     worker;
@@ -94,6 +95,39 @@ export class Store {
     async markSigningIntentSigned(economicIntentId, messageSha256, signatureBase64) {
         await this.call('mark-signed', JSON.stringify({ economicIntentId, messageSha256, signatureBase64 }));
     }
+    async getSigningIntent(economicIntentId) {
+        if (typeof economicIntentId !== 'string' || economicIntentId.length < 1 || economicIntentId.length > 256) {
+            throw new Error('Invalid signing intent lookup');
+        }
+        const text = await this.call('get-signing-intent', economicIntentId);
+        if (!text)
+            return null;
+        let row;
+        try {
+            row = JSON.parse(text);
+        }
+        catch {
+            throw new Error('SIGNING_INTENT_ROW_INCONSISTENT');
+        }
+        if (row === null)
+            return null;
+        if (!row || typeof row !== 'object' || Array.isArray(row))
+            throw new Error('SIGNING_INTENT_ROW_INCONSISTENT');
+        const value = row;
+        if (value.economicIntentId !== economicIntentId || typeof value.wallet !== 'string' || value.wallet.length < 1 ||
+            typeof value.messageSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(value.messageSha256) ||
+            (value.state !== 'PREPARED' && value.state !== 'SIGNED') ||
+            (value.state === 'PREPARED' && value.signatureBase64 !== null) ||
+            (value.state === 'SIGNED' && (typeof value.signatureBase64 !== 'string' ||
+                Buffer.from(value.signatureBase64, 'base64').byteLength !== 64 ||
+                Buffer.from(value.signatureBase64, 'base64').toString('base64') !== value.signatureBase64))) {
+            throw new Error('SIGNING_INTENT_ROW_INCONSISTENT');
+        }
+        return Object.freeze({
+            economicIntentId, wallet: value.wallet, messageSha256: value.messageSha256,
+            state: value.state, signatureBase64: value.signatureBase64,
+        });
+    }
     async saveCapitalCommit(commit) {
         await this.call('save-capital-commit', JSON.stringify(commit, (_, v) => typeof v === 'bigint' ? v.toString() : v));
     }
@@ -101,7 +135,36 @@ export class Store {
         await this.call('append-capital-event', JSON.stringify(event, (_, v) => typeof v === 'bigint' ? v.toString() : v));
     }
     async saveRecoveryCertificate(cert) {
+        // Legacy signed-row format; new range-bound certificates use the v2 journal below.
         await this.call('save-recovery-certificate', JSON.stringify(cert));
+    }
+    async saveVerifiedRecoveryCertificate(certificate) {
+        const serialized = serializeRecoveryCertificate(certificate);
+        if (!serialized)
+            throw new Error('RECOVERY_CERTIFICATE_INVALID');
+        await this.call('save-verified-recovery-certificate', JSON.stringify({
+            certificateJson: serialized.certificateJson,
+            certificateSha256: serialized.certificateSha256,
+        }));
+    }
+    async getVerifiedRecoveryCertificate(certificateIdOrGapId) {
+        if (typeof certificateIdOrGapId !== 'string' || certificateIdOrGapId.length < 1 || certificateIdOrGapId.length > 256) {
+            throw new Error('RECOVERY_CERTIFICATE_LOOKUP_INVALID');
+        }
+        const text = await this.call('get-verified-recovery-certificate', certificateIdOrGapId);
+        if (!text)
+            return null;
+        let certificate;
+        try {
+            certificate = JSON.parse(text);
+        }
+        catch {
+            throw new Error('RECOVERY_CERTIFICATE_ROW_INCONSISTENT');
+        }
+        const serialized = serializeRecoveryCertificate(certificate);
+        if (!serialized || serialized.certificateJson !== text)
+            throw new Error('RECOVERY_CERTIFICATE_ROW_INCONSISTENT');
+        return serialized.certificate;
     }
     async getRecoveryCertificate(certificateIdOrGapId) {
         const text = await this.call('get-recovery-certificate', certificateIdOrGapId);

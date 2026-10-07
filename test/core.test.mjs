@@ -217,22 +217,64 @@ test('SQLite persists pending bytes across restart', async () => {
 });
 test('finalized metadata drives actual SOL and token deltas', () => {
   const msg = new TransactionMessage({ payerKey: key.publicKey, recentBlockhash: PublicKey.default.toBase58(), instructions: [] }).compileToV0Message();
-  const response = { transaction: { message: msg }, meta: { err: null, preBalances: [100000], postBalances: [88995], preTokenBalances: [], postTokenBalances: [{ owner: key.publicKey.toBase58(), mint, uiTokenAmount: { amount: '99999999999999999' } }] } };
-  assert.deepEqual(transactionDeltas(response, key.publicKey.toBase58(), mint), { tokenDelta: 99999999999999999n, solDelta: -11005n });
+  const response = { transaction: { signatures: ['signature'], message: msg }, slot: 10, meta: { err: null, fee: 5000, preBalances: [100000], postBalances: [95000], loadedAddresses: { writable: [], readonly: [] }, preTokenBalances: [], postTokenBalances: [{ accountIndex: 0, owner: key.publicKey.toBase58(), mint, programId: TOKEN_PROGRAM_ID.toBase58(), uiTokenAmount: { amount: '99999999999999999' } }], innerInstructions: [] } };
+  assert.deepEqual(transactionDeltas(response, key.publicKey.toBase58(), mint, 'signature'), { tokenDelta: 99999999999999999n, solDelta: -5000n });
+  assert.throws(() => transactionDeltas({ ...response, transaction: { ...response.transaction, signatures: ['other-signature'] } }, key.publicKey.toBase58(), mint, 'signature'), /signature mismatch/);
+  assert.throws(() => transactionDeltas({ ...response, meta: { ...response.meta, err: undefined } }, key.publicKey.toBase58(), mint), /metadata or signature mismatch/);
+  assert.throws(() => transactionDeltas({ ...response, meta: { ...response.meta, postBalances: [Number.MAX_SAFE_INTEGER + 1] } }, key.publicKey.toBase58(), mint), /INVALID_TRANSACTION_BALANCE_METADATA/);
 });
 test('unknown send outcome remains pending when any RPC cannot prove expiry', async () => {
   const endpoints = [{ getTransaction: async () => null, getBlockHeight: async () => 200 }, { getTransaction: async () => { throw new Error('offline'); } }];
   const e = new Executor(cfg(), { endpoints }, {}, key);
   assert.equal((await e.reconcile(pending())).status, 'pending');
 });
+test('reconciliation requests only the pinned SDK transaction-version range and leaves unsupported versions pending', async () => {
+  let request;
+  const e = new Executor(cfg(), { endpoints: [{
+    getTransaction: async (_signature, options) => { request = options; throw new Error('unsupported transaction version'); },
+  }] }, {}, key);
+  assert.deepEqual(await e.reconcile(pending()), { status: 'pending' });
+  assert.deepEqual(request, { commitment: 'finalized', maxSupportedTransactionVersion: 0 });
+});
 test('expiry requires every RPC to report finalized height beyond validity margin', async () => {
   const e = new Executor(cfg(), { endpoints: [1, 2].map(() => ({ getTransaction: async () => null, getBlockHeight: async () => 133 })) }, {}, key);
   assert.equal((await e.reconcile(pending())).status, 'expired');
 });
-test('a landed transaction found by fallback prevents false expiry', async () => {
-  const failed = { meta: { err: { InstructionError: [0, 'error'] }, fee: 5000 } };
+test('a transaction found by only one RPC remains unresolved despite expiry evidence from another', async () => {
+  const failed = { transaction: { signatures: ['signature'] }, slot: 12, meta: { err: { InstructionError: [0, 'error'] }, fee: 5000 } };
   const e = new Executor(cfg(), { endpoints: [{ getTransaction: async () => null, getBlockHeight: async () => 200 }, { getTransaction: async () => failed }] }, {}, key);
-  const result = await e.reconcile(pending()); assert.equal(result.status, 'failed'); assert.equal(result.fee, 5000n);
+  assert.deepEqual(await e.reconcile(pending()), { status: 'pending' });
+});
+test('matching finalized failure observations charge only the reported transaction fee', async () => {
+  const failed = { transaction: { signatures: ['signature'] }, slot: 12, meta: { err: { InstructionError: [0, 'error'] }, fee: 5000 } };
+  const endpoints = [1, 2].map(() => ({ getTransaction: async () => failed }));
+  const e = new Executor(cfg(), { endpoints }, {}, key);
+  assert.deepEqual(await e.reconcile(pending()), { status: 'failed', fee: 5000n });
+});
+test('finalized settlement requires matching signature and effects from every configured RPC', async () => {
+  const message = new TransactionMessage({ payerKey: key.publicKey, recentBlockhash: PublicKey.default.toBase58(), instructions: [] }).compileToV0Message();
+  const tx = { transaction: { signatures: ['signature'], message }, slot: 15, meta: { err: null, fee: 5000,
+    preBalances: [100000], postBalances: [95000], loadedAddresses: { writable: [], readonly: [] },
+    preTokenBalances: [], postTokenBalances: [{ accountIndex: 0, owner: key.publicKey.toBase58(), mint,
+      programId: TOKEN_PROGRAM_ID.toBase58(), uiTokenAmount: { amount: '500' } }], innerInstructions: [] } };
+  const endpoints = [1, 2].map(() => ({ getTransaction: async () => tx }));
+  const executor = new Executor(cfg(), { endpoints }, {}, key);
+  assert.deepEqual(await executor.reconcile(pending()), { status: 'filled', tokenDelta: 500n, solDelta: -5000n });
+
+  const mismatch = new Executor(cfg(), { endpoints: [
+    { getTransaction: async () => tx },
+    { getTransaction: async () => ({ ...tx, meta: { ...tx.meta, preBalances: [100100], postBalances: [95100] } }) },
+  ] }, {}, key);
+  assert.deepEqual(await mismatch.reconcile(pending()), { status: 'pending' });
+});
+test('Jito failure status is advisory and cannot replace finalized chain observation', async () => {
+  const executor = new Executor(cfg(), { endpoints: [
+    { getTransaction: async () => null, getBlockHeight: async () => 100 },
+    { getTransaction: async () => null, getBlockHeight: async () => 100 },
+  ] }, {}, key);
+  executor.jitoCoordinator.checkInflightStatus = async (bundleId, signature) => ({ bundleId, signature,
+    status: 'AUCTION_LOST', failureReason: 'fixture', latencyMs: 0, terminal: true });
+  assert.deepEqual(await executor.reconcile(pending(), 'bundle'), { status: 'pending' });
 });
 test('durability failure prevents broadcast and propagates out of the actor', async () => {
   let sent = false;

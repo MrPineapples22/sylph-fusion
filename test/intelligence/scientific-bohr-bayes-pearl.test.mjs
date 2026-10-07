@@ -157,21 +157,45 @@ test('Part X & XI - PEARL Causal Identification & EINSTEIN Reference Frames', as
   // Test 5: EINSTEIN Reference Frames & Signal Normalization
   const bundle = einstein.normalizeContext({
     mint,
-    raw_tx_velocity: 1.5,
     token_age_sec: 120,
-    liquidity_sol: 45,
-    market_cap_sol: 180,
-    volume_sol: 75,
-    sol_1h_pct: 2.5,
-    token_1h_pct: 15.0,
-    depth_sol_1pct: 12.0,
+    decision_at_ms: 4_600_100,
+    velocity_observation: {
+      transactionCount: 180, windowStartMs: 4_540_000, windowEndMs: 4_600_000,
+      observedAtMs: 4_600_050, observationId: 'velocity-fixture',
+    },
+    liquidity_market_cap_observation: {
+      liquiditySol: 45, marketCapSol: 180, observedAtMs: 4_600_050, observationId: 'liquidity-fixture',
+    },
+    volume_observation: {
+      volumeSol: 75, windowStartMs: 1_000, windowEndMs: 4_000,
+      observedAtMs: 5_000, observationId: 'volume-fixture',
+    },
+    relative_return_1h: {
+      returnCurrency: 'USD', tokenReturnPct: 15, solReturnPct: 2.5,
+      windowStartMs: 1_000_000, windowEndMs: 4_600_000,
+      observedAtMs: 4_600_050, observationId: 'paired-return-fixture',
+    },
+    slippage_quote: {
+      slippageBps: 80, tradeSizeLamports: '1000000000', routeId: 'fixture-route',
+      quotedAtMs: 4_600_100, validUntilMs: 4_601_000, observationId: 'quote-fixture',
+    },
   });
 
   assert.equal(bundle.velocity_by_age.reference_frame, 'AGE_FRAME');
+  assert.equal(bundle.velocity_by_age.availability, 'OBSERVED');
   assert.equal(bundle.liquidity_by_mcap.reference_frame, 'LIQUIDITY_FRAME');
+  assert.equal(bundle.liquidity_by_mcap.availability, 'OBSERVED');
+  assert.equal(bundle.velocity_by_age.evidenceId, 'velocity-fixture');
+  assert.equal(bundle.liquidity_by_mcap.evidenceId, 'liquidity-fixture');
   assert.equal(bundle.volume_by_liquidity.reference_frame, 'PAIR_FRAME');
+  assert.equal(bundle.volume_by_liquidity.availability, 'OBSERVED');
   assert.equal(bundle.price_by_sol.reference_frame, 'SOL_FRAME');
+  assert.equal(bundle.price_by_sol.availability, 'OBSERVED');
+  assert.equal(bundle.price_by_sol.evidenceId, 'paired-return-fixture');
+  assert.equal(bundle.price_by_sol.windowStartMs, 1_000_000);
   assert.equal(bundle.slippage_by_depth.reference_frame, 'EXECUTION_FRAME');
+  assert.equal(bundle.slippage_by_depth.availability, 'OBSERVED');
+  assert.equal(bundle.slippage_by_depth.evidenceId, 'quote-fixture');
 
   // Both absolute and normalized values preserved
   assert.equal(bundle.liquidity_by_mcap.absolute_value, 0.25);

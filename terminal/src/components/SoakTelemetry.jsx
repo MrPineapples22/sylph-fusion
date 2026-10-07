@@ -47,6 +47,19 @@ const CATEGORY_LABELS = {
   other: 'OTHER'
 };
 
+function formatAppendLatencyUpperBound(value, sampleCount, overflowCount) {
+  if (!Number.isSafeInteger(sampleCount) || sampleCount <= 0) return 'NO SAMPLES';
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    return Number.isSafeInteger(overflowCount) && overflowCount > 0 ? 'HISTOGRAM OVERFLOW' : 'UNAVAILABLE';
+  }
+  return `≤ ${value.toFixed(3)} ms`;
+}
+
+function formatBoundedCount(value, limit) {
+  if (!Number.isSafeInteger(value) || value < 0) return 'UNKNOWN';
+  return Number.isSafeInteger(limit) && limit > 0 ? `${value} / ${limit}` : String(value);
+}
+
 export function SoakTelemetry() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -626,6 +639,36 @@ export function SoakTelemetry() {
                     <span>Realized PnL:</span>
                     <b className="font-mono">{latestCheckpoint.realizedPnl} lamports</b>
                   </div>
+                  {latestCheckpoint.researchSpool && (
+                    <>
+                      <div className="checkpoint-row">
+                        <span>Research spool records:</span>
+                        <b className="font-mono">{formatBoundedCount(latestCheckpoint.researchSpool.pendingCount, latestCheckpoint.researchSpool.capacityLimit)}</b>
+                      </div>
+                      <div className="checkpoint-row">
+                        <span>Research spool payload:</span>
+                        <b className="font-mono">{formatBoundedCount(latestCheckpoint.researchSpool.pendingPayloadBytes, latestCheckpoint.researchSpool.aggregateByteLimit)} bytes</b>
+                      </div>
+                      <div className="checkpoint-row" title="Cumulative append histogram since process start; percentile values are conservative bucket upper bounds.">
+                        <span>Durable append latency · p50 / p95 / p99:</span>
+                        <b className="font-mono">
+                          {formatAppendLatencyUpperBound(latestCheckpoint.researchSpool.durableAppendP50UpperBoundMs, latestCheckpoint.researchSpool.durableAppendCount, latestCheckpoint.researchSpool.durableAppendLatencyOverflowCount)}{' / '}
+                          {formatAppendLatencyUpperBound(latestCheckpoint.researchSpool.durableAppendP95UpperBoundMs, latestCheckpoint.researchSpool.durableAppendCount, latestCheckpoint.researchSpool.durableAppendLatencyOverflowCount)}{' / '}
+                          {formatAppendLatencyUpperBound(latestCheckpoint.researchSpool.durableAppendP99UpperBoundMs, latestCheckpoint.researchSpool.durableAppendCount, latestCheckpoint.researchSpool.durableAppendLatencyOverflowCount)}
+                        </b>
+                      </div>
+                      {latestCheckpoint.researchSpool.appendLatencyInterval && (
+                        <div className="checkpoint-row" title="Append latency samples since the previous checkpoint; this checkpoint alone consumes the interval. Percentiles are conservative bucket upper bounds.">
+                          <span>Checkpoint window append p50 / p95 / p99:</span>
+                          <b className="font-mono">
+                            {formatAppendLatencyUpperBound(latestCheckpoint.researchSpool.appendLatencyInterval.p50UpperBoundMs, latestCheckpoint.researchSpool.appendLatencyInterval.sampleCount, latestCheckpoint.researchSpool.appendLatencyInterval.overflowCount)}{' / '}
+                            {formatAppendLatencyUpperBound(latestCheckpoint.researchSpool.appendLatencyInterval.p95UpperBoundMs, latestCheckpoint.researchSpool.appendLatencyInterval.sampleCount, latestCheckpoint.researchSpool.appendLatencyInterval.overflowCount)}{' / '}
+                            {formatAppendLatencyUpperBound(latestCheckpoint.researchSpool.appendLatencyInterval.p99UpperBoundMs, latestCheckpoint.researchSpool.appendLatencyInterval.sampleCount, latestCheckpoint.researchSpool.appendLatencyInterval.overflowCount)}
+                          </b>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </>
               )}
             </div>

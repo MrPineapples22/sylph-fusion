@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PublicKey } from '@solana/web3.js';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 
 import {
   ExactBytesAuthority,
@@ -277,8 +278,8 @@ test('5. Live Canary Controller: Strict A3 capital constraints, circuit breakers
   assert.equal(riskState.emergencyExitPermitted, true);
 });
 
-test('6. Live Readiness Evaluator: Dynamic 10-gate assessment and fail-closed state derivation', () => {
-  // Case A: Missing isolated signer and release root -> 8/10 gates pass -> LIVE_BLOCKED
+test('6. Live Readiness Evaluator: distinguishes failed, unknown, and passing observations', () => {
+  // Synthetic inputs exercise aggregation logic only; caller assertions are not runtime proof.
   const offlineReport = LiveReadinessEvaluator.evaluate({
     hasIsolatedSigner: false,
     signerPublicKeyBase58: undefined,
@@ -292,18 +293,21 @@ test('6. Live Readiness Evaluator: Dynamic 10-gate assessment and fail-closed st
     executionHurdleCalibrated: true,
     canaryRiskLimitsEnforced: true,
     releaseRootDigest: undefined,
+    releaseCertificateVerified: undefined,
   });
 
   assert.equal(offlineReport.liveReady, false);
   assert.equal(offlineReport.liveSigningUnavailable, true, 'Must derive liveSigningUnavailable = true');
   assert.equal(offlineReport.productionCapitalAuthorityBlocked, true, 'Must derive productionCapitalAuthorityBlocked = true');
   assert.equal(offlineReport.passedGatesCount, 8);
+  assert.equal(offlineReport.failedGatesCount, 1);
+  assert.equal(offlineReport.unknownGatesCount, 1);
   assert.equal(offlineReport.gates.signingAuthority.status, 'FAIL');
-  assert.equal(offlineReport.gates.releaseCertification.status, 'FAIL');
+  assert.equal(offlineReport.gates.releaseCertification.status, 'UNKNOWN');
   assert.equal(offlineReport.gates.exactBytesAuthority.status, 'PASS');
   assert.equal(offlineReport.gates.protocolCompatibility.status, 'PASS');
 
-  // Case B: ALL 10 production gates legitimately satisfied -> LIVE READY
+  // Case B: complete synthetic inputs exercise the aggregator, not runtime authority.
   const certifiedReport = LiveReadinessEvaluator.evaluate({
     hasIsolatedSigner: true,
     signerPublicKeyBase58: '11111111111111111111111111111111',
@@ -316,11 +320,30 @@ test('6. Live Readiness Evaluator: Dynamic 10-gate assessment and fail-closed st
     reconciliationLedgerClean: true,
     executionHurdleCalibrated: true,
     canaryRiskLimitsEnforced: true,
-    releaseRootDigest: '0x_release_root_digest_certified_full_hash_1234567890',
+    releaseCertificateVerified: true,
+    releaseRootDigest: 'a'.repeat(64),
   });
 
   assert.equal(certifiedReport.liveReady, true);
   assert.equal(certifiedReport.liveSigningUnavailable, false);
   assert.equal(certifiedReport.productionCapitalAuthorityBlocked, false);
   assert.equal(certifiedReport.passedGatesCount, 10);
+  assert.equal(certifiedReport.unknownGatesCount, 0);
+});
+
+test('terminal live-readiness route does not turn disconnected research components into PASS', () => {
+  const server = readFileSync(new URL('../../terminal/server.mjs', import.meta.url), 'utf8');
+  const routeStart = server.indexOf("if (req.method === 'GET' && reqUrl.pathname === '/api/live/readiness')");
+  assert.notEqual(routeStart, -1);
+  const routeEnd = server.indexOf("if(req.method==='POST'&&reqUrl.pathname==='/live/api/command')", routeStart);
+  assert.notEqual(routeEnd, -1);
+  const route = server.slice(routeStart, routeEnd);
+  for (const field of [
+    'hasActiveProtocolLease', 'protocolLeaseExpired', 'exactBytesAuthorityReady',
+    'terminalityWitnessCount', 'noLandSearchEngineReady', 'reservationEngineReady',
+    'reconciliationLedgerClean', 'executionHurdleCalibrated', 'canaryRiskLimitsEnforced',
+  ]) {
+    assert.match(route, new RegExp(`${field}: undefined`), `${field} must remain unknown until runtime evidence is wired`);
+  }
+  assert.match(route, /releaseCertificateVerified: certReport\.isProductionPermitted === true/);
 });

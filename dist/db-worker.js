@@ -2,6 +2,35 @@ import { parentPort, workerData } from 'node:worker_threads';
 import { createHash } from 'node:crypto';
 import { openGenerationDatabase, registerInitialGenerationSync, readGenerationIdentitySync, sqliteDiagnostic } from './platform/storage/generation-sqlite.js';
 import { GenerationStorageError } from './platform/storage/generation-identity.js';
+import { serializeRecoveryCertificate } from './platform/ingestion/recovery-certificate.js';
+const verifiedRecoveryCertificateSchema = `CREATE TABLE IF NOT EXISTS verified_recovery_certificates_v2(
+  certificate_id TEXT PRIMARY KEY CHECK(length(certificate_id) BETWEEN 1 AND 128),
+  gap_id TEXT NOT NULL CHECK(length(gap_id) BETWEEN 1 AND 256),
+  start_slot INTEGER NOT NULL CHECK(start_slot > 0),
+  end_slot INTEGER NOT NULL CHECK(end_slot >= start_slot),
+  provider_id TEXT NOT NULL CHECK(length(provider_id) BETWEEN 1 AND 128),
+  classification TEXT NOT NULL CHECK(classification IN ('SKIPPED_SLOT','DEAD_FORK','MISSING_OBSERVATION','PROVIDER_LOSS','UNAVAILABLE_HISTORY','PARTIAL_RECOVERY','PROVIDER_DISAGREEMENT','UNKNOWN')),
+  lane TEXT NOT NULL CHECK(lane IN ('CHAIN_BLOCK','PUMP_TRANSACTION','ACCOUNT_WRITE','ENTRY','FORK_LINEAGE','BLOCK_FOOTER')),
+  state_root TEXT NOT NULL CHECK(length(state_root)=64 AND state_root NOT GLOB '*[^a-f0-9]*'),
+  coverage_root TEXT NOT NULL CHECK(length(coverage_root)=64 AND coverage_root NOT GLOB '*[^a-f0-9]*'),
+  certified_at_ms INTEGER NOT NULL CHECK(certified_at_ms BETWEEN 0 AND 9007199254740991),
+  certificate_sha256 TEXT NOT NULL CHECK(length(certificate_sha256)=64 AND certificate_sha256 NOT GLOB '*[^a-f0-9]*'),
+  certificate_json TEXT NOT NULL CHECK(length(certificate_json)<=33554432)
+) STRICT;`;
+const verifiedRecoveryCertificateIndex = 'CREATE INDEX verified_recovery_certificates_gap_time_idx ON verified_recovery_certificates_v2(gap_id,certified_at_ms DESC,certificate_id ASC)';
+const normalizedSql = (value) => value.replace(/CREATE TABLE IF NOT EXISTS /i, 'CREATE TABLE ').replace(/\s+/g, '').replace(/;$/, '').toLowerCase();
+function ensureVerifiedRecoveryCertificateSchema() {
+    const table = db.prepare("SELECT sql FROM sqlite_schema WHERE type='table' AND name='verified_recovery_certificates_v2'").get();
+    if (!table)
+        db.exec(verifiedRecoveryCertificateSchema);
+    else if (normalizedSql(String(table.sql)) !== normalizedSql(verifiedRecoveryCertificateSchema))
+        throw new Error('RECOVERY_CERTIFICATE_SCHEMA_UNSUPPORTED');
+    const index = db.prepare("SELECT sql FROM sqlite_schema WHERE type='index' AND name='verified_recovery_certificates_gap_time_idx'").get();
+    if (!index)
+        db.exec(verifiedRecoveryCertificateIndex);
+    else if (normalizedSql(String(index.sql)) !== normalizedSql(verifiedRecoveryCertificateIndex))
+        throw new Error('RECOVERY_CERTIFICATE_INDEX_UNSUPPORTED');
+}
 const initialized = (() => {
     try {
         return openGenerationDatabase(workerData.path);
@@ -114,6 +143,13 @@ parentPort.on('message', (m) => {
                 throw new Error('signing intent missing, altered, or already finalized');
             parentPort.postMessage({ id: m.id, value: null });
         }
+        else if (m.op === 'get-signing-intent') {
+            if (typeof m.body !== 'string' || m.body.length < 1 || m.body.length > 256)
+                throw new Error('invalid signing intent lookup');
+            const row = db.prepare(`SELECT economic_intent_id AS economicIntentId,wallet,message_sha256 AS messageSha256,
+        state,signature_base64 AS signatureBase64 FROM signing_intents WHERE economic_intent_id=? AND record_kind='LEGACY_SIGNING'`).get(m.body);
+            parentPort.postMessage({ id: m.id, value: JSON.stringify(row ?? null) });
+        }
         else if (m.op === 'save-capital-commit') {
             const commit = JSON.parse(m.body);
             db.prepare(`INSERT INTO capital_commits(intent_id, reservation_id, certificate_id, capital_state_root, certificate_hash, committed_at)
@@ -136,15 +172,111 @@ parentPort.on('message', (m) => {
         }
         else if (m.op === 'save-recovery-certificate') {
             const cert = JSON.parse(m.body);
-            db.prepare(`INSERT INTO recovery_certificates(certificate_id, gap_id, from_slot, to_slot, provider_id, recovered_events_count, skipped_slots_json, dead_fork_slots_json, coverage_root, state_root, resolved_at_ms, signature, certificate_json)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
-        ON CONFLICT(certificate_id) DO UPDATE SET certificate_json=excluded.certificate_json, state_root=excluded.state_root`).run(cert.certificateId, cert.gapId, cert.fromSlot, cert.toSlot, cert.providerId, cert.recoveredEventIds?.length ?? 0, JSON.stringify(cert.skippedSlots ?? []), JSON.stringify(cert.deadForkSlots ?? []), cert.coverageRoot ?? null, cert.stateRoot ?? null, cert.resolvedAtMs ?? Date.now(), cert.signature ?? null, JSON.stringify(cert));
+            if (!cert || typeof cert !== 'object' || Array.isArray(cert) ||
+                'startSlot' in cert || 'perSlotStatus' in cert || typeof cert.certificateId !== 'string' || !cert.certificateId ||
+                typeof cert.gapId !== 'string' || !cert.gapId || !Number.isSafeInteger(cert.fromSlot) || !Number.isSafeInteger(cert.toSlot) ||
+                cert.fromSlot < 1 || cert.toSlot < cert.fromSlot || typeof cert.providerId !== 'string' || !cert.providerId ||
+                typeof cert.signature !== 'string' || !cert.signature)
+                throw new Error('RECOVERY_CERTIFICATE_USE_V2_JOURNAL');
+            const certificateJson = JSON.stringify(cert);
+            if (Buffer.byteLength(certificateJson, 'utf8') > 32 * 1024 * 1024)
+                throw new Error('RECOVERY_CERTIFICATE_INVALID');
+            db.exec('BEGIN IMMEDIATE');
+            try {
+                const existing = db.prepare('SELECT certificate_json FROM recovery_certificates WHERE certificate_id=?').get(cert.certificateId);
+                if (existing) {
+                    if (existing.certificate_json !== certificateJson)
+                        throw new Error('RECOVERY_CERTIFICATE_CONTENT_CONFLICT');
+                }
+                else {
+                    db.prepare(`INSERT INTO recovery_certificates(certificate_id, gap_id, from_slot, to_slot, provider_id, recovered_events_count, skipped_slots_json, dead_fork_slots_json, coverage_root, state_root, resolved_at_ms, signature, certificate_json)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(cert.certificateId, cert.gapId, cert.fromSlot, cert.toSlot, cert.providerId, cert.recoveredEventIds?.length ?? 0, JSON.stringify(cert.skippedSlots ?? []), JSON.stringify(cert.deadForkSlots ?? []), cert.coverageRoot ?? null, cert.stateRoot ?? null, cert.resolvedAtMs ?? Date.now(), cert.signature, certificateJson);
+                }
+                db.exec('COMMIT');
+            }
+            catch (error) {
+                if (db.isTransaction)
+                    db.exec('ROLLBACK');
+                throw error;
+            }
             parentPort.postMessage({ id: m.id, value: null });
         }
         else if (m.op === 'get-recovery-certificate') {
             const id = m.body;
             const row = db.prepare('SELECT certificate_json FROM recovery_certificates WHERE certificate_id=? OR gap_id=?').get(id, id);
             parentPort.postMessage({ id: m.id, value: row?.certificate_json ?? null });
+        }
+        else if (m.op === 'save-verified-recovery-certificate') {
+            const request = JSON.parse(m.body);
+            if (!request || typeof request.certificateJson !== 'string' || typeof request.certificateSha256 !== 'string' ||
+                !/^[a-f0-9]{64}$/.test(request.certificateSha256) || Buffer.byteLength(request.certificateJson, 'utf8') > 32 * 1024 * 1024) {
+                throw new Error('RECOVERY_CERTIFICATE_INVALID');
+            }
+            let certificate;
+            try {
+                certificate = JSON.parse(request.certificateJson);
+            }
+            catch {
+                throw new Error('RECOVERY_CERTIFICATE_INVALID');
+            }
+            const serialized = serializeRecoveryCertificate(certificate);
+            if (!serialized || serialized.certificateJson !== request.certificateJson || serialized.certificateSha256 !== request.certificateSha256) {
+                throw new Error('RECOVERY_CERTIFICATE_INVALID');
+            }
+            db.exec('BEGIN IMMEDIATE');
+            try {
+                ensureVerifiedRecoveryCertificateSchema();
+                const cert = serialized.certificate;
+                const existing = db.prepare('SELECT certificate_sha256,certificate_json FROM verified_recovery_certificates_v2 WHERE certificate_id=?').get(cert.certificateId);
+                if (existing) {
+                    if (existing.certificate_sha256 !== serialized.certificateSha256 || existing.certificate_json !== serialized.certificateJson) {
+                        throw new Error('RECOVERY_CERTIFICATE_CONTENT_CONFLICT');
+                    }
+                }
+                else {
+                    db.prepare(`INSERT INTO verified_recovery_certificates_v2(
+            certificate_id,gap_id,start_slot,end_slot,provider_id,classification,lane,state_root,coverage_root,
+            certified_at_ms,certificate_sha256,certificate_json
+          ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).run(cert.certificateId, cert.gapId, cert.startSlot, cert.endSlot, cert.providerId, cert.classification, cert.lane, cert.stateRoot, cert.coverageRoot, cert.certifiedAtMs, serialized.certificateSha256, serialized.certificateJson);
+                }
+                db.exec('COMMIT');
+            }
+            catch (error) {
+                if (db.isTransaction)
+                    db.exec('ROLLBACK');
+                throw error;
+            }
+            parentPort.postMessage({ id: m.id, value: null });
+        }
+        else if (m.op === 'get-verified-recovery-certificate') {
+            const lookup = m.body;
+            if (typeof lookup !== 'string' || lookup.length < 1 || lookup.length > 256)
+                throw new Error('RECOVERY_CERTIFICATE_LOOKUP_INVALID');
+            ensureVerifiedRecoveryCertificateSchema();
+            const row = db.prepare(`SELECT certificate_id,gap_id,start_slot,end_slot,provider_id,classification,lane,state_root,
+        coverage_root,certified_at_ms,certificate_sha256,certificate_json FROM verified_recovery_certificates_v2
+        WHERE certificate_id=? OR gap_id=? ORDER BY certified_at_ms DESC,certificate_id ASC LIMIT 1`).get(lookup, lookup);
+            if (!row)
+                parentPort.postMessage({ id: m.id, value: null });
+            else {
+                let certificate;
+                try {
+                    certificate = JSON.parse(row.certificate_json);
+                }
+                catch {
+                    throw new Error('RECOVERY_CERTIFICATE_ROW_INCONSISTENT');
+                }
+                const serialized = serializeRecoveryCertificate(certificate);
+                const cert = serialized?.certificate;
+                if (!serialized || !cert || serialized.certificateJson !== row.certificate_json ||
+                    serialized.certificateSha256 !== row.certificate_sha256 || cert.certificateId !== row.certificate_id ||
+                    cert.gapId !== row.gap_id || cert.startSlot !== row.start_slot || cert.endSlot !== row.end_slot ||
+                    cert.providerId !== row.provider_id || cert.classification !== row.classification || cert.lane !== row.lane ||
+                    cert.stateRoot !== row.state_root || cert.coverageRoot !== row.coverage_root || cert.certifiedAtMs !== row.certified_at_ms) {
+                    throw new Error('RECOVERY_CERTIFICATE_ROW_INCONSISTENT');
+                }
+                parentPort.postMessage({ id: m.id, value: row.certificate_json });
+            }
         }
         else if (m.op === 'save-coverage-frontier') {
             const frontier = JSON.parse(m.body);
@@ -211,13 +343,39 @@ parentPort.on('message', (m) => {
         }
         else if (m.op === 'save-counterfactual-evaluation') {
             const ev = JSON.parse(m.body);
-            db.prepare(`INSERT INTO counterfactual_regrets(
-        evaluation_id, decision_id, opportunity_id, token_id, strategy_version, slot, timestamp_ms,
-        action_taken, realized_pnl_bps, best_counterfactual_scenario, max_counterfactual_pnl_bps,
-        overall_regret_bps, discovery_regret_bps, pricing_regret_bps, execution_regret_bps, exit_regret_bps,
-        primary_failure_subsystem, actionable_policy_tuning, evaluation_json
-      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-      ON CONFLICT(evaluation_id) DO UPDATE SET evaluation_json=excluded.evaluation_json`).run(ev.evaluationId, ev.decisionId, ev.opportunityId, ev.tokenId, ev.strategyVersion, ev.slot, ev.timestamp, ev.actionTaken, ev.realizedPnlBps, ev.bestCounterfactualScenario, ev.maxCounterfactualPnlBps, ev.overallRegretBps, ev.alphaDecomposition?.discoveryRegretBps ?? 0, ev.alphaDecomposition?.pricingRegretBps ?? 0, ev.alphaDecomposition?.executionRegretBps ?? 0, ev.alphaDecomposition?.exitRegretBps ?? 0, ev.primaryFailureSubsystem, ev.actionablePolicyTuning, JSON.stringify(ev));
+            db.exec('BEGIN IMMEDIATE');
+            try {
+                const old = db.prepare('SELECT decision_id, opportunity_id, token_id, strategy_version, slot, timestamp_ms, action_taken, realized_pnl_bps, best_counterfactual_scenario, max_counterfactual_pnl_bps, overall_regret_bps, discovery_regret_bps, pricing_regret_bps, execution_regret_bps, exit_regret_bps, primary_failure_subsystem, actionable_policy_tuning, evaluation_json FROM counterfactual_regrets WHERE evaluation_id=?')
+                    .get(ev.evaluationId);
+                if (old) {
+                    const actual = [old.decision_id, old.opportunity_id, old.token_id, old.strategy_version, old.slot, old.timestamp_ms,
+                        old.action_taken, old.realized_pnl_bps, old.best_counterfactual_scenario, old.max_counterfactual_pnl_bps,
+                        old.overall_regret_bps, old.discovery_regret_bps, old.pricing_regret_bps, old.execution_regret_bps, old.exit_regret_bps,
+                        old.primary_failure_subsystem, old.actionable_policy_tuning, old.evaluation_json];
+                    const expected = [ev.decisionId, ev.opportunityId, ev.tokenId, ev.strategyVersion, ev.slot, ev.timestamp,
+                        ev.actionTaken, ev.realizedPnlBps, ev.bestCounterfactualScenario, ev.maxCounterfactualPnlBps,
+                        ev.overallRegretBps, ev.alphaDecomposition?.discoveryRegretBps ?? 0, ev.alphaDecomposition?.pricingRegretBps ?? 0,
+                        ev.alphaDecomposition?.executionRegretBps ?? 0, ev.alphaDecomposition?.exitRegretBps ?? 0,
+                        ev.primaryFailureSubsystem, ev.actionablePolicyTuning, m.body];
+                    if (actual.some((value, index) => value !== expected[index])) {
+                        throw new Error(old.evaluation_json === m.body ? 'COUNTERFACTUAL_ROW_INCONSISTENT' : 'COUNTERFACTUAL_ID_CONTENT_CONFLICT');
+                    }
+                }
+                else {
+                    db.prepare(`INSERT INTO counterfactual_regrets(
+            evaluation_id, decision_id, opportunity_id, token_id, strategy_version, slot, timestamp_ms,
+            action_taken, realized_pnl_bps, best_counterfactual_scenario, max_counterfactual_pnl_bps,
+            overall_regret_bps, discovery_regret_bps, pricing_regret_bps, execution_regret_bps, exit_regret_bps,
+            primary_failure_subsystem, actionable_policy_tuning, evaluation_json
+          ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(ev.evaluationId, ev.decisionId, ev.opportunityId, ev.tokenId, ev.strategyVersion, ev.slot, ev.timestamp, ev.actionTaken, ev.realizedPnlBps, ev.bestCounterfactualScenario, ev.maxCounterfactualPnlBps, ev.overallRegretBps, ev.alphaDecomposition?.discoveryRegretBps ?? 0, ev.alphaDecomposition?.pricingRegretBps ?? 0, ev.alphaDecomposition?.executionRegretBps ?? 0, ev.alphaDecomposition?.exitRegretBps ?? 0, ev.primaryFailureSubsystem, ev.actionablePolicyTuning, m.body);
+                }
+                db.exec('COMMIT');
+            }
+            catch (error) {
+                if (db.isTransaction)
+                    db.exec('ROLLBACK');
+                throw error;
+            }
             parentPort.postMessage({ id: m.id, value: null });
         }
         else if (m.op === 'get-counterfactual-evaluation') {
@@ -232,11 +390,33 @@ parentPort.on('message', (m) => {
         }
         else if (m.op === 'save-falsification-report') {
             const rep = JSON.parse(m.body);
-            db.prepare(`INSERT INTO falsification_reports(
-        report_id, mint, slot, is_thesis_falsified, falsification_confidence, survivability_index,
-        minimum_plausible_break_capital_sol, lethal_attack_vector, is_veto_recommended, rationale, report_json, created_at_ms
-      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
-      ON CONFLICT(report_id) DO UPDATE SET report_json=excluded.report_json`).run(rep.reportId, rep.mint, rep.slot, rep.isThesisFalsified ? 1 : 0, rep.falsificationConfidence, rep.survivabilityIndex, rep.minimumPlausibleBreakCapitalSol, rep.lethalAttackVector, rep.isVetoRecommended ? 1 : 0, rep.rationale, JSON.stringify(rep), Date.now());
+            db.exec('BEGIN IMMEDIATE');
+            try {
+                const old = db.prepare('SELECT mint, slot, is_thesis_falsified, falsification_confidence, survivability_index, minimum_plausible_break_capital_sol, lethal_attack_vector, is_veto_recommended, rationale, report_json FROM falsification_reports WHERE report_id=?')
+                    .get(rep.reportId);
+                if (old) {
+                    const actual = [old.mint, old.slot, old.is_thesis_falsified, old.falsification_confidence, old.survivability_index,
+                        old.minimum_plausible_break_capital_sol, old.lethal_attack_vector, old.is_veto_recommended, old.rationale, old.report_json];
+                    const expected = [rep.mint, rep.slot, rep.isThesisFalsified ? 1 : 0, rep.falsificationConfidence,
+                        rep.survivabilityIndex, rep.minimumPlausibleBreakCapitalSol, rep.lethalAttackVector,
+                        rep.isVetoRecommended ? 1 : 0, rep.rationale, m.body];
+                    if (actual.some((value, index) => value !== expected[index])) {
+                        throw new Error(old.report_json === m.body ? 'FALSIFICATION_ROW_INCONSISTENT' : 'FALSIFICATION_ID_CONTENT_CONFLICT');
+                    }
+                }
+                else {
+                    db.prepare(`INSERT INTO falsification_reports(
+            report_id, mint, slot, is_thesis_falsified, falsification_confidence, survivability_index,
+            minimum_plausible_break_capital_sol, lethal_attack_vector, is_veto_recommended, rationale, report_json, created_at_ms
+          ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).run(rep.reportId, rep.mint, rep.slot, rep.isThesisFalsified ? 1 : 0, rep.falsificationConfidence, rep.survivabilityIndex, rep.minimumPlausibleBreakCapitalSol, rep.lethalAttackVector, rep.isVetoRecommended ? 1 : 0, rep.rationale, m.body, Date.now());
+                }
+                db.exec('COMMIT');
+            }
+            catch (error) {
+                if (db.isTransaction)
+                    db.exec('ROLLBACK');
+                throw error;
+            }
             parentPort.postMessage({ id: m.id, value: null });
         }
         else if (m.op === 'get-falsification-report') {

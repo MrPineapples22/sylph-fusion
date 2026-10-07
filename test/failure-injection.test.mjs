@@ -16,7 +16,8 @@ const cfg = (extra = {}) => config({
   RPC_URLS: 'https://rpc1.invalid,https://rpc2.invalid',
   WS_URLS: 'wss://feed.invalid',
   KEYPAIR_PATH: 'test-key.json',
-  JUPITER_URL: 'https://jupiter.invalid/swap/v1',
+  JUPITER_URL: 'https://jupiter.invalid/swap/v2',
+  JUPITER_API_KEY: 'test-jupiter-key',
   ...extra,
 });
 
@@ -148,7 +149,7 @@ test('2B. Creator sell arriving during build simulation aborts before broadcast'
 test('3A. Jupiter route failure during graduation leaves position in panic without hanging pending order', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url) => {
-    if (url.includes('quote')) return new Response(JSON.stringify({ error: 'No routes found' }), { status: 404 });
+    if (url.includes('/build')) return new Response(JSON.stringify({ error: 'No routes found' }), { status: 404 });
     return new Response('{}');
   };
 
@@ -162,8 +163,15 @@ test('3A. Jupiter route failure during graduation leaves position in panic witho
 
 test('3B. Jupiter missing ALT address table throws fail-closed error', async () => {
   const originalFetch = globalThis.fetch;
+  const routeData = Buffer.alloc(32);
+  Buffer.from('c1209b3341d69c81', 'hex').copy(routeData);
+  routeData.writeUInt8(1, 8);
+  routeData.writeUInt32LE(0, 9);
+  routeData.writeBigUInt64LE(1000n, 13);
+  routeData.writeBigUInt64LE(50000n, 21);
+  routeData.writeUInt16LE(1000, 29);
   globalThis.fetch = async (url) => {
-    if (url.includes('quote')) {
+    if (url.includes('/build')) {
       return new Response(JSON.stringify({
         inputMint: mint,
         outputMint: 'So11111111111111111111111111111111111111112',
@@ -171,18 +179,20 @@ test('3B. Jupiter missing ALT address table throws fail-closed error', async () 
         inAmount: '1000',
         outAmount: '50000',
         otherAmountThreshold: '45000',
-      }));
-    }
-    if (url.includes('swap-instructions')) {
-      return new Response(JSON.stringify({
+        slippageBps: 1000,
+        routePlan: [{ swapInfo: { inputMint: mint, outputMint: 'So11111111111111111111111111111111111111112', inAmount: '1000', outAmount: '50000' }, percent: 100 }],
+        computeBudgetInstructions: [],
         setupInstructions: [],
         swapInstruction: {
           programId: 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4',
-          data: Buffer.from([]).toString('base64'),
+          data: routeData.toString('base64'),
           accounts: [{ pubkey: key.publicKey.toBase58(), isSigner: true, isWritable: true }],
         },
         cleanupInstruction: null,
-        addressLookupTableAddresses: [Keypair.generate().publicKey.toBase58()],
+        otherInstructions: [],
+        tipInstruction: null,
+        addressesByLookupTableAddress: { [Keypair.generate().publicKey.toBase58()]: [] },
+        blockhashWithMetadata: { blockhash: Array(32).fill(7), lastValidBlockHeight: 300 },
       }));
     }
     return new Response('{}');

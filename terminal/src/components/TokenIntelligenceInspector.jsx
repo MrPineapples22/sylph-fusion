@@ -34,6 +34,16 @@ import {
 } from 'lucide-react';
 import { DecisionTimeline } from './DecisionTimeline.jsx';
 
+function formatScientificNumber(value, decimals = 2) {
+  return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(decimals) : 'UNAVAILABLE';
+}
+
+function formatScientificPercent(value) {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`
+    : 'UNAVAILABLE';
+}
+
 export function TokenIntelligenceInspector({ mint, initialData = null }) {
   const [data, setData] = useState(initialData);
   const [loading, setLoading] = useState(false);
@@ -1319,27 +1329,27 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
           <div className="blueprint-grid">
             <div className="blueprint-card">
               <small>DOMINANT HYPOTHESIS</small>
-              <strong className="text-cyan">{bohr.dominantHypothesis || 'ORGANIC_EXPANSION'}</strong>
+              <strong className="text-cyan">{bohr.dominantHypothesis || 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>MATERIAL ALTERNATIVE</small>
-              <strong className="text-warn">{bohr.materialAlternative || 'COORDINATED_PUMP'}</strong>
+              <strong className="text-warn">{bohr.materialAlternative || 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>PRESERVED UNKNOWN MASS</small>
-              <strong className="text-good">{Math.round((bohr.unknownMass ?? 0.12) * 100)}% (min 5%)</strong>
+              <strong className="text-muted">{typeof bohr.unknownMass === 'number' && Number.isFinite(bohr.unknownMass) ? `${Math.round(bohr.unknownMass * 100)}%` : 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>BAYES PRIOR</small>
-              <strong>{((bayes.priorProb ?? 0.15) * 100).toFixed(1)}%</strong>
+              <strong>{typeof bayes.priorProb === 'number' && Number.isFinite(bayes.priorProb) ? `${(bayes.priorProb * 100).toFixed(1)}%` : 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>BAYES POSTERIOR</small>
-              <strong className="text-good">{((bayes.posteriorProb ?? 0.68) * 100).toFixed(1)}%</strong>
+              <strong className="text-muted">{typeof bayes.posteriorProb === 'number' && Number.isFinite(bayes.posteriorProb) ? `${(bayes.posteriorProb * 100).toFixed(1)}% (uncalibrated estimate)` : 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>DISCOUNTED OVERLAPS</small>
-              <strong className="text-cyan">{bayes.discountedOverlap ?? 2} burst signals</strong>
+              <strong className="text-cyan">{formatScientificNumber(bayes.discountedOverlap, 0)} burst signals</strong>
             </div>
           </div>
 
@@ -1347,13 +1357,13 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
             <h4><HelpCircle size={13} /> Discriminating Evidence Need &amp; Epistemic Governance</h4>
             <dl className="blueprint-dl">
               <dt>Critical Question:</dt>
-              <dd className="font-bold text-warn">{bohr.discriminatingQuestion || 'Are top buyer wallets funded from common exchange sweep roots?'}</dd>
+              <dd className="font-bold text-warn">{bohr.discriminatingQuestion || 'UNAVAILABLE'}</dd>
               <dt>Effective Evidence:</dt>
-              <dd>{bayes.effectiveEvidenceCount ?? 2.5} independent evidence units (correlated trade bursts discounted)</dd>
+              <dd>{formatScientificNumber(bayes.effectiveEvidenceCount)} independent evidence units (correlated trade bursts discounted)</dd>
               <dt>Hierarchical Priors:</dt>
-              <dd>Global Base (4%) &rarr; Pump.fun Launch Class (12%) &rarr; Bull Trend (20%) &rarr; Mid-Liquidity (15%)</dd>
+              <dd className="text-muted">Uncalibrated heuristic prior; empirical cohort calibration is unavailable.</dd>
               <dt>Unknown Mass Policy:</dt>
-              <dd className="text-good">Preserved &ge;5% probability mass for UNKNOWN / UNMODELED dynamics (Part IX Invariant)</dd>
+              <dd className="text-muted">Reported mass: {typeof bohr.unknownMass === 'number' && Number.isFinite(bohr.unknownMass) ? `${Math.round(bohr.unknownMass * 100)}%` : 'UNAVAILABLE'}; not a calibrated market probability.</dd>
             </dl>
           </div>
         </div>
@@ -1371,29 +1381,36 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
           <div className="blueprint-grid">
             <div className="blueprint-card">
               <small>IDENTIFIABILITY STATE</small>
-              <strong className="text-good">{pearl.identifiability || 'PLAUSIBLY_IDENTIFIED'}</strong>
+              <strong className="text-muted">{pearl.identifiability || 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>CAUSAL UNCERTAINTY</small>
-              <strong>{Math.round((pearl.causalUncertainty ?? 0.25) * 100)}%</strong>
+              <strong className="text-muted">{typeof pearl.causalUncertainty === 'number' && Number.isFinite(pearl.causalUncertainty) ? `${Math.round(pearl.causalUncertainty * 100)}%` : 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>SELF-IMPACT CHECK</small>
-              <strong className={pearl.isSelfCaused ? 'text-danger' : 'text-good'}>
-                {pearl.isSelfCaused ? 'SELF_CAUSED_EVIDENCE' : 'EXTERNAL_ORGANIC'}
+              <strong className={typeof pearl.isSelfCaused === 'boolean' ? (pearl.isSelfCaused ? 'text-danger' : 'text-muted') : 'text-muted'}>
+                {typeof pearl.isSelfCaused === 'boolean' ? (pearl.isSelfCaused ? 'SELF_CAUSED_EVIDENCE' : 'NOT_SELF_CAUSED') : 'UNAVAILABLE'}
               </strong>
             </div>
             <div className="blueprint-card">
-              <small>VELOCITY (AGE FRAME)</small>
-              <strong className="text-cyan">{(einstein.velocityByAgeNormalized ?? 0.72).toFixed(2)} / 1.0</strong>
+              <small>OBSERVED VELOCITY (AGE FRAME)</small>
+              <strong className="text-cyan">{formatScientificNumber(einstein.velocityByAgeNormalized)} / 1.0</strong>
             </div>
             <div className="blueprint-card">
-              <small>LIQUIDITY (MCAP FRAME)</small>
-              <strong className="text-cyan">{(einstein.liquidityToMcapRatio ?? 0.38).toFixed(2)} / 1.0</strong>
+              <small>OBSERVED LIQUIDITY / MARKET CAP</small>
+              <strong className="text-cyan">{formatScientificNumber(einstein.liquidityToMcapRatio)} / 1.0</strong>
             </div>
             <div className="blueprint-card">
-              <small>EXCESS RETURN (SOL)</small>
-              <strong className="text-good">+{(einstein.excessReturnOverSol ?? 0.45).toFixed(2)} z-score</strong>
+              <small>TOKEN RETURN VS SOL (1H)</small>
+              <strong className="text-muted">{formatScientificPercent(einstein.excessReturnOverSol)}</strong>
+              {einstein.excessReturnOverSolNormalized != null && (
+                <small className="text-muted">Normalized score {formatScientificNumber(einstein.excessReturnOverSolNormalized)} / 1.0</small>
+              )}
+            </div>
+            <div className="blueprint-card">
+              <small>OBSERVED VOLUME / LIQUIDITY</small>
+              <strong className="text-muted">{formatScientificNumber(einstein.volumeTurnoverNormalized)} / 1.0</strong>
             </div>
           </div>
 

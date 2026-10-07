@@ -1,0 +1,211 @@
+{
+  "certificationSchemaVersion": "1.0.0",
+  "canonicalizationVersion": "v10",
+  "targetBaselineCommit": "373143a10d05327149cc5d3cbd0cfb44bff9cc18",
+  "authorizedImplementationBranch": "feat/certification-layer-c1-c4",
+  "emptyHashGuardHex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "provenancePolicy": {
+    "certifiedEligible": [
+      "REAL_RUNTIME",
+      "REAL_REPLAY",
+      "REAL_FAULT_INJECTION",
+      "REAL_CANARY"
+    ],
+    "certifiedIneligible": [
+      "TEST_FIXTURE",
+      "SYNTHETIC",
+      "UNKNOWN"
+    ]
+  },
+  "authorityRequirements": {
+    "canonicalStateWriter": "FusionReducer",
+    "economicStateWriter": "EconomicAuthorityStore",
+    "decisionIssuer": "UnifiedDecisionEngine",
+    "terminalityIssuer": "TerminalityAuthority",
+    "requiredForSystemCertification": true,
+    "requiredConnectivityLevel": "C10"
+  },
+  "mandatoryEdgesCount": 18,
+  "mandatoryEdges": [
+    {
+      "edgeIndex": 1,
+      "edgeId": "EDGE_01_RAW_TO_TRUTH",
+      "producerComponent": "RawSolanaYellowstone",
+      "producerModule": "src/feed.ts",
+      "consumerComponent": "TruthX",
+      "consumerModule": "src/platform/ingestion/truth.ts",
+      "edgeDescription": "Raw Solana / Yellowstone feed ingested into TRUTH-X chain truth observer",
+      "isAuthoritative": false
+    },
+    {
+      "edgeIndex": 2,
+      "edgeId": "EDGE_02_TRUTH_TO_CENSUS",
+      "producerComponent": "TruthX",
+      "producerModule": "src/platform/ingestion/truth.ts",
+      "consumerComponent": "CensusR",
+      "consumerModule": "src/platform/census/census-r.ts",
+      "edgeDescription": "TRUTH-X observations registered in CENSUS-R actor census",
+      "isAuthoritative": false
+    },
+    {
+      "edgeIndex": 3,
+      "edgeId": "EDGE_03_CENSUS_TO_JOURNAL_STORE",
+      "producerComponent": "CensusR",
+      "producerModule": "src/platform/census/census-r.ts",
+      "consumerComponent": "FusionJournalStore",
+      "consumerModule": "src/store.ts",
+      "edgeDescription": "Census records appended to durable FusionJournalStore ledger",
+      "isAuthoritative": true
+    },
+    {
+      "edgeIndex": 4,
+      "edgeId": "EDGE_04_JOURNAL_STORE_TO_REDUCER",
+      "producerComponent": "FusionJournalStore",
+      "producerModule": "src/store.ts",
+      "consumerComponent": "FusionReducer",
+      "consumerModule": "src/platform/pipeline/fusion-reducer.ts",
+      "edgeDescription": "Journaled events folded into sole canonical state writer FusionReducer",
+      "isAuthoritative": true
+    },
+    {
+      "edgeIndex": 5,
+      "edgeId": "EDGE_05_REDUCER_TO_STATE_ROOT",
+      "producerComponent": "FusionReducer",
+      "producerModule": "src/platform/pipeline/fusion-reducer.ts",
+      "consumerComponent": "FusionStateRootV2",
+      "consumerModule": "src/platform/pipeline/fusion-envelope.ts",
+      "edgeDescription": "FusionReducer emits certified FusionStateRootV2 envelope hash",
+      "isAuthoritative": true
+    },
+    {
+      "edgeIndex": 6,
+      "edgeId": "EDGE_06_STATE_ROOT_TO_KNOWLEDGE_CUT",
+      "producerComponent": "FusionStateRootV2",
+      "producerModule": "src/platform/pipeline/fusion-envelope.ts",
+      "consumerComponent": "KnowledgeCut",
+      "consumerModule": "src/platform/pipeline/block-context-joiner.ts",
+      "edgeDescription": "State root bound to temporal KnowledgeCut slot and block identity",
+      "isAuthoritative": true
+    },
+    {
+      "edgeIndex": 7,
+      "edgeId": "EDGE_07_KNOWLEDGE_CUT_TO_FEATURES",
+      "producerComponent": "KnowledgeCut",
+      "producerModule": "src/platform/pipeline/block-context-joiner.ts",
+      "consumerComponent": "PointInTimeFeatures",
+      "consumerModule": "src/candidate-snapshot.ts",
+      "edgeDescription": "KnowledgeCut projects strictly point-in-time candidate feature snapshot",
+      "isAuthoritative": false
+    },
+    {
+      "edgeIndex": 8,
+      "edgeId": "EDGE_08_FEATURES_TO_SIGNAL_ECOLOGY",
+      "producerComponent": "PointInTimeFeatures",
+      "producerModule": "src/candidate-snapshot.ts",
+      "consumerComponent": "SignalEcology",
+      "consumerModule": "src/intelligence/signal-ecology/family-aggregator.ts",
+      "edgeDescription": "Features evaluated by specialist model signal ecology",
+      "isAuthoritative": false
+    },
+    {
+      "edgeIndex": 9,
+      "edgeId": "EDGE_09_SIGNAL_ECOLOGY_TO_ALPHA_REALITY",
+      "producerComponent": "SignalEcology",
+      "producerModule": "src/intelligence/signal-ecology/family-aggregator.ts",
+      "consumerComponent": "AlphaReality",
+      "consumerModule": "src/intelligence/alpha-reality/orthogonalization.ts",
+      "edgeDescription": "Signal ecology vector decomposed into orthogonal residual alpha",
+      "isAuthoritative": false
+    },
+    {
+      "edgeIndex": 10,
+      "edgeId": "EDGE_10_ALPHA_TO_DECISION_AUTHORITY",
+      "producerComponent": "AlphaReality",
+      "producerModule": "src/intelligence/alpha-reality/orthogonalization.ts",
+      "consumerComponent": "UnifiedDecisionAuthority",
+      "consumerModule": "src/intelligence/decision/unified-decision.ts",
+      "edgeDescription": "Residual alpha submitted to sole authoritative decision issuer",
+      "isAuthoritative": true
+    },
+    {
+      "edgeIndex": 11,
+      "edgeId": "EDGE_11_DECISION_TO_ECONOMIC_AUTHORITY",
+      "producerComponent": "UnifiedDecisionAuthority",
+      "producerModule": "src/intelligence/decision/unified-decision.ts",
+      "consumerComponent": "EconomicAuthorityStore",
+      "consumerModule": "src/intelligence/capital/economic-authority-store.ts",
+      "edgeDescription": "Decision submitted to sole economic state writer EconomicAuthorityStore",
+      "isAuthoritative": true
+    },
+    {
+      "edgeIndex": 12,
+      "edgeId": "EDGE_12_ECONOMIC_AUTHORITY_TO_ACTION_PROOF",
+      "producerComponent": "EconomicAuthorityStore",
+      "producerModule": "src/intelligence/capital/economic-authority-store.ts",
+      "consumerComponent": "ActionProofBundle",
+      "consumerModule": "src/platform/assurance/action-proof-bundle.ts",
+      "edgeDescription": "Reserved capital bound to cryptographic ActionProofBundle",
+      "isAuthoritative": true
+    },
+    {
+      "edgeIndex": 13,
+      "edgeId": "EDGE_13_ACTION_PROOF_TO_AUTHORITY_KERNEL",
+      "producerComponent": "ActionProofBundle",
+      "producerModule": "src/platform/assurance/action-proof-bundle.ts",
+      "consumerComponent": "AuthorityKernel",
+      "consumerModule": "src/platform/assurance/issuer-manifest.ts",
+      "edgeDescription": "Proof bundle validated against preemption fence in AuthorityKernel",
+      "isAuthoritative": true
+    },
+    {
+      "edgeIndex": 14,
+      "edgeId": "EDGE_14_AUTHORITY_KERNEL_TO_SIGNER_TRANSPORT",
+      "producerComponent": "AuthorityKernel",
+      "producerModule": "src/platform/assurance/issuer-manifest.ts",
+      "consumerComponent": "PaperSignerTransport",
+      "consumerModule": "src/platform/signing/durable-live-signer.ts",
+      "edgeDescription": "Permit forwarded to paper signer transport firewall",
+      "isAuthoritative": true
+    },
+    {
+      "edgeIndex": 15,
+      "edgeId": "EDGE_15_SIGNER_TRANSPORT_TO_TERMINALITY",
+      "producerComponent": "PaperSignerTransport",
+      "producerModule": "src/platform/signing/durable-live-signer.ts",
+      "consumerComponent": "TerminalityAuthority",
+      "consumerModule": "src/platform/execution/terminality-authority.ts",
+      "edgeDescription": "Execution outcome submitted to sole terminality issuer TerminalityAuthority",
+      "isAuthoritative": true
+    },
+    {
+      "edgeIndex": 16,
+      "edgeId": "EDGE_16_TERMINALITY_TO_SETTLEMENT",
+      "producerComponent": "TerminalityAuthority",
+      "producerModule": "src/platform/execution/terminality-authority.ts",
+      "consumerComponent": "SettlementAuthority",
+      "consumerModule": "src/platform/ledger/double-entry.ts",
+      "edgeDescription": "Terminal verdict posted to double-entry settlement journal",
+      "isAuthoritative": true
+    },
+    {
+      "edgeIndex": 17,
+      "edgeId": "EDGE_17_SETTLEMENT_TO_ASSET_DELTA_SET",
+      "producerComponent": "SettlementAuthority",
+      "producerModule": "src/platform/ledger/double-entry.ts",
+      "consumerComponent": "FinalizedAssetDeltaSet",
+      "consumerModule": "src/platform/execution/asset-delta-engine.ts",
+      "edgeDescription": "Settled transactions compute finalized native/token AssetDeltaSet",
+      "isAuthoritative": true
+    },
+    {
+      "edgeIndex": 18,
+      "edgeId": "EDGE_18_ASSET_DELTA_TO_PROFIT_COMPILER",
+      "producerComponent": "FinalizedAssetDeltaSet",
+      "producerModule": "src/platform/execution/asset-delta-engine.ts",
+      "consumerComponent": "ProfitCompiler",
+      "consumerModule": "src/intelligence/economics/profit-compiler/accounting-compiler.ts",
+      "edgeDescription": "Finalized delta set compiled into exact integer profit accounting & outcome maturity",
+      "isAuthoritative": true
+    }
+  ]
+}

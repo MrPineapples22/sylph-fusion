@@ -133,6 +133,17 @@ test('v2 RuntimeRoot input rejects JSON-coerced epochs, slots, and malformed fea
     /RUNTIME_ROOT_TRANSACTION_VERSION_INVALID/);
 });
 
+test('simulation-certificate RuntimeRoot validation rejects object enum values without calling coercion hooks',()=>{
+  const valid=EnvironmentCertificationEngine.createRuntimeRoot({epoch:3,contextSlot:9});
+  let coercions=0;
+  const hostile=()=>({toString(){coercions+=1;throw new Error('coercion hook must not run');}});
+  const badCluster={...valid,cluster:hostile()};
+  const badTransactionSupport={...valid,transactionVersionSupported:hostile()};
+  assert.throws(()=>SimulationCertificateBuilder.buildCertificate(certificateInput(badCluster)),/SIMULATION_RUNTIME_ROOT_INVALID/);
+  assert.throws(()=>SimulationCertificateBuilder.buildCertificate(certificateInput(badTransactionSupport)),/SIMULATION_RUNTIME_ROOT_INVALID/);
+  assert.equal(coercions,0);
+});
+
 test('runtime compatibility invalidates chain identity, runtime policy, software, and transaction support drift',()=>{
   const certified=EnvironmentCertificationEngine.createRuntimeRoot({epoch:650,contextSlot:280_000_000});
   const noPrograms=[];

@@ -61,29 +61,60 @@ export class BayesBeliefEngine {
         };
     }
     /**
-     * Evaluate probabilistic calibration (Brier Score & ECE).
+     * Evaluate binary forecasts with Brier score and fixed-width, 10-bin ECE.
+     * ECE measures the weighted gap between each bin's mean forecast and event rate;
+     * mean_calibration_gap preserves the direction of aggregate over/underprediction.
+     * ECE is descriptive, depends on the fixed binning, and carries no sampling interval.
      */
     evaluateCalibration(forecasts) {
         if (forecasts.length === 0) {
             return {
-                brier_score: 0.12,
-                expected_calibration_error: 0.05,
-                is_overconfident: false,
+                status: 'INSUFFICIENT_DATA',
+                brier_score: null,
+                expected_calibration_error: null,
+                mean_calibration_gap: null,
+                is_overconfident: null,
                 evaluated_samples: 0,
             };
         }
         let brierSum = 0;
-        let errorSum = 0;
+        let probabilitySum = 0;
+        let outcomeSum = 0;
+        const bins = Array.from({ length: 10 }, () => ({ count: 0, probabilitySum: 0, outcomeSum: 0 }));
         for (const f of forecasts) {
-            brierSum += Math.pow(f.predicted_prob - f.actual_outcome, 2);
-            errorSum += Math.abs(f.predicted_prob - f.actual_outcome);
+            if (f === null || typeof f !== 'object')
+                throw new Error('CALIBRATION_FORECAST_INVALID');
+            const probability = f.predicted_prob;
+            const outcome = f.actual_outcome;
+            if (typeof probability !== 'number' || !Number.isFinite(probability) || probability < 0 || probability > 1) {
+                throw new Error('CALIBRATION_PROBABILITY_INVALID');
+            }
+            if (outcome !== 0 && outcome !== 1)
+                throw new Error('CALIBRATION_OUTCOME_INVALID');
+            brierSum += (probability - outcome) ** 2;
+            probabilitySum += probability;
+            outcomeSum += outcome;
+            const binIndex = Math.min(9, Math.floor(probability * 10));
+            const bin = bins[binIndex];
+            bin.count++;
+            bin.probabilitySum += probability;
+            bin.outcomeSum += outcome;
         }
         const brier = Number((brierSum / forecasts.length).toFixed(4));
-        const ece = Number((errorSum / forecasts.length).toFixed(4));
+        const ece = Number(bins.reduce((sum, bin) => {
+            if (bin.count === 0)
+                return sum;
+            const meanProbability = bin.probabilitySum / bin.count;
+            const observedRate = bin.outcomeSum / bin.count;
+            return sum + (bin.count / forecasts.length) * Math.abs(meanProbability - observedRate);
+        }, 0).toFixed(4));
+        const meanCalibrationGap = Number(((probabilitySum - outcomeSum) / forecasts.length).toFixed(4));
         return {
+            status: 'EVALUATED',
             brier_score: brier,
             expected_calibration_error: ece,
-            is_overconfident: ece > 0.15,
+            mean_calibration_gap: meanCalibrationGap,
+            is_overconfident: meanCalibrationGap > 0.15,
             evaluated_samples: forecasts.length,
         };
     }

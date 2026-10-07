@@ -27,3 +27,6 @@ data/paper-emergency-stop.json
 target/
 authority-kernel/target/
 scratch/
+artifacts/
+!artifacts/test-fixtures/
+!artifacts/test-fixtures/**

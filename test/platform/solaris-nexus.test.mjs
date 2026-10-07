@@ -281,7 +281,17 @@ test('SOLARIS IngestionGapReconciler: Detects slot gaps, triggers backfill, and 
 
   reconciler.setBackfillHandler(async (gap) => {
     backfilledGaps.push(gap);
-    return true; // backfill succeeded
+    const perSlotStatus = Object.create(null);
+    for (let slot = gap.startSlot; slot <= gap.endSlot; slot++) perSlotStatus[slot] = 'EMPTY';
+    return Object.freeze({
+      certificateId: `fixture-${gap.gapId}`, gapId: gap.gapId,
+      startSlot: gap.startSlot, endSlot: gap.endSlot,
+      providerId: gap.providerId ?? 'fixture-provider',
+      classification: gap.classification ?? 'UNKNOWN', lane: gap.lane ?? 'CHAIN_BLOCK',
+      recoveredEventIds: Object.freeze([]), perSlotStatus: Object.freeze(perSlotStatus),
+      stateRoot: 'a'.repeat(64), coverageRoot: 'b'.repeat(64),
+      isVerified: true, certifiedAtMs: Date.now(),
+    });
   });
 
   // Continuous slots: no gap

@@ -156,7 +156,7 @@ describe('UnifiedPipelineUnit — End-to-End Control Unit', () => {
     assert.ok(opportunity.actionIntent);
   });
 
-  it('Stage 3: compiles and authorizes cryptographic ActionProofBundle with 12 mandatory certificates', () => {
+  it('Stage 3: blocks the proof bundle when no trusted certificate verifier is configured', () => {
     const actionIntent = {
       intentId: 'intent_stage3_01',
       action: 'OPEN',
@@ -169,7 +169,7 @@ describe('UnifiedPipelineUnit — End-to-End Control Unit', () => {
       validUntilSlot: 250_100n,
     };
 
-    const pkg = unit.compileAndAuthorizeProof({
+    assert.throws(() => unit.compileAndAuthorizeProof({
       actionIntent,
       stateRoot: 'state_root_hash_0001',
       policyRoot: 'policy_root_hash_0001',
@@ -178,22 +178,7 @@ describe('UnifiedPipelineUnit — End-to-End Control Unit', () => {
       controlEpoch: 1,
       revocationEpoch: 1,
       signingKey: 'super_secret_kernel_signing_key_32bytes',
-    });
-
-    assert.equal(pkg.actionIntent.intentId, 'intent_stage3_01');
-    assert.ok(pkg.bundle.marketTruthCertificate.artifactId.startsWith('art_'));
-    assert.ok(pkg.bundle.tokenSemanticsCertificate.artifactId.startsWith('art_'));
-    assert.ok(pkg.bundle.alphaRealityCertificate.artifactId.startsWith('art_'));
-    assert.ok(pkg.bundle.signalPortfolioCertificate.artifactId.startsWith('art_'));
-    assert.ok(pkg.bundle.executionPolicyCertificate.artifactId.startsWith('art_'));
-    assert.ok(pkg.bundle.simulationCertificate.artifactId.startsWith('art_'));
-    assert.ok(pkg.bundle.exitabilityCertificate.artifactId.startsWith('art_'));
-    assert.ok(pkg.bundle.portfolioEvacuationCertificate.artifactId.startsWith('art_'));
-    assert.ok(pkg.bundle.capitalAllocationCertificate.artifactId.startsWith('art_'));
-    assert.ok(pkg.bundle.reservationCertificate.artifactId.startsWith('art_'));
-    assert.ok(pkg.bundle.survivalCertificate.artifactId.startsWith('art_'));
-    assert.ok(pkg.bundle.twinTrustCertificate.artifactId.startsWith('art_'));
-    assert.equal(pkg.authorityLatticeState, 'A0_OBSERVE_ONLY');
+    }), /PROOF_BUNDLE_INVALID:.*CERTIFICATE_SIGNATURE_UNVERIFIED/);
   });
 
   it('Stage 4: builds an 8-stage tamper-evident ImmutableReceiptChain', () => {

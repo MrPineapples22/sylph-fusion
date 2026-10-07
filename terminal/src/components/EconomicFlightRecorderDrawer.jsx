@@ -17,7 +17,8 @@ import {
   Filter
 } from 'lucide-react';
 import { formatMoney, formatNumber, formatPrice } from '../design-system/format.js';
-import { FLIGHT_RECORDER_STAGES, latestFlightRecords, revisionsForFlight } from './flight-recorder-history.js';
+import { FLIGHT_RECORDER_STAGES, latestFlightRecords, parseFlightRecorderResponse, revisionsForFlight } from './flight-recorder-history.js';
+import { EngineResearchAuditPanel } from './EngineResearchAuditPanel.jsx';
 
 export { FLIGHT_RECORDER_STAGES };
 
@@ -25,6 +26,7 @@ export function EconomicFlightRecorderDrawer({ isOpen, onClose, selectedAttemptI
   const [attempts, setAttempts] = useState([]);
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [recordStatus, setRecordStatus] = useState('LOADING');
   const [selectedAttempt, setSelectedAttempt] = useState(null);
   const [search, setSearch] = useState('');
   const [viewRawJson, setViewRawJson] = useState(false);
@@ -36,7 +38,8 @@ export function EconomicFlightRecorderDrawer({ isOpen, onClose, selectedAttemptI
       const res = await fetch('/api/flight-recorder/attempts');
       if (res.ok) {
         const data = await res.json();
-        const revisions = data.attempts || [];
+        const { status, revisions } = parseFlightRecorderResponse(data);
+        setRecordStatus(status);
         const latest = latestFlightRecords(revisions);
         setHistory(revisions);
         setAttempts(latest);
@@ -45,10 +48,18 @@ export function EconomicFlightRecorderDrawer({ isOpen, onClose, selectedAttemptI
             ? latest.find(a => a.attemptId === selectedAttemptId || a.economicFactId === selectedAttemptId)
             : latest[0];
           setSelectedAttempt(match || latest[0]);
-        }
+        } else setSelectedAttempt(null);
+      } else {
+        setRecordStatus('UNKNOWN');
+        setHistory([]);
+        setAttempts([]);
+        setSelectedAttempt(null);
       }
     } catch {
-      // Non-blocking fallback
+      setRecordStatus('UNKNOWN');
+      setHistory([]);
+      setAttempts([]);
+      setSelectedAttempt(null);
     } finally {
       setLoading(false);
     }
@@ -132,6 +143,8 @@ export function EconomicFlightRecorderDrawer({ isOpen, onClose, selectedAttemptI
         </header>
 
         <div className="sb-drawer-body">
+          <EngineResearchAuditPanel />
+
           {/* Attempt Selector & Search */}
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
             <div style={{ position: 'relative', flex: '1 1 200px' }}>
@@ -373,9 +386,15 @@ export function EconomicFlightRecorderDrawer({ isOpen, onClose, selectedAttemptI
           ) : (
             <div className="op-empty" style={{ padding: '3rem', textAlign: 'center' }}>
               <Database size={32} style={{ color: '#73869a', margin: '0 auto 12px' }} />
-              <h3 style={{ color: '#f0f4f8', margin: '0 0 8px' }}>No Flight Records Recorded Yet</h3>
+              <h3 style={{ color: '#f0f4f8', margin: '0 0 8px' }}>
+                {recordStatus === 'LOADING' ? 'Loading Flight Records' : recordStatus === 'EMPTY' ? 'No Flight Records in This Database' : 'Flight Recorder Status Unavailable'}
+              </h3>
               <p style={{ color: '#98aabd', margin: 0 }}>
-                Candidate execution attempts will be captured in the append-only SQLite WAL prior to knowing their outcome.
+                {recordStatus === 'LOADING'
+                  ? 'Checking the recorder database.'
+                  : recordStatus === 'EMPTY'
+                    ? 'The database contains no recorded revisions. An empty store does not establish that no candidate or order attempts occurred.'
+                    : 'The recorder endpoint did not provide a verifiable status. No completeness claim can be made.'}
               </p>
             </div>
           )}

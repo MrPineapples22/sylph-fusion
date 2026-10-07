@@ -41,6 +41,17 @@ test('HASHING: canonicalJson and hashCanonical sort keys lexicographically and s
   assert.equal(hashCanonical(obj1).length, 64);
 });
 
+test('HASHING: own __proto__ fields remain JSON data and affect canonical hashes', () => {
+  const first = JSON.parse('{"safe":1,"__proto__":{"value":"first"}}');
+  const reordered = JSON.parse('{"__proto__":{"value":"first"},"safe":1}');
+  const changed = JSON.parse('{"safe":1,"__proto__":{"value":"second"}}');
+  assert.equal(canonicalJson(first), '{"__proto__":{"value":"first"},"safe":1}');
+  assert.equal(canonicalJson(first), canonicalJson(reordered));
+  assert.equal(hashCanonical(first), hashCanonical(reordered));
+  assert.notEqual(hashCanonical(first), hashCanonical(changed));
+  assert.equal(Object.getPrototypeOf(first), Object.prototype);
+});
+
 test('IDENTITY: identity invariants strictly reject identity drift', () => {
   const base = createGenesisEnvelope();
 

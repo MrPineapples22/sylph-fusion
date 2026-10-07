@@ -33,7 +33,6 @@ EXPOSE 8793
 ENV NODE_ENV=production
 ENV MODE=paper
 ENV TERMINAL_PORT=8793
-ENV TERMINAL_HOST=127.0.0.1
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
   CMD curl -f http://127.0.0.1:8793/health || exit 1

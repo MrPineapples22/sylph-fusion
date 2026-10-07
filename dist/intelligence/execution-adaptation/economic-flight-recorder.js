@@ -38,17 +38,28 @@ export class SQLiteExecutionAttemptStore {
     constructor(dbPath) {
         this.inMemory = dbPath === ':memory:';
         this.db = new DatabaseSync(dbPath);
-        this.initializeSchema();
+        try {
+            this.initializeSchema();
+        }
+        catch (cause) {
+            this.db.close();
+            throw cause;
+        }
     }
     initializeSchema() {
         if (!this.inMemory) {
             try {
-                this.db.exec('PRAGMA journal_mode = WAL;');
+                const journalMode = this.db.prepare('PRAGMA journal_mode = WAL').get()?.journal_mode;
+                if (journalMode !== 'wal')
+                    throw new Error('FLIGHT_RECORDER_WAL_MODE_UNAVAILABLE');
                 // FULL sync preserves committed WAL transactions across power loss/hard reboot.
                 this.db.exec('PRAGMA synchronous = FULL;');
+                const synchronous = this.db.prepare('PRAGMA synchronous').get()?.synchronous;
+                if (synchronous !== 2)
+                    throw new Error('FLIGHT_RECORDER_SYNC_FULL_UNAVAILABLE');
             }
-            catch {
-                // In-memory or restricted environments ignore journal mode pragmas.
+            catch (cause) {
+                throw new Error('FLIGHT_RECORDER_DURABILITY_SETUP_FAILED', { cause });
             }
         }
         this.db.exec(`

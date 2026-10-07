@@ -117,7 +117,7 @@ test('CounterfactualRegretStore: records evaluations and computes rolling aggreg
   store.recordEvaluation(trade1);
   store.recordEvaluation(trade2);
 
-  assert.equal(store.getEvaluation('cfr_opp_1_1000')?.tokenId, 'mint_A');
+  assert.equal(store.getEvaluation(trade1.evaluationId)?.tokenId, 'mint_A');
   assert.equal(store.getEvaluationsForToken('mint_B').length, 1);
 
   const report = store.getAggregateRegretReport('sylph_momentum_v1.0');
@@ -125,4 +125,14 @@ test('CounterfactualRegretStore: records evaluations and computes rolling aggreg
   assert.equal(report.meanRealizedPnlBps, 75); // (100 + 50) / 2
   assert.equal(report.dominantRegretSubsystem, 'EXECUTION');
   assert.match(report.recommendedAdjustment, /EXECUTION/);
+});
+
+test('counterfactual evaluation IDs stay fixed length for unbounded opportunity identifiers', () => {
+  const evaluation = ExecutionRegretEngine.evaluateDecisionRegret({
+    decisionId: 'decision', opportunityId: 'opportunity/'.repeat(200), tokenId: 'mint',
+    slot: 1000, actionTaken: 'WAIT', expectedNetEvBps: 0, expectedSlippageBps: 0,
+    realizedPnlBps: 0, realizedSlippageBps: 0, realizedTipLamports: 0n, discoveryLagMs: 0,
+  });
+  assert.match(evaluation.evaluationId, /^cfr_[a-f0-9]{64}$/);
+  assert.ok(evaluation.evaluationId.length <= 128);
 });

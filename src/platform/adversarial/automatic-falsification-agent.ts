@@ -273,14 +273,11 @@ export class AutomaticFalsificationAgent {
       Math.min(0.98, isThesisFalsified ? 0.70 + (1.0 - survivabilityIndex) * 0.28 : 0.85).toFixed(2)
     );
 
-    const reportId = `falsify_${mint.slice(0, 8)}_${slot}_${createHash('sha256').update(`${mint}:${slot}:${isThesisFalsified}`).digest('hex').slice(0, 8)}`;
-
     const rationale = isThesisFalsified
       ? `THESIS_FALSIFIED: Opportunity invalidated under ${lethalAttackVector} (${lethalScenarios.length}/${scenarios.length} lethal vectors${windTunnelCertificate ? `, wind tunnel canary pass: ${windTunnelCertificate.isApprovedForCanary}` : ''}). Break capital: ${minimumPlausibleBreakCapitalSol} SOL, Survivability: ${(survivabilityIndex * 100).toFixed(1)}%`
       : `Thesis survived all ${scenarios.length} red-team adversarial attacks${windTunnelCertificate ? ` and wind tunnel survival: ${(windTunnelCertificate.survivalRate * 100).toFixed(1)}%` : ''} (Survivability: ${(survivabilityIndex * 100).toFixed(1)}%, Min break capital: ${minimumPlausibleBreakCapitalSol.toFixed(1)} SOL)`;
 
-    return {
-      reportId,
+    const report = {
       mint,
       slot,
       isThesisFalsified,
@@ -313,6 +310,8 @@ export class AutomaticFalsificationAgent {
           isCalibratedProbability: false,
         },
       },
-    };
+    } as const;
+    const digest = createHash('sha256').update(JSON.stringify(report)).digest('hex');
+    return { ...report, reportId: `falsify_${mint.slice(0, 8)}_${slot}_${digest}` };
   }
 }

@@ -35,8 +35,13 @@ export class StartupHealthAuditor {
         try {
             const reconciler = new IngestionGapReconciler();
             reconciler.registerSlot(310000000, 1, false);
-            if (typeof reconciler.preseedContinuousSlot !== 'function')
-                throw new Error('Discovery gap reconciler failed check');
+            if (reconciler.getContinuousSlot() !== 0)
+                throw new Error('Filtered slot advanced the coverage frontier');
+            reconciler.registerSlot(310000001);
+            const gap = reconciler.registerSlot(310000003);
+            if (!gap || gap.startSlot !== 310000002 || reconciler.getContinuousSlot() !== 310000003) {
+                throw new Error('Contiguous slot gap was not detected');
+            }
             records.push({
                 name: 'Discovery',
                 status: 'SELF_TEST_PASS',
