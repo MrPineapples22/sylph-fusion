@@ -111,8 +111,8 @@
       "status": "RESOLVED",
       "severity": "HIGH",
       "evidence": [
-        "npm run test:all completed with no failed tests across core, intelligence, platform, and terminal suites after rebuilding current TypeScript.",
-        "The platform suite passed 909/909 in the previous focused platform run; the full suite terminal summary passed 531 tests, intelligence and platform suites completed successfully, and terminal passed 309/309."
+        "The latest repository-wide npm run test:all passed core 531/531, intelligence 561/561, platform 909/909, and terminal 309/309 (2,310 total; zero failures).",
+        "The full run completed after rebuilding current TypeScript and after the durable ingress recovery, in-memory test-journal acknowledgement, Feed fixture, and C5 attestation changes."
       ],
       "remaining": [],
       "owner": "Sol QA",
