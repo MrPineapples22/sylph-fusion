@@ -23,6 +23,7 @@
     "audit:convergence:certify": "node scripts/connectivity-runtime-convergence.mjs --mode certify",
     "audit:certificate": "node scripts/generate-system-integration-certificate.mjs",
     "audit:certificate:verify": "node scripts/verify-system-integration-certificate.mjs",
+    "audit:c1": "node scripts/audit-single-authority-door.mjs",
     "test:all": "npm run test:core && npm run test:intelligence && npm run test:platform && npm run test:terminal",
     "research:manifest": "node scripts/research-export-manifest.mjs",
     "test": "npm run build:engine && npm run test:core && npm run test:intelligence && npm run test:platform && npm run test:terminal",

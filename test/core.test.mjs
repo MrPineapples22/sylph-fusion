@@ -15,6 +15,7 @@ import { Executor, transactionDeltas } from '../dist/execution.js';
 import { Engine } from '../dist/fusion.js';
 import { Feed } from '../dist/feed.js';
 import { RpcPool } from '../dist/rpc.js';
+import { createCanonicalSolanaIngress, InMemoryIngressJournal } from '../dist/platform/ingress/canonical-ingress.js';
 
 const cfg = (extra = {}) => config({ RPC_URLS: 'https://one.invalid,https://two.invalid', WS_URLS: 'wss://one.invalid', ...extra });
 const key = Keypair.fromSeed(Buffer.alloc(32, 8));
@@ -425,8 +426,16 @@ test('legacy Jito broadcast and identical-wire retries reject before transport',
   } finally { globalThis.fetch = original; }
 });
 test('Anchor parser rejects spoofed event from unrelated invocation', async () => {
-  const received = [], feed = new Feed(cfg(), {}, e => received.push(e));
-  feed.accept('fake-sig', 123, ['Program 11111111111111111111111111111111 invoke [1]', 'Program data: AQIDBA==', 'Program 11111111111111111111111111111111 success']);
+  const received = [];
+  const ingress = createCanonicalSolanaIngress({ journal: new InMemoryIngressJournal(),
+    onCommitted: (committed) => {
+      for (const ev of committed.validatedEnvelope.compiledEnvelope.decodedEvents) {
+        received.push(ev);
+      }
+    }
+  });
+  const feed = new Feed(cfg(), {}, ingress);
+  await feed.accept('fake-sig', 123, ['Program 11111111111111111111111111111111 invoke [1]', 'Program data: AQIDBA==', 'Program 11111111111111111111111111111111 success']);
   assert.equal(received.length, 0);
 });
 test('SDK curve quotes use integer reserves and cannot produce profitable immediate roundtrip', () => {
@@ -484,17 +493,37 @@ function createLogs() {
   const bytes = Buffer.concat([Buffer.from(definition.discriminator), program.coder.types.encode('createEvent', data)]);
   return [`Program ${PUMP_PROGRAM_ID} invoke [1]`, `Program data: ${bytes.toString('base64')}`, `Program ${PUMP_PROGRAM_ID} success`];
 }
-test('real IDL event decodes once across duplicate feeds and rejects stale slots', () => {
-  const events = [], feed = new Feed(cfg(), {}, e => events.push(e));
-  feed.accept('signature-a', 100, createLogs()); feed.accept('signature-a', 100, createLogs()); feed.accept('signature-b', 1, createLogs());
-  assert.equal(events.length, 1); assert.equal(events[0].data.mint.toBase58(), mint);
+test('real IDL event decodes once across duplicate feeds and rejects stale slots', async () => {
+  const events = [];
+  const ingress = createCanonicalSolanaIngress({ journal: new InMemoryIngressJournal(),
+    onCommitted: (committed) => {
+      for (const ev of committed.validatedEnvelope.compiledEnvelope.decodedEvents) {
+        events.push(ev);
+      }
+    }
+  });
+  const feed = new Feed(cfg(), {}, ingress);
+  await feed.accept('signature-a', 100, createLogs());
+  await feed.accept('signature-a', 100, createLogs());
+  await feed.accept('signature-b', 1, createLogs());
+  assert.equal(events.length, 1);
+  assert.equal(events[0].data.mint.toBase58(), mint);
 });
 test('Yellowstone path writes an actual transaction subscription and consumes updates', async () => {
   const { Duplex } = await import('node:stream');
   const { default: Client } = await import('@triton-one/yellowstone-grpc');
   const original = Client.prototype.subscribe; let request;
   const events = [];
-  const feed = new Feed(cfg({ YELLOWSTONE_URL: 'https://localhost:443' }), {}, event => { events.push(event); feed.stop(); });
+  let feed;
+  const ingress = createCanonicalSolanaIngress({ journal: new InMemoryIngressJournal(),
+    onCommitted: (committed) => {
+      for (const ev of committed.validatedEnvelope.compiledEnvelope.decodedEvents) {
+        events.push(ev);
+      }
+      feed?.stop();
+    }
+  });
+  feed = new Feed(cfg({ YELLOWSTONE_URL: 'https://localhost:443' }), {}, ingress);
   Client.prototype.subscribe = async function () {
     let delivered = false;
     return new Duplex({ objectMode: true,

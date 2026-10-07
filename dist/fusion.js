@@ -13,6 +13,7 @@ import { exitDecision, log, mulBps, settle, recordFailure, recordEquity, pruneRi
 import { startDashboard } from './dashboard.js';
 import { RpcPool } from './rpc.js';
 import { Feed } from './feed.js';
+import { createCanonicalSolanaIngress } from './platform/ingress/canonical-ingress.js';
 import { Market } from './market.js';
 import { SimulationExecutionAuthority, LiveExecutionAuthority, simulationExecutionCosts, simulationSellProceeds } from './platform/execution/authority.js';
 import { Store } from './store.js';
@@ -183,9 +184,10 @@ export class Engine {
     nextResearchSpoolDrainAt = 0;
     nextResearchLossMarkerSaveAt = 0;
     feed;
+    ingress;
     runtimeUnit;
     divergenceAuditor;
-    constructor(cfg, rpc, market, executor, store, state, sessionLogger, modelEvaluator, gateMode = modelEvaluator ? 'ml_gated' : 'deterministic_only', runtimeUnit, divergenceAuditor, researchSpool) {
+    constructor(cfg, rpc, market, executor, store, state, sessionLogger, modelEvaluator, gateMode = modelEvaluator ? 'ml_gated' : 'deterministic_only', runtimeUnit, divergenceAuditor, researchSpool, ingress, feed) {
         this.cfg = cfg;
         this.rpc = rpc;
         this.market = market;
@@ -196,7 +198,14 @@ export class Engine {
         this.modelEvaluator = modelEvaluator;
         this.gateMode = gateMode;
         this.researchSpool = researchSpool;
-        this.feed = new Feed(cfg, rpc.connection, e => this.onEvent(e));
+        this.ingress = ingress ?? createCanonicalSolanaIngress({
+            connectionOrCoder: rpc.connection,
+            durability: 'FSYNC_COMMITTED',
+        });
+        this.ingress.subscribe(async (committed) => {
+            await this.onCommitted(committed);
+        });
+        this.feed = feed ?? new Feed(cfg, rpc.connection, this.ingress);
         this.feed.gapReconciler.setRecoveryCertificateJournal({
             saveVerifiedRecoveryCertificate: certificate => {
                 const journal = this.store;
@@ -815,7 +824,12 @@ export class Engine {
             events: recentEvents.slice().reverse(),
         };
     }
-    onEvent(e) {
+    async onCommitted(committed) {
+        for (const event of committed.validatedEnvelope.compiledEnvelope.decodedEvents) {
+            this.processCommittedEvent(event);
+        }
+    }
+    processCommittedEvent(e) {
         const d = e.data, name = e.name.replaceAll('_', '').toLowerCase();
         const mint = d.mint?.toBase58?.();
         if (!mint)
@@ -1983,7 +1997,12 @@ export async function runEngine(options = {}) {
             reconciliation: {},
             unit: new UnifiedPipelineUnit(paperMode),
         });
-        const engine = new Engine(cfg, rpc, market, executor, store, state, sessionLogger, undefined, undefined, paperRuntime.unit, paperRuntime.divergenceAuditor, researchSpool);
+        const ingress = createCanonicalSolanaIngress({
+            connectionOrCoder: rpc.connection,
+            durability: 'FSYNC_COMMITTED',
+        });
+        const feed = new Feed(cfg, rpc.connection, ingress);
+        const engine = new Engine(cfg, rpc, market, executor, store, state, sessionLogger, undefined, undefined, paperRuntime.unit, paperRuntime.divergenceAuditor, researchSpool, ingress, feed);
         const spoolRecovery = await engine.drainResearchSpool();
         if (spoolRecovery.error || spoolRecovery.replayedCount > 0) {
             log('research_spool_drain', {

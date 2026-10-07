@@ -13,6 +13,8 @@ import { exitDecision, log, mulBps, settle, recordFailure, recordEquity, pruneRi
 import { startDashboard } from './dashboard.js';
 import { RpcPool } from './rpc.js';
 import { Feed, type MarketEvent } from './feed.js';
+import { CanonicalIngress, createCanonicalSolanaIngress, StoreIngressJournal, TEST_INGRESS_JOURNAL } from './platform/ingress/canonical-ingress.js';
+import type { CommittedEnvelope, UnvalidatedObservation } from './platform/ingress/types.js';
 import { Market, type Snapshot } from './market.js';
 import { Executor } from './execution.js';
 import { type ExecutionAuthority, SimulationExecutionAuthority, LiveExecutionAuthority, simulationExecutionCosts, simulationSellProceeds } from './platform/execution/authority.js';
@@ -71,7 +73,7 @@ type Candidate = {
   born: number;
   slot: number;
   eventSignature?: string;
-  sourceObservation?: RawObservationEnvelope;
+  sourceObservation?: RawObservationEnvelope | UnvalidatedObservation;
   buyers: Map<string, number>;
   buy: bigint;
   sell: bigint;
@@ -241,6 +243,7 @@ export class Engine {
   private nextResearchSpoolDrainAt = 0;
   private nextResearchLossMarkerSaveAt = 0;
   readonly feed: Feed;
+  readonly ingress: CanonicalIngress;
   readonly runtimeUnit: UnifiedPipelineUnit;
   divergenceAuditor?: RuntimeDivergenceAuditor;
   constructor(
@@ -256,8 +259,14 @@ export class Engine {
     runtimeUnit?: UnifiedPipelineUnit,
     divergenceAuditor?: RuntimeDivergenceAuditor,
     readonly researchSpool?: DurableResearchSpool,
+    ingress: CanonicalIngress = createCanonicalSolanaIngress({ journal: TEST_INGRESS_JOURNAL }),
+    feed: Feed = new Feed(cfg, rpc.connection, ingress),
   ) {
-    this.feed = new Feed(cfg, rpc.connection, e => this.onEvent(e));
+    this.ingress = ingress;
+    this.ingress.subscribe(async (committed: CommittedEnvelope) => {
+      await this.onCommitted(committed);
+    });
+    this.feed = feed;
     this.feed.gapReconciler.setRecoveryCertificateJournal({
       saveVerifiedRecoveryCertificate: certificate => {
         const journal = this.store as Store & { saveVerifiedRecoveryCertificate?: Store['saveVerifiedRecoveryCertificate'] };
@@ -873,7 +882,14 @@ export class Engine {
       events: recentEvents.slice().reverse(),
     };
   }
-  private onEvent(e: MarketEvent) {
+
+  public async onCommitted(committed: CommittedEnvelope): Promise<void> {
+    for (const event of committed.validatedEnvelope.compiledEnvelope.decodedEvents) {
+      this.processCommittedEvent(event);
+    }
+  }
+
+  private processCommittedEvent(e: MarketEvent) {
     const d = e.data, name = e.name.replaceAll('_', '').toLowerCase();
     const mint = d.mint?.toBase58?.();
     if (!mint) return;
@@ -1043,6 +1059,7 @@ export class Engine {
     }
   }
   private async tick() {
+    await this.ingress.retryPendingDeliveries();
     const today = new Date().toISOString().slice(0, 10);
     if (this.state.day !== today) { this.state.day = today; this.state.dayPnl = '0'; }
     for (const [mint, c] of this.candidates) {
@@ -1994,6 +2011,12 @@ export async function runEngine(options: {
       reconciliation: {},
       unit: new UnifiedPipelineUnit(paperMode),
     });
+    const ingress = createCanonicalSolanaIngress({
+      connectionOrCoder: rpc.connection,
+      journal: new StoreIngressJournal(store),
+      durability: 'FSYNC_COMMITTED',
+    });
+    const feed = new Feed(cfg, rpc.connection, ingress);
     const engine = new Engine(
       cfg,
       rpc,
@@ -2006,7 +2029,9 @@ export async function runEngine(options: {
       undefined,
       paperRuntime.unit,
       paperRuntime.divergenceAuditor,
-      researchSpool
+      researchSpool,
+      ingress,
+      feed
     );
     const spoolRecovery = await engine.drainResearchSpool();
     if (spoolRecovery.error || spoolRecovery.replayedCount > 0) {

@@ -197,8 +197,22 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
     const cCreator = creatorPub.toBase58();
     const eventTime = Date.now() - 15_000;
 
+    const feedCommitted = async (engineInstance, event) => {
+      await engineInstance.onCommitted({
+        journalSeq: 1n,
+        envelopeHash: '0'.repeat(64),
+        durability: 'FSYNC_COMMITTED',
+        committedAtMs: Date.now(),
+        validatedEnvelope: {
+          compiledEnvelope: {
+            decodedEvents: [event]
+          }
+        }
+      });
+    };
+
     // Create event
-    engine['onEvent']({
+    await feedCommitted(engine, {
       name: 'create_event',
       signature: 'create-sig-1',
       slot: 100,
@@ -226,7 +240,7 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
     // 6 Buy trade events from distinct buyers (not creator)
     for (let i = 1; i <= 6; i++) {
       const buyer = makeKey(50 + i).publicKey;
-      engine['onEvent']({
+      await feedCommitted(engine, {
         name: 'trade_event',
         signature: `buy-sig-${i}`,
         slot: 101 + i,
@@ -253,7 +267,7 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
     // Raw create events with unusable chain timestamps stay visible in the
     // denominator while their price outcomes remain explicitly unresolved.
     const invalidTimestampMint = Keypair.generate().publicKey;
-    engine['onEvent']({
+    await feedCommitted(engine, {
       name: 'create_event', signature: 'create-sig-invalid-time', slot: 101,
       received: Date.now(),
       observation: {observationId: 'obs-invalid-time', sourceId: 'test-provider',
@@ -451,7 +465,7 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
     engine.cfg.MAX_TRACKED = 1;
     const nextMint = Keypair.generate().publicKey;
     const nextReceivedAt = Date.now();
-    engine['onEvent']({
+    await feedCommitted(engine, {
       name: 'create_event', signature: 'create-sig-capacity', slot: 200, received: nextReceivedAt,
       observation: {observationId: 'obs-capacity', sourceId: 'test-provider', providerId: 'https://provider.example',
         transport: 'test.feed', receivedAt: nextReceivedAt, slot: 200, commitment: 'confirmed',

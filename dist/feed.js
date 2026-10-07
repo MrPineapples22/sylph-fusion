@@ -1,11 +1,10 @@
-import { EventParser } from '@coral-xyz/anchor';
-import { createHash } from 'node:crypto';
-import { getPumpProgram, PUMP_PROGRAM_ID } from '@pump-fun/pump-sdk';
+import { PUMP_PROGRAM_ID } from '@pump-fun/pump-sdk';
 import WebSocket from 'ws';
 import bs58 from 'bs58';
 import { setTimeout as delay } from 'node:timers/promises';
 import { BoundedSet, log } from './core.js';
 import { IngestionGapReconciler } from './platform/ingestion/gap-reconciler.js';
+import { createUnvalidatedObservation } from './platform/ingress/observation-factory.js';
 function providerLabel(endpoint) {
     try {
         return new URL(endpoint).origin;
@@ -26,8 +25,8 @@ function validateSource(source) {
 }
 export class Feed {
     cfg;
-    consume;
-    parser;
+    ingress;
+    sourceId = 'feed-solana-pump';
     seen = new BoundedSet(100_000, 300_000);
     sockets = new Set();
     grpcStream;
@@ -37,17 +36,42 @@ export class Feed {
     last = 0;
     slot = 0;
     readySince = 0;
-    constructor(cfg, connection, consume) {
+    _parser;
+    constructor(cfg, _connection, ingress) {
         this.cfg = cfg;
-        this.consume = consume;
-        this.parser = new EventParser(PUMP_PROGRAM_ID, getPumpProgram(connection).coder);
+        this.ingress = ingress;
+        if (typeof ingress === 'function' || !ingress || typeof ingress.submit !== 'function') {
+            throw new Error('FEED_CALLBACK_BYPASS_FORBIDDEN: Feed requires an ObservationIngressPort instance. Arbitrary callback functions are strictly prohibited.');
+        }
+    }
+    get parser() {
+        if (this.ingress?.compiler?.parser) {
+            return this.ingress.compiler.parser;
+        }
+        return this._parser;
+    }
+    set parser(p) {
+        this._parser = p;
+        if (this.ingress?.compiler) {
+            this.ingress.compiler.parser = p;
+        }
     }
     healthy() { const age = Date.now() - this.last; return !this.stopped && this.last > 0 && age >= 0 && age < this.cfg.FEED_STALE_MS && Date.now() - this.readySince >= this.cfg.MIN_AGE_MS; }
-    accept(signature, slot, logs, source = { sourceId: 'unknown', providerId: 'unknown', transport: 'unknown', commitment: 'unknown' }) {
+    async accept(signature, slot, logs, source = { sourceId: 'unknown', providerId: 'unknown', transport: 'unknown', commitment: 'unknown' }) {
         const now = Date.now();
         const isHistoricalRepair = Boolean(source?.isRepair || source?.processingIntent === 'HISTORICAL_REPAIR');
-        if (this.stopped || !Number.isSafeInteger(slot) || slot < 0 || (this.slot > 0 && slot < this.slot && !isHistoricalRepair && !source?.allowLate) || (this.slot > 0 && !isHistoricalRepair && this.slot - slot > 1000) || typeof signature !== 'string' || !signature || !Array.isArray(logs) || logs.length === 0 || logs.some(line => typeof line !== 'string'))
+        if (this.stopped ||
+            !Number.isSafeInteger(slot) ||
+            slot < 0 ||
+            (this.slot > 0 && slot < this.slot && !isHistoricalRepair && !source?.allowLate) ||
+            (this.slot > 0 && !isHistoricalRepair && this.slot - slot > 1000) ||
+            typeof signature !== 'string' ||
+            !signature ||
+            !Array.isArray(logs) ||
+            logs.length === 0 ||
+            logs.some(line => typeof line !== 'string')) {
             return;
+        }
         try {
             validateSource(source);
         }
@@ -55,60 +79,57 @@ export class Feed {
             log('feed_source_rejected');
             return;
         }
-        // Execution freshness and historical validity are separate.  A late
-        // canonical transaction must still be available to repair materialized
-        // history even though it cannot renew the execution-freshness clock.
-        const rawPayloadHash = createHash('sha256').update(JSON.stringify(logs)).digest('hex');
         const intent = source.processingIntent ?? (isHistoricalRepair ? 'HISTORICAL_REPAIR' : 'LIVE');
-        const identity = JSON.stringify({ sourceId: source.sourceId, providerId: source.providerId, transport: source.transport, commitment: source.commitment ?? 'unknown', signature, slot, rawPayloadHash, schemaVersion: 'solana-program-logs/v1', processingIntent: intent });
-        const envelope = Object.freeze({
-            observationId: createHash('sha256').update(identity).digest('hex'),
-            sourceId: source.sourceId,
-            providerId: source.providerId,
-            transport: source.transport,
-            receivedAt: now,
-            observedAt: source.observedAt,
-            slot,
-            commitment: source.commitment ?? 'unknown',
-            signature,
-            transactionVersion: 'unknown',
-            rawPayloadHash,
-            schemaVersion: 'solana-program-logs/v1',
-            processingIntent: intent,
-        });
-        const decoded = [];
+        let observation;
         try {
-            // Anchor's invocation-stack parser rejects events emitted by unrelated CPI programs.
-            for (const event of this.parser.parseLogs(logs, false)) {
-                if (decoded.length >= 256)
-                    throw new Error('Too many events in one transaction');
-                decoded.push({ name: event.name, data: event.data, signature, slot, received: now, observation: envelope });
-            }
+            const rawPayload = Buffer.from(JSON.stringify(logs));
+            observation = createUnvalidatedObservation({
+                sourceId: source.sourceId,
+                providerId: source.providerId,
+                transport: source.transport,
+                receivedAtMs: now,
+                observedAtMs: source.observedAt ?? null,
+                slot,
+                commitment: source.commitment ?? 'unknown',
+                signature,
+                transactionVersion: 'unknown',
+                rawPayload,
+                schemaVersion: 'solana-program-logs/v1',
+                processingIntent: intent,
+            });
         }
-        catch {
-            log('feed_decode_rejected');
+        catch (err) {
+            log('feed_observation_rejected', { error: String(err) });
             return;
         }
-        if (!decoded.length || this.seen.has(signature))
+        if (this.seen.has(signature))
             return;
+        let receipt;
         try {
-            for (const event of decoded)
-                this.consume(event);
+            receipt = await this.ingress.submit(observation);
         }
-        catch {
+        catch (err) {
             this.last = 0;
             this.readySince = now;
-            log('feed_consumer_rejected');
+            log('feed_ingress_failed', { error: String(err) });
             return;
         }
-        // Commit dedupe only after the consumer accepted the decoded transaction.
-        // A failure remains replayable instead of disappearing for the TTL.
+        if (receipt.status !== 'ACCEPTED') {
+            if (receipt.status === 'REJECTED') {
+                if (receipt.reason !== 'NO_MATCHING_PROGRAM_EVENTS') {
+                    this.last = 0;
+                    this.readySince = now;
+                    log('feed_consumer_rejected', { reason: receipt.reason });
+                }
+            }
+            return receipt;
+        }
+        // Commit dedupe only after canonical ingress durably accepted the observation.
         if (!this.seen.add(signature))
-            return;
+            return receipt;
         if (this.stopped)
-            return;
-        // A program-filtered transaction stream does not contain every chain slot.
-        this.gapReconciler.registerSlot(slot, decoded.length, false);
+            return receipt;
+        this.gapReconciler.registerSlot(slot, 1, false);
         const isLate = this.slot > 0 && slot < this.slot;
         if (!isLate) {
             if (now - this.last >= this.cfg.FEED_STALE_MS)
@@ -116,11 +137,16 @@ export class Feed {
             this.last = now;
             this.slot = Math.max(this.slot, slot);
         }
+        return receipt;
+    }
+    async start(sink, signal) {
+        signal.addEventListener('abort', () => this.stop(), { once: true });
+        await this.run();
     }
     async run() {
         await Promise.all([...this.cfg.WS_URLS.map((url, i) => this.websocket(url, i)), ...(this.cfg.YELLOWSTONE_URL ? [this.geyser()] : [])]);
     }
-    stop() { this.stopped = true; this.shutdown.abort(); for (const s of this.sockets)
+    async stop() { this.stopped = true; this.shutdown.abort(); for (const s of this.sockets)
         s.terminate(); this.grpcStream?.destroy(); }
     async reconnectDelay(ms) {
         try {

@@ -1,7 +1,5 @@
-import { EventParser } from '@coral-xyz/anchor';
-import { createHash } from 'node:crypto';
-import { getPumpProgram, PUMP_PROGRAM_ID } from '@pump-fun/pump-sdk';
 import { Connection } from '@solana/web3.js';
+import { PUMP_PROGRAM_ID } from '@pump-fun/pump-sdk';
 import WebSocket from 'ws';
 import bs58 from 'bs58';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -9,6 +7,9 @@ import { BoundedSet, log } from './core.js';
 import type { Config } from './config.js';
 import { IngestionGapReconciler } from './platform/ingestion/gap-reconciler.js';
 import type { RawObservationEnvelope, ProcessingIntent } from './platform/ingestion/types.js';
+import type { ObservationIngressPort, ObservationSource } from './platform/ingress/port.js';
+import { createUnvalidatedObservation } from './platform/ingress/observation-factory.js';
+import type { IngressReceipt, UnvalidatedObservation } from './platform/ingress/types.js';
 
 function providerLabel(endpoint: string): string {
   try { return new URL(endpoint).origin; }
@@ -23,9 +24,9 @@ function validateSource(source: { sourceId: string; providerId: string; transpor
   if (source.observedAt !== undefined && (!Number.isFinite(source.observedAt) || source.observedAt < 0)) throw new Error('RAW_OBSERVATION_INVALID_TIME');
 }
 
-export type MarketEvent = { name: string; data: Record<string, any>; signature: string; slot: number; received: number; observation: RawObservationEnvelope };
-export class Feed {
-  private parser: EventParser;
+export type MarketEvent = { name: string; data: Record<string, any>; signature: string; slot: number; received: number; observation: RawObservationEnvelope | UnvalidatedObservation };
+export class Feed implements ObservationSource {
+  readonly sourceId = 'feed-solana-pump';
   private seen = new BoundedSet(100_000, 300_000);
   private sockets = new Set<WebSocket>();
   private grpcStream: { destroy(): unknown } | undefined;
@@ -35,69 +36,147 @@ export class Feed {
   last = 0;
   slot = 0;
   readySince = 0;
-  constructor(private cfg: Config, connection: Connection, private consume: (event: MarketEvent) => void) {
-    this.parser = new EventParser(PUMP_PROGRAM_ID, getPumpProgram(connection).coder);
+  private _parser?: any;
+
+  constructor(private cfg: Config, _connection: Connection, private readonly ingress: ObservationIngressPort) {
+    if (typeof ingress === 'function' || !ingress || typeof ingress.submit !== 'function') {
+      throw new Error(
+        'FEED_CALLBACK_BYPASS_FORBIDDEN: Feed requires an ObservationIngressPort instance. Arbitrary callback functions are strictly prohibited.'
+      );
+    }
   }
+
+  get parser(): any {
+    if ((this.ingress as any)?.compiler?.parser) {
+      return (this.ingress as any).compiler.parser;
+    }
+    return this._parser;
+  }
+
+  set parser(p: any) {
+    this._parser = p;
+    if ((this.ingress as any)?.compiler) {
+      (this.ingress as any).compiler.parser = p;
+    }
+  }
+
   healthy() { const age = Date.now() - this.last; return !this.stopped && this.last > 0 && age >= 0 && age < this.cfg.FEED_STALE_MS && Date.now() - this.readySince >= this.cfg.MIN_AGE_MS; }
-  accept(signature: string, slot: number, logs: string[], source: { sourceId: string; providerId: string; transport: string; commitment?: RawObservationEnvelope['commitment']; observedAt?: number; isRepair?: boolean; allowLate?: boolean; processingIntent?: ProcessingIntent } = { sourceId: 'unknown', providerId: 'unknown', transport: 'unknown', commitment: 'unknown' }) {
+
+  async accept(
+    signature: string,
+    slot: number,
+    logs: string[],
+    source: {
+      sourceId: string;
+      providerId: string;
+      transport: string;
+      commitment?: RawObservationEnvelope['commitment'];
+      observedAt?: number;
+      isRepair?: boolean;
+      allowLate?: boolean;
+      processingIntent?: ProcessingIntent;
+      rawPayload?: Uint8Array;
+    } = { sourceId: 'unknown', providerId: 'unknown', transport: 'unknown', commitment: 'unknown' }
+  ): Promise<IngressReceipt | void> {
     const now = Date.now();
     const isHistoricalRepair = Boolean(source?.isRepair || source?.processingIntent === 'HISTORICAL_REPAIR');
-    if (this.stopped || !Number.isSafeInteger(slot) || slot < 0 || (this.slot > 0 && slot < this.slot && !isHistoricalRepair && !source?.allowLate) || (this.slot > 0 && !isHistoricalRepair && this.slot - slot > 1000) || typeof signature !== 'string' || !signature || !Array.isArray(logs) || logs.length === 0 || logs.some(line => typeof line !== 'string')) return;
-    try { validateSource(source); } catch { log('feed_source_rejected'); return; }
-    // Execution freshness and historical validity are separate.  A late
-    // canonical transaction must still be available to repair materialized
-    // history even though it cannot renew the execution-freshness clock.
-    const rawPayloadHash = createHash('sha256').update(JSON.stringify(logs)).digest('hex');
-    const intent: ProcessingIntent = source.processingIntent ?? (isHistoricalRepair ? 'HISTORICAL_REPAIR' : 'LIVE');
-    const identity = JSON.stringify({ sourceId: source.sourceId, providerId: source.providerId, transport: source.transport, commitment: source.commitment ?? 'unknown', signature, slot, rawPayloadHash, schemaVersion: 'solana-program-logs/v1', processingIntent: intent });
-    const envelope: RawObservationEnvelope = Object.freeze({
-      observationId: createHash('sha256').update(identity).digest('hex'),
-      sourceId: source.sourceId,
-      providerId: source.providerId,
-      transport: source.transport,
-      receivedAt: now,
-      observedAt: source.observedAt,
-      slot,
-      commitment: source.commitment ?? 'unknown',
-      signature,
-      transactionVersion: 'unknown',
-      rawPayloadHash,
-      schemaVersion: 'solana-program-logs/v1',
-      processingIntent: intent,
-    });
-    const decoded: MarketEvent[] = [];
-    try {
-      // Anchor's invocation-stack parser rejects events emitted by unrelated CPI programs.
-      for (const event of this.parser.parseLogs(logs, false)) {
-        if (decoded.length >= 256) throw new Error('Too many events in one transaction');
-        decoded.push({ name: event.name, data: event.data, signature, slot, received: now, observation: envelope });
-      }
-    } catch { log('feed_decode_rejected'); return; }
-    if (!decoded.length || this.seen.has(signature)) return;
-    try {
-      for (const event of decoded) this.consume(event);
-    } catch {
-      this.last = 0; this.readySince = now;
-      log('feed_consumer_rejected');
+    if (
+      this.stopped ||
+      !Number.isSafeInteger(slot) ||
+      slot < 0 ||
+      (this.slot > 0 && slot < this.slot && !isHistoricalRepair && !source?.allowLate) ||
+      (this.slot > 0 && !isHistoricalRepair && this.slot - slot > 1000) ||
+      typeof signature !== 'string' ||
+      !signature ||
+      !Array.isArray(logs) ||
+      logs.length === 0 ||
+      logs.some(line => typeof line !== 'string')
+    ) {
       return;
     }
-    // Commit dedupe only after the consumer accepted the decoded transaction.
-    // A failure remains replayable instead of disappearing for the TTL.
-    if (!this.seen.add(signature)) return;
-    if (this.stopped) return;
-    // A program-filtered transaction stream does not contain every chain slot.
-    this.gapReconciler.registerSlot(slot, decoded.length, false);
+    try {
+      validateSource(source);
+    } catch {
+      log('feed_source_rejected');
+      return;
+    }
+
+    const intent: ProcessingIntent =
+      source.processingIntent ?? (isHistoricalRepair ? 'HISTORICAL_REPAIR' : 'LIVE');
+
+    let observation: UnvalidatedObservation;
+    try {
+      // WebSocket supplies the original JSON-RPC frame. Yellowstone exposes decoded
+      // protobuf updates, so its payload is explicitly a canonical observation encoding.
+      const rawPayload = source.rawPayload ?? Buffer.from(JSON.stringify(logs));
+      observation = createUnvalidatedObservation({
+        sourceId: source.sourceId,
+        providerId: source.providerId,
+        transport: source.transport,
+        receivedAtMs: now,
+        observedAtMs: source.observedAt ?? null,
+        slot,
+        commitment: source.commitment ?? 'unknown',
+        signature,
+        transactionVersion: 'unknown',
+        rawPayload,
+        schemaVersion: source.transport === 'yellowstone.transaction.logs'
+          ? 'yellowstone-update-json/v1'
+          : 'solana-json-rpc-frame/v1',
+        processingIntent: intent,
+      });
+    } catch (err) {
+      log('feed_observation_rejected', { error: String(err) });
+      return;
+    }
+
+    if (this.seen.has(signature)) return;
+
+    let receipt: IngressReceipt;
+    try {
+      receipt = await this.ingress.submit(observation);
+    } catch (err) {
+      this.last = 0;
+      this.readySince = now;
+      log('feed_ingress_failed', { error: String(err) });
+      return;
+    }
+
+    if (receipt.status !== 'ACCEPTED') {
+      if (receipt.status === 'REJECTED') {
+        if (receipt.reason !== 'NO_MATCHING_PROGRAM_EVENTS') {
+          this.last = 0;
+          this.readySince = now;
+          log('feed_consumer_rejected', { reason: receipt.reason });
+        }
+      }
+      return receipt;
+    }
+
+    // Commit dedupe only after canonical ingress durably accepted the observation.
+    if (!this.seen.add(signature)) return receipt;
+    if (this.stopped) return receipt;
+
+    this.gapReconciler.registerSlot(slot, 1, false);
     const isLate = this.slot > 0 && slot < this.slot;
     if (!isLate) {
       if (now - this.last >= this.cfg.FEED_STALE_MS) this.readySince = now;
       this.last = now;
       this.slot = Math.max(this.slot, slot);
     }
+    return receipt;
   }
+
+  async start(sink: ObservationIngressPort, signal: AbortSignal): Promise<void> {
+    if (sink !== this.ingress) throw new Error('OBSERVATION_INGRESS_MISMATCH');
+    signal.addEventListener('abort', () => { void this.stop(); }, { once: true });
+    await this.run();
+  }
+
   async run() {
     await Promise.all([...this.cfg.WS_URLS.map((url, i) => this.websocket(url, i)), ...(this.cfg.YELLOWSTONE_URL ? [this.geyser()] : [])]);
   }
-  stop() { this.stopped = true; this.shutdown.abort(); for (const s of this.sockets) s.terminate(); this.grpcStream?.destroy(); }
+  async stop(): Promise<void> { this.stopped = true; this.shutdown.abort(); for (const s of this.sockets) s.terminate(); this.grpcStream?.destroy(); }
   async reconnectDelay(ms: number) {
     try { await delay(ms, undefined, {signal: this.shutdown.signal}); }
     catch (error) { if (!this.stopped) throw error; }
@@ -126,7 +205,7 @@ export class Feed {
             if (m.error) { ws.terminate(); return; }
             if (m.method === 'logsNotification' && m.params?.result?.value?.err === null) {
               const r = m.params.result;
-              this.accept(r.value.signature, r.context.slot, r.value.logs, { sourceId: `solana-ws-${index}`, providerId: providerLabel(url), transport: 'websocket.logsSubscribe', commitment: 'confirmed' });
+              void this.accept(r.value.signature, r.context.slot, r.value.logs, { sourceId: `solana-ws-${index}`, providerId: providerLabel(url), transport: 'websocket.logsSubscribe', commitment: 'confirmed', rawPayload: Buffer.from(raw) });
             }
           } catch { log('websocket_message_rejected', { endpointIndex: index }); }
         });
@@ -164,7 +243,7 @@ export class Feed {
           if (this.stopped) break;
           if (update.ping) stream.write({ ...request, ping: { id: 1 } });
           const tx = update.transaction?.transaction;
-          if (tx?.meta && !tx.meta.err) this.accept(bs58.encode(tx.signature), Number(update.transaction.slot), tx.meta.logMessages, { sourceId: 'yellowstone-grpc', providerId: providerLabel(this.cfg.YELLOWSTONE_URL), transport: 'yellowstone.transaction.logs', commitment: 'confirmed' });
+          if (tx?.meta && !tx.meta.err) await this.accept(bs58.encode(tx.signature), Number(update.transaction.slot), tx.meta.logMessages, { sourceId: 'yellowstone-grpc', providerId: providerLabel(this.cfg.YELLOWSTONE_URL), transport: 'yellowstone.transaction.logs', commitment: 'confirmed', rawPayload: Buffer.from(JSON.stringify(update)) });
         }
       } catch { log('yellowstone_reconnecting'); }
       finally { if (watchdog) clearInterval(watchdog); this.grpcStream?.destroy(); this.grpcStream = undefined; try { client?._client?.close?.(); } catch {} }

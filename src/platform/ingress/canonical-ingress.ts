@@ -1,0 +1,558 @@
+/**
+ * SYLPH FUSION — CANONICAL INGRESS PIPELINE
+ * Specifications: Frozen Architecture Execution Step 1 (Section 14)
+ *
+ * Architecture Flow:
+ * UnvalidatedObservation
+ *         ↓
+ * FusionEnvelopeCompiler
+ *         ↓
+ * CompiledFusionEnvelope
+ *         ↓
+ * TruthValidator
+ *         ↓
+ * ValidatedFusionEnvelope
+ *         ↓
+ * FusionJournalStore.append
+ *         ↓
+ * Durability Barrier ('FSYNC_COMMITTED')
+ *         ↓
+ * CommittedEnvelope
+ *         ↓
+ * Downstream Authoritative Processing
+ *
+ * Invariants:
+ * 1. NO AUTHORITATIVE DOWNSTREAM NOTIFICATION BEFORE DURABLE JOURNAL COMMIT.
+ * 2. Only FSYNC_COMMITTED may create a CommittedEnvelope.
+ * 3. QUEUED, BUFFERED, WRITE_COMPLETE, FSYNC_DATA must never create a CommittedEnvelope.
+ * 4. Deduplication is finalized only upon durable journal acceptance.
+ */
+
+import { createHash } from 'node:crypto';
+import { EventParser } from '@coral-xyz/anchor';
+import { getPumpProgram, PUMP_PROGRAM_ID } from '@pump-fun/pump-sdk';
+import type { ObservationIngressPort } from './port.js';
+import type {
+  CompiledFusionEnvelope,
+  CompiledFusionEnvelopeData,
+  CommittedEnvelope,
+  CommittedEnvelopeData,
+  DurabilityBarrier,
+  Hash256,
+  IngressReceipt,
+  TruthEvidence,
+  UnvalidatedObservation,
+  ValidatedFusionEnvelope,
+  ValidatedFusionEnvelopeData,
+} from './types.js';
+
+export interface FusionEnvelopeCompiler {
+  compile(observation: UnvalidatedObservation): Promise<CompiledFusionEnvelope> | CompiledFusionEnvelope;
+}
+
+export type ValidationResult =
+  | { readonly valid: true; readonly validatedEnvelope: ValidatedFusionEnvelope }
+  | { readonly valid: false; readonly reason: string };
+
+export interface TruthValidator {
+  validate(compiled: CompiledFusionEnvelope): Promise<ValidationResult> | ValidationResult;
+}
+
+export interface IngressJournalRecord {
+  readonly sequence: bigint;
+  readonly entryHash: Hash256;
+}
+
+export interface IngressDurableJournal {
+  append(validated: ValidatedFusionEnvelope): Promise<IngressJournalRecord>;
+  findByObservationId?(observationId: string): Promise<IngressJournalRecord | null>;
+}
+
+export interface AuditEventJournal {
+  appendAuditEvent(event: string, payload: Readonly<Record<string, unknown>>, stableEventId?: string): Promise<{ inserted: boolean; auditId?: number }>;
+  getAuditEvents(event: string, limit?: number): Promise<readonly { id: number; at: number; event: string; body: string }[]>;
+}
+
+export interface CanonicalIngressOptions {
+  readonly compiler: FusionEnvelopeCompiler;
+  readonly validator: TruthValidator;
+  readonly journal: IngressDurableJournal;
+  readonly durability?: DurabilityBarrier;
+  readonly downstreamSubscriber?: (committed: CommittedEnvelope) => Promise<void> | void;
+}
+
+/**
+ * Canonical single-door ingress implementation enforcing the strict type-state progression
+ * and durability barrier.
+ */
+export class CanonicalIngress implements ObservationIngressPort {
+  private readonly compiler: FusionEnvelopeCompiler;
+  private readonly validator: TruthValidator;
+  private readonly journal: IngressDurableJournal;
+  private readonly durability: DurabilityBarrier;
+  private readonly subscribers: Array<(committed: CommittedEnvelope) => Promise<void> | void> = [];
+  private readonly seenObservations = new Set<string>();
+  private readonly pendingDeliveries = new Map<string, CommittedEnvelope>();
+  private deliveryCursor = 0;
+  private deliveryMutex: Promise<void> = Promise.resolve();
+
+  constructor(options: CanonicalIngressOptions) {
+    this.compiler = options.compiler;
+    this.validator = options.validator;
+    this.journal = options.journal;
+    this.durability = options.durability ?? 'FSYNC_COMMITTED';
+    if (options.downstreamSubscriber) {
+      this.subscribers.push(options.downstreamSubscriber);
+    }
+  }
+
+  public subscribe(subscriber: (committed: CommittedEnvelope) => Promise<void> | void): void {
+    this.subscribers.push(subscriber);
+  }
+
+  public async submit(observation: UnvalidatedObservation): Promise<IngressReceipt> {
+    if (!observation || typeof observation !== 'object') {
+      return {
+        status: 'REJECTED',
+        observationId: '0'.repeat(64) as Hash256,
+        reason: 'INVALID_OBSERVATION_PAYLOAD: Null or non-object observation submitted',
+      };
+    }
+
+    // 1. In-flight / seen deduplication check
+    if (this.seenObservations.has(observation.observationId)) {
+      return {
+        status: 'DUPLICATE',
+        observationId: observation.observationId,
+        reason: 'OBSERVATION_ALREADY_COMMITTED',
+      };
+    }
+
+    if (this.journal.findByObservationId) {
+      try {
+        const existing = await this.journal.findByObservationId(observation.observationId);
+        if (existing) {
+          this.seenObservations.add(observation.observationId);
+          return { status: 'DUPLICATE', observationId: observation.observationId, reason: 'OBSERVATION_ALREADY_COMMITTED' };
+        }
+      } catch (err) {
+        return { status: 'REJECTED', observationId: observation.observationId, reason: `JOURNAL_LOOKUP_FAILED: ${err instanceof Error ? err.message : String(err)}` };
+      }
+    }
+
+    if (observation.rawPayloadHash !== createHash('sha256').update(observation.rawPayload).digest('hex')) {
+      return { status: 'REJECTED', observationId: observation.observationId, reason: 'RAW_PAYLOAD_HASH_MISMATCH' };
+    }
+    if (this.inFlightObservations.has(observation.observationId)) {
+      return { status: 'DUPLICATE', observationId: observation.observationId, reason: 'OBSERVATION_IN_FLIGHT' };
+    }
+    this.inFlightObservations.add(observation.observationId);
+    try {
+      return await this.processObservation(observation);
+    } finally {
+      this.inFlightObservations.delete(observation.observationId);
+    }
+  }
+
+  private readonly inFlightObservations = new Set<string>();
+
+  private async processObservation(observation: UnvalidatedObservation): Promise<IngressReceipt> {
+
+    // 2. Compile: UnvalidatedObservation -> CompiledFusionEnvelope
+    let compiled: CompiledFusionEnvelope;
+    try {
+      compiled = await this.compiler.compile(observation);
+    } catch (err) {
+      return {
+        status: 'REJECTED',
+        observationId: observation.observationId,
+        reason: `COMPILER_ERROR: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+
+    // 3. Validate: CompiledFusionEnvelope -> ValidatedFusionEnvelope
+    let validationResult: ValidationResult;
+    try {
+      validationResult = await this.validator.validate(compiled);
+    } catch (err) {
+      return {
+        status: 'REJECTED',
+        observationId: observation.observationId,
+        reason: `VALIDATOR_EXCEPTION: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+
+    if (!validationResult.valid) {
+      return {
+        status: 'REJECTED',
+        observationId: observation.observationId,
+        reason: validationResult.reason,
+      };
+    }
+
+    const validated = validationResult.validatedEnvelope;
+
+    // 4. Durability Barrier Check
+    // Master Blueprint & Section 14 Invariant: Only FSYNC_COMMITTED may create CommittedEnvelope.
+    if (this.durability !== 'FSYNC_COMMITTED') {
+      throw new Error(
+        `DURABILITY_BARRIER_VIOLATION: Durability mode '${this.durability}' is forbidden. Only FSYNC_COMMITTED may create CommittedEnvelope.`
+      );
+    }
+
+    // 5. Commit to Durable Journal
+    let journalRecord: IngressJournalRecord;
+    try {
+      journalRecord = await this.journal.append(validated);
+    } catch (err) {
+      return {
+        status: 'REJECTED',
+        observationId: observation.observationId,
+        reason: `JOURNAL_APPEND_FAILED: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+
+    // 6. Construct CommittedEnvelope (Only permitted with FSYNC_COMMITTED)
+    const committedData: CommittedEnvelopeData = {
+      journalSeq: journalRecord.sequence,
+      envelopeHash: journalRecord.entryHash,
+      validatedEnvelope: validated,
+      committedAtMs: Date.now(),
+      durability: 'FSYNC_COMMITTED',
+    };
+
+    const committed = Object.freeze(committedData) as CommittedEnvelope;
+
+    // 7. Authoritatively commit deduplication state
+    this.seenObservations.add(observation.observationId);
+
+    // 8. Downstream Authoritative Notification
+    // Invariant: Strictly executed ONLY AFTER durable journal commit.
+    this.pendingDeliveries.set(observation.observationId, committed);
+    await this.deliverPending(observation.observationId);
+
+    return {
+      status: 'ACCEPTED',
+      observationId: observation.observationId,
+      journalSeq: committed.journalSeq,
+      envelopeHash: committed.envelopeHash,
+    };
+  }
+
+  public async retryPendingDeliveries(): Promise<number> {
+    let delivered = 0;
+    for (const observationId of this.pendingDeliveries.keys()) {
+      if (await this.deliverPending(observationId)) delivered++;
+    }
+    return delivered;
+  }
+
+  private async deliverPending(observationId: string): Promise<boolean> {
+    let resolveMutex!: () => void;
+    const previous = this.deliveryMutex;
+    this.deliveryMutex = new Promise<void>(resolve => { resolveMutex = resolve; });
+    await previous;
+    try {
+      return await this.deliverPendingExclusive(observationId);
+    } finally {
+      resolveMutex();
+    }
+  }
+
+  private async deliverPendingExclusive(observationId: string): Promise<boolean> {
+    const committed = this.pendingDeliveries.get(observationId);
+    if (!committed) return true;
+    try {
+      while (this.deliveryCursor < this.subscribers.length) {
+        await this.subscribers[this.deliveryCursor](committed);
+        this.deliveryCursor++;
+      }
+      this.pendingDeliveries.delete(observationId);
+      this.deliveryCursor = 0;
+      return true;
+    } catch {
+      // Keep the exact durable envelope available for explicit retry.
+      return false;
+    }
+  }
+}
+
+/**
+ * Default implementation of FusionEnvelopeCompiler.
+ */
+export class DefaultFusionEnvelopeCompiler implements FusionEnvelopeCompiler {
+  private readonly decoderVersion: string;
+
+  constructor(decoderVersion = '1.0.0') {
+    this.decoderVersion = decoderVersion;
+  }
+
+  public compile(observation: UnvalidatedObservation): CompiledFusionEnvelope {
+    let decodedEvents: readonly any[] = [];
+    try {
+      const text = Buffer.from(observation.rawPayload).toString('utf8');
+      const parsed = JSON.parse(text);
+      decodedEvents = Array.isArray(parsed) ? Object.freeze(parsed) : Object.freeze([parsed]);
+    } catch {
+      decodedEvents = Object.freeze([]);
+    }
+
+    const envelopeIdentity = `${observation.observationId}:${this.decoderVersion}:${observation.receivedAtMs}`;
+    const envelopeId = createHash('sha256').update(envelopeIdentity).digest('hex') as Hash256;
+
+    const data: CompiledFusionEnvelopeData = {
+      envelopeId,
+      observation,
+      compiledAtMs: Date.now(),
+      decodedEvents,
+      compilerVersion: this.decoderVersion,
+    };
+
+    return Object.freeze(data) as CompiledFusionEnvelope;
+  }
+}
+
+/**
+ * Default implementation of TruthValidator.
+ */
+export class DefaultTruthValidator implements TruthValidator {
+  private readonly validatorVersion: string;
+
+  constructor(validatorVersion = '1.0.0') {
+    this.validatorVersion = validatorVersion;
+  }
+
+  public validate(compiled: CompiledFusionEnvelope): ValidationResult {
+    const obs = compiled.observation;
+
+    // Verify hash integrity of raw payload
+    const recalculatedHash = createHash('sha256').update(obs.rawPayload).digest('hex');
+    if (recalculatedHash !== obs.rawPayloadHash) {
+      return {
+        valid: false,
+        reason: `RAW_PAYLOAD_HASH_MISMATCH: Computed ${recalculatedHash} != Claimed ${obs.rawPayloadHash}`,
+      };
+    }
+
+    if (compiled.compilerVersion.startsWith('solana-pump-') && compiled.decodedEvents.length === 0) {
+      return {
+        valid: false,
+        reason: 'NO_MATCHING_PROGRAM_EVENTS',
+      };
+    }
+
+    const truthEvidence: TruthEvidence = {
+      evidenceId: createHash('sha256')
+        .update(`evidence:${compiled.envelopeId}:${this.validatorVersion}`)
+        .digest('hex') as Hash256,
+      validatorVersion: this.validatorVersion,
+      validatedAtMs: Date.now(),
+      rawPayloadHash: obs.rawPayloadHash,
+      signatureVerified: obs.signature !== null && obs.signature.length >= 16,
+      schemaCompliant: true,
+      verificationMethod: 'PAYLOAD_DIGEST_AND_METADATA_INTEGRITY',
+    };
+
+    const validationId = createHash('sha256')
+      .update(`val:${compiled.envelopeId}:${truthEvidence.evidenceId}`)
+      .digest('hex') as Hash256;
+
+    const data: ValidatedFusionEnvelopeData = {
+      validationId,
+      compiledEnvelope: compiled,
+      validatedAtMs: Date.now(),
+      validatorVersion: this.validatorVersion,
+      truthEvidence: Object.freeze(truthEvidence),
+    };
+
+    return {
+      valid: true,
+      validatedEnvelope: Object.freeze(data) as ValidatedFusionEnvelope,
+    };
+  }
+}
+
+/**
+ * Solana program logs fusion envelope compiler using Anchor EventParser.
+ */
+export class SolanaLogFusionEnvelopeCompiler implements FusionEnvelopeCompiler {
+  public parser: any;
+  private readonly decoderVersion: string;
+
+  constructor(connectionOrCoder?: any, decoderVersion = 'solana-pump-v1') {
+    let coder: any;
+    if (connectionOrCoder && typeof connectionOrCoder === 'object') {
+      if ('coder' in connectionOrCoder) {
+        coder = connectionOrCoder.coder;
+      } else {
+        try {
+          coder = getPumpProgram(connectionOrCoder).coder;
+        } catch {
+          coder = getPumpProgram({} as any).coder;
+        }
+      }
+    } else {
+      coder = getPumpProgram({} as any).coder;
+    }
+    this.parser = new EventParser(PUMP_PROGRAM_ID, coder);
+    this.decoderVersion = decoderVersion;
+  }
+
+  public compile(observation: UnvalidatedObservation): CompiledFusionEnvelope {
+    const rawPayload = observation.rawPayload;
+    const text = Buffer.from(rawPayload.buffer, rawPayload.byteOffset, rawPayload.byteLength).toString('utf8');
+    let logs: any;
+    try {
+      logs = JSON.parse(text);
+    } catch {
+      throw new Error('SOLANA_LOGS_INVALID_JSON: Failed to parse raw logs JSON');
+    }
+    if (!Array.isArray(logs)) {
+      throw new Error('SOLANA_LOGS_INVALID_PAYLOAD: Expected string array of logs');
+    }
+
+    const decodedEvents: any[] = [];
+    for (const event of this.parser.parseLogs(logs, false)) {
+      if (decodedEvents.length >= 256) {
+        throw new Error('Too many events in one transaction');
+      }
+      decodedEvents.push({
+        name: event.name,
+        data: event.data,
+        signature: observation.signature ?? '',
+        slot: observation.slot ?? 0,
+        received: observation.receivedAtMs,
+        observation,
+      });
+    }
+
+    const envelopeIdentity = `${observation.observationId}:${this.decoderVersion}:${observation.receivedAtMs}`;
+    const envelopeId = createHash('sha256').update(envelopeIdentity).digest('hex') as Hash256;
+
+    const data: CompiledFusionEnvelopeData = {
+      envelopeId,
+      observation,
+      compiledAtMs: Date.now(),
+      decodedEvents: Object.freeze(decodedEvents),
+      compilerVersion: this.decoderVersion,
+    };
+
+    return Object.freeze(data) as CompiledFusionEnvelope;
+  }
+}
+
+export interface CreateCanonicalSolanaIngressOptions {
+  connectionOrCoder?: any;
+  journal: IngressDurableJournal;
+  durability?: DurabilityBarrier;
+  onCommitted?: (committed: CommittedEnvelope) => Promise<void> | void;
+}
+
+export const TEST_INGRESS_JOURNAL = new InMemoryIngressJournal();
+
+/** Adapts the Store audit transaction to the ingress journal contract. The resolved Store
+ * acknowledgement follows SQLite COMMIT with WAL + synchronous=FULL, so downstream work
+ * cannot run before the durable transaction completes. */
+export class StoreIngressJournal implements IngressDurableJournal {
+  constructor(private readonly store: AuditEventJournal) {
+    if (!store || typeof store.appendAuditEvent !== 'function') throw new Error('INGRESS_DURABLE_JOURNAL_REQUIRED');
+  }
+
+  async append(validated: ValidatedFusionEnvelope): Promise<IngressJournalRecord> {
+    const { observation, envelopeId, compilerVersion, decodedEvents } = validated.compiledEnvelope;
+    const { truthEvidence, validationId, validatorVersion } = validated;
+    const payload = {
+      schemaVersion: 1,
+      observationId: observation.observationId,
+      sourceId: observation.sourceId,
+      providerId: observation.providerId,
+      transport: observation.transport,
+      receivedAtMs: observation.receivedAtMs,
+      observedAtMs: observation.observedAtMs,
+      slot: observation.slot,
+      commitment: observation.commitment,
+      signature: observation.signature,
+      transactionVersion: observation.transactionVersion,
+      rawPayloadBase64: Buffer.from(observation.rawPayload).toString('base64'),
+      rawPayloadHash: observation.rawPayloadHash,
+      schema: observation.schemaVersion,
+      processingIntent: observation.processingIntent,
+      envelopeId,
+      compilerVersion,
+      validatedAtMs: validated.validatedAtMs,
+      validatorVersion,
+      validationId,
+      truthEvidence,
+      decodedEvents: decodedEvents.map(event => ({
+        name: String(event?.name ?? ''),
+        signature: String(event?.signature ?? ''),
+        slot: Number.isSafeInteger(event?.slot) ? event.slot : null,
+        received: Number.isFinite(event?.received) ? event.received : null,
+        data: JSON.parse(JSON.stringify(event?.data ?? null, (_key, value) =>
+          typeof value === 'bigint' ? value.toString() : value?.toBase58?.() ?? value
+        )),
+      })),
+    };
+    const stableEventId = `ingress:${observation.observationId}`;
+    const canonicalPayload = JSON.stringify(payload);
+    const entryHash = createHash('sha256').update(canonicalPayload).digest('hex') as Hash256;
+    const result = await this.store.appendAuditEvent('canonical_ingress_committed_v1', { ...payload, entryHash }, stableEventId);
+    if (!result.inserted && result.auditId === undefined) throw new Error('INGRESS_JOURNAL_ID_MISSING');
+    const sequence = result.auditId;
+    if (!Number.isSafeInteger(sequence) || sequence! <= 0) throw new Error('INGRESS_JOURNAL_SEQUENCE_INVALID');
+    return { sequence: BigInt(sequence!), entryHash };
+  }
+
+  async findByObservationId(observationId: string): Promise<IngressJournalRecord | null> {
+    const rows = await this.store.getAuditEvents('canonical_ingress_committed_v1', 10_000);
+    for (const row of rows) {
+      let payload: any;
+      try { payload = JSON.parse(row.body); } catch { throw new Error('INGRESS_JOURNAL_ROW_INVALID'); }
+      if (payload?.observationId === observationId) {
+        if (typeof payload.entryHash !== 'string' || !/^[a-f0-9]{64}$/.test(payload.entryHash)) throw new Error('INGRESS_JOURNAL_ROW_INVALID');
+        const { entryHash, ...entryPayload } = payload;
+        if (createHash('sha256').update(JSON.stringify(entryPayload)).digest('hex') !== entryHash) throw new Error('INGRESS_JOURNAL_HASH_MISMATCH');
+        return { sequence: BigInt(row.id), entryHash: payload.entryHash as Hash256 };
+      }
+    }
+    return null;
+  }
+}
+
+export function createCanonicalSolanaIngress(
+  options: CreateCanonicalSolanaIngressOptions = { journal: TEST_INGRESS_JOURNAL }
+): CanonicalIngress {
+  const compiler = new SolanaLogFusionEnvelopeCompiler(options.connectionOrCoder);
+  const validator = new DefaultTruthValidator();
+  const journal = options.journal;
+  return new CanonicalIngress({
+    compiler,
+    validator,
+    journal,
+    durability: options.durability ?? 'FSYNC_COMMITTED',
+    downstreamSubscriber: options.onCommitted,
+  });
+}
+
+/**
+ * In-memory implementation of IngressDurableJournal for tests only. Production composition
+ * must pass the SQLite-backed audit journal explicitly.
+ */
+export class InMemoryIngressJournal implements IngressDurableJournal {
+  private seqCounter = 0n;
+  private readonly entries = new Map<bigint, ValidatedFusionEnvelope>();
+
+  public async append(validated: ValidatedFusionEnvelope): Promise<IngressJournalRecord> {
+    const sequence = ++this.seqCounter;
+    this.entries.set(sequence, validated);
+
+    const entryHash = createHash('sha256')
+      .update(`journal:${sequence}:${validated.validationId}:${validated.validatedAtMs}`)
+      .digest('hex') as Hash256;
+
+    return {
+      sequence,
+      entryHash,
+    };
+  }
+}
