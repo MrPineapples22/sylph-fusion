@@ -4,6 +4,7 @@
   "targetBaselineCommit": "373143a10d05327149cc5d3cbd0cfb44bff9cc18",
   "authorizedImplementationBranch": "feat/certification-layer-c1-c4",
   "emptyHashGuardHex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "runtimeAttestationPublicKeyPem": null,
   "provenancePolicy": {
     "certifiedEligible": [
       "REAL_RUNTIME",

@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { generateKeyPairSync, sign } from 'node:crypto';
 import { evaluateRuntimeConvergence } from '../scripts/connectivity-runtime-convergence.mjs';
 import { loadMandatoryEdgeConfig } from '../scripts/canary-campaign-verifier.mjs';
 import { hashCanonicalV10 } from '../scripts/canonicalization-v10.mjs';
@@ -132,6 +133,7 @@ test('Step 6 Convergence: Sequential C6 break halts at C5', () => {
 });
 
 test('C5 runtime evidence requires a complete durable schema and detects byte-level edits', () => {
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519');
   const evidence = {
     schemaVersion: 'SYLPH_RUNTIME_TELEMETRY_V1',
     provenanceClass: 'REAL_RUNTIME',
@@ -147,11 +149,15 @@ test('C5 runtime evidence requires a complete durable schema and detects byte-le
     spans: [{ spanId: '5'.repeat(16), traceId: '6'.repeat(32), parentSpanId: null, name: 'ingress.commit',
       startedAtNs: '1000', endedAtNs: '1200', status: 'OK' }],
   };
+  const attestedRoot = hashCanonicalV10(evidence);
+  evidence.attestation = { algorithm: 'Ed25519', signatureBase64: sign(null, Buffer.from(attestedRoot, 'hex'), privateKey).toString('base64') };
   evidence.evidenceHash = hashCanonicalV10(evidence);
-  assert.equal(verifyRuntimeTelemetryEvidence(evidence).valid, true);
+  const trustRoot = publicKey.export({ type: 'spki', format: 'pem' });
+  assert.equal(verifyRuntimeTelemetryEvidence(evidence, { trustedPublicKeyPem: trustRoot }).valid, true);
+  assert.deepEqual(verifyRuntimeTelemetryEvidence(evidence), { valid: false, reason: 'C5_RUNTIME_ATTESTATION_TRUST_ROOT_MISSING' });
   const altered = { ...evidence, spans: [{ ...evidence.spans[0], status: 'ERROR' }] };
-  assert.deepEqual(verifyRuntimeTelemetryEvidence(altered), { valid: false, reason: 'C5_EVIDENCE_HASH_MISMATCH' });
-  assert.deepEqual(verifyRuntimeTelemetryEvidence({ ...evidence, spans: [{ id: 'span_1' }] }), { valid: false, reason: 'C5_SPAN_INVALID' });
+  assert.deepEqual(verifyRuntimeTelemetryEvidence(altered, { trustedPublicKeyPem: trustRoot }), { valid: false, reason: 'C5_ATTESTATION_SIGNATURE_INVALID' });
+  assert.deepEqual(verifyRuntimeTelemetryEvidence({ ...evidence, spans: [{ id: 'span_1' }] }, { trustedPublicKeyPem: trustRoot }), { valid: false, reason: 'C5_SPAN_INVALID' });
 });
 
 test('Step 6 Convergence: Full ladder progression in TEST mode with valid mock evidence', () => {

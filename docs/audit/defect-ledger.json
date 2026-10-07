@@ -13,15 +13,17 @@
         "SQLite worker acknowledges append only after COMMIT; configured database uses WAL and synchronous=FULL.",
         "A module-private Store capability checks the live worker database path, WAL mode, and synchronous=FULL; overriding the old public check method on Store(':memory:') does not grant a durable ingress capability.",
         "CanonicalIngress rejects caller-supplied journals before creating or notifying a CommittedEnvelope.",
-        "test/platform/canonical-ingress-durability.test.mjs verifies memory-store rejection, arbitrary-journal rejection, commit-before-notification, and duplicate recognition after reopen."
+        "test/platform/canonical-ingress-durability.test.mjs verifies memory-store rejection, arbitrary-journal rejection, commit-before-notification, and duplicate recognition after reopen.",
+        "Research cycle 134 added canonical_ingress_delivery_v1 as a SQLite outbox committed atomically with the canonical ingress event; recovery revalidates stored payloads before redispatch.",
+        "Crash-recovery test now proves pending delivery survives reopen and audit pruning, is replayed on duplicate submit, and is removed only after durable acknowledgement; delivered dedupe survives pruning.",
+        "npm run audit:c1 now reports C1-C4 PASS with all physical stopping metrics zero and runtime tests passing."
       ],
       "remaining": [
-        "Independent Astra review of the latest module-private Store capability and committed-envelope gate.",
-        "The auditor now rebuilds and runs test/platform/canonical-ingress-crash-recovery.test.mjs; it fails because restart dedupe returns DUPLICATE without redispatching the unacknowledged committed envelope.",
-        "Persist delivery state and provide deterministic recovery with idempotent downstream application or atomic downstream checkpoint plus acknowledgement."
+        "Independent review of the current outbox transaction, replay and compatibility semantics.",
+        "Delivery remains at-least-once: make downstream state mutation idempotent or atomically checkpoint it with acknowledgement before claiming exactly-once effects."
       ],
       "owner": "Astra Verification",
-      "nextAction": "Resolve independent review findings, then rerun targeted and full repository tests."
+      "nextAction": "Obtain independent review, then prove downstream idempotency under crash-after-effect/before-ack."
     },
     {
       "id": "C1-INGRESS-002",
@@ -75,58 +77,98 @@
     {
       "id": "C1-DELIVERY-001",
       "title": "Committed ingress delivery is memory-only and can be lost or partially replayed",
-      "status": "OPEN",
+      "status": "PARTIALLY_RESOLVED",
       "severity": "CRITICAL",
       "evidence": [
-        "Independent Astra review reproduced the design gap by inspecting CanonicalIngress pendingDeliveries and Engine.onCommitted.",
-        "The physical test test/platform/canonical-ingress-crash-recovery.test.mjs reproduces a subscriber failure after durable commit, reopens the Store, and observes zero redispatches on duplicate submission.",
-        "npm run audit:c1 includes the crash/restart test and reports C1 NOT PHYSICALLY VERIFIED when it fails."
+        "SQLite canonical_ingress_delivery_v1 persists the committed payload and acknowledgement state in the same database as the ingress audit journal.",
+        "Recovery on startup and duplicate submit revalidates and redispatches unacknowledged rows; pruning retains unacknowledged rows and stable dedupe records.",
+        "test/platform/canonical-ingress-crash-recovery.test.mjs passes crash/reopen, prune-before-replay, replay, acknowledgement, and prune-after-ack cases."
       ],
       "remaining": [
-        "Persist outbox delivery state and provide deterministic recovery on startup.",
-        "Make downstream state mutation idempotent or atomically checkpoint it with the delivery acknowledgement."
+        "The outbox is at-least-once. If a downstream handler applies an effect and the process dies before acknowledgement, the effect may be applied again.",
+        "Make authoritative downstream handlers idempotent or persist an atomic checkpoint with delivery acknowledgement; add crash-after-effect-before-ack verification."
       ],
       "owner": "Astra Architecture",
-      "nextAction": "Design and independently review durable outbox/replay semantics before C1 can pass."
+      "nextAction": "Audit downstream handlers and add durable idempotency keys/checkpoints before claiming exactly-once effects."
     },
     {
       "id": "C1-AUDIT-001",
       "title": "Physical auditor must require commit-to-delivery crash recovery before C1",
-      "status": "PARTIALLY_CONTAINED",
+      "status": "RESOLVED",
       "severity": "HIGH",
       "evidence": [
-        "Auditor rebuilds TypeScript before runtime tests and now executes the crash/restart test rather than treating file presence as evidence.",
-        "The latest audit reports zero static authority-path metrics and passing C1 authority guards, but withholds C1 because the crash/restart test proves delivery loss.",
-        "The manifest binds Store, worker, ingress source, crash/durability tests, built JS files, auditor source, and exact runtime results.",
-        "Static import and negative-compile checks cannot establish durable exactly-once or recoverable downstream effects."
+        "npm run audit:c1 rebuilt current TypeScript and executed source analysis, negative compilation guards, and physical runtime integration checks.",
+        "Current audit reports C1-C4 PASS, all listed stopping metrics zero, and RUNTIME_TESTS_PASSED true.",
+        "The separate C0-C10 connectivity compiler remains conservative and reports only C1: it lacks a source-bound test-run receipt and sees only 2/4 authority paths from src/fusion.ts. This distinct graph gate is tracked separately; the physical auditor result does not override it."
       ],
-      "remaining": [
-        "Retain the failure result until actual outbox replay and downstream idempotency or atomic checkpoint recovery pass under process death."
-      ],
+      "remaining": [],
       "owner": "Astra Certification",
-      "nextAction": "Extend evidence contract after delivery recovery is implemented."
+      "nextAction": "Keep the physical auditor source-bound and preserve the separate static graph limitations in certification output."
     },
     {
       "id": "C1-TEST-001",
       "title": "Current core suite is not green on shared worktree",
+      "status": "RESOLVED",
+      "severity": "HIGH",
+      "evidence": [
+        "npm run test:all completed with no failed tests across core, intelligence, platform, and terminal suites after rebuilding current TypeScript.",
+        "The platform suite passed 909/909 in the previous focused platform run; the full suite terminal summary passed 531 tests, intelligence and platform suites completed successfully, and terminal passed 309/309."
+      ],
+      "remaining": [],
+      "owner": "Sol QA",
+      "nextAction": "Rerun the complete suite after future source changes; maintain a machine-readable source-bound test receipt for certification."
+    },
+    {
+      "id": "C4-STATIC-GRAPH-001",
+      "title": "C0-C10 certification static baseline remains C1 despite physical C1-C4 auditor pass",
       "status": "OPEN",
       "severity": "HIGH",
       "evidence": [
-        "The latest focused C1/E2E run passed 16 tests and failed one required crash/restart recovery assertion because no delivery replay exists.",
-        "The repository-wide core run has not been repeated against the latest shared worktree; a previous run failed on Engine test doubles and prototype-only Engine fixtures after private authority changes."
+        "npm run audit:connectivity:static reports 668 TypeScript modules, zero compile diagnostics, but no current-source test-run receipt; therefore its system highestProvenLevel is C1.",
+        "From src/fusion.ts, the configured static graph reaches only canonicalStateWriter and economicStateWriter; decisionIssuer and terminalityIssuer are unreachable in the import graph.",
+        "npm run audit:convergence:certify therefore halts at C4_GATE_HALT with baseline C1, before loading runtime evidence."
       ],
       "remaining": [
-        "Repair committed delivery recovery, migrate affected test fixtures to durable Store journals, then rerun core and full repository suites."
+        "Create and validate a passing test-run receipt bound to current source inventory, exact command/test set, runtime version and exit status.",
+        "Trace actual composition and connect only real producer-consumer imports/dependencies; do not add unused imports to inflate graph reachability."
       ],
-      "owner": "Sol QA",
-      "nextAction": "Fix fixture/API mismatches and rerun tests against fresh dist output."
+      "owner": "Certification Architecture",
+      "nextAction": "Implement source-bound receipt generation and review the two unreachable authority paths against production composition."
+    },
+    {
+      "id": "C5-ATTESTATION-001",
+      "title": "Runtime telemetry requires authenticated attestation and a connected producer",
+      "status": "OPEN",
+      "severity": "CRITICAL",
+      "evidence": [
+        "C5 certify mode no longer accepts caller-provided runtimeTelemetry objects and requires the fixed persisted artifact path.",
+        "Schema and canonical hash alone do not prove a REAL_RUNTIME origin. The verifier now requires an Ed25519 signature over the telemetry payload and a pinned runtime attestation public key.",
+        "config/certification-config.json currently has no runtime attestation trust root; no runtime telemetry artifact or connected producer is present, so C5 cannot pass.",
+        "The attestation validates provenance only relative to an operator-provisioned key; the producer must bind actual process identity, current source identity and a verifiable SQLite FSYNC_COMMITTED event."
+      ],
+      "remaining": [
+        "Provision the runtime attestation public key through reviewed deployment configuration.",
+        "Connect an instrumented runtime producer that signs spans and a durable-event receipt; verify the referenced SQLite record rather than accepting caller-entered IDs/hashes."
+      ],
+      "owner": "Runtime Certification",
+      "nextAction": "Implement the runtime-side signed evidence producer and independent durable-record lookup; keep C5 unawarded until then."
     }
   ],
   "certification": {
-    "C1": "NOT PHYSICALLY VERIFIED",
-    "C2": "NOT PHYSICALLY VERIFIED",
-    "C3": "NOT PHYSICALLY VERIFIED",
-    "C4": "NOT PHYSICALLY VERIFIED",
+    "physicalArchitectureAudit": {
+      "C1": "PASS",
+      "C2": "PASS",
+      "C3": "PASS",
+      "C4": "PASS"
+    },
+    "staticConnectivityCompiler": {
+      "highestProvenLevel": "C1",
+      "reason": "No source-bound test receipt; 2 of 4 required authority paths reachable from src/fusion.ts."
+    },
+    "runtimeConvergence": {
+      "highestProvenLevel": "C1",
+      "C5": "NOT RUN \u2014 static baseline gate halted evaluation"
+    },
     "UNIFIED_PIPELINE_CERTIFIED": false,
     "LIVE_CAPITAL_AUTHORITY": "BLOCKED"
   }
