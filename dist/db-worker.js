@@ -42,7 +42,7 @@ const initialized = (() => {
     }
 })();
 const { db, registrationCapable } = initialized;
-function ensureIngressDeliverySchema() {
+function ensureIngressDeliverySchemaInternal() {
     const priorDeliverySchema = db.prepare("SELECT 1 AS present FROM sqlite_schema WHERE type='table' AND name='canonical_ingress_delivery_v1'").get();
     db.exec('CREATE TABLE IF NOT EXISTS audit_event_dedupe(event_id TEXT PRIMARY KEY, event_hash TEXT NOT NULL, audit_id INTEGER, created_at_ms INTEGER NOT NULL) STRICT;');
     db.exec(`CREATE TABLE IF NOT EXISTS canonical_ingress_delivery_v1(
@@ -61,8 +61,8 @@ function ensureIngressDeliverySchema() {
     // Before the outbox existed, the database cannot tell whether an old
     // in-memory subscriber completed. Replaying those rows as pending would
     // silently duplicate non-idempotent Engine projections. Quarantine that
-    // uncertainty as an acknowledged-for-live-delivery migration, and retain a
-    // durable audit marker so a later explicit rebuild can account for it.
+    // uncertainty as LEGACY_UNKNOWN, and retain a durable audit marker so a
+    // later explicit rebuild can account for it.
     if (priorDeliverySchema)
         return;
     const rows = db.prepare(`SELECT a.id,a.body,e.event_hash AS eventHash FROM audit a
@@ -106,18 +106,24 @@ function ensureIngressDeliverySchema() {
             }
         }
     };
-    if (db.isTransaction)
-        migrate();
-    else {
-        db.exec('BEGIN IMMEDIATE');
-        try {
-            migrate();
-            db.exec('COMMIT');
-        }
-        catch (error) {
-            db.exec('ROLLBACK');
-            throw error;
-        }
+    migrate();
+}
+function ensureIngressDeliverySchema() {
+    if (db.isTransaction) {
+        ensureIngressDeliverySchemaInternal();
+        return;
+    }
+    // Schema creation, legacy classification and its audit marker must commit
+    // together; otherwise a crash after CREATE TABLE could make the next boot
+    // mistake an incomplete migration for a completed one.
+    db.exec('BEGIN IMMEDIATE');
+    try {
+        ensureIngressDeliverySchemaInternal();
+        db.exec('COMMIT');
+    }
+    catch (error) {
+        db.exec('ROLLBACK');
+        throw error;
     }
 }
 parentPort.on('message', (m) => {
@@ -246,6 +252,90 @@ parentPort.on('message', (m) => {
         FROM canonical_ingress_delivery_v1 d JOIN audit a ON a.id=d.audit_id
         WHERE d.delivery_status='PENDING' AND d.audit_id>? ORDER BY d.audit_id LIMIT ?`).all(query.afterSequence, query.limit);
             parentPort.postMessage({ id: m.id, value: JSON.stringify(rows) });
+        }
+        else if (m.op === 'load-engine-projection') {
+            const exists = db.prepare("SELECT 1 AS present FROM sqlite_schema WHERE type='table' AND name='canonical_ingress_engine_projection_v1'").get();
+            const row = exists ? db.prepare(`SELECT sequence,observation_id AS observationId,entry_hash AS entryHash,
+        projection_json AS projectionJson,state_json AS stateJson,projection_hash AS projectionHash,state_hash AS stateHash
+        FROM canonical_ingress_engine_projection_v1 WHERE id=1`).get() : undefined;
+            if (!row)
+                parentPort.postMessage({ id: m.id, value: null });
+            else {
+                if (!Number.isSafeInteger(row.sequence) || row.sequence < 1 || typeof row.observationId !== 'string' ||
+                    !/^[a-f0-9]{64}$/.test(row.observationId) || typeof row.entryHash !== 'string' || !/^[a-f0-9]{64}$/.test(row.entryHash) ||
+                    typeof row.projectionJson !== 'string' || typeof row.stateJson !== 'string' ||
+                    createHash('sha256').update(row.projectionJson).digest('hex') !== row.projectionHash ||
+                    createHash('sha256').update(row.stateJson).digest('hex') !== row.stateHash)
+                    throw new Error('ENGINE_PROJECTION_CHECKPOINT_INVALID');
+                parentPort.postMessage({ id: m.id, value: JSON.stringify({ sequence: row.sequence, observationId: row.observationId,
+                        entryHash: row.entryHash, projectionJson: row.projectionJson, stateJson: row.stateJson }) });
+            }
+        }
+        else if (m.op === 'commit-engine-projection') {
+            const input = JSON.parse(m.body);
+            if (!input || typeof input.observationId !== 'string' || !/^[a-f0-9]{64}$/.test(input.observationId) ||
+                !Number.isSafeInteger(input.sequence) || input.sequence < 1 || typeof input.entryHash !== 'string' || !/^[a-f0-9]{64}$/.test(input.entryHash) ||
+                typeof input.projectionJson !== 'string' || Buffer.byteLength(input.projectionJson) > 32 * 1024 * 1024 ||
+                typeof input.stateJson !== 'string' || Buffer.byteLength(input.stateJson) > 32 * 1024 * 1024)
+                throw new Error('ENGINE_PROJECTION_INPUT_INVALID');
+            let projection, state;
+            try {
+                projection = JSON.parse(input.projectionJson);
+                state = JSON.parse(input.stateJson);
+            }
+            catch {
+                throw new Error('ENGINE_PROJECTION_JSON_INVALID');
+            }
+            if (!projection || projection.schemaVersion !== 1 || projection.sequence !== input.sequence ||
+                projection.observationId !== input.observationId || projection.entryHash !== input.entryHash ||
+                !state || typeof state !== 'object' || Array.isArray(state))
+                throw new Error('ENGINE_PROJECTION_IDENTITY_MISMATCH');
+            ensureIngressDeliverySchema();
+            db.exec(`CREATE TABLE IF NOT EXISTS canonical_ingress_engine_projection_v1(
+        id INTEGER PRIMARY KEY CHECK(id=1),sequence INTEGER NOT NULL CHECK(sequence>0),
+        observation_id TEXT NOT NULL CHECK(length(observation_id)=64 AND observation_id NOT GLOB '*[^a-f0-9]*'),
+        entry_hash TEXT NOT NULL CHECK(length(entry_hash)=64 AND entry_hash NOT GLOB '*[^a-f0-9]*'),
+        projection_json TEXT NOT NULL,projection_hash TEXT NOT NULL CHECK(length(projection_hash)=64 AND projection_hash NOT GLOB '*[^a-f0-9]*'),
+        state_json TEXT NOT NULL,state_hash TEXT NOT NULL CHECK(length(state_hash)=64 AND state_hash NOT GLOB '*[^a-f0-9]*')
+      ) STRICT;`);
+            const projectionHash = createHash('sha256').update(input.projectionJson).digest('hex');
+            const stateHash = createHash('sha256').update(input.stateJson).digest('hex');
+            const ackEvent = 'canonical_ingress_delivery_ack_v1';
+            const ackEventId = `ingress-delivery:${input.observationId}`;
+            const ackPayload = JSON.stringify({ schemaVersion: 1, observationId: input.observationId, journalSeq: input.sequence, entryHash: input.entryHash });
+            const ackHash = createHash('sha256').update(`${ackEvent}:${ackPayload}`).digest('hex');
+            db.exec('BEGIN IMMEDIATE');
+            try {
+                const delivery = db.prepare(`SELECT audit_id,entry_hash,delivery_status FROM canonical_ingress_delivery_v1 WHERE observation_id=?`).get(input.observationId);
+                if (!delivery || delivery.audit_id !== input.sequence || delivery.entry_hash !== input.entryHash)
+                    throw new Error('INGRESS_ACK_IDENTITY_MISMATCH');
+                if (delivery.delivery_status !== 'PENDING')
+                    throw new Error(delivery.delivery_status === 'LEGACY_UNKNOWN' ? 'INGRESS_LEGACY_DELIVERY_REQUIRES_REBUILD' : 'INGRESS_PROJECTION_ALREADY_ACKNOWLEDGED');
+                const existing = db.prepare('SELECT sequence,observation_id,entry_hash FROM canonical_ingress_engine_projection_v1 WHERE id=1').get();
+                if (existing && existing.sequence >= input.sequence)
+                    throw new Error('ENGINE_PROJECTION_SEQUENCE_REGRESSION');
+                db.prepare(`INSERT INTO canonical_ingress_engine_projection_v1(id,sequence,observation_id,entry_hash,projection_json,projection_hash,state_json,state_hash)
+          VALUES(1,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET sequence=excluded.sequence,observation_id=excluded.observation_id,
+          entry_hash=excluded.entry_hash,projection_json=excluded.projection_json,projection_hash=excluded.projection_hash,
+          state_json=excluded.state_json,state_hash=excluded.state_hash`).run(input.sequence, input.observationId, input.entryHash, input.projectionJson, projectionHash, input.stateJson, stateHash);
+                db.prepare('INSERT INTO state VALUES(1,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body').run(input.stateJson);
+                db.prepare(`UPDATE canonical_ingress_delivery_v1 SET acknowledged_at_ms=?,delivery_status='ACKNOWLEDGED'
+          WHERE observation_id=? AND delivery_status='PENDING'`).run(Date.now(), input.observationId);
+                const prior = db.prepare('SELECT event_hash FROM audit_event_dedupe WHERE event_id=?').get(ackEventId);
+                if (prior && prior.event_hash !== ackHash)
+                    throw new Error('INGRESS_ACK_CONTENT_CONFLICT');
+                if (!prior) {
+                    const info = db.prepare('INSERT INTO audit(at,event,body) VALUES(?,?,?)').run(Date.now(), ackEvent, ackPayload);
+                    db.prepare('INSERT INTO audit_event_dedupe(event_id,event_hash,audit_id,created_at_ms) VALUES(?,?,?,?)')
+                        .run(ackEventId, ackHash, Number(info.lastInsertRowid), Date.now());
+                }
+                db.exec('COMMIT');
+            }
+            catch (error) {
+                db.exec('ROLLBACK');
+                throw error;
+            }
+            parentPort.postMessage({ id: m.id, value: null });
         }
         else if (m.op === 'acknowledge-ingress') {
             const ack = JSON.parse(m.body);

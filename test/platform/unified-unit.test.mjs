@@ -154,6 +154,12 @@ describe('UnifiedPipelineUnit — End-to-End Control Unit', () => {
     assert.equal(opportunity.downstreamConstraints.newExposurePermitted, true);
     assert.equal(opportunity.clearanceCertificate.clearedBidsCount, 1);
     assert.ok(opportunity.actionIntent);
+    assert.ok(opportunity.decision);
+    assert.ok(opportunity.decision.decisionId.startsWith('dec_'));
+    assert.equal(opportunity.decision.tokenId, testMint);
+    assert.equal(opportunity.decision.actionRecommendation, 'ABSTAIN');
+    assert.equal(opportunity.decision.expectedNetEvBps, 0);
+    assert.equal(unit.decisionEngine.getDecision(opportunity.decision.decisionId)?.decisionId, opportunity.decision.decisionId);
   });
 
   it('Stage 3: blocks the proof bundle when no trusted certificate verifier is configured', () => {
@@ -244,7 +250,11 @@ describe('UnifiedPipelineUnit — End-to-End Control Unit', () => {
     assert.equal(outcome.accounting.isAccountingBalanced, true);
     assert.equal(outcome.receiptChainIntegrity, true);
     assert.equal(outcome.doubleEntryBalanced, true);
-    assert.equal(outcome.outcomeMature, true);
+    assert.equal(outcome.outcomeMature, false);
+    assert.ok(outcome.terminalityVerdict);
+    assert.equal(outcome.terminalityVerdict.terminalityState, 'UNKNOWN');
+    assert.equal(outcome.terminalityVerdict.witnesses.length, 0);
+    assert.equal(unit.terminalityAuthority.getVerdict('trade_settle_01')?.terminalityState, 'UNKNOWN');
   });
 
   it('Stage 6: certifies profit frontier and governs autonomous self-improvement cycles', () => {

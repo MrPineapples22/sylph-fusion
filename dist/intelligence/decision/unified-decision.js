@@ -20,7 +20,7 @@ export class UnifiedDecisionEngine {
     reconcile(input) {
         const timestamp = input.timestamp ?? Date.now();
         const opportunityId = `opp_${input.tokenId.slice(0, 8)}_${input.slot}`;
-        const marketSnapshotId = input.marketSnapshotId ?? `snap_${input.tokenId.slice(0, 8)}_${input.slot}`;
+        const marketSnapshotId = input.marketSnapshotId ?? 'unbound_no_market_snapshot';
         const strategyVersion = input.strategyVersion ?? 'sylph_momentum_v1.0';
         const featureVersion = input.featureVersion ?? 'features_v1';
         const freshnessMs = input.freshnessMs ?? 250;
@@ -29,8 +29,8 @@ export class UnifiedDecisionEngine {
             .digest('hex')
             .slice(0, 12);
         const decisionId = `dec_${input.tokenId.slice(0, 8)}_${input.slot}_${inputDigest}`;
-        const walletEvidenceIds = input.walletIntelMetrics?.evidenceIds ?? [`wallet_${input.tokenId.slice(0, 8)}`];
-        const graphEvidenceIds = input.graphMetrics?.evidenceIds ?? [`graph_${input.tokenId.slice(0, 8)}`];
+        const walletEvidenceIds = input.walletIntelMetrics?.evidenceIds ?? [];
+        const graphEvidenceIds = input.graphMetrics?.evidenceIds ?? [];
         const reasonsForAcceptance = [];
         const reasonsForRejection = [];
         const vetoEvidence = [];
@@ -161,26 +161,28 @@ export class UnifiedDecisionEngine {
             strategyVersion,
             featureVersion,
             freshnessMs,
-            expectedValue: (netEvBps / 10_000) * (input.riskEvaluation?.maxRiskUsd ?? 100),
+            expectedValue: input.riskEvaluation?.maxRiskUsd === undefined
+                ? 0
+                : (netEvBps / 10_000) * input.riskEvaluation.maxRiskUsd,
             expectedNetEvBps: netEvBps,
             confidence,
             uncertainty,
-            expectedUpside: (spie?.grossExpectedUpsideBps ?? 2000) / 10_000,
-            expectedDownside: (spie?.modeledDownsideBps ?? 1200) / 10_000,
-            liquidityQuality: spie?.factors?.liquidityDepth ?? 0.8,
-            momentumQuality: spie?.factors?.momentum ?? 0.7,
-            participationQuality: spie?.factors?.participation ?? 0.8,
-            walletQuality: spie?.factors?.walletQuality ?? 0.8,
-            safetyScore: hasHardVeto ? 0 : Math.round((spie?.factors?.safety ?? 0.85) * 100),
-            rugProbability: hasHardVeto ? 1.0 : Math.max(0, 1 - (spie?.factors?.safety ?? 0.85)),
-            manipulationProbability: (1 - (spie?.factors?.walletQuality ?? 0.8)) * 0.5,
-            executionQuality: spie?.factors?.executionFeasibility ?? 0.85,
-            expectedSlippageBps: 120,
-            expectedTransactionCostLamports: 150000n,
-            marketRegime: 'TRENDING',
+            expectedUpside: (spie?.grossExpectedUpsideBps ?? 0) / 10_000,
+            expectedDownside: (spie?.modeledDownsideBps ?? 0) / 10_000,
+            liquidityQuality: spie?.factors?.liquidityDepth ?? 0,
+            momentumQuality: spie?.factors?.momentum ?? 0,
+            participationQuality: spie?.factors?.participation ?? 0,
+            walletQuality: spie?.factors?.walletQuality ?? 0,
+            safetyScore: hasHardVeto ? 0 : Math.round((spie?.factors?.safety ?? 0) * 100),
+            rugProbability: hasHardVeto ? 1.0 : Math.max(0, 1 - (spie?.factors?.safety ?? 0)),
+            manipulationProbability: (1 - (spie?.factors?.walletQuality ?? 0)) * 0.5,
+            executionQuality: spie?.factors?.executionFeasibility ?? 0,
+            expectedSlippageBps: spie ? 120 : 0,
+            expectedTransactionCostLamports: spie ? 150000n : 0n,
+            marketRegime: input.spieEvaluation ? 'TRENDING' : 'DEGRADED',
             opportunityWindowMs: halfLifeEstimate.halfLifeMs,
             invalidationCondition: 'Price drops below micro-support or creator dumps supply',
-            recommendedMaxRiskUsd: input.riskEvaluation?.maxRiskUsd ?? 100,
+            recommendedMaxRiskUsd: input.riskEvaluation?.maxRiskUsd ?? 0,
             riskEvidence: Object.freeze(riskEvidence),
             vetoEvidence: Object.freeze(vetoEvidence),
             conflicts: Object.freeze(conflicts),

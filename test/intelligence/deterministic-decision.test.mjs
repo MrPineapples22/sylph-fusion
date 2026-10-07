@@ -27,3 +27,22 @@ test('UnifiedDecisionEngine generates strictly deterministic decisionId and prov
   assert.equal(decision1.timestamp, decision2.timestamp, 'timestamp must be preserved');
   assert.match(decision1.decisionId, /^dec_MintDete_28492019_[a-f0-9]{12}$/);
 });
+
+test('UnifiedDecisionEngine does not invent positive evidence or capital value when inputs are absent', () => {
+  const decision = new UnifiedDecisionEngine().reconcile({
+    tokenId: 'MintNoEvidence1111111111111111111111111111',
+    symbol: 'NONE',
+    slot: 7,
+    timestamp: 1234,
+  });
+
+  assert.equal(decision.actionRecommendation, 'ABSTAIN');
+  assert.equal(decision.expectedNetEvBps, 0);
+  assert.equal(decision.expectedValue, 0);
+  assert.equal(decision.expectedUpside, 0);
+  assert.equal(decision.expectedDownside, 0);
+  assert.equal(decision.recommendedMaxRiskUsd, 0);
+  assert.equal(decision.walletEvidenceIds.length, 0);
+  assert.equal(decision.graphEvidenceIds.length, 0);
+  assert.equal(decision.marketSnapshotId, 'unbound_no_market_snapshot');
+});

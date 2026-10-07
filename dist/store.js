@@ -46,6 +46,13 @@ export class Store {
             acknowledgeIngress: async (observationId, sequence, entryHash) => {
                 await this.#call('acknowledge-ingress', JSON.stringify({ observationId, sequence, entryHash }));
             },
+            loadEngineProjection: async () => {
+                const text = await this.#call('load-engine-projection');
+                return text ? JSON.parse(text) : null;
+            },
+            commitEngineProjection: async (observationId, sequence, entryHash, projectionJson, stateJson) => {
+                await this.#call('commit-engine-projection', JSON.stringify({ observationId, sequence, entryHash, projectionJson, stateJson }));
+            },
         }));
     }
     #fail(error, knownFailure = false) {

@@ -59,6 +59,8 @@ import { RealizedEdgeLedger } from './realized-edge-ledger.js';
 import { PaperAuthorityPolicy, } from '../paper/paper-authority-policy.js';
 import { ExecutablePaperSimulator, } from '../paper/executable-paper-simulator.js';
 import { AntiPortfolioEngine } from '../../intelligence/research/anti-portfolio.js';
+import { UnifiedDecisionEngine, } from '../../intelligence/decision/unified-decision.js';
+import { TerminalityAuthority, } from '../execution/terminality-authority.js';
 export class UnifiedPipelineUnit {
     // 1. Journal & Provenance
     journal;
@@ -74,6 +76,8 @@ export class UnifiedPipelineUnit {
     capitalOrchestrator;
     canaryController;
     capitalKernel;
+    decisionEngine;
+    terminalityAuthority;
     // 4. Ledger & Accounting
     doubleEntry;
     edgeLedger;
@@ -98,6 +102,8 @@ export class UnifiedPipelineUnit {
         this.capitalOrchestrator = new CapitalOrchestratorX();
         this.canaryController = new CanaryInvariantController();
         this.capitalKernel = new CapitalKernel({ initialAuthority: 'A0_OBSERVE_ONLY' });
+        this.decisionEngine = new UnifiedDecisionEngine();
+        this.terminalityAuthority = new TerminalityAuthority();
         this.doubleEntry = new DoubleEntryJournal();
         this.edgeLedger = new RealizedEdgeLedger();
         this.conservationAuthority = new ConservationProofAuthority();
@@ -209,6 +215,24 @@ export class UnifiedPipelineUnit {
             ...params.orchestration,
             clearedBids: clearance.clearedBids,
         });
+        // 8. Authoritative Unified Decision Reconciliation
+        const decision = this.decisionEngine.reconcile({
+            tokenId: params.mint,
+            symbol: params.mint.slice(0, 6).toUpperCase(),
+            slot: Number(params.slot),
+            strategyVersion: 'sylph_momentum_v1.0',
+            featureVersion: 'features_v1',
+            vetoRules: [
+                {
+                    ruleId: 'CANARY_SAFETY_RULE',
+                    passed: this.canaryController.canAuthorizeNewExposure(params.mint).allowed,
+                },
+            ],
+            riskEvaluation: {
+                approved: actionIntent.allocationSol > 0,
+                maxRiskUsd: actionIntent.allocationSol * 150,
+            },
+        });
         return {
             mint: params.mint,
             orthogonalAlpha,
@@ -219,6 +243,7 @@ export class UnifiedPipelineUnit {
             evacuationCertificate,
             clearanceCertificate,
             actionIntent,
+            decision,
         };
     }
     /**
@@ -450,7 +475,8 @@ export class UnifiedPipelineUnit {
             slippageAndImpactLamports: 0n,
             capitalTimeAndFrictionLamports: 0n,
         });
-        // 5. Evaluate Outcome Maturity Gate
+        // 5. Evaluate Outcome Maturity Gate. Its output is provisional until
+        // independent terminality evidence confirms the economic fact.
         const maturityCert = this.outcomeMaturityGate.evaluateMaturity({
             tradeId: params.tradeId,
             economicFactId: `fact_${params.tradeId}`,
@@ -465,12 +491,21 @@ export class UnifiedPipelineUnit {
             maePct: -2.0,
             realizedNetPnLLamports: accounting.realizedNetPnLLamports,
         }, new Date(params.currentAtMs).toISOString());
+        // 6. Terminality Authority Verification
+        const terminalityVerdict = this.terminalityAuthority.getVerdict(params.tradeId) ??
+            this.terminalityAuthority.evaluateTerminality({
+                economicFactId: `fact_${params.tradeId}`,
+                executionGenerationId: params.tradeId,
+                witnesses: [],
+            });
         return {
             accounting,
             profitCertificate,
             receiptChainIntegrity: chainIntegrity.isValid,
             doubleEntryBalanced,
-            outcomeMature: maturityCert.isMature && maturityCert.learningReady,
+            outcomeMature: maturityCert.isMature && maturityCert.learningReady &&
+                (terminalityVerdict.terminalityState === 'LANDED_SUCCESS' || terminalityVerdict.terminalityState === 'CERTIFIED_NOLAND'),
+            terminalityVerdict,
         };
     }
     /**

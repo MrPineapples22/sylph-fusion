@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { createHash } from 'node:crypto';
 import { Store, getStoreIngressCapability } from '../../dist/store.js';
 import { createUnvalidatedObservation } from '../../dist/platform/ingress/observation-factory.js';
 import { CanonicalIngress, DefaultFusionEnvelopeCompiler, DefaultTruthValidator, StoreIngressJournal } from '../../dist/platform/ingress/canonical-ingress.js';
@@ -113,6 +114,37 @@ test('outbox migration quarantines legacy delivery uncertainty without replaying
     const legacyIdentity = await getStoreIngressCapability(store).getAuditEventByStableId(`ingress:${observationId}`);
     assert.equal(legacyIdentity?.event, 'canonical_ingress_committed_v1', 'legacy dedupe evidence remains available');
   } finally { await store.close(); }
+});
+
+test('invalid legacy ingress rolls back outbox schema creation and migration atomically', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'canonical-ingress-legacy-rollback-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const path = join(dir, 'state.sqlite');
+  const initial = new Store(path);
+  await getStoreIngressCapability(initial).assertDurable();
+  await initial.close();
+
+  const legacyDb = new DatabaseSync(path);
+  try {
+    legacyDb.exec('DROP TABLE canonical_ingress_delivery_v1');
+    const body = JSON.stringify({ malformed: true });
+    const event = 'canonical_ingress_committed_v1';
+    const eventId = `ingress:${'c'.repeat(64)}`;
+    const eventHash = createHash('sha256').update(`${event}:${body}`).digest('hex');
+    const info = legacyDb.prepare('INSERT INTO audit(at,event,body) VALUES(?,?,?)').run(Date.now(), event, body);
+    legacyDb.prepare('INSERT INTO audit_event_dedupe(event_id,event_hash,audit_id,created_at_ms) VALUES(?,?,?,?)')
+      .run(eventId, eventHash, Number(info.lastInsertRowid), Date.now());
+  } finally { legacyDb.close(); }
+
+  const upgraded = new Store(path);
+  try {
+    await assert.rejects(getStoreIngressCapability(upgraded).assertDurable(), /INGRESS_OUTBOX_ROW_INVALID/);
+  } finally { await upgraded.close(); }
+  const verifyDb = new DatabaseSync(path);
+  try {
+    assert.equal(verifyDb.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='canonical_ingress_delivery_v1'").get(), undefined,
+      'failed migration must roll back the new schema as well as migrated rows');
+  } finally { verifyDb.close(); }
 });
 
 test('ingress refuses tampered raw payload before compiling or journaling', async () => {

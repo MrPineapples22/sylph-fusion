@@ -106,6 +106,22 @@ test('C2-2: CanonicalReducer.reduce produces nextState and valid StateTransition
   assert.equal(proof.transitionHash, expectedTransitionHash);
 });
 
+test('C2-2a: durable state roots and proofs restore with private authority brands', () => {
+  const genesis = CanonicalReducer.createGenesisState();
+  const env = createMockCommittedEnvelope(7n);
+  const { nextState, proof } = CanonicalReducer.reduce(genesis, env);
+  const savedRoot = JSON.parse(JSON.stringify(nextState, (_key, value) => typeof value === 'bigint' ? value.toString() : value));
+  const restoredRoot = CanonicalReducer.restoreStateRoot(savedRoot);
+  const savedProof = JSON.parse(JSON.stringify({ ...proof, journalSeq: proof.journalSeq.toString() }));
+  const restoredProof = CanonicalReducer.restoreTransitionProof(savedProof, restoredRoot);
+  assert.equal(CanonicalReducer.isStateRootV2(restoredRoot), true);
+  assert.equal(CanonicalReducer.isStateTransitionProof(restoredProof), true);
+  assert.equal(restoredRoot.stateRoot, nextState.stateRoot);
+  assert.equal(restoredProof.transitionHash, proof.transitionHash);
+  assert.throws(() => CanonicalReducer.restoreStateRoot({ ...savedRoot, stateRoot: '0'.repeat(64) }), /PERSISTED_STATE_ROOT_HASH_MISMATCH/);
+  assert.throws(() => CanonicalReducer.restoreTransitionProof({ ...savedProof, envelopeHash: '0'.repeat(64) }, restoredRoot), /PERSISTED_TRANSITION_PROOF_HASH_MISMATCH/);
+});
+
 test('C2-3: Real Immutability — Authoritative state cannot be mutated, added to, or deleted from', () => {
   const genesis = CanonicalReducer.createGenesisState();
   const env = createMockCommittedEnvelope(1n);

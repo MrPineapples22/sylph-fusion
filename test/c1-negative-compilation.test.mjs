@@ -211,7 +211,7 @@ test('C1 Runtime Guard: Engine rejects forged and replayed committed envelopes',
   const store = new Store(join(dir, 'state.sqlite'));
   t.after(async () => { await store.close(); await rm(dir, { recursive: true, force: true }); });
   const ingress = new CanonicalIngress({ compiler: new DefaultFusionEnvelopeCompiler(), validator: new DefaultTruthValidator(), journal: new StoreIngressJournal(store) });
-  const engine = new Engine({ MODE: 'paper_standard' }, { connection: {} }, {}, {}, {}, { mode: 'paper_standard' }, undefined, undefined, 'deterministic_only', undefined, undefined, undefined, ingress);
+  const engine = new Engine({ MODE: 'paper_standard' }, { connection: {} }, {}, {}, store, { mode: 'paper_standard' }, undefined, undefined, 'deterministic_only', undefined, undefined, undefined, ingress);
   assert.throws(
     () => new Engine({ MODE: 'paper_standard' }, { connection: {} }, {}, {}, {}, { mode: 'paper_standard' }),
     /INGRESS_DURABLE_JOURNAL_REQUIRED/,
@@ -243,7 +243,7 @@ test('C1 Runtime Guard: Engine rejects forged and replayed committed envelopes',
     receivedAtMs: Date.now(), slot: 1, commitment: 'confirmed', signature: 'captured-test',
     transactionVersion: 0, rawPayload: Buffer.from('[]'), schemaVersion: 'test-v1', processingIntent: 'LIVE',
   }));
-  assert.equal(receipt.status, 'ACCEPTED');
+  assert.equal(receipt.status, 'ACCEPTED', `durable Store-backed subscriber should accept fixture event: ${receipt.reason}`);
   assert.equal(ingress.issued(captured), true, 'the captured object is genuinely issued by ingress');
   assert.equal(engine.onCommitted, undefined, 'capturing an authentic envelope does not create a replay entrypoint');
 });

@@ -23,6 +23,7 @@ import {
 } from '../pipeline/state-root-v2.js';
 import {
   isValidTransition,
+  REQUIRED_AUTHORITY_MAP,
   type FusionPipelineState,
 } from '../pipeline/pipeline-state.js';
 import type {
@@ -303,6 +304,51 @@ export class CanonicalReducer implements CanonicalReducerPort {
     };
 
     return deepFreeze(stateObj) as unknown as FusionStateRootV2;
+  }
+
+  /** Restore a persisted root only after checking its complete canonical hash. */
+  public static restoreStateRoot(snapshot: unknown): FusionStateRootV2 {
+    if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) throw new Error('PERSISTED_STATE_ROOT_INVALID');
+    const source = snapshot as Record<string, unknown>;
+    const keys = Object.keys(GENESIS_STATE_ROOT_FIELDS_V2);
+    if (Object.keys(source).length !== keys.length + 1 || typeof source.stateRoot !== 'string' || !/^[a-f0-9]{64}$/.test(source.stateRoot) ||
+        keys.some(key => !Object.prototype.hasOwnProperty.call(source, key))) throw new Error('PERSISTED_STATE_ROOT_INVALID');
+    const fields: any = { ...source };
+    for (const key of ['revision', 'observedSlot', 'lastValidBlockHeight']) {
+      if (typeof source[key] !== 'string' || !/^(0|[1-9][0-9]*)$/.test(source[key] as string)) throw new Error('PERSISTED_STATE_ROOT_INVALID');
+      fields[key] = BigInt(source[key] as string);
+    }
+    for (const key of ['authorityEpoch', 'fenceEpoch', 'revocationEpoch']) {
+      if (!Number.isSafeInteger(source[key]) || (source[key] as number) < 0) throw new Error('PERSISTED_STATE_ROOT_INVALID');
+    }
+    if (typeof source.state !== 'string' || !Object.prototype.hasOwnProperty.call(REQUIRED_AUTHORITY_MAP, source.state)) throw new Error('PERSISTED_STATE_ROOT_INVALID');
+    for (const key of keys) {
+      if (['revision', 'observedSlot', 'lastValidBlockHeight', 'authorityEpoch', 'fenceEpoch', 'revocationEpoch', 'state'].includes(key)) continue;
+      if (typeof source[key] !== 'string') throw new Error('PERSISTED_STATE_ROOT_INVALID');
+    }
+    const { stateRoot: claimedRoot, ...rootFields } = fields;
+    if (computeStateRootV2(rootFields) !== claimedRoot) throw new Error('PERSISTED_STATE_ROOT_HASH_MISMATCH');
+    return deepFreeze({ ...rootFields, stateRoot: claimedRoot, [_runtimeStateRootBrand]: true }) as unknown as FusionStateRootV2;
+  }
+
+  /** Restore the last proof only when it is bound to the restored state root. */
+  public static restoreTransitionProof(snapshot: unknown, state: FusionStateRootV2): StateTransitionProof {
+    if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) throw new Error('PERSISTED_TRANSITION_PROOF_INVALID');
+    const value = snapshot as Record<string, unknown>;
+    if (Object.keys(value).length !== 6 || typeof value.journalSeq !== 'string' || !/^[1-9][0-9]*$/.test(value.journalSeq) ||
+        typeof value.envelopeHash !== 'string' || !/^[a-f0-9]{64}$/.test(value.envelopeHash) ||
+        typeof value.stateRootBefore !== 'string' || !/^[a-f0-9]{64}$/.test(value.stateRootBefore) ||
+        value.stateRootAfter !== state.stateRoot ||
+        value.reducerVersion !== CANONICAL_REDUCER_VERSION || typeof value.transitionHash !== 'string' || !/^[a-f0-9]{64}$/.test(value.transitionHash)) {
+      throw new Error('PERSISTED_TRANSITION_PROOF_INVALID');
+    }
+    const journalSeq = BigInt(value.journalSeq);
+    if (computeTransitionHash(journalSeq, value.envelopeHash, value.stateRootBefore, state.stateRoot, CANONICAL_REDUCER_VERSION) !== value.transitionHash) {
+      throw new Error('PERSISTED_TRANSITION_PROOF_HASH_MISMATCH');
+    }
+    return deepFreeze({ journalSeq, envelopeHash: value.envelopeHash, stateRootBefore: value.stateRootBefore,
+      stateRootAfter: state.stateRoot, reducerVersion: CANONICAL_REDUCER_VERSION, transitionHash: value.transitionHash,
+      [_runtimeProofBrand]: true }) as unknown as StateTransitionProof;
   }
 
   /**

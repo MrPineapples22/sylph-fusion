@@ -26,7 +26,7 @@ import {
 import { Market, type Snapshot } from './market.js';
 import { Executor } from './execution.js';
 import { type ExecutionAuthority, SimulationExecutionAuthority, LiveExecutionAuthority, simulationExecutionCosts, simulationSellProceeds } from './platform/execution/authority.js';
-import { Store } from './store.js';
+import { Store, getStoreIngressCapability } from './store.js';
 import { strategyStatuses } from './strategy.js';
 import { SessionLogger } from './session-logger.js';
 import { ExecutionRegretEngine } from './intelligence/forensics/counterfactual-regret-store.js';
@@ -108,6 +108,66 @@ type Candidate = {
   lastSnapshotSlot?: number;
   lastSnapshotDisposition?: EvaluationDisposition;
 };
+
+function serializeCanonicalRoot(root: FusionStateRootV2): Record<string, unknown> {
+  return { ...root, revision: root.revision.toString(), observedSlot: root.observedSlot.toString(),
+    lastValidBlockHeight: root.lastValidBlockHeight.toString() };
+}
+
+function serializeTransitionProof(proof: StateTransitionProof | null): Record<string, unknown> | null {
+  return proof ? { journalSeq: proof.journalSeq.toString(), envelopeHash: proof.envelopeHash,
+    stateRootBefore: proof.stateRootBefore, stateRootAfter: proof.stateRootAfter,
+    reducerVersion: proof.reducerVersion, transitionHash: proof.transitionHash } : null;
+}
+
+function serializeCandidateProjection(candidate: Candidate): Record<string, unknown> {
+  const source = candidate.sourceObservation as any;
+  const sourceObservation = source ? {
+    observationId: source.observationId, sourceId: source.sourceId, providerId: source.providerId,
+    transport: source.transport, receivedAt: source.receivedAt ?? source.receivedAtMs,
+    observedAt: source.observedAt ?? source.observedAtMs ?? undefined, slot: source.slot ?? undefined,
+    blockHeight: source.blockHeight ?? undefined, commitment: source.commitment ?? undefined,
+    signature: source.signature ?? undefined, transactionVersion: source.transactionVersion ?? undefined,
+    rawPayloadHash: source.rawPayloadHash, schemaVersion: source.schemaVersion ?? source.schema,
+    processingIntent: source.processingIntent ?? undefined,
+  } : null;
+  return { ...candidate, sourceObservation, buyers: [...candidate.buyers.entries()],
+    buy: candidate.buy.toString(), sell: candidate.sell.toString() };
+}
+
+function restoreCandidateProjection(value: any): Candidate {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || typeof value.mint !== 'string' || !value.mint ||
+      typeof value.creator !== 'string' || !(typeof value.launchUser === 'string' || value.launchUser === null) ||
+      !Number.isSafeInteger(value.creationSlot) || value.creationSlot < 0 || typeof value.creationSignature !== 'string' ||
+      typeof value.candidateGenerationId !== 'string' || !value.candidateGenerationId ||
+      !Number.isSafeInteger(value.entryBuildAttemptCount) || value.entryBuildAttemptCount < 0 ||
+      !(value.chainCreatedAtMs === null || Number.isFinite(value.chainCreatedAtMs)) ||
+      !Number.isFinite(value.firstObservedAtMs) || !Number.isFinite(value.born) || !Number.isSafeInteger(value.slot) || value.slot < 0 ||
+      !(value.eventSignature === undefined || typeof value.eventSignature === 'string') ||
+      typeof value.buy !== 'string' || !/^(0|[1-9][0-9]*)$/.test(value.buy) ||
+      typeof value.sell !== 'string' || !/^(0|[1-9][0-9]*)$/.test(value.sell) ||
+      !Number.isSafeInteger(value.buyCount) || value.buyCount < 0 || !Number.isSafeInteger(value.sellCount) || value.sellCount < 0 ||
+      typeof value.devSold !== 'boolean' || !Number.isFinite(value.next) || !Array.isArray(value.buyers) || value.buyers.length > 1000) {
+    throw new Error('ENGINE_PROJECTION_CANDIDATE_INVALID');
+  }
+  const buyers = new Map<string, number>();
+  for (const pair of value.buyers) {
+    if (!Array.isArray(pair) || pair.length !== 2 || typeof pair[0] !== 'string' || !Number.isFinite(pair[1]) || buyers.has(pair[0])) {
+      throw new Error('ENGINE_PROJECTION_CANDIDATE_INVALID');
+    }
+    buyers.set(pair[0], pair[1]);
+  }
+  let sourceObservation: Candidate['sourceObservation'];
+  if (value.sourceObservation !== null) {
+    const source = value.sourceObservation;
+    if (!source || typeof source !== 'object' || typeof source.observationId !== 'string' || !/^[a-f0-9]{64}$/.test(source.observationId) ||
+        typeof source.sourceId !== 'string' || typeof source.providerId !== 'string' || typeof source.transport !== 'string' ||
+        !Number.isFinite(source.receivedAt) || typeof source.rawPayloadHash !== 'string' || !/^[a-f0-9]{64}$/.test(source.rawPayloadHash) ||
+        typeof source.schemaVersion !== 'string') throw new Error('ENGINE_PROJECTION_CANDIDATE_INVALID');
+    sourceObservation = Object.freeze({ ...source }) as RawObservationEnvelope;
+  }
+  return { ...value, sourceObservation, buyers, buy: BigInt(value.buy), sell: BigInt(value.sell) } as Candidate;
+}
 export type ReserveDriftResult = {
   passed: boolean;
   priceDriftBps: bigint;
@@ -253,6 +313,7 @@ export class Engine {
   private nextResearchLossMarkerSaveAt = 0;
   private canonicalState: FusionStateRootV2 = CanonicalReducer.createGenesisState();
   private lastTransitionProof: StateTransitionProof | null = null;
+  private projectionSequence = 0;
   readonly feed: Feed;
   readonly runtimeUnit: UnifiedPipelineUnit;
   divergenceAuditor?: RuntimeDivergenceAuditor;
@@ -957,6 +1018,12 @@ export class Engine {
     if (!this.#ingress.issued(committed)) {
       throw new Error('COMMITTED_ENVELOPE_NOT_ISSUED_BY_CANONICAL_INGRESS');
     }
+    const sequence = Number(committed.journalSeq);
+    const observationId = committed.validatedEnvelope.compiledEnvelope.observation.observationId;
+    if (!Number.isSafeInteger(sequence) || sequence < 1 || !/^[a-f0-9]{64}$/.test(observationId)) {
+      throw new Error('ENGINE_PROJECTION_INGRESS_IDENTITY_INVALID');
+    }
+    if (sequence <= this.projectionSequence) throw new Error('ENGINE_PROJECTION_SEQUENCE_REGRESSION');
     const reduction = CanonicalReducer.reduce(this.canonicalState, committed);
     this.canonicalState = reduction.nextState;
     this.lastTransitionProof = reduction.proof;
@@ -964,6 +1031,70 @@ export class Engine {
     for (const event of committed.validatedEnvelope.compiledEnvelope.decodedEvents) {
       this.processCommittedEvent(event);
     }
+    const capability = getStoreIngressCapability(this.store);
+    if (!capability) {
+      this.stop();
+      throw new Error('ENGINE_PROJECTION_DURABLE_STORE_REQUIRED');
+    }
+    try {
+      const projection = {
+        schemaVersion: 1,
+        sequence,
+        observationId,
+        entryHash: committed.envelopeHash,
+        canonicalState: serializeCanonicalRoot(this.canonicalState),
+        lastTransitionProof: serializeTransitionProof(this.lastTransitionProof),
+        candidates: [...this.candidates.values()].map(serializeCandidateProjection),
+        counterfactual: [...this.counterfactualObservations.entries()],
+      };
+      await capability.commitEngineProjection(observationId, sequence, committed.envelopeHash,
+        JSON.stringify(projection), JSON.stringify(this.state));
+      this.projectionSequence = sequence;
+    } catch (error) {
+      // Do not process another observation with memory state that was not
+      // atomically checkpointed and acknowledged. Restart will restore the
+      // previous checkpoint and retry this pending delivery.
+      log('engine_projection_commit_failed', {
+        sequence,
+        observationId,
+        reason: error instanceof Error ? error.message.slice(0, 256) : 'unknown_error',
+      });
+      this.stop();
+      throw error;
+    }
+  }
+
+  private async restoreIngressProjection(): Promise<void> {
+    const capability = getStoreIngressCapability(this.store);
+    if (!capability) throw new Error('ENGINE_PROJECTION_DURABLE_STORE_REQUIRED');
+    const checkpoint = await capability.loadEngineProjection();
+    if (!checkpoint) return;
+    let projection: any, persistedState: any;
+    try { projection = JSON.parse(checkpoint.projectionJson); persistedState = JSON.parse(checkpoint.stateJson); }
+    catch { throw new Error('ENGINE_PROJECTION_CHECKPOINT_INVALID'); }
+    if (!projection || projection.schemaVersion !== 1 || projection.sequence !== checkpoint.sequence ||
+        projection.observationId !== checkpoint.observationId || projection.entryHash !== checkpoint.entryHash ||
+        !Array.isArray(projection.candidates) || projection.candidates.length > this.cfg.MAX_TRACKED ||
+        !Array.isArray(projection.counterfactual) || !persistedState || persistedState.wallet !== this.state.wallet ||
+        persistedState.mode !== this.state.mode) throw new Error('ENGINE_PROJECTION_CHECKPOINT_INVALID');
+    this.canonicalState = CanonicalReducer.restoreStateRoot(projection.canonicalState);
+    if (!projection.lastTransitionProof || projection.lastTransitionProof.journalSeq !== String(checkpoint.sequence)) {
+      throw new Error('ENGINE_PROJECTION_SEQUENCE_MISMATCH');
+    }
+    this.lastTransitionProof = CanonicalReducer.restoreTransitionProof(projection.lastTransitionProof, this.canonicalState);
+    Object.assign(this.state, persistedState);
+    this.candidates.clear();
+    for (const value of projection.candidates) {
+      const candidate = restoreCandidateProjection(value);
+      if (this.candidates.has(candidate.mint)) throw new Error('ENGINE_PROJECTION_DUPLICATE_CANDIDATE');
+      this.candidates.set(candidate.mint, candidate);
+    }
+    this.counterfactualObservations.clear();
+    for (const pair of projection.counterfactual) {
+      if (!Array.isArray(pair) || typeof pair[0] !== 'string' || !pair[1] || typeof pair[1] !== 'object') throw new Error('ENGINE_PROJECTION_CHECKPOINT_INVALID');
+      this.counterfactualObservations.set(pair[0], pair[1]);
+    }
+    this.projectionSequence = checkpoint.sequence;
   }
 
   private processCommittedEvent(e: MarketEvent) {
@@ -1044,6 +1175,7 @@ export class Engine {
     this.loopLag.enable();
     let feedTask: Promise<void> | null = null;
     try {
+      await this.restoreIngressProjection();
       if (#ingress in this) await this.#ingress?.recoverPendingDeliveries();
       feedTask = this.feed.run().catch(() => { log('feed_fatal'); this.stop(); });
       await this.drainResearchSpoolSafely('startup');

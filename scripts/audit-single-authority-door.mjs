@@ -288,6 +288,7 @@ function auditSourceAst() {
             const rightText = node.right.getText(sourceFile);
             if (!rightText.includes('CanonicalReducer.reduce') &&
                 !rightText.includes('CanonicalReducer.createGenesisState') &&
+                !rightText.includes('CanonicalReducer.restoreStateRoot') &&
                 !rightText.includes('reduction.nextState')) {
               directStateMutators++;
               violations.push({

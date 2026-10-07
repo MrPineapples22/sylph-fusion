@@ -12,6 +12,8 @@ export interface StoreIngressCapability {
   getAuditEventByStableId(stableEventId: string): Promise<{ id: number; at: number; event: string | null; body: string | null; pruned?: boolean; eventHash?: string } | null>;
   getPendingIngress(afterSequence: number, limit: number): Promise<readonly { id: number; at: number; body: string; eventHash: string }[]>;
   acknowledgeIngress(observationId: string, sequence: number, entryHash: string): Promise<void>;
+  loadEngineProjection(): Promise<{ sequence: number; observationId: string; entryHash: string; projectionJson: string; stateJson: string } | null>;
+  commitEngineProjection(observationId: string, sequence: number, entryHash: string, projectionJson: string, stateJson: string): Promise<void>;
 }
 const storeIngressCapabilities = new WeakMap<object, StoreIngressCapability>();
 
@@ -61,6 +63,13 @@ export class Store implements
       },
       acknowledgeIngress: async (observationId: string, sequence: number, entryHash: string) => {
         await this.#call('acknowledge-ingress', JSON.stringify({ observationId, sequence, entryHash }));
+      },
+      loadEngineProjection: async () => {
+        const text = await this.#call('load-engine-projection');
+        return text ? JSON.parse(text) : null;
+      },
+      commitEngineProjection: async (observationId: string, sequence: number, entryHash: string, projectionJson: string, stateJson: string) => {
+        await this.#call('commit-engine-projection', JSON.stringify({ observationId, sequence, entryHash, projectionJson, stateJson }));
       },
     }));
   }
