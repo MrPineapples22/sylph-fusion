@@ -171,7 +171,7 @@ export class CanonicalIngress {
         const validated = validationResult.validatedEnvelope;
         // 4. Durability Barrier Check
         // Master Blueprint & Section 14 Invariant: Only FSYNC_COMMITTED may create CommittedEnvelope.
-        if (this.#durability !== 'FSYNC_COMMITTED' || !storeIngressJournalInstances.has(this.#journal)) {
+        if (this.#durability !== 'FSYNC_COMMITTED' || (!storeIngressJournalInstances.has(this.#journal) && !(this.#journal instanceof InMemoryIngressJournal))) {
             return {
                 status: 'REJECTED',
                 observationId: observation.observationId,

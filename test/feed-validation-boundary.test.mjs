@@ -12,6 +12,7 @@ const feed = (consume, parser) => {
           consume(ev);
         }
       }
+    }
   });
   return new Feed(cfg(), {}, ingress);
 };

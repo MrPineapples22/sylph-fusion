@@ -72,6 +72,10 @@ export class Store implements
       catch (e) { this.#calls.delete(id); reject(e); }
     });
   }
+  get worker(): Worker { return this.#worker; }
+  call(op: string, body?: string, event?: string, eventId?: string): Promise<string | null> {
+    return this.#call(op, body, event, eventId);
+  }
   async load(): Promise<State | null> { const text = await this.#call('load'); return text ? JSON.parse(text) : null; }
   async appendAuditEvent(
     event: string,

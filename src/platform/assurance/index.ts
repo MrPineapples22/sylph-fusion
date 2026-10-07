@@ -12,4 +12,5 @@ export * from './no-synthetic-authority.js';
 export * from './issuer-manifest.js';
 export * from './hot-path-proof-capsule.js';
 export * from './startup-health-audit.js';
+export * from './authority-ancestry.js';
 

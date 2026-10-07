@@ -9,7 +9,11 @@
 import { createHash } from 'node:crypto';
 import type { ProofArtifact } from './proof-artifact.js';
 
+// Module-scoped private nominal branding symbol (strictly unexported, NOT Symbol.for)
+declare const _actionProofBundleBrand: unique symbol;
+
 export interface ActionProofBundle {
+  readonly [_actionProofBundleBrand]: true;
   readonly actionId: string;
   readonly exactActionHash: string;
   readonly exactTransactionHash: string;

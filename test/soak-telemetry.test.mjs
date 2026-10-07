@@ -211,57 +211,60 @@ test('Engine instruments exit-blocked-by-pending when an order is in flight', as
       reason: 'TEST_TRANSPORT_DISABLED',
     }),
   };
-  const mockStore = {
-    save: async () => {},
-  };
+  const dir = await mkdtemp(join(tmpdir(), 'soak-telemetry-1-'));
+  const store = new Store(join(dir, 'state.sqlite'));
+  try {
+    const engine = new Engine(cfg, mockRpc, mockMarket, mockExecutor, store, testState, mockLogger);
 
-  const engine = new Engine(cfg, mockRpc, mockMarket, mockExecutor, mockStore, testState, mockLogger);
+    // Position mark is at 8,000,000 lamports (20% loss, breaching the 12% stop)
+    engine.marks.set(mintPub.toBase58(), { value: '8000000', at: Date.now() });
 
-  // Position mark is at 8,000,000 lamports (20% loss, breaching the 12% stop)
-  engine.marks.set(mintPub.toBase58(), { value: '8000000', at: Date.now() });
+    // Run a single tick while pending is non-null
+    await engine.tick();
 
-  // Run a single tick while pending is non-null
-  await engine.tick();
+    const blocked = events.find(e => e.event === 'exit_blocked_by_pending');
+    assert.ok(blocked, 'Expected exit_blocked_by_pending event');
+    assert.equal(blocked.mint, mintPub.toBase58());
+    assert.equal(blocked.reason, 'stop');
+    assert.equal(blocked.pendingMint, 'AnotherMint111111111111111111111111111111111');
 
-  const blocked = events.find(e => e.event === 'exit_blocked_by_pending');
-  assert.ok(blocked, 'Expected exit_blocked_by_pending event');
-  assert.equal(blocked.mint, mintPub.toBase58());
-  assert.equal(blocked.reason, 'stop');
-  assert.equal(blocked.pendingMint, 'AnotherMint111111111111111111111111111111111');
+    // Verify internal map records blocked exit
+    assert.ok(engine.blockedExits.has(mintPub.toBase58()));
 
-  // Verify internal map records blocked exit
-  assert.ok(engine.blockedExits.has(mintPub.toBase58()));
+    // Now clear pending and execute tick with market producing sell quote
+    testState.pending = null;
+    mockMarket.sellQuote = () => 8_000_000n;
+    mockExecutor.build = async () => ({
+      pending: {
+        id: 'sell-order-1',
+        mint: mintPub.toBase58(),
+        side: 'sell',
+        signature: 'sell-sig',
+        created: Date.now(),
+        requested: '1000000',
+        creator: creatorPub.toBase58(),
+        stage: 0,
+        reason: 'stop',
+      },
+      tokenDelta: -1_000_000n,
+      solDelta: 7_500_000n,
+      quotedOutput: 8_000_000n,
+      quoteTimestamp: Date.now(),
+      overhead: { tipLamports: '10000', priorityLamports: '200000', rentLamports: '0', slippageBps: 1200 },
+    });
 
-  // Now clear pending and execute tick with market producing sell quote
-  testState.pending = null;
-  mockMarket.sellQuote = () => 8_000_000n;
-  mockExecutor.build = async () => ({
-    pending: {
-      id: 'sell-order-1',
-      mint: mintPub.toBase58(),
-      side: 'sell',
-      signature: 'sell-sig',
-      created: Date.now(),
-      requested: '1000000',
-      creator: creatorPub.toBase58(),
-      stage: 0,
-      reason: 'stop',
-    },
-    tokenDelta: -1_000_000n,
-    solDelta: 7_500_000n,
-    quotedOutput: 8_000_000n,
-    quoteTimestamp: Date.now(),
-    overhead: { tipLamports: '10000', priorityLamports: '200000', rentLamports: '0', slippageBps: 1200 },
-  });
+    await engine.tick();
 
-  await engine.tick();
-
-  const cleared = events.find(e => e.event === 'exit_block_cleared');
-  assert.ok(cleared, 'Expected exit_block_cleared event');
-  assert.equal(cleared.mint, mintPub.toBase58());
-  assert.equal(cleared.reason, 'stop');
-  assert.ok(cleared.blockedDurationMs >= 0);
-  assert.equal(engine.blockedExits.has(mintPub.toBase58()), false);
+    const cleared = events.find(e => e.event === 'exit_block_cleared');
+    assert.ok(cleared, 'Expected exit_block_cleared event');
+    assert.equal(cleared.mint, mintPub.toBase58());
+    assert.equal(cleared.reason, 'stop');
+    assert.ok(cleared.blockedDurationMs >= 0);
+    assert.equal(engine.blockedExits.has(mintPub.toBase58()), false);
+  } finally {
+    await store.close();
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('Engine records rejection taxonomy and emits periodic soak checkpoint', async () => {
@@ -289,30 +292,37 @@ test('Engine records rejection taxonomy and emits periodic soak checkpoint', asy
     halted: false,
   };
 
-  const engine = new Engine(cfg, {}, {}, {}, {}, testState, mockLogger);
+  const dir = await mkdtemp(join(tmpdir(), 'soak-telemetry-2-'));
+  const store = new Store(join(dir, 'state.sqlite'));
+  try {
+    const engine = new Engine(cfg, {}, {}, {}, store, testState, mockLogger);
 
-  // Record diverse rejection reasons
-  engine.recordRejection('MintA111111111111111111111111111111111111111', 'creator concentration');
-  engine.recordRejection('MintA111111111111111111111111111111111111111', 'creator concentration');
-  engine.recordRejection('MintB111111111111111111111111111111111111111', 'rug report rejected');
-  engine.recordRejection('MintC111111111111111111111111111111111111111', 'insufficient real reserves');
+    // Record diverse rejection reasons
+    engine.recordRejection('MintA111111111111111111111111111111111111111', 'creator concentration');
+    engine.recordRejection('MintA111111111111111111111111111111111111111', 'creator concentration');
+    engine.recordRejection('MintB111111111111111111111111111111111111111', 'rug report rejected');
+    engine.recordRejection('MintC111111111111111111111111111111111111111', 'insufficient real reserves');
 
-  assert.equal(engine.rejectionCounts.get('creator concentration'), 2);
-  assert.equal(engine.rejectionCounts.get('rug report rejected'), 1);
-  assert.equal(engine.rejectionCounts.get('insufficient real reserves'), 1);
+    assert.equal(engine.rejectionCounts.get('creator concentration'), 2);
+    assert.equal(engine.rejectionCounts.get('rug report rejected'), 1);
+    assert.equal(engine.rejectionCounts.get('insufficient real reserves'), 1);
 
-  // Trigger checkpoint emission
-  engine.emitCheckpoint();
+    // Trigger checkpoint emission
+    engine.emitCheckpoint();
 
-  const checkpoint = events.find(e => e.event === 'soak_checkpoint');
-  assert.ok(checkpoint, 'Expected soak_checkpoint event');
-  assert.ok(checkpoint.uptimeHours !== undefined);
-  assert.equal(checkpoint.cash, '1000000000');
-  assert.equal(checkpoint.rejectionTaxonomy['creator concentration'], 2);
-  assert.equal(checkpoint.rejectionTaxonomy['rug report rejected'], 1);
-  assert.equal(checkpoint.rejectionTaxonomy['insufficient real reserves'], 1);
-  assert.equal(checkpoint.openPositionsCount, 0);
-  assert.equal(checkpoint.blockedExitsCount, 0);
+    const checkpoint = events.find(e => e.event === 'soak_checkpoint');
+    assert.ok(checkpoint, 'Expected soak_checkpoint event');
+    assert.ok(checkpoint.uptimeHours !== undefined);
+    assert.equal(checkpoint.cash, '1000000000');
+    assert.equal(checkpoint.rejectionTaxonomy['creator concentration'], 2);
+    assert.equal(checkpoint.rejectionTaxonomy['rug report rejected'], 1);
+    assert.equal(checkpoint.rejectionTaxonomy['insufficient real reserves'], 1);
+    assert.equal(checkpoint.openPositionsCount, 0);
+    assert.equal(checkpoint.blockedExitsCount, 0);
+  } finally {
+    await store.close();
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('optional paper research journal failures remain visible without blocking a settled exit', async () => {
@@ -342,10 +352,19 @@ test('optional paper research journal failures remain visible without blocking a
       closed: {},
       halted: false,
     };
-    const store = { save: async (_state, event) => saved.push(event) };
+    const dir = await mkdtemp(join(tmpdir(), 'soak-telemetry-3-'));
+    const store = new Store(join(dir, 'state.sqlite'));
+    const origSave = store.save.bind(store);
+    store.save = async (_state, event) => {
+      saved.push(event);
+      return origSave(_state, event);
+    };
     if (failure === 'write_rejected') {
       store.saveCounterfactualEvaluation = async () => { throw new Error('research disk unavailable'); };
       store.saveFalsificationReport = async () => { throw new Error('research disk unavailable'); };
+    } else if (failure === 'method_unavailable') {
+      store.saveCounterfactualEvaluation = undefined;
+      store.saveFalsificationReport = undefined;
     }
     const executor = {
       build: async () => ({
@@ -385,6 +404,8 @@ test('optional paper research journal failures remain visible without blocking a
       assert.deepEqual(unhandled, [], 'journal rejection must be observed');
     } finally {
       process.off('unhandledRejection', onUnhandled);
+      await store.close();
+      await rm(dir, { recursive: true, force: true });
     }
   }
 });

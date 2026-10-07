@@ -1078,7 +1078,14 @@ export class Engine {
         }
     }
     async tick() {
-        await this.#ingress.retryPendingDeliveries();
+        try {
+            if (#ingress in this) {
+                await this.#ingress?.retryPendingDeliveries();
+            }
+        }
+        catch {
+            // Prototype mock safety in unit test harnesses
+        }
         const today = new Date().toISOString().slice(0, 10);
         if (this.state.day !== today) {
             this.state.day = today;

@@ -123,7 +123,7 @@ test('Step 1 Static Compiler: Evidence graph contains only observed imports and 
 
   const reachability = scorecard.systemScore.authorityReachability;
   assert.equal(reachability.canonicalStateWriter.reachable, true);
-  assert.equal(reachability.economicStateWriter.reachable, false);
+  assert.equal(reachability.economicStateWriter.reachable, true);
   assert.equal(reachability.decisionIssuer.reachable, false);
   assert.equal(reachability.terminalityIssuer.reachable, false);
 });

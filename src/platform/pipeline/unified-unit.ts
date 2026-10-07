@@ -491,7 +491,7 @@ export class UnifiedPipelineUnit {
       validUntilSlot: params.actionIntent.validUntilSlot,
       validUntilTime: marketTruthCertificate.validUntil,
       proofGraphRoot: marketTruthCertificate.signature,
-    };
+    } as ActionProofBundle;
 
     const bundleValidation = validateActionProofBundle(bundle, {
       releaseRoot: params.releaseRoot,

@@ -281,9 +281,17 @@ test('durability failure prevents broadcast and propagates out of the actor', as
   let sent = false;
   const s = state(); s.pending = null;
   const executor = { build: async () => ({ pending: pending('sell') }), broadcast: async () => { sent = true; } };
-  const engine = new Engine(cfg({ MODE: 'live', KEYPAIR_PATH: 'file' }), { connection: {} }, {}, executor, { save: async () => { throw new Error('disk full'); } }, s);
-  await assert.rejects(engine.trade({ mint: new PublicKey(mint) }, 'sell', 1n, '', 0, 'panic', true), /disk full/);
-  assert.equal(sent, false);
+  const dir = await mkdtemp(join(tmpdir(), 'durability-fail-'));
+  const store = new Store(join(dir, 'state.sqlite'));
+  store.save = async () => { throw new Error('disk full'); };
+  try {
+    const engine = new Engine(cfg({ MODE: 'live', KEYPAIR_PATH: 'file' }), { connection: {} }, {}, executor, store, s);
+    await assert.rejects(engine.trade({ mint: new PublicKey(mint) }, 'sell', 1n, '', 0, 'panic', true), /disk full/);
+    assert.equal(sent, false);
+  } finally {
+    await store.close();
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 test('RPC failover preserves method and request body', async () => {
   const original = globalThis.fetch; const calls = [];

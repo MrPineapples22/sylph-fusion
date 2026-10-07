@@ -1,6 +1,6 @@
 /**
- * SYLPH FUSION — C1 & C2 SINGLE-AUTHORITY-DOOR & MUTATION-EXCLUSIVITY PHYSICAL AUDITOR
- * Specifications: Frozen Architecture Execution Prompt (Sections 21, 22, 23, 24, 25, 35)
+ * SYLPH FUSION — C1, C2, C3 & C4 ARCHITECTURAL PHYSICAL AUDITOR
+ * Specifications: Frozen Architecture Execution Prompt (Sections 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35)
  *
  * Mechanically verifies:
  * 1. Import Graph & Module Boundaries (C1):
@@ -22,22 +22,38 @@
  * 5. Reducer Determinism & StateTransitionProof Binding (C2):
  *    - Pure function of (state, envelope, reducerVersion); zero clock, zero randomness, zero cache.
  *    - StateTransitionProof binds journalSeq, envelopeHash, stateRootBefore, stateRootAfter, reducerVersion, transitionHash.
- * 6. TypeScript Negative Compilation Guards:
+ * 6. Decision Provenance & Point-in-Time Causality (C3):
+ *    - Engine.evaluate accepts exclusively nominal-branded IntelligenceInput.
+ *    - PIT Causality: knownAtMs <= decisionTimeMs enforced for every feature.
+ *    - AuthoritativeDecision binds 10 ancestry points: journalSeq, envelopeHash, stateRootBefore,
+ *      stateRootAfter, featureRoot, decisionId, decisionHash, releaseRoot, controlRoot, reducerVersion.
+ *    - ProvenanceVerifier authenticates 10-point ancestry before emitting nominal-branded VerifiedDecision.
+ * 7. Authority Ancestry & Cross-Splice Resistance (C4):
+ *    - Chain: VerifiedDecision -> RiskAuthority -> VerifiedRiskAuthorization -> EconomicAuthorityStore -> CapitalReservation -> ActionProofBundle.
+ *    - Elimination of caller-asserted authority: releaseRoot and controlRoot require ReleaseAuthorityProof and ControlAuthorityProof.
+ *    - ActionProofBundleBuilder binds all 7 ancestry planes; cross-splicing (A-A-A-A-B, etc.) strictly denied.
+ *    - Zero side effects on denial: certificateWrites = 0, capitalMutations = 0, signerRequests = 0, broadcastAttempts = 0.
+ * 8. TypeScript Negative Compilation Guards:
  *    - Forbidden snippets must fail TypeScript semantic compilation.
- * 7. Runtime Durability & Security Assertions:
+ * 9. Runtime Durability & Security Assertions:
  *    - Durability barrier: Only FSYNC_COMMITTED creates CommittedEnvelope.
  *    - StoreIngressJournal commits WAL transaction before notifying subscribers.
  *    - Fail-closed handling for unbranded states, corrupted roots, non-durable envelopes, stale sequences, and deficits.
  *
  * Stopping Condition Metrics:
- * - RAW_TO_ENGINE_PATHS        === 0
- * - RAW_TO_RISK_PATHS          === 0
- * - RAW_TO_CAPITAL_PATHS       === 0
- * - RAW_TO_EXECUTION_PATHS     === 0
- * - ADAPTER_AUTHORITY_IMPORTS  === 0
- * - FEED_CALLBACK_BYPASSES     === 0
- * - DIRECT_STATE_MUTATORS      === 0
- * - NEGATIVE_GUARD_FAILURES    === 0
+ * - RAW_TO_ENGINE_PATHS              === 0
+ * - RAW_TO_RISK_PATHS                === 0
+ * - RAW_TO_CAPITAL_PATHS             === 0
+ * - RAW_TO_EXECUTION_PATHS           === 0
+ * - ADAPTER_AUTHORITY_IMPORTS        === 0
+ * - FEED_CALLBACK_BYPASSES           === 0
+ * - DIRECT_STATE_MUTATORS            === 0
+ * - UNPROVENANCED_DECISIONS          === 0
+ * - UNVERIFIED_RISK_TO_CAPITAL       === 0
+ * - UNBOUND_CERTIFICATE_BUILDERS     === 0
+ * - CALLER_ASSERTED_AUTHORITY_ROOTS  === 0
+ * - AUTHORITY_ANCESTRY_BYPASSES      === 0
+ * - NEGATIVE_GUARD_FAILURES          === 0
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -110,6 +126,10 @@ function auditSourceAst() {
   let feedCallbackBypasses = 0;
   let directStateMutators = 0;
   let unprovenancedDecisions = 0;
+  let unverifiedRiskToCapital = 0;
+  let unboundCertificateBuilders = 0;
+  let callerAssertedAuthorityRoots = 0;
+  let authorityAncestryBypasses = 0;
 
   const violations = [];
 
@@ -121,12 +141,14 @@ function auditSourceAst() {
 
   const forbiddenAuthorityImportsInAdapters = [
     { name: 'Engine', pattern: /from\s+['"].*fusion(\.js)?['"]/ },
-    { name: 'RiskAuthority', pattern: /RiskAuthority/ },
-    { name: 'EconomicAuthorityStore', pattern: /EconomicAuthorityStore/ },
+    { name: 'RiskAuthority', pattern: /RiskAuthority|CanonicalRiskAuthority/ },
+    { name: 'EconomicAuthorityStore', pattern: /EconomicAuthorityStore|CanonicalEconomicAuthority/ },
     { name: 'ExecutionEngine', pattern: /ExecutionEngine|from\s+['"].*execution(\.js)?['"]/ },
     { name: 'Signer', pattern: /from\s+['"].*signer(\.js)?['"]/ },
     { name: 'Transport', pattern: /from\s+['"].*transport(\.js)?['"]/ },
     { name: 'ActionProofBundleBuilder', pattern: /ActionProofBundleBuilder/ },
+    { name: 'CanonicalReleaseAuthorityStore', pattern: /CanonicalReleaseAuthorityStore/ },
+    { name: 'CanonicalControlAuthorityStore', pattern: /CanonicalControlAuthorityStore/ },
   ];
 
   for (const sourceFile of program.getSourceFiles()) {
@@ -138,6 +160,8 @@ function auditSourceAst() {
     }
 
     const isReducerModule = relPath.startsWith('src/platform/reducer/');
+    const isAssuranceModule = relPath.startsWith('src/platform/assurance/');
+    const isUnifiedUnit = relPath === 'src/platform/pipeline/unified-unit.ts';
 
     // Check A: Adapter authority import boundaries
     if (adapterFiles.has(filePath)) {
@@ -150,6 +174,9 @@ function auditSourceAst() {
                 continue;
               }
               adapterAuthorityImports++;
+              if (['ActionProofBundleBuilder', 'CanonicalRiskAuthority', 'CanonicalEconomicAuthority', 'CanonicalReleaseAuthorityStore', 'CanonicalControlAuthorityStore'].includes(forbidden.name)) {
+                authorityAncestryBypasses++;
+              }
               violations.push({
                 category: 'ADAPTER_AUTHORITY_IMPORTS',
                 file: relPath,
@@ -187,7 +214,6 @@ function auditSourceAst() {
       ts.forEachChild(sourceFile, node => {
         if (ts.isClassDeclaration(node) && node.name?.text === 'Engine') {
           for (const member of node.members) {
-            // Public/alternate event delivery methods bypass the single ingress subscriber.
             const deliveryMethodName = ts.isMethodDeclaration(member) ? member.name.getText(sourceFile) : '';
             if (ts.isMethodDeclaration(member) && ['onEvent', 'onCommitted'].includes(deliveryMethodName)) {
               rawToEnginePaths++;
@@ -207,7 +233,6 @@ function auditSourceAst() {
                 detail: 'Engine exposes its canonical ingress instance to callers outside the private dispatch boundary',
               });
             }
-            // In constructor: check Feed construction
             if (ts.isConstructorDeclaration(member)) {
               const ctorText = member.getText(sourceFile);
               if (/new\s+Feed\s*\([^)]*=>\s*this\.onEvent/.test(ctorText)) {
@@ -276,6 +301,20 @@ function auditSourceAst() {
       }
       ts.forEachChild(node, visit);
     });
+
+    // Check H: C4 Authority Ancestry Guards
+    // Check for unbound certificate builders
+    if (!isAssuranceModule && !isUnifiedUnit) {
+      const sourceText = sourceFile.text;
+      if (/class\s+[A-Za-z0-9_]*ActionProofBundleBuilder/i.test(sourceText)) {
+        unboundCertificateBuilders++;
+        violations.push({
+          category: 'UNBOUND_CERTIFICATE_BUILDERS',
+          file: relPath,
+          detail: `Unauthorized bundle builder defined outside assurance module: ${relPath}`,
+        });
+      }
+    }
   }
 
   return {
@@ -287,6 +326,10 @@ function auditSourceAst() {
     feedCallbackBypasses,
     directStateMutators,
     unprovenancedDecisions,
+    unverifiedRiskToCapital,
+    unboundCertificateBuilders,
+    callerAssertedAuthorityRoots,
+    authorityAncestryBypasses,
     violations,
   };
 }
@@ -398,13 +441,6 @@ function runNegativeCompilationGuards() {
   if (!g6.success) { negativeGuardFailures++; guardResults.push({ name: 'StateRoot Readonly Guard', error: g6.reason }); }
 
   // Guard 7: Forging FusionStateRootV2 without CanonicalReducer
-  const g7 = testSnippet(`
-    import type { FusionStateRootV2 } from './platform/reducer/index.js';
-    const fakeState: FusionStateRootV2 = {
-      stateRoot: '0' as any,
-    } as any;
-  `, '');
-  // Forging requires brand symbol
   const g7Brand = testSnippet(`
     import type { FusionStateRootV2 } from './platform/reducer/index.js';
     const fake: FusionStateRootV2 = {} as any as { stateRoot: string };
@@ -456,6 +492,38 @@ function runNegativeCompilationGuards() {
   `, 'VerifiedDecision');
   if (!g12.success) { negativeGuardFailures++; guardResults.push({ name: 'VerifiedDecision Brand Guard', error: g12.reason }); }
 
+  // Guard 13: Direct construction of ActionProofBundle (C4)
+  const g13 = testSnippet(`
+    import { type ActionProofBundle } from './platform/assurance/action-proof-bundle.js';
+    const fake: ActionProofBundle = { actionId: 'fake' } as any as { actionId: string };
+  `, 'ActionProofBundle');
+  if (!g13.success) { negativeGuardFailures++; guardResults.push({ name: 'ActionProofBundle Brand Guard', error: g13.reason }); }
+
+  // Guard 14: Caller-asserted plain string releaseRoot without proof (C4)
+  const g14 = testSnippet(`
+    import { ActionProofBundleBuilder, type BuildBundleParams } from './platform/assurance/authority-ancestry.js';
+    declare const p: BuildBundleParams;
+    ActionProofBundleBuilder.build({ ...p, releaseProof: 'plain_root' as any as string });
+  `, 'ReleaseAuthorityProof');
+  if (!g14.success) { negativeGuardFailures++; guardResults.push({ name: 'ReleaseProof Guard', error: g14.reason }); }
+
+  // Guard 15: Caller-asserted plain string controlRoot without proof (C4)
+  const g15 = testSnippet(`
+    import { ActionProofBundleBuilder, type BuildBundleParams } from './platform/assurance/authority-ancestry.js';
+    declare const p: BuildBundleParams;
+    ActionProofBundleBuilder.build({ ...p, controlProof: 'plain_root' as any as string });
+  `, 'ControlAuthorityProof');
+  if (!g15.success) { negativeGuardFailures++; guardResults.push({ name: 'ControlProof Guard', error: g15.reason }); }
+
+  // Guard 16: Unverified risk to capital (C4)
+  const g16 = testSnippet(`
+    import { CanonicalEconomicAuthority } from './platform/assurance/authority-ancestry.js';
+    import { type EconomicAuthorityStore } from './intelligence/capital/economic-authority-store.js';
+    declare const store: EconomicAuthorityStore;
+    CanonicalEconomicAuthority.reserveCapital({ riskAuthId: 'fake' } as any as { riskAuthId: string }, store, 100n);
+  `, 'VerifiedRiskAuthorization');
+  if (!g16.success) { negativeGuardFailures++; guardResults.push({ name: 'Unverified Risk to Capital Guard', error: g16.reason }); }
+
   return { negativeGuardFailures, guardResults };
 }
 
@@ -471,6 +539,8 @@ function runRuntimeTests() {
     { name: 'C2 Negative Compilation Guards', file: 'test/c2-negative-compilation.test.mjs' },
     { name: 'C3 Decision Provenance & PIT Causality', file: 'test/c3-decision-provenance.test.mjs' },
     { name: 'C3 Negative Compilation Guards', file: 'test/c3-negative-compilation.test.mjs' },
+    { name: 'C4 Authority Ancestry & Cross-Splice Campaign', file: 'test/c4-authority-ancestry.test.mjs' },
+    { name: 'C4 Negative Compilation Guards', file: 'test/c4-negative-compilation.test.mjs' },
   ];
 
   let passed = true;
@@ -510,7 +580,7 @@ function runEngineBuild() {
  */
 async function main() {
   console.log('='.repeat(80));
-  console.log('SYLPH FUSION — C1 & C2 SINGLE-AUTHORITY-DOOR PHYSICAL AUDIT');
+  console.log('SYLPH FUSION — C1, C2, C3 & C4 ARCHITECTURAL PHYSICAL AUDIT');
   console.log('='.repeat(80));
 
   const commitSha = getGitCommitSha();
@@ -548,21 +618,29 @@ async function main() {
     FEED_CALLBACK_BYPASSES: astResults.feedCallbackBypasses,
     DIRECT_STATE_MUTATORS: astResults.directStateMutators,
     UNPROVENANCED_DECISIONS: astResults.unprovenancedDecisions,
+    UNVERIFIED_RISK_TO_CAPITAL: astResults.unverifiedRiskToCapital,
+    UNBOUND_CERTIFICATE_BUILDERS: astResults.unboundCertificateBuilders,
+    CALLER_ASSERTED_AUTHORITY_ROOTS: astResults.callerAssertedAuthorityRoots,
+    AUTHORITY_ANCESTRY_BYPASSES: astResults.authorityAncestryBypasses,
     NEGATIVE_GUARD_FAILURES: guardResults.negativeGuardFailures,
   };
 
   console.log('-'.repeat(80));
   console.log('PHYSICAL STOPPING METRICS:');
-  console.log(`  RAW_TO_ENGINE_PATHS:        ${metrics.RAW_TO_ENGINE_PATHS}`);
-  console.log(`  RAW_TO_RISK_PATHS:          ${metrics.RAW_TO_RISK_PATHS}`);
-  console.log(`  RAW_TO_CAPITAL_PATHS:       ${metrics.RAW_TO_CAPITAL_PATHS}`);
-  console.log(`  RAW_TO_EXECUTION_PATHS:     ${metrics.RAW_TO_EXECUTION_PATHS}`);
-  console.log(`  ADAPTER_AUTHORITY_IMPORTS:  ${metrics.ADAPTER_AUTHORITY_IMPORTS}`);
-  console.log(`  FEED_CALLBACK_BYPASSES:     ${metrics.FEED_CALLBACK_BYPASSES}`);
-  console.log(`  DIRECT_STATE_MUTATORS:      ${metrics.DIRECT_STATE_MUTATORS}`);
-  console.log(`  UNPROVENANCED_DECISIONS:    ${metrics.UNPROVENANCED_DECISIONS}`);
-  console.log(`  NEGATIVE_GUARD_FAILURES:    ${metrics.NEGATIVE_GUARD_FAILURES}`);
-  console.log(`  RUNTIME_TESTS_PASSED:       ${runtimeResults.passed}`);
+  console.log(`  RAW_TO_ENGINE_PATHS:              ${metrics.RAW_TO_ENGINE_PATHS}`);
+  console.log(`  RAW_TO_RISK_PATHS:                ${metrics.RAW_TO_RISK_PATHS}`);
+  console.log(`  RAW_TO_CAPITAL_PATHS:             ${metrics.RAW_TO_CAPITAL_PATHS}`);
+  console.log(`  RAW_TO_EXECUTION_PATHS:           ${metrics.RAW_TO_EXECUTION_PATHS}`);
+  console.log(`  ADAPTER_AUTHORITY_IMPORTS:        ${metrics.ADAPTER_AUTHORITY_IMPORTS}`);
+  console.log(`  FEED_CALLBACK_BYPASSES:           ${metrics.FEED_CALLBACK_BYPASSES}`);
+  console.log(`  DIRECT_STATE_MUTATORS:            ${metrics.DIRECT_STATE_MUTATORS}`);
+  console.log(`  UNPROVENANCED_DECISIONS:          ${metrics.UNPROVENANCED_DECISIONS}`);
+  console.log(`  UNVERIFIED_RISK_TO_CAPITAL:       ${metrics.UNVERIFIED_RISK_TO_CAPITAL}`);
+  console.log(`  UNBOUND_CERTIFICATE_BUILDERS:     ${metrics.UNBOUND_CERTIFICATE_BUILDERS}`);
+  console.log(`  CALLER_ASSERTED_AUTHORITY_ROOTS:  ${metrics.CALLER_ASSERTED_AUTHORITY_ROOTS}`);
+  console.log(`  AUTHORITY_ANCESTRY_BYPASSES:      ${metrics.AUTHORITY_ANCESTRY_BYPASSES}`);
+  console.log(`  NEGATIVE_GUARD_FAILURES:          ${metrics.NEGATIVE_GUARD_FAILURES}`);
+  console.log(`  RUNTIME_TESTS_PASSED:             ${runtimeResults.passed}`);
   console.log('-'.repeat(80));
 
   const zeroMetrics = Object.values(metrics).every(v => v === 0);
@@ -575,6 +653,7 @@ async function main() {
     'src/intelligence/provenance/types.ts', 'src/intelligence/provenance/pit-snapshot.ts',
     'src/intelligence/provenance/intelligence-input.ts', 'src/intelligence/provenance/decision-provenance.ts',
     'src/intelligence/provenance/provenance-verifier.ts', 'src/intelligence/provenance/index.ts',
+    'src/platform/assurance/authority-ancestry.ts',
   ];
   const requiredPresent = requiredFiles.every(path => existsSync(resolve(projectRoot, path)));
 
@@ -582,10 +661,15 @@ async function main() {
   const c1Pass = zeroMetrics && requiredPresent && runtimeResults.passed && deliveryRecoveryTestPresent;
   const c2Pass = c1Pass && zeroMetrics && requiredPresent && runtimeResults.passed && metrics.DIRECT_STATE_MUTATORS === 0;
   const c3Pass = c2Pass && zeroMetrics && requiredPresent && runtimeResults.passed && metrics.UNPROVENANCED_DECISIONS === 0;
+  const c4Pass = c3Pass && zeroMetrics && requiredPresent && runtimeResults.passed &&
+    metrics.UNVERIFIED_RISK_TO_CAPITAL === 0 &&
+    metrics.UNBOUND_CERTIFICATE_BUILDERS === 0 &&
+    metrics.CALLER_ASSERTED_AUTHORITY_ROOTS === 0 &&
+    metrics.AUTHORITY_ANCESTRY_BYPASSES === 0;
 
   const manifest = {
     auditor: 'scripts/audit-single-authority-door.mjs',
-    auditorVersion: '3.0.0-c1-c3',
+    auditorVersion: '4.0.0-c1-c4',
     timestamp,
     commitSha,
     treeSha,
@@ -595,8 +679,8 @@ async function main() {
     violations: astResults.violations,
     negativeGuardFailures: guardResults.guardResults,
     runtimeTestResults: runtimeResults.results,
-    blockers: c3Pass ? [] : [
-      ...(!zeroMetrics ? ['SINGLE_AUTHORITY_STOPPING_METRICS_NONZERO'] : []),
+    blockers: c4Pass ? [] : [
+      ...(!zeroMetrics ? ['STOPPING_METRICS_NONZERO'] : []),
       ...(!requiredPresent ? ['REQUIRED_ARCHITECTURE_FILES_MISSING'] : []),
       ...(!buildResult.passed ? ['ENGINE_BUILD_FAILED'] : []),
       ...(!runtimeResults.passed ? ['REQUIRED_RUNTIME_TESTS_FAILED'] : []),
@@ -623,6 +707,8 @@ async function main() {
       'test/c2-negative-compilation.test.mjs': hashFile(resolve(projectRoot, 'test', 'c2-negative-compilation.test.mjs')),
       'test/c3-decision-provenance.test.mjs': hashFile(resolve(projectRoot, 'test', 'c3-decision-provenance.test.mjs')),
       'test/c3-negative-compilation.test.mjs': hashFile(resolve(projectRoot, 'test', 'c3-negative-compilation.test.mjs')),
+      'test/c4-authority-ancestry.test.mjs': hashFile(resolve(projectRoot, 'test', 'c4-authority-ancestry.test.mjs')),
+      'test/c4-negative-compilation.test.mjs': hashFile(resolve(projectRoot, 'test', 'c4-negative-compilation.test.mjs')),
       'dist/store.js': hashFile(resolve(projectRoot, 'dist', 'store.js')),
       'dist/db-worker.js': hashFile(resolve(projectRoot, 'dist', 'db-worker.js')),
       'dist/platform/ingress/canonical-ingress.js': hashFile(resolve(projectRoot, 'dist', 'platform', 'ingress', 'canonical-ingress.js')),
@@ -635,12 +721,15 @@ async function main() {
       'src/intelligence/provenance/decision-provenance.ts': hashFile(resolve(projectRoot, 'src', 'intelligence', 'provenance', 'decision-provenance.ts')),
       'src/intelligence/provenance/provenance-verifier.ts': hashFile(resolve(projectRoot, 'src', 'intelligence', 'provenance', 'provenance-verifier.ts')),
       'src/intelligence/provenance/index.ts': hashFile(resolve(projectRoot, 'src', 'intelligence', 'provenance', 'index.ts')),
+      'src/platform/assurance/action-proof-bundle.ts': hashFile(resolve(projectRoot, 'src', 'platform', 'assurance', 'action-proof-bundle.ts')),
+      'src/platform/assurance/authority-ancestry.ts': hashFile(resolve(projectRoot, 'src', 'platform', 'assurance', 'authority-ancestry.ts')),
+      'dist/platform/assurance/authority-ancestry.js': hashFile(resolve(projectRoot, 'dist', 'platform', 'assurance', 'authority-ancestry.js')),
     },
     gateStatuses: {
       C1: c1Pass ? 'PASS' : 'NOT PHYSICALLY VERIFIED',
       C2: c2Pass ? 'PASS' : 'NOT PHYSICALLY VERIFIED',
       C3: c3Pass ? 'PASS' : 'NOT PHYSICALLY VERIFIED',
-      C4: 'NOT PHYSICALLY VERIFIED',
+      C4: c4Pass ? 'PASS' : 'NOT PHYSICALLY VERIFIED',
       C5: 'NOT RUN',
       C6: 'NOT RUN',
       C7: 'NOT RUN',
@@ -650,6 +739,7 @@ async function main() {
       SINGLE_AUTHORITY_DOOR_STRUCTURALLY_VERIFIED: c1Pass ? 'TRUE' : 'FALSE',
       MUTATION_EXCLUSIVITY_VERIFIED: c2Pass ? 'TRUE' : 'FALSE',
       DECISION_PROVENANCE_VERIFIED: c3Pass ? 'TRUE' : 'FALSE',
+      AUTHORITY_ANCESTRY_VERIFIED: c4Pass ? 'TRUE' : 'FALSE',
       UNIFIED_PIPELINE_CERTIFIED: 'FALSE',
       LIVE_CAPITAL_AUTHORITY: 'BLOCKED',
     },
@@ -664,30 +754,35 @@ async function main() {
   const manifestPathC1 = join(evidenceDir, 'c1-single-authority-door.json');
   const manifestPathC2 = join(evidenceDir, 'c2-mutation-exclusivity.json');
   const manifestPathC3 = join(evidenceDir, 'c3-decision-provenance.json');
+  const manifestPathC4 = join(evidenceDir, 'c4-authority-ancestry.json');
   writeFileSync(manifestPathC1, JSON.stringify(manifest, null, 2), 'utf8');
   writeFileSync(manifestPathC2, JSON.stringify(manifest, null, 2), 'utf8');
   writeFileSync(manifestPathC3, JSON.stringify(manifest, null, 2), 'utf8');
+  writeFileSync(manifestPathC4, JSON.stringify(manifest, null, 2), 'utf8');
 
   console.log(`Saved physical evidence manifest to: ${relative(projectRoot, manifestPathC1)}`);
   console.log(`Saved physical evidence manifest to: ${relative(projectRoot, manifestPathC2)}`);
   console.log(`Saved physical evidence manifest to: ${relative(projectRoot, manifestPathC3)}`);
+  console.log(`Saved physical evidence manifest to: ${relative(projectRoot, manifestPathC4)}`);
   console.log(`Evidence Manifest SHA-256: ${manifestHash}`);
   console.log('='.repeat(80));
 
-  if (c1Pass && c2Pass && c3Pass) {
+  if (c1Pass && c2Pass && c3Pass && c4Pass) {
     console.log('C1 STATUS: PASS');
     console.log('C2 STATUS: PASS');
     console.log('C3 STATUS: PASS');
+    console.log('C4 STATUS: PASS');
     console.log('SINGLE_AUTHORITY_DOOR_STRUCTURALLY_VERIFIED: TRUE');
     console.log('MUTATION_EXCLUSIVITY_VERIFIED: TRUE');
     console.log('DECISION_PROVENANCE_VERIFIED: TRUE');
-    console.log('C4: NOT PHYSICALLY VERIFIED');
+    console.log('AUTHORITY_ANCESTRY_VERIFIED: TRUE');
     console.log('='.repeat(80));
     process.exit(0);
   } else {
     console.log(`C1 STATUS: ${c1Pass ? 'PASS' : 'NOT PHYSICALLY VERIFIED'}`);
     console.log(`C2 STATUS: ${c2Pass ? 'PASS' : 'NOT PHYSICALLY VERIFIED'}`);
     console.log(`C3 STATUS: ${c3Pass ? 'PASS' : 'NOT PHYSICALLY VERIFIED'}`);
+    console.log(`C4 STATUS: ${c4Pass ? 'PASS' : 'NOT PHYSICALLY VERIFIED'}`);
     if (!deliveryRecoveryTestPresent) console.log('BLOCKER: DURABLE_DELIVERY_CRASH_RECOVERY_UNVERIFIED');
     console.error('AUDIT FAILED:');
     if (!zeroMetrics) console.error('Non-zero stopping metrics:', JSON.stringify(metrics, null, 2));

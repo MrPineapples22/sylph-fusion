@@ -68,6 +68,10 @@ export class Store {
             }
         });
     }
+    get worker() { return this.#worker; }
+    call(op, body, event, eventId) {
+        return this.#call(op, body, event, eventId);
+    }
     async load() { const text = await this.#call('load'); return text ? JSON.parse(text) : null; }
     async appendAuditEvent(event, payload, stableEventId) {
         return this.#appendAuditEvent(event, payload, stableEventId);

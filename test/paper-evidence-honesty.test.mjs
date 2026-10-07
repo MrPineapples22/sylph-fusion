@@ -7,6 +7,21 @@ import { SimulationExecutionAuthority } from '../dist/platform/execution/authori
 import { UltimateExecutionPermitAuthority } from '../dist/intelligence/execution/ultimate-execution-permit.js';
 import { UltimateExecutionRecordLedger } from '../dist/platform/evidence/ultimate-execution-record.js';
 
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Store } from '../dist/store.js';
+
+let sharedDir, sharedStore;
+test.before(async () => {
+  sharedDir = await mkdtemp(join(tmpdir(), 'paper-honesty-'));
+  sharedStore = new Store(join(sharedDir, 'state.sqlite'));
+});
+test.after(async () => {
+  await sharedStore?.close();
+  if (sharedDir) await rm(sharedDir, { recursive: true, force: true });
+});
+
 const mint = PublicKey.default.toBase58();
 const fail = () => assert.fail('unexpected external/delivery operation');
 
@@ -29,9 +44,10 @@ function fixture() {
   const events = [], labels = [], fills = [], saves = [], builds = [];
   const logger = { writeEvent: (event, fields) => events.push({ event, ...fields }),
     writeOutcomeLabel: label => labels.push(label), writeFill: fill => fills.push(fill) };
-  const store = { save: async (_state, reason) => saves.push(reason),
-    saveCounterfactualEvaluation: async () => {}, saveFalsificationReport: async () => {} };
-  const engine = new Engine(cfg, { connection: new Proxy({}, { get: () => fail }) }, market, authority, store, state, logger);
+  sharedStore.save = async (_state, reason) => { saves.push(reason); };
+  sharedStore.saveCounterfactualEvaluation = async () => {};
+  sharedStore.saveFalsificationReport = async () => {};
+  const engine = new Engine(cfg, { connection: new Proxy({}, { get: () => fail }) }, market, authority, sharedStore, state, logger);
   engine.feed.healthy = () => true;
   engine.persistAndBroadcast = fail;
   engine.snapshotCandidate = () => null;

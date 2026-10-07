@@ -13,6 +13,7 @@ import {
   stableResearchEventId,
 } from '../../dist/platform/audit/durable-research-spool.js';
 import { Engine } from '../../dist/fusion.js';
+import { Store } from '../../dist/store.js';
 
 test('Engine spools execution audit before async Store ack so restart repairs immediate process loss', async t => {
   const dir = mkdtempSync(join(tmpdir(), 'sylph-spool-crash-window-'));
@@ -463,18 +464,17 @@ test('failed spool compaction does not retire accepted records in memory or on d
 test('Engine integrates DurableResearchSpool and surfaces spool telemetry in researchEvidence', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'sylph-engine-spool-'));
   const spoolFile = join(dir, 'engine-spool.jsonl');
-  t.after(() => rm(dir, { recursive: true, force: true }));
-
   const spool = new DurableResearchSpool({ spoolFilePath: spoolFile });
 
   let firstEventId;
-  const mockStore = {
-    save: async () => {},
-    load: async () => null,
-    appendAuditEvent: async (_event, _payload, eventId) => {
-      firstEventId = eventId;
-      throw new Error('database write queue rejected');
-    },
+  const store = new Store(join(dir, 'state.sqlite'));
+  t.after(async () => {
+    await store.close();
+    await rm(dir, { recursive: true, force: true });
+  });
+  store.appendAuditEvent = async (_event, _payload, eventId) => {
+    firstEventId = eventId;
+    throw new Error('database write queue rejected');
   };
 
   const cfg = { MAX_POSITIONS: 3, MAX_EXPOSURE_LAMPORTS: 1000n, MAX_DAILY_LOSS_LAMPORTS: 1000n, BUY_LAMPORTS: 100n, MAX_SPECULATIVE_RISK_BPS: 500, ROLLING_DRAWDOWN_BPS: 1000, FAILURE_HALT_COUNT: 3, SLIPPAGE_BPS: 100, STOP_BPS: 200, MAX_TIP_LAMPORTS: 10n, MAX_PRIORITY_LAMPORTS: 10n, RPC_URL: 'http://127.0.0.1:8899', WS_URL: 'ws://127.0.0.1:8900' };
@@ -490,7 +490,7 @@ test('Engine integrates DurableResearchSpool and surfaces spool telemetry in res
     rpc,
     mockMarket,
     executor,
-    mockStore,
+    store,
     state,
     mockLogger,
     undefined,
@@ -555,7 +555,7 @@ test('Engine integrates DurableResearchSpool and surfaces spool telemetry in res
 
   // Fix store and drain spool through engine
   let drainedEvent = null;
-  mockStore.appendAuditEvent = async (event, payload, eventId) => { drainedEvent = { event, payload, eventId }; };
+  store.appendAuditEvent = async (event, payload, eventId) => { drainedEvent = { event, payload, eventId }; };
 
   const drainResult = await engine.drainResearchSpool();
   assert.equal(drainResult.replayedCount, 1);
@@ -571,25 +571,26 @@ test('Engine integrates DurableResearchSpool and surfaces spool telemetry in res
 test('Engine recovers the spool before its loop and drains observations again during shutdown', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'sylph-engine-spool-lifecycle-'));
   const spoolFile = join(dir, 'engine-spool.jsonl');
-  t.after(() => rm(dir, { recursive: true, force: true }));
   const spool = new DurableResearchSpool({ spoolFilePath: spoolFile });
   spool.enqueue('AUDIT_EVENT', 'startup_recovered_event', { sequence: 1 }, 'startup-id');
   const dispatched = [];
-  const mockStore = {
-    save: async () => {},
-    appendAuditEvent: async (event, payload, stableEventId) => dispatched.push({ event, payload, stableEventId }),
-  };
+  const store = new Store(join(dir, 'state.sqlite'));
+  t.after(async () => {
+    await store.close();
+    await rm(dir, { recursive: true, force: true });
+  });
+  store.appendAuditEvent = async (event, payload, stableEventId) => { dispatched.push({ event, payload, stableEventId }); return { inserted: true }; };
   const cfg = { MAX_POSITIONS: 3, MAX_EXPOSURE_LAMPORTS: 1000n, MAX_DAILY_LOSS_LAMPORTS: 1000n,
     BUY_LAMPORTS: 100n, MAX_SPECULATIVE_RISK_BPS: 500, ROLLING_DRAWDOWN_BPS: 1000,
     FAILURE_HALT_COUNT: 3, SLIPPAGE_BPS: 100, STOP_BPS: 200, MAX_TIP_LAMPORTS: 10n,
     MAX_PRIORITY_LAMPORTS: 10n, RPC_URL: 'http://127.0.0.1:8899', WS_URL: 'http://127.0.0.1:8900',
     POLL_MS: 10, CHECKPOINT_INTERVAL_MS: 60_000 };
-  const engine = new Engine(cfg, { connection: {} }, {}, {}, mockStore,
+  const engine = new Engine(cfg, { connection: {} }, {}, {}, store,
     { cash: 1000000000n, positions: {} }, undefined, undefined, 'deterministic_only', undefined, undefined, spool);
   engine.feed.run = async () => {};
   engine.feed.stop = () => {};
   engine.saveState = async () => {};
-  engine.drainResearchSpool = () => spool.replay(mockStore, 1);
+  engine.drainResearchSpool = () => spool.replay(store, 1);
   engine.tick = async () => {
     assert.equal(dispatched[0]?.event, 'startup_recovered_event');
     spool.enqueue('AUDIT_EVENT', 'periodic_drained_event', { sequence: 2 }, 'periodic-id');
@@ -609,25 +610,27 @@ test('Engine recovers the spool before its loop and drains observations again du
 
 test('Engine retries a failed research-loss marker save without waiting for another trade', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'sylph-engine-loss-marker-retry-'));
-  t.after(() => rm(dir, { recursive: true, force: true }));
   let saveCalls = 0;
   let persisted;
   const saveEvents = [];
-  const mockStore = {
-    appendAuditEvent: async () => { throw new Error('audit sink unavailable'); },
-    save: async (state, event) => {
-      saveCalls++;
-      saveEvents.push(event);
-      if (saveCalls === 1) throw new Error('temporary state sink failure');
-      persisted = structuredClone(state);
-    },
+  const store = new Store(join(dir, 'state.sqlite'));
+  t.after(async () => {
+    await store.close();
+    await rm(dir, { recursive: true, force: true });
+  });
+  store.appendAuditEvent = async () => { throw new Error('audit sink unavailable'); };
+  store.save = async (state, event) => {
+    saveCalls++;
+    saveEvents.push(event);
+    if (saveCalls === 1) throw new Error('temporary state sink failure');
+    persisted = structuredClone(state);
   };
   const cfg = { MAX_POSITIONS: 3, MAX_EXPOSURE_LAMPORTS: 1000n, MAX_DAILY_LOSS_LAMPORTS: 1000n,
     BUY_LAMPORTS: 100n, MAX_SPECULATIVE_RISK_BPS: 500, ROLLING_DRAWDOWN_BPS: 1000,
     FAILURE_HALT_COUNT: 3, SLIPPAGE_BPS: 100, STOP_BPS: 200, MAX_TIP_LAMPORTS: 10n,
     MAX_PRIORITY_LAMPORTS: 10n, RPC_URL: 'http://127.0.0.1:8899', WS_URL: 'http://127.0.0.1:8900',
     POLL_MS: 10, CHECKPOINT_INTERVAL_MS: 60_000 };
-  const engine = new Engine(cfg, { connection: {} }, {}, {}, mockStore,
+  const engine = new Engine(cfg, { connection: {} }, {}, {}, store,
     { cash: 1000000000n, positions: {} });
   engine.feed.run = async () => {};
   engine.feed.stop = () => {};
@@ -655,18 +658,18 @@ test('Engine retries a failed research-loss marker save without waiting for anot
 test('Engine records immutable journal identity conflicts without spooling them as transient failures', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'sylph-engine-immutable-conflict-'));
   const spoolFile = join(dir, 'engine-spool.jsonl');
-  t.after(() => rm(dir, { recursive: true, force: true }));
   const spool = new DurableResearchSpool({ spoolFilePath: spoolFile });
-  const mockStore = {
-    save: async () => {},
-    load: async () => null,
-    saveCounterfactualEvaluation: async () => { throw new Error('COUNTERFACTUAL_ID_CONTENT_CONFLICT'); },
-  };
+  const store = new Store(join(dir, 'state.sqlite'));
+  t.after(async () => {
+    await store.close();
+    await rm(dir, { recursive: true, force: true });
+  });
+  store.saveCounterfactualEvaluation = async () => { throw new Error('COUNTERFACTUAL_ID_CONTENT_CONFLICT'); };
   const cfg = { MAX_POSITIONS: 3, MAX_EXPOSURE_LAMPORTS: 1000n, MAX_DAILY_LOSS_LAMPORTS: 1000n,
     BUY_LAMPORTS: 100n, MAX_SPECULATIVE_RISK_BPS: 500, ROLLING_DRAWDOWN_BPS: 1000,
     FAILURE_HALT_COUNT: 3, SLIPPAGE_BPS: 100, STOP_BPS: 200, MAX_TIP_LAMPORTS: 10n,
     MAX_PRIORITY_LAMPORTS: 10n, RPC_URL: 'http://127.0.0.1:8899', WS_URL: 'ws://127.0.0.1:8900' };
-  const engine = new Engine(cfg, { connection: {} }, {}, {}, mockStore,
+  const engine = new Engine(cfg, { connection: {} }, {}, {}, store,
     { cash: 1000000000n, positions: {} }, undefined, undefined, 'deterministic_only', undefined, undefined, spool);
   engine['persistResearchJournal']('saveCounterfactualEvaluation', { evaluationId: 'cfr_conflict' }, 'cfr_conflict');
   await new Promise(resolve => setImmediate(resolve));
@@ -682,16 +685,15 @@ test('Engine records a second loss when the research spool cannot write its reco
   const spoolFile = join(dir, 'missing-parent', 'spool.jsonl');
   t.after(() => rm(dir, { recursive: true, force: true }));
   const spool = new DurableResearchSpool({ spoolFilePath: spoolFile });
-  const mockStore = {
-    save: async () => {},
-    load: async () => null,
-    appendAuditEvent: async () => { throw new Error('database write queue rejected'); },
-  };
+  const dbDir = await mkdtemp(join(tmpdir(), 'sylph-spool-db-'));
+  const store = new Store(join(dbDir, 'state.sqlite'));
+  t.after(async () => { await store.close(); await rm(dbDir, { recursive: true, force: true }); });
+  store.appendAuditEvent = async () => { throw new Error('database write queue rejected'); };
   const cfg = { MAX_POSITIONS: 3, MAX_EXPOSURE_LAMPORTS: 1000n, MAX_DAILY_LOSS_LAMPORTS: 1000n,
     BUY_LAMPORTS: 100n, MAX_SPECULATIVE_RISK_BPS: 500, ROLLING_DRAWDOWN_BPS: 1000,
     FAILURE_HALT_COUNT: 3, SLIPPAGE_BPS: 100, STOP_BPS: 200, MAX_TIP_LAMPORTS: 10n,
     MAX_PRIORITY_LAMPORTS: 10n, RPC_URL: 'http://127.0.0.1:8899', WS_URL: 'ws://127.0.0.1:8900' };
-  const engine = new Engine(cfg, { connection: {} }, {}, {}, mockStore,
+  const engine = new Engine(cfg, { connection: {} }, {}, {}, store,
     { cash: 1000000000n, positions: {} }, undefined, undefined, 'deterministic_only', undefined, undefined, spool);
   engine['persistResearchObservation']('candidate_spool_disk_failure_v1', { test: true }, 'disk-failure-record');
   await new Promise(resolve => setImmediate(resolve));
