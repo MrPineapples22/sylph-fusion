@@ -39,28 +39,67 @@ const initialized = (() => {
 const { db, registrationCapable } = initialized;
 
 function ensureIngressDeliverySchema(): void {
+  const priorDeliverySchema = db.prepare("SELECT 1 AS present FROM sqlite_schema WHERE type='table' AND name='canonical_ingress_delivery_v1'").get();
   db.exec('CREATE TABLE IF NOT EXISTS audit_event_dedupe(event_id TEXT PRIMARY KEY, event_hash TEXT NOT NULL, audit_id INTEGER, created_at_ms INTEGER NOT NULL) STRICT;');
   db.exec(`CREATE TABLE IF NOT EXISTS canonical_ingress_delivery_v1(
     observation_id TEXT PRIMARY KEY CHECK(length(observation_id)=64 AND observation_id NOT GLOB '*[^a-f0-9]*'),
     audit_id INTEGER NOT NULL UNIQUE,
     entry_hash TEXT NOT NULL CHECK(length(entry_hash)=64 AND entry_hash NOT GLOB '*[^a-f0-9]*'),
-    acknowledged_at_ms INTEGER CHECK(acknowledged_at_ms IS NULL OR acknowledged_at_ms BETWEEN 0 AND 9007199254740991)
+    acknowledged_at_ms INTEGER CHECK(acknowledged_at_ms IS NULL OR acknowledged_at_ms BETWEEN 0 AND 9007199254740991),
+    delivery_status TEXT NOT NULL DEFAULT 'PENDING' CHECK(delivery_status IN ('PENDING','ACKNOWLEDGED','LEGACY_UNKNOWN'))
   ) STRICT;`);
+  const deliveryColumns = db.prepare('PRAGMA table_info(canonical_ingress_delivery_v1)').all() as { name: string }[];
+  if (!deliveryColumns.some(column => column.name === 'delivery_status')) {
+    db.exec(`ALTER TABLE canonical_ingress_delivery_v1 ADD COLUMN delivery_status TEXT NOT NULL DEFAULT 'PENDING'
+      CHECK(delivery_status IN ('PENDING','ACKNOWLEDGED','LEGACY_UNKNOWN'));
+      UPDATE canonical_ingress_delivery_v1 SET delivery_status='ACKNOWLEDGED' WHERE acknowledged_at_ms IS NOT NULL;`);
+  }
+  // Before the outbox existed, the database cannot tell whether an old
+  // in-memory subscriber completed. Replaying those rows as pending would
+  // silently duplicate non-idempotent Engine projections. Quarantine that
+  // uncertainty as an acknowledged-for-live-delivery migration, and retain a
+  // durable audit marker so a later explicit rebuild can account for it.
+  if (priorDeliverySchema) return;
   const rows = db.prepare(`SELECT a.id,a.body,e.event_hash AS eventHash FROM audit a
     JOIN audit_event_dedupe e ON e.audit_id=a.id
-    LEFT JOIN canonical_ingress_delivery_v1 d ON d.audit_id=a.id
-    WHERE a.event='canonical_ingress_committed_v1' AND d.audit_id IS NULL ORDER BY a.id`).all() as { id: number; body: string; eventHash: string }[];
-  const insert = db.prepare(`INSERT INTO canonical_ingress_delivery_v1(observation_id,audit_id,entry_hash,acknowledged_at_ms)
-    VALUES(?,?,?,NULL) ON CONFLICT(observation_id) DO NOTHING`);
-  for (const row of rows) {
-    let payload: any;
-    try { payload = JSON.parse(row.body); } catch { throw new Error('INGRESS_OUTBOX_ROW_INVALID'); }
-    if (typeof payload?.observationId !== 'string' || !/^[a-f0-9]{64}$/.test(payload.observationId) ||
-        typeof payload.entryHash !== 'string' || !/^[a-f0-9]{64}$/.test(payload.entryHash) ||
-        typeof row.eventHash !== 'string' || !/^[a-f0-9]{64}$/.test(row.eventHash)) {
-      throw new Error('INGRESS_OUTBOX_ROW_INVALID');
+    WHERE a.event='canonical_ingress_committed_v1' ORDER BY a.id`).all() as { id: number; body: string; eventHash: string }[];
+  const migrate = () => {
+    const migratedAt = Date.now();
+    const insert = db.prepare(`INSERT INTO canonical_ingress_delivery_v1(observation_id,audit_id,entry_hash,acknowledged_at_ms,delivery_status)
+      VALUES(?,?,?,NULL,'LEGACY_UNKNOWN') ON CONFLICT(observation_id) DO NOTHING`);
+    const observationIds: string[] = [];
+    for (const row of rows) {
+      let payload: any;
+      try { payload = JSON.parse(row.body); } catch { throw new Error('INGRESS_OUTBOX_ROW_INVALID'); }
+      if (typeof payload?.observationId !== 'string' || !/^[a-f0-9]{64}$/.test(payload.observationId) ||
+          typeof payload.entryHash !== 'string' || !/^[a-f0-9]{64}$/.test(payload.entryHash) ||
+          typeof row.eventHash !== 'string' || !/^[a-f0-9]{64}$/.test(row.eventHash)) {
+        throw new Error('INGRESS_OUTBOX_ROW_INVALID');
+      }
+      insert.run(payload.observationId, row.id, row.eventHash);
+      observationIds.push(payload.observationId);
     }
-    insert.run(payload.observationId, row.id, row.eventHash);
+    if (observationIds.length > 0) {
+      const markerEvent = 'canonical_ingress_legacy_delivery_migration_v1';
+      const markerId = 'canonical-ingress-legacy-delivery-migration:v1';
+      const marker = JSON.stringify({ schemaVersion: 1, policy: 'LEGACY_OUTCOME_UNKNOWN_DO_NOT_REPLAY',
+        migratedAtMs: migratedAt, rowCount: observationIds.length,
+        observationIdsSha256: createHash('sha256').update([...observationIds].sort().join('\n')).digest('hex') });
+      const markerHash = createHash('sha256').update(`${markerEvent}:${marker}`).digest('hex');
+      const previous = db.prepare('SELECT event_hash FROM audit_event_dedupe WHERE event_id=?').get(markerId) as { event_hash: string } | undefined;
+      if (previous && previous.event_hash !== markerHash) throw new Error('INGRESS_LEGACY_MIGRATION_MARKER_CONFLICT');
+      if (!previous) {
+        const info = db.prepare('INSERT INTO audit(at,event,body) VALUES(?,?,?)').run(migratedAt, markerEvent, marker);
+        db.prepare('INSERT INTO audit_event_dedupe(event_id,event_hash,audit_id,created_at_ms) VALUES(?,?,?,?)')
+          .run(markerId, markerHash, Number(info.lastInsertRowid), migratedAt);
+      }
+    }
+  };
+  if (db.isTransaction) migrate();
+  else {
+    db.exec('BEGIN IMMEDIATE');
+    try { migrate(); db.exec('COMMIT'); }
+    catch (error) { db.exec('ROLLBACK'); throw error; }
   }
 }
 
@@ -122,13 +161,15 @@ parentPort!.on('message', (m: { id: number; op: string; body?: string; event?: s
             parentPort!.postMessage({ id: m.id, value: JSON.stringify({ inserted: false, auditId: existing.audit_id }) });
             return;
           }
+          if (m.event === 'canonical_ingress_committed_v1') ensureIngressDeliverySchema();
           const info = db.prepare('INSERT INTO audit(at,event,body) VALUES(?,?,?)').run(Date.now(), m.event, m.body);
           const auditId = Number(info.lastInsertRowid);
           db.prepare('INSERT INTO audit_event_dedupe(event_id,event_hash,audit_id,created_at_ms) VALUES(?,?,?,?)').run(stableEventId, eventHash, auditId, Date.now());
           if (m.event === 'canonical_ingress_committed_v1') {
             if (typeof payload.observationId !== 'string' || !/^[a-f0-9]{64}$/.test(payload.observationId) ||
                 typeof payload.entryHash !== 'string' || !/^[a-f0-9]{64}$/.test(payload.entryHash)) throw new Error('invalid canonical ingress delivery identity');
-            ensureIngressDeliverySchema();
+            db.prepare(`INSERT INTO canonical_ingress_delivery_v1(observation_id,audit_id,entry_hash,acknowledged_at_ms,delivery_status)
+              VALUES(?,?,?,NULL,'PENDING')`).run(payload.observationId, auditId, eventHash);
             const record = db.prepare('SELECT audit_id,entry_hash FROM canonical_ingress_delivery_v1 WHERE observation_id=?').get(payload.observationId) as
               { audit_id: number; entry_hash: string } | undefined;
             if (!record || record.audit_id !== auditId || record.entry_hash !== eventHash) throw new Error('INGRESS_OUTBOX_ROW_CONFLICT');
@@ -163,7 +204,7 @@ parentPort!.on('message', (m: { id: number; op: string; body?: string; event?: s
       ensureIngressDeliverySchema();
       const rows = db.prepare(`SELECT d.audit_id AS id,a.at,a.body,d.entry_hash AS eventHash
         FROM canonical_ingress_delivery_v1 d JOIN audit a ON a.id=d.audit_id
-        WHERE d.acknowledged_at_ms IS NULL AND d.audit_id>? ORDER BY d.audit_id LIMIT ?`).all(query.afterSequence, query.limit);
+        WHERE d.delivery_status='PENDING' AND d.audit_id>? ORDER BY d.audit_id LIMIT ?`).all(query.afterSequence, query.limit);
       parentPort!.postMessage({ id: m.id, value: JSON.stringify(rows) });
     } else if (m.op === 'acknowledge-ingress') {
       const ack = JSON.parse(m.body!);
@@ -178,11 +219,13 @@ parentPort!.on('message', (m: { id: number; op: string; body?: string; event?: s
       const ackEventHash = createHash('sha256').update(`${ackEvent}:${ackPayload}`).digest('hex');
       db.exec('BEGIN IMMEDIATE');
       try {
-        const row = db.prepare(`SELECT audit_id,entry_hash,acknowledged_at_ms FROM canonical_ingress_delivery_v1 WHERE observation_id=?`).get(ack.observationId) as
-          { audit_id: number; entry_hash: string; acknowledged_at_ms: number | null } | undefined;
+        const row = db.prepare(`SELECT audit_id,entry_hash,acknowledged_at_ms,delivery_status FROM canonical_ingress_delivery_v1 WHERE observation_id=?`).get(ack.observationId) as
+          { audit_id: number; entry_hash: string; acknowledged_at_ms: number | null; delivery_status: string } | undefined;
         if (!row || row.audit_id !== ack.sequence || row.entry_hash !== ack.entryHash) throw new Error('INGRESS_ACK_IDENTITY_MISMATCH');
-        if (row.acknowledged_at_ms === null) {
-          db.prepare('UPDATE canonical_ingress_delivery_v1 SET acknowledged_at_ms=? WHERE observation_id=? AND acknowledged_at_ms IS NULL').run(Date.now(), ack.observationId);
+        if (row.delivery_status === 'LEGACY_UNKNOWN') throw new Error('INGRESS_LEGACY_DELIVERY_REQUIRES_REBUILD');
+        if (row.delivery_status === 'PENDING') {
+          db.prepare(`UPDATE canonical_ingress_delivery_v1 SET acknowledged_at_ms=?,delivery_status='ACKNOWLEDGED'
+            WHERE observation_id=? AND delivery_status='PENDING'`).run(Date.now(), ack.observationId);
           db.exec('CREATE TABLE IF NOT EXISTS audit_event_dedupe(event_id TEXT PRIMARY KEY, event_hash TEXT NOT NULL, audit_id INTEGER, created_at_ms INTEGER NOT NULL) STRICT;');
           const prior = db.prepare('SELECT event_hash FROM audit_event_dedupe WHERE event_id=?').get(stableEventId) as { event_hash: string } | undefined;
           if (prior && prior.event_hash !== ackEventHash) throw new Error('INGRESS_ACK_CONTENT_CONFLICT');
@@ -516,7 +559,7 @@ parentPort!.on('message', (m: { id: number; op: string; body?: string; event?: s
         ensureIngressDeliverySchema();
         const select = db.prepare(`SELECT a.id,a.at,substr(a.event,1,256) AS event FROM audit a
           WHERE a.at < ? AND NOT EXISTS (
-            SELECT 1 FROM canonical_ingress_delivery_v1 d WHERE d.audit_id=a.id AND d.acknowledged_at_ms IS NULL
+            SELECT 1 FROM canonical_ingress_delivery_v1 d WHERE d.audit_id=a.id AND d.delivery_status='PENDING'
           ) ORDER BY a.id LIMIT 50000`);
         select.setReadBigInts(true);
         const rows = select.all(cutoff) as { id: bigint; at: bigint; event: string }[];

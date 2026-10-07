@@ -6,7 +6,7 @@
     {
       "id": "C1-INGRESS-001",
       "title": "Canonical ingress must be durably journaled before authoritative delivery",
-      "status": "PARTIALLY_IMPLEMENTED_PENDING_INDEPENDENT_REVIEW",
+      "status": "PARTIALLY_RESOLVED",
       "severity": "CRITICAL",
       "evidence": [
         "Production composition supplies StoreIngressJournal backed by Store.appendAuditEvent.",
@@ -16,14 +16,16 @@
         "test/platform/canonical-ingress-durability.test.mjs verifies memory-store rejection, arbitrary-journal rejection, commit-before-notification, and duplicate recognition after reopen.",
         "Research cycle 134 added canonical_ingress_delivery_v1 as a SQLite outbox committed atomically with the canonical ingress event; recovery revalidates stored payloads before redispatch.",
         "Crash-recovery test now proves pending delivery survives reopen and audit pruning, is replayed on duplicate submit, and is removed only after durable acknowledgement; delivered dedupe survives pruning.",
-        "npm run audit:c1 now reports C1-C4 PASS with all physical stopping metrics zero and runtime tests passing."
+        "Independent review found no transaction atomicity defect for fresh-format commit/ack, but identified unknown legacy delivery outcomes and non-durable Engine projection effects.",
+        "Research cycle 135 classifies pre-outbox rows as LEGACY_UNKNOWN, retains dedupe evidence, emits a durable uncertainty marker, and prevents unsafe automatic replay.",
+        "Targeted ingress durability and crash-recovery suites pass 6/6 after the migration change; the prior C1-C4 report is a snapshot and does not certify this modified source."
       ],
       "remaining": [
-        "Independent review of the current outbox transaction, replay and compatibility semantics.",
-        "Delivery remains at-least-once: make downstream state mutation idempotent or atomically checkpoint it with acknowledgement before claiming exactly-once effects."
+        "Delivery remains at-least-once: persist an idempotent Engine projection/checkpoint atomically with acknowledgement, or make replay a deterministic rebuild; test crashes after effect/before ack and after ack.",
+        "Pending records fail closed when compiler or validator versions drift; add a reviewed version registry or controlled migration and cross-version recovery tests."
       ],
       "owner": "Astra Verification",
-      "nextAction": "Obtain independent review, then prove downstream idempotency under crash-after-effect/before-ack."
+      "nextAction": "Design durable Engine projection recovery and versioned pending-event replay without weakening fail-closed verification."
     },
     {
       "id": "C1-INGRESS-002",

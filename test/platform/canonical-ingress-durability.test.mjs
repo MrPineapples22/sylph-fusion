@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { Store, getStoreIngressCapability } from '../../dist/store.js';
 import { createUnvalidatedObservation } from '../../dist/platform/ingress/observation-factory.js';
 import { CanonicalIngress, DefaultFusionEnvelopeCompiler, DefaultTruthValidator, StoreIngressJournal } from '../../dist/platform/ingress/canonical-ingress.js';
@@ -75,6 +76,42 @@ test('Store ingress commits before notifying and detects replay after a fresh in
     assert.equal((await store.getAuditEvents('canonical_ingress_committed_v1')).length, 0);
     const recoveredJournalRecord = await new StoreIngressJournal(store).findByObservationId(firstObservation.observationId);
     assert.deepEqual(recoveredJournalRecord, initialJournalRecord, 'duplicate identity and journal hash stay stable after row pruning');
+  } finally { await store.close(); }
+});
+
+test('outbox migration quarantines legacy delivery uncertainty without replaying historical events', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'canonical-ingress-legacy-migration-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const path = join(dir, 'state.sqlite');
+  const observationId = 'a'.repeat(64);
+  let store = new Store(path);
+  try {
+    await getStoreIngressCapability(store).appendAuditEvent('canonical_ingress_committed_v1', {
+      schemaVersion: 1, observationId, entryHash: 'b'.repeat(64),
+    }, `ingress:${observationId}`);
+  } finally { await store.close(); }
+
+  // Recreate the schema state produced by a pre-outbox release while keeping
+  // its committed event and dedupe identity intact.
+  const legacyDb = new DatabaseSync(path);
+  try {
+    legacyDb.exec(`DELETE FROM audit_event_dedupe WHERE event_id='canonical-ingress-legacy-delivery-migration:v1';
+      DELETE FROM audit WHERE event='canonical_ingress_legacy_delivery_migration_v1';
+      DROP TABLE canonical_ingress_delivery_v1;`);
+  }
+  finally { legacyDb.close(); }
+
+  store = new Store(path);
+  try {
+    const journal = new StoreIngressJournal(store);
+    await getStoreIngressCapability(store).assertDurable();
+    assert.deepEqual(await journal.getPendingDeliveries(0, 10), [], 'legacy rows must not be implicitly replayed');
+    const migration = await store.getAuditEvents('canonical_ingress_legacy_delivery_migration_v1');
+    assert.equal(migration.length, 1);
+    assert.equal(JSON.parse(migration[0].body).policy, 'LEGACY_OUTCOME_UNKNOWN_DO_NOT_REPLAY');
+    assert.equal(JSON.parse(migration[0].body).rowCount, 1);
+    const legacyIdentity = await getStoreIngressCapability(store).getAuditEventByStableId(`ingress:${observationId}`);
+    assert.equal(legacyIdentity?.event, 'canonical_ingress_committed_v1', 'legacy dedupe evidence remains available');
   } finally { await store.close(); }
 });
 
