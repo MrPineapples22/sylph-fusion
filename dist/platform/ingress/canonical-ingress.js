@@ -664,6 +664,8 @@ export class InMemoryIngressJournal {
             entryHash,
         };
     }
+    /** In-memory test journal has no restartable outbox; acknowledge in-process delivery. */
+    async acknowledgeDelivery(_observationId, _sequence, _entryHash) { }
 }
 export const TEST_INGRESS_JOURNAL = new InMemoryIngressJournal();
 //# sourceMappingURL=canonical-ingress.js.map

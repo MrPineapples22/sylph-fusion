@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { evaluateRuntimeConvergence } from '../scripts/connectivity-runtime-convergence.mjs';
 import { loadMandatoryEdgeConfig } from '../scripts/canary-campaign-verifier.mjs';
 import { hashCanonicalV10 } from '../scripts/canonicalization-v10.mjs';
+import { verifyRuntimeTelemetryEvidence } from '../scripts/runtime-telemetry-evidence.mjs';
 
 function buildValidCanary(provenanceClass = 'TEST_FIXTURE') {
   const mandatoryEdges = loadMandatoryEdgeConfig();
@@ -84,18 +85,27 @@ test('Step 6 Convergence: Ineligible provenance in CERTIFY mode halts at C4', ()
     { mode: 'certify', baselineLevel: 'C4' }
   );
   assert.equal(report.certifiedPayload.highestProvenLevel, 'C4');
-  assert.match(report.certifiedPayload.ladder.C5.reason, /Ineligible runtime telemetry provenance/);
+  assert.match(report.certifiedPayload.ladder.C5.reason, /C5_DURABLE_RUNTIME_EVIDENCE_MISSING/);
 });
 
-test('Step 6 Convergence: Sequential C5 award with eligible telemetry', () => {
+test('Step 6 Convergence: CERTIFY mode ignores caller-asserted REAL_RUNTIME spans', () => {
+  const report = evaluateRuntimeConvergence({
+    runtimeTelemetry: { spans: [{ id: 'forged' }], provenanceClass: 'REAL_RUNTIME' },
+  }, { mode: 'certify', baselineLevel: 'C4' });
+  assert.equal(report.certifiedPayload.highestProvenLevel, 'C4');
+  assert.equal(report.certifiedPayload.ladder.C5.awarded, false);
+  assert.equal(report.certifiedPayload.runtimeTelemetryRoot, null);
+});
+
+test('Step 6 Convergence: Sequential C5 award with eligible TEST telemetry', () => {
   const report = evaluateRuntimeConvergence(
     {
       runtimeTelemetry: {
         spans: [{ id: 'span_1', component: 'fusion' }],
-        provenanceClass: 'REAL_RUNTIME',
+        provenanceClass: 'TEST_FIXTURE',
       },
     },
-    { mode: 'certify', baselineLevel: 'C4' }
+    { mode: 'test', baselineLevel: 'C4' }
   );
   assert.equal(report.certifiedPayload.highestProvenLevel, 'C5');
   assert.equal(report.certifiedPayload.ladder.C5.awarded, true);
@@ -107,7 +117,7 @@ test('Step 6 Convergence: Sequential C6 break halts at C5', () => {
     {
       runtimeTelemetry: {
         spans: [{ id: 'span_1' }],
-        provenanceClass: 'REAL_RUNTIME',
+        provenanceClass: 'TEST_FIXTURE',
       },
       artifactContinuity: {
         pairs: [
@@ -115,10 +125,33 @@ test('Step 6 Convergence: Sequential C6 break halts at C5', () => {
         ],
       },
     },
-    { mode: 'certify', baselineLevel: 'C4' }
+    { mode: 'test', baselineLevel: 'C4' }
   );
   assert.equal(report.certifiedPayload.highestProvenLevel, 'C5');
   assert.match(report.certifiedPayload.ladder.C6.reason, /C6_HALT/);
+});
+
+test('C5 runtime evidence requires a complete durable schema and detects byte-level edits', () => {
+  const evidence = {
+    schemaVersion: 'SYLPH_RUNTIME_TELEMETRY_V1',
+    provenanceClass: 'REAL_RUNTIME',
+    sourceCommitSha: '1'.repeat(40),
+    sourceTreeSha: '2'.repeat(40),
+    runtimeInstanceId: '3'.repeat(32),
+    processId: 10,
+    nodeVersion: 'v24.1.0',
+    processStartedAtMs: 100,
+    captureStartedAtMs: 101,
+    captureEndedAtMs: 110,
+    durability: { barrier: 'FSYNC_COMMITTED', storeEventId: 'runtime:trace-1', storeAuditId: 9, storeEventHash: '4'.repeat(64) },
+    spans: [{ spanId: '5'.repeat(16), traceId: '6'.repeat(32), parentSpanId: null, name: 'ingress.commit',
+      startedAtNs: '1000', endedAtNs: '1200', status: 'OK' }],
+  };
+  evidence.evidenceHash = hashCanonicalV10(evidence);
+  assert.equal(verifyRuntimeTelemetryEvidence(evidence).valid, true);
+  const altered = { ...evidence, spans: [{ ...evidence.spans[0], status: 'ERROR' }] };
+  assert.deepEqual(verifyRuntimeTelemetryEvidence(altered), { valid: false, reason: 'C5_EVIDENCE_HASH_MISMATCH' });
+  assert.deepEqual(verifyRuntimeTelemetryEvidence({ ...evidence, spans: [{ id: 'span_1' }] }), { valid: false, reason: 'C5_SPAN_INVALID' });
 });
 
 test('Step 6 Convergence: Full ladder progression in TEST mode with valid mock evidence', () => {

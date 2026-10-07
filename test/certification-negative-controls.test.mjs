@@ -115,7 +115,7 @@ test('Negative Control 3: Corrupted intermediate artifact hash breaks C6 cryptog
     {
       runtimeTelemetry: {
         spans: [{ id: 's1' }],
-        provenanceClass: 'REAL_RUNTIME',
+        provenanceClass: 'TEST_FIXTURE',
       },
       artifactContinuity: {
         pairs: [
@@ -128,7 +128,7 @@ test('Negative Control 3: Corrupted intermediate artifact hash breaks C6 cryptog
         ],
       },
     },
-    { mode: 'certify', baselineLevel: 'C4' }
+    { mode: 'test', baselineLevel: 'C4' }
   );
 
   assert.equal(report.certifiedPayload.highestProvenLevel, 'C5');

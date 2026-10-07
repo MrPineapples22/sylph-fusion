@@ -12,6 +12,6 @@ export function createTestIngress({ parser, journal = new InMemoryIngressJournal
     compiler,
     validator: new DefaultTruthValidator(),
     journal,
-    downstreamSubscriber: onCommitted,
+    downstreamSubscriber: onCommitted ?? (() => {}),
   });
 }

@@ -743,6 +743,9 @@ export class InMemoryIngressJournal implements IngressDurableJournal {
       entryHash,
     };
   }
+
+  /** In-memory test journal has no restartable outbox; acknowledge in-process delivery. */
+  public async acknowledgeDelivery(_observationId: string, _sequence: number, _entryHash: Hash256): Promise<void> {}
 }
 
 export const TEST_INGRESS_JOURNAL = new InMemoryIngressJournal();

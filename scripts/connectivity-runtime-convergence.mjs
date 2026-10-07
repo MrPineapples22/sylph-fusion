@@ -28,6 +28,7 @@ import {
   EMPTY_SHA256_HEX,
 } from './canonicalization-v10.mjs';
 import { verifyCanaryCampaign } from './canary-campaign-verifier.mjs';
+import { loadRuntimeTelemetryEvidence } from './runtime-telemetry-evidence.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -81,6 +82,7 @@ export function evaluateRuntimeConvergence(evidenceBundle = {}, options = {}) {
 
   let highestProvenLevel = baselineLevel;
   let stopReason = '';
+  let runtimeTelemetryRoot = null;
 
   if (!baselinePass) {
     stopReason = `C4_GATE_HALT: Static scorecard level is '${baselineLevel}'. C4 static integration is required before C5-C10 can be evaluated.`;
@@ -97,17 +99,24 @@ export function evaluateRuntimeConvergence(evidenceBundle = {}, options = {}) {
   // === Sequential Evaluation ===
   if (baselinePass) {
     // LEVEL C5: OBSERVED RUNTIME
-    const c5Evidence = evidenceBundle.runtimeTelemetry;
+    const loadedC5 = mode === 'certify' ? loadRuntimeTelemetryEvidence() : null;
+    const c5Evidence = mode === 'certify' ? loadedC5?.evidence : evidenceBundle.runtimeTelemetry;
     if (!c5Evidence || !c5Evidence.spans || c5Evidence.spans.length === 0) {
-      stopReason = 'C5_HALT: No eligible runtime telemetry spans provided. Static evidence ceiling is C4.';
+      stopReason = mode === 'certify'
+        ? `C5_HALT: ${loadedC5?.reason ?? 'C5_DURABLE_RUNTIME_EVIDENCE_MISSING'}. Static evidence ceiling is C4.`
+        : 'C5_HALT: No eligible runtime telemetry spans provided. Static evidence ceiling is C4.';
       ladder.C5.reason = stopReason;
-    } else if (!isProvenanceEligible(c5Evidence.provenanceClass)) {
+    } else if (mode === 'certify' && !loadedC5?.valid) {
+      stopReason = `C5_HALT: ${loadedC5?.reason ?? 'C5_DURABLE_RUNTIME_EVIDENCE_INVALID'}.`;
+      ladder.C5.reason = stopReason;
+    } else if (mode !== 'certify' && !isProvenanceEligible(c5Evidence.provenanceClass)) {
       stopReason = `C5_HALT: Ineligible runtime telemetry provenance '${c5Evidence.provenanceClass}' in ${mode} mode.`;
       ladder.C5.reason = stopReason;
     } else {
       ladder.C5.awarded = true;
       ladder.C5.reason = `Physical runtime telemetry observed with ${c5Evidence.spans.length} spans. Provenance: ${c5Evidence.provenanceClass}.`;
       highestProvenLevel = 'C5';
+      runtimeTelemetryRoot = mode === 'certify' ? loadedC5.evidenceHash : null;
 
     // LEVEL C6: CRYPTOGRAPHIC CONTINUITY
     const c6Evidence = evidenceBundle.artifactContinuity;
@@ -208,6 +217,7 @@ export function evaluateRuntimeConvergence(evidenceBundle = {}, options = {}) {
   const certifiedPayload = {
     mode,
     highestProvenLevel,
+    runtimeTelemetryRoot,
     evaluatedAt: new Date().toISOString(),
     ladder,
     stopReason: stopReason || 'ALL_LEVELS_PASSED',
