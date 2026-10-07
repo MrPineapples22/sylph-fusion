@@ -10,6 +10,8 @@ export interface StoreIngressCapability {
   assertDurable(): Promise<void>;
   appendAuditEvent(event: string, payload: Readonly<Record<string, unknown>>, stableEventId?: string): Promise<{ inserted: boolean; auditId?: number }>;
   getAuditEventByStableId(stableEventId: string): Promise<{ id: number; at: number; event: string | null; body: string | null; pruned?: boolean; eventHash?: string } | null>;
+  getPendingIngress(afterSequence: number, limit: number): Promise<readonly { id: number; at: number; body: string; eventHash: string }[]>;
+  acknowledgeIngress(observationId: string, sequence: number, entryHash: string): Promise<void>;
 }
 const storeIngressCapabilities = new WeakMap<object, StoreIngressCapability>();
 
@@ -53,6 +55,13 @@ export class Store implements
       appendAuditEvent: (event: string, payload: Readonly<Record<string, unknown>>, stableEventId?: string) =>
         this.#appendAuditEvent(event, payload, stableEventId),
       getAuditEventByStableId: (stableEventId: string) => this.#getAuditEventByStableId(stableEventId),
+      getPendingIngress: async (afterSequence: number, limit: number) => {
+        const text = await this.#call('get-pending-ingress', JSON.stringify({ afterSequence, limit }));
+        return Object.freeze(text ? JSON.parse(text) : []);
+      },
+      acknowledgeIngress: async (observationId: string, sequence: number, entryHash: string) => {
+        await this.#call('acknowledge-ingress', JSON.stringify({ observationId, sequence, entryHash }));
+      },
     }));
   }
   #fail(error: Error, knownFailure = false): void {

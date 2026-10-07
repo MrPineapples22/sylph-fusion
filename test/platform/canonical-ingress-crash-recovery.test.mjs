@@ -34,12 +34,13 @@ test('Canonical ingress redispatches a durably committed delivery after restart'
   const dbPath = join(dir, 'state.sqlite');
   const observation = createSampleObservation();
   let store = new Store(dbPath);
+  let journal = new StoreIngressJournal(store);
   let firstAttempts = 0;
   try {
     const ingress = new CanonicalIngress({
       compiler: new DefaultFusionEnvelopeCompiler(),
       validator: new DefaultTruthValidator(),
-      journal: new StoreIngressJournal(store),
+      journal,
       downstreamSubscriber: async () => {
         firstAttempts++;
         throw new Error('SIMULATED_PROCESS_CRASH_POST_COMMIT');
@@ -48,11 +49,15 @@ test('Canonical ingress redispatches a durably committed delivery after restart'
     const firstReceipt = await ingress.submit(observation);
     assert.equal(firstReceipt.status, 'REJECTED', 'failed delivery must not be reported as successful');
     assert.match(firstReceipt.reason, /COMMITTED_DELIVERY_PENDING_RETRY/);
+    assert.equal((await journal.getPendingDeliveries(0, 10)).length, 1, 'commit and pending outbox entry must exist together');
+    await new Promise(resolve => setTimeout(resolve, 5));
+    await store.pruneAudit(0);
+    assert.equal((await journal.getPendingDeliveries(0, 10)).length, 1, 'retention must preserve an unacknowledged recovery payload');
   } finally { await store.close(); }
 
   store = new Store(dbPath);
   try {
-    const journal = new StoreIngressJournal(store);
+    journal = new StoreIngressJournal(store);
     const recoveredRecord = await journal.findByObservationId(observation.observationId);
     assert.ok(recoveredRecord, 'the committed journal record must survive restart');
     assert.match(recoveredRecord.entryHash, /^[a-f0-9]{64}$/);
@@ -71,6 +76,12 @@ test('Canonical ingress redispatches a durably committed delivery after restart'
     const retryReceipt = await restartedIngress.submit(observation);
     assert.equal(retryReceipt.status, 'DUPLICATE');
     assert.equal(recoveredAttempts, 1, 'restart must redispatch the durable but unacknowledged envelope');
+    assert.equal((await journal.getPendingDeliveries(0, 10)).length, 0, 'successful redispatch must durably acknowledge the outbox row');
+    assert.equal((await store.getAuditEvents('canonical_ingress_delivery_ack_v1')).length, 1);
+    await store.pruneAudit(0);
+    assert.equal((await store.getAuditEvents('canonical_ingress_committed_v1')).length, 0, 'acknowledged ingress payload may follow normal audit retention');
+    const stillDeduplicated = await journal.findByObservationId(observation.observationId);
+    assert.ok(stillDeduplicated, 'pruning a delivered payload must preserve deduplication evidence');
   } finally { await store.close(); }
   assert.equal(firstAttempts, 1);
 });

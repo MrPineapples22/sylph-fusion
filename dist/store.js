@@ -39,6 +39,13 @@ export class Store {
             },
             appendAuditEvent: (event, payload, stableEventId) => this.#appendAuditEvent(event, payload, stableEventId),
             getAuditEventByStableId: (stableEventId) => this.#getAuditEventByStableId(stableEventId),
+            getPendingIngress: async (afterSequence, limit) => {
+                const text = await this.#call('get-pending-ingress', JSON.stringify({ afterSequence, limit }));
+                return Object.freeze(text ? JSON.parse(text) : []);
+            },
+            acknowledgeIngress: async (observationId, sequence, entryHash) => {
+                await this.#call('acknowledge-ingress', JSON.stringify({ observationId, sequence, entryHash }));
+            },
         }));
     }
     #fail(error, knownFailure = false) {

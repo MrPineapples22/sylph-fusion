@@ -31,6 +31,7 @@ import { createHash } from 'node:crypto';
 import { EventParser } from '@coral-xyz/anchor';
 import { getPumpProgram, PUMP_PROGRAM_ID } from '@pump-fun/pump-sdk';
 import { getStoreIngressCapability } from '../../store.js';
+import { createUnvalidatedObservation } from './observation-factory.js';
 import { isObservationCreatedByFactory } from './observation-factory.js';
 const durableCanonicalIngressInstances = new WeakSet();
 const storeIngressJournalInstances = new WeakSet();
@@ -51,7 +52,7 @@ export class CanonicalIngress {
     #subscribers = [];
     #seenObservations = new Set();
     #pendingDeliveries = new Map();
-    #deliveryCursor = 0;
+    #deliveryCursors = new Map();
     #deliveryMutex = Promise.resolve();
     constructor(options) {
         this.#compiler = options.compiler;
@@ -90,29 +91,11 @@ export class CanonicalIngress {
             try {
                 const existing = await this.#journal.findByObservationId(observation.observationId);
                 if (existing) {
-                    if (!this.#seenObservations.has(observation.observationId)) {
-                        this.#seenObservations.add(observation.observationId);
-                        try {
-                            const compiled = await this.#compiler.compile(observation);
-                            const valResult = await this.#validator.validate(compiled);
-                            if (valResult.valid) {
-                                const committedData = {
-                                    journalSeq: existing.sequence,
-                                    envelopeHash: existing.entryHash,
-                                    validatedEnvelope: valResult.validatedEnvelope,
-                                    committedAtMs: existing.timestamp ?? Date.now(),
-                                    durability: 'FSYNC_COMMITTED',
-                                };
-                                const committed = Object.freeze(committedData);
-                                this.#authenticCommittedEnvelopes.add(committed);
-                                for (const sub of this.#subscribers) {
-                                    await sub(committed);
-                                }
-                            }
-                        }
-                        catch {
-                            // Redispatch failure handled gracefully
-                        }
+                    if (this.#journal.getPendingDeliveries)
+                        await this.recoverPendingDeliveries();
+                    this.#seenObservations.add(observation.observationId);
+                    if (this.#pendingDeliveries.has(observation.observationId)) {
+                        return { status: 'REJECTED', observationId: observation.observationId, reason: 'COMMITTED_DELIVERY_PENDING_RETRY' };
                     }
                     return { status: 'DUPLICATE', observationId: observation.observationId, reason: 'OBSERVATION_ALREADY_COMMITTED' };
                 }
@@ -225,6 +208,31 @@ export class CanonicalIngress {
         }
         return delivered;
     }
+    /** Rebuilds and dispatches durable outbox records left unacknowledged by a prior process. */
+    async recoverPendingDeliveries() {
+        if (!this.#journal.getPendingDeliveries)
+            return 0;
+        let afterSequence = 0;
+        let recovered = 0;
+        for (;;) {
+            const page = await this.#journal.getPendingDeliveries(afterSequence, 500);
+            for (const row of page) {
+                if (!Number.isSafeInteger(row.sequence) || row.sequence <= afterSequence)
+                    throw new Error('INGRESS_OUTBOX_SEQUENCE_INVALID');
+                afterSequence = row.sequence;
+                const committed = await this.restoreCommittedEnvelope(row);
+                const observationId = committed.validatedEnvelope.compiledEnvelope.observation.observationId;
+                this.#authenticCommittedEnvelopes.add(committed);
+                this.#seenObservations.add(observationId);
+                this.#pendingDeliveries.set(observationId, committed);
+                if (await this.deliverPending(observationId))
+                    recovered++;
+            }
+            if (page.length < 500)
+                break;
+        }
+        return recovered;
+    }
     async deliverPending(observationId) {
         let resolveMutex;
         const previous = this.#deliveryMutex;
@@ -241,13 +249,20 @@ export class CanonicalIngress {
         const committed = this.#pendingDeliveries.get(observationId);
         if (!committed)
             return true;
+        if (this.#subscribers.length === 0)
+            return false;
         try {
-            while (this.#deliveryCursor < this.#subscribers.length) {
-                await this.#subscribers[this.#deliveryCursor](committed);
-                this.#deliveryCursor++;
+            let cursor = this.#deliveryCursors.get(observationId) ?? 0;
+            while (cursor < this.#subscribers.length) {
+                await this.#subscribers[cursor](committed);
+                cursor++;
+                this.#deliveryCursors.set(observationId, cursor);
             }
+            if (!this.#journal.acknowledgeDelivery)
+                return false;
+            await this.#journal.acknowledgeDelivery(observationId, Number(committed.journalSeq), committed.envelopeHash);
             this.#pendingDeliveries.delete(observationId);
-            this.#deliveryCursor = 0;
+            this.#deliveryCursors.delete(observationId);
             return true;
         }
         catch {
@@ -255,6 +270,87 @@ export class CanonicalIngress {
             return false;
         }
     }
+    async restoreCommittedEnvelope(row) {
+        let payload;
+        try {
+            payload = JSON.parse(row.body);
+        }
+        catch {
+            throw new Error('INGRESS_OUTBOX_ROW_INVALID');
+        }
+        if (payload?.schemaVersion !== 1 || typeof payload.observationId !== 'string' ||
+            typeof payload.rawPayloadBase64 !== 'string' || typeof payload.rawPayloadHash !== 'string' ||
+            typeof payload.entryHash !== 'string' || !/^[a-f0-9]{64}$/.test(row.entryHash) ||
+            createHash('sha256').update(`${'canonical_ingress_committed_v1'}:${row.body}`).digest('hex') !== row.eventHash) {
+            throw new Error('INGRESS_OUTBOX_ROW_INVALID');
+        }
+        const { entryHash, ...entryPayload } = payload;
+        if (createHash('sha256').update(JSON.stringify(entryPayload)).digest('hex') !== entryHash)
+            throw new Error('INGRESS_OUTBOX_HASH_MISMATCH');
+        const rawPayload = Buffer.from(payload.rawPayloadBase64, 'base64');
+        const observation = createUnvalidatedObservation({
+            sourceId: payload.sourceId,
+            providerId: payload.providerId,
+            transport: payload.transport,
+            receivedAtMs: payload.receivedAtMs,
+            observedAtMs: payload.observedAtMs,
+            slot: payload.slot,
+            commitment: payload.commitment,
+            signature: payload.signature,
+            transactionVersion: payload.transactionVersion,
+            rawPayload,
+            schemaVersion: payload.schema,
+            processingIntent: payload.processingIntent,
+        });
+        if (observation.observationId !== payload.observationId || observation.rawPayloadHash !== payload.rawPayloadHash) {
+            throw new Error('INGRESS_OUTBOX_OBSERVATION_IDENTITY_MISMATCH');
+        }
+        const compiled = await this.#compiler.compile(observation);
+        if (compiled.envelopeId !== payload.envelopeId || compiled.compilerVersion !== payload.compilerVersion ||
+            JSON.stringify(compiled.decodedEvents.map(serializeDecodedEvent)) !== JSON.stringify(payload.decodedEvents)) {
+            throw new Error('INGRESS_OUTBOX_COMPILER_DRIFT');
+        }
+        const result = await this.#validator.validate(compiled);
+        if (!result.valid)
+            throw new Error('INGRESS_OUTBOX_VALIDATION_FAILED');
+        const current = result.validatedEnvelope;
+        const savedEvidence = payload.truthEvidence;
+        if (current.validationId !== payload.validationId || current.validatorVersion !== payload.validatorVersion ||
+            !savedEvidence || savedEvidence.evidenceId !== current.truthEvidence.evidenceId ||
+            savedEvidence.validatorVersion !== current.truthEvidence.validatorVersion ||
+            savedEvidence.rawPayloadHash !== current.truthEvidence.rawPayloadHash ||
+            savedEvidence.signatureVerified !== current.truthEvidence.signatureVerified ||
+            savedEvidence.schemaCompliant !== current.truthEvidence.schemaCompliant ||
+            savedEvidence.verificationMethod !== current.truthEvidence.verificationMethod ||
+            !Number.isSafeInteger(savedEvidence.validatedAtMs) || savedEvidence.validatedAtMs < 0 ||
+            !Number.isSafeInteger(payload.validatedAtMs) || payload.validatedAtMs < 0) {
+            throw new Error('INGRESS_OUTBOX_VALIDATION_IDENTITY_MISMATCH');
+        }
+        const validated = Object.freeze({
+            validationId: payload.validationId,
+            compiledEnvelope: compiled,
+            validatedAtMs: payload.validatedAtMs,
+            validatorVersion: payload.validatorVersion,
+            truthEvidence: Object.freeze(savedEvidence),
+        });
+        const committed = Object.freeze({
+            journalSeq: BigInt(row.sequence),
+            envelopeHash: row.eventHash,
+            validatedEnvelope: validated,
+            committedAtMs: Date.now(),
+            durability: 'FSYNC_COMMITTED',
+        });
+        return committed;
+    }
+}
+function serializeDecodedEvent(event) {
+    return {
+        name: String(event?.name ?? ''),
+        signature: String(event?.signature ?? ''),
+        slot: Number.isSafeInteger(event?.slot) ? event.slot : null,
+        received: Number.isFinite(event?.received) ? event.received : null,
+        data: JSON.parse(JSON.stringify(event?.data ?? null, (_key, value) => typeof value === 'bigint' ? value.toString() : value?.toBase58?.() ?? value)),
+    };
 }
 /**
  * Default implementation of FusionEnvelopeCompiler.
@@ -520,6 +616,22 @@ export class StoreIngressJournal {
             return { sequence: BigInt(candidate.id), entryHash: candidate.eventHash };
         }
         return null;
+    }
+    async getPendingDeliveries(afterSequence, limit) {
+        await this.#store.assertDurable();
+        if (!Number.isSafeInteger(afterSequence) || afterSequence < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 1000) {
+            throw new Error('INGRESS_OUTBOX_QUERY_INVALID');
+        }
+        return Object.freeze((await this.#store.getPendingIngress(afterSequence, limit)).map(row => {
+            if (!Number.isSafeInteger(row.id) || row.id < 1 || typeof row.body !== 'string' ||
+                !/^[a-f0-9]{64}$/.test(row.eventHash))
+                throw new Error('INGRESS_OUTBOX_ROW_INVALID');
+            return Object.freeze({ sequence: row.id, entryHash: row.eventHash, body: row.body, eventHash: row.eventHash });
+        }));
+    }
+    async acknowledgeDelivery(observationId, sequence, entryHash) {
+        await this.#store.assertDurable();
+        await this.#store.acknowledgeIngress(observationId, sequence, entryHash);
     }
 }
 export function createCanonicalSolanaIngress(options) {

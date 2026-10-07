@@ -977,8 +977,11 @@ export class Engine {
     }
     async run() {
         this.loopLag.enable();
-        const feedTask = this.feed.run().catch(() => { log('feed_fatal'); this.stop(); });
+        let feedTask = null;
         try {
+            if (#ingress in this)
+                await this.#ingress?.recoverPendingDeliveries();
+            feedTask = this.feed.run().catch(() => { log('feed_fatal'); this.stop(); });
             await this.drainResearchSpoolSafely('startup');
             this.nextResearchSpoolDrainAt = Date.now() + RESEARCH_SPOOL_DRAIN_INTERVAL_MS;
             while (!this.stopped) {
