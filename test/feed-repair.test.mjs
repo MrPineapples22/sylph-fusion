@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Feed } from '../dist/feed.js';
 import { Connection } from '@solana/web3.js';
-import { createCanonicalSolanaIngress, InMemoryIngressJournal } from '../dist/platform/ingress/canonical-ingress.js';
+import { createTestIngress } from './support/ingress-fixtures.mjs';
 
 test('Feed: accepts bounded late slots for historical repair without renewing execution freshness', async () => {
   const events = [];
@@ -13,8 +13,8 @@ test('Feed: accepts bounded late slots for historical repair without renewing ex
     YELLOWSTONE_URL: '',
   };
   const conn = new Connection('https://api.mainnet-beta.solana.com', 'confirmed');
-  const ingress = createCanonicalSolanaIngress({
-    journal: new InMemoryIngressJournal(),
+  const ingress = createTestIngress({
+    parser: { parseLogs: () => [{ name: 'TradeEvent', data: { mint: 'mint123', solAmount: 100 } }] },
     onCommitted: (committed) => {
       for (const ev of committed.validatedEnvelope.compiledEnvelope.decodedEvents) {
         events.push(ev);
@@ -22,11 +22,6 @@ test('Feed: accepts bounded late slots for historical repair without renewing ex
     }
   });
   const feed = new Feed(cfg, conn, ingress);
-
-  // Mock parser parseLogs to return a synthetic decoded event
-  feed.parser = {
-    parseLogs: () => [{ name: 'TradeEvent', data: { mint: 'mint123', solAmount: 100 } }]
-  };
 
   const logs = ['Program 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P invoke [1]', 'Program 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P success'];
   const src = { sourceId: 'src-1', providerId: 'https://rpc.example.com', transport: 'ws' };

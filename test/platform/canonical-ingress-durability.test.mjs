@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Store } from '../../dist/store.js';
+import { Store, getStoreIngressCapability } from '../../dist/store.js';
 import { createUnvalidatedObservation } from '../../dist/platform/ingress/observation-factory.js';
 import { CanonicalIngress, DefaultFusionEnvelopeCompiler, DefaultTruthValidator, StoreIngressJournal } from '../../dist/platform/ingress/canonical-ingress.js';
 
@@ -14,13 +14,36 @@ const observation = (receivedAtMs = Date.now()) => createUnvalidatedObservation(
   processingIntent: 'DETERMINISTIC_REPLAY',
 });
 
+test('ingress durability capability rejects SQLite memory databases', async () => {
+  const store = new Store(':memory:');
+  try {
+    store.assertIngressDurability = async () => {};
+    await assert.rejects(new StoreIngressJournal(store).append({}), /INGRESS_DURABLE_JOURNAL_REQUIRED/);
+  } finally { await store.close(); }
+});
+
+test('canonical ingress cannot issue a committed envelope from a caller supplied journal', async () => {
+  let notifications = 0;
+  const ingress = new CanonicalIngress({
+    compiler: new DefaultFusionEnvelopeCompiler(), validator: new DefaultTruthValidator(),
+    journal: { async append() { return { sequence: 1n, entryHash: 'a'.repeat(64) }; } },
+    downstreamSubscriber() { notifications++; },
+  });
+  const receipt = await ingress.submit(observation());
+  assert.equal(receipt.status, 'REJECTED');
+  assert.match(receipt.reason, /DURABLE_STORE_INGRESS_JOURNAL_REQUIRED/);
+  assert.equal(notifications, 0);
+});
+
 test('Store ingress commits before notifying and detects replay after a fresh instance', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'canonical-ingress-wal-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const path = join(dir, 'state.sqlite');
   let store = new Store(path);
+  await getStoreIngressCapability(store).assertDurable();
   const firstObservation = observation();
   let deliveries = 0;
+  let initialJournalRecord;
   const makeIngress = onCommitted => new CanonicalIngress({
     compiler: new DefaultFusionEnvelopeCompiler(), validator: new DefaultTruthValidator(),
     journal: new StoreIngressJournal(store), durability: 'FSYNC_COMMITTED', downstreamSubscriber: onCommitted,
@@ -29,11 +52,15 @@ test('Store ingress commits before notifying and detects replay after a fresh in
     const rows = await store.getAuditEvents('canonical_ingress_committed_v1');
     assert.equal(rows.length, 1, 'downstream callback must run after the committed row is readable');
     assert.equal(committed.durability, 'FSYNC_COMMITTED');
+    assert.equal(committed.validatedEnvelope.truthEvidence.signatureVerified, false, 'hash validation cannot claim transaction signature verification');
+    assert.equal(committed.validatedEnvelope.truthEvidence.schemaCompliant, false, 'generic decoder cannot claim Solana schema validation');
     deliveries++;
   });
   try {
     assert.equal((await ingress.submit(firstObservation)).status, 'ACCEPTED');
     assert.equal(deliveries, 1);
+    initialJournalRecord = await new StoreIngressJournal(store).findByObservationId(firstObservation.observationId);
+    assert.ok(initialJournalRecord);
     const row = JSON.parse((await store.getAuditEvents('canonical_ingress_committed_v1'))[0].body);
     assert.equal(Buffer.from(row.rawPayloadBase64, 'base64').toString(), Buffer.from(firstObservation.rawPayload).toString());
     assert.match(row.entryHash, /^[a-f0-9]{64}$/);
@@ -41,10 +68,13 @@ test('Store ingress commits before notifying and detects replay after a fresh in
 
   store = new Store(path);
   try {
+    await store.pruneAudit(0);
     const replay = makeIngress();
     const result = await replay.submit(observation(Date.now() + 1));
     assert.equal(result.status, 'DUPLICATE');
-    assert.equal((await store.getAuditEvents('canonical_ingress_committed_v1')).length, 1);
+    assert.equal((await store.getAuditEvents('canonical_ingress_committed_v1')).length, 0);
+    const recoveredJournalRecord = await new StoreIngressJournal(store).findByObservationId(firstObservation.observationId);
+    assert.deepEqual(recoveredJournalRecord, initialJournalRecord, 'duplicate identity and journal hash stay stable after row pruning');
   } finally { await store.close(); }
 });
 

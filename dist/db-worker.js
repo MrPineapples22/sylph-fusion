@@ -44,7 +44,16 @@ const initialized = (() => {
 const { db, registrationCapable } = initialized;
 parentPort.on('message', (m) => {
     try {
-        if (m.op === 'register-initial-generation') {
+        if (m.op === 'assert-ingress-durability') {
+            const file = db.prepare('PRAGMA database_list').all().find(row => row.name === 'main')?.file;
+            const journalMode = db.prepare('PRAGMA journal_mode').get().journal_mode;
+            const synchronous = db.prepare('PRAGMA synchronous').get().synchronous;
+            if (!registrationCapable || typeof file !== 'string' || file.length === 0 || journalMode !== 'wal' || synchronous !== 2) {
+                throw new Error('INGRESS_DURABLE_JOURNAL_REQUIRED');
+            }
+            parentPort.postMessage({ id: m.id, value: 'FSYNC_COMMITTED' });
+        }
+        else if (m.op === 'register-initial-generation') {
             const result = registerInitialGenerationSync(db, registrationCapable, m.body);
             parentPort.postMessage({ id: m.id, value: JSON.stringify(result) });
         }

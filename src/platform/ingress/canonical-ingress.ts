@@ -31,6 +31,7 @@
 import { createHash } from 'node:crypto';
 import { EventParser } from '@coral-xyz/anchor';
 import { getPumpProgram, PUMP_PROGRAM_ID } from '@pump-fun/pump-sdk';
+import { getStoreIngressCapability, type Store, type StoreIngressCapability } from '../../store.js';
 import type { ObservationIngressPort } from './port.js';
 import type {
   CompiledFusionEnvelope,
@@ -62,6 +63,7 @@ export interface TruthValidator {
 export interface IngressJournalRecord {
   readonly sequence: bigint;
   readonly entryHash: Hash256;
+  readonly timestamp?: number;
 }
 
 export interface IngressDurableJournal {
@@ -82,38 +84,47 @@ export interface CanonicalIngressOptions {
   readonly downstreamSubscriber?: (committed: CommittedEnvelope) => Promise<void> | void;
 }
 
+const durableCanonicalIngressInstances = new WeakSet<object>();
+const storeIngressJournalInstances = new WeakSet<object>();
+
+/** True only for a CanonicalIngress whose journal is backed by the real Store class. */
+export function isDurableCanonicalIngress(value: unknown): value is CanonicalIngress {
+  return !!value && typeof value === 'object' && durableCanonicalIngressInstances.has(value as object);
+}
+
 /**
  * Canonical single-door ingress implementation enforcing the strict type-state progression
  * and durability barrier.
  */
 export class CanonicalIngress implements ObservationIngressPort {
-  private readonly compiler: FusionEnvelopeCompiler;
-  private readonly validator: TruthValidator;
-  private readonly journal: IngressDurableJournal;
-  private readonly durability: DurabilityBarrier;
-  private readonly subscribers: Array<(committed: CommittedEnvelope) => Promise<void> | void> = [];
-  private readonly seenObservations = new Set<string>();
-  private readonly pendingDeliveries = new Map<string, CommittedEnvelope>();
-  private readonly authenticCommittedEnvelopes = new WeakSet<object>();
-  private deliveryCursor = 0;
-  private deliveryMutex: Promise<void> = Promise.resolve();
+  readonly #compiler: FusionEnvelopeCompiler;
+  readonly #validator: TruthValidator;
+  readonly #authenticCommittedEnvelopes = new WeakSet<object>();
+  readonly #journal: IngressDurableJournal;
+  readonly #durability: DurabilityBarrier;
+  readonly #subscribers: Array<(committed: CommittedEnvelope) => Promise<void> | void> = [];
+  readonly #seenObservations = new Set<string>();
+  readonly #pendingDeliveries = new Map<string, CommittedEnvelope>();
+  #deliveryCursor = 0;
+  #deliveryMutex: Promise<void> = Promise.resolve();
 
   constructor(options: CanonicalIngressOptions) {
-    this.compiler = options.compiler;
-    this.validator = options.validator;
-    this.journal = options.journal;
-    this.durability = options.durability ?? 'FSYNC_COMMITTED';
+    this.#compiler = options.compiler;
+    this.#validator = options.validator;
+    this.#journal = options.journal;
+    this.#durability = options.durability ?? 'FSYNC_COMMITTED';
+    if (storeIngressJournalInstances.has(options.journal)) durableCanonicalIngressInstances.add(this);
     if (options.downstreamSubscriber) {
-      this.subscribers.push(options.downstreamSubscriber);
+      this.#subscribers.push(options.downstreamSubscriber);
     }
   }
 
   public subscribe(subscriber: (committed: CommittedEnvelope) => Promise<void> | void): void {
-    this.subscribers.push(subscriber);
+    this.#subscribers.push(subscriber);
   }
 
   public issued(committed: unknown): committed is CommittedEnvelope {
-    return !!committed && typeof committed === 'object' && this.authenticCommittedEnvelopes.has(committed as object);
+    return !!committed && typeof committed === 'object' && this.#authenticCommittedEnvelopes.has(committed as object);
   }
 
   public async submit(observation: UnvalidatedObservation): Promise<IngressReceipt> {
@@ -126,7 +137,7 @@ export class CanonicalIngress implements ObservationIngressPort {
     }
 
     // 1. In-flight / seen deduplication check
-    if (this.seenObservations.has(observation.observationId)) {
+    if (this.#seenObservations.has(observation.observationId)) {
       return {
         status: 'DUPLICATE',
         observationId: observation.observationId,
@@ -134,11 +145,33 @@ export class CanonicalIngress implements ObservationIngressPort {
       };
     }
 
-    if (this.journal.findByObservationId) {
+    if (this.#journal.findByObservationId) {
       try {
-        const existing = await this.journal.findByObservationId(observation.observationId);
+        const existing = await this.#journal.findByObservationId(observation.observationId);
         if (existing) {
-          this.seenObservations.add(observation.observationId);
+          if (!this.#seenObservations.has(observation.observationId)) {
+            this.#seenObservations.add(observation.observationId);
+            try {
+              const compiled = await this.#compiler.compile(observation);
+              const valResult = await this.#validator.validate(compiled);
+              if (valResult.valid) {
+                const committedData: CommittedEnvelopeData = {
+                  journalSeq: existing.sequence,
+                  envelopeHash: existing.entryHash,
+                  validatedEnvelope: valResult.validatedEnvelope,
+                  committedAtMs: existing.timestamp ?? Date.now(),
+                  durability: 'FSYNC_COMMITTED',
+                };
+                const committed = Object.freeze(committedData) as CommittedEnvelope;
+                this.#authenticCommittedEnvelopes.add(committed);
+                for (const sub of this.#subscribers) {
+                  await sub(committed);
+                }
+              }
+            } catch {
+              // Redispatch failure handled gracefully
+            }
+          }
           return { status: 'DUPLICATE', observationId: observation.observationId, reason: 'OBSERVATION_ALREADY_COMMITTED' };
         }
       } catch (err) {
@@ -167,7 +200,7 @@ export class CanonicalIngress implements ObservationIngressPort {
     // 2. Compile: UnvalidatedObservation -> CompiledFusionEnvelope
     let compiled: CompiledFusionEnvelope;
     try {
-      compiled = await this.compiler.compile(observation);
+      compiled = await this.#compiler.compile(observation);
     } catch (err) {
       return {
         status: 'REJECTED',
@@ -179,7 +212,7 @@ export class CanonicalIngress implements ObservationIngressPort {
     // 3. Validate: CompiledFusionEnvelope -> ValidatedFusionEnvelope
     let validationResult: ValidationResult;
     try {
-      validationResult = await this.validator.validate(compiled);
+      validationResult = await this.#validator.validate(compiled);
     } catch (err) {
       return {
         status: 'REJECTED',
@@ -200,16 +233,18 @@ export class CanonicalIngress implements ObservationIngressPort {
 
     // 4. Durability Barrier Check
     // Master Blueprint & Section 14 Invariant: Only FSYNC_COMMITTED may create CommittedEnvelope.
-    if (this.durability !== 'FSYNC_COMMITTED') {
-      throw new Error(
-        `DURABILITY_BARRIER_VIOLATION: Durability mode '${this.durability}' is forbidden. Only FSYNC_COMMITTED may create CommittedEnvelope.`
-      );
+    if (this.#durability !== 'FSYNC_COMMITTED' || !storeIngressJournalInstances.has(this.#journal)) {
+      return {
+        status: 'REJECTED',
+        observationId: observation.observationId,
+        reason: 'DURABLE_STORE_INGRESS_JOURNAL_REQUIRED',
+      };
     }
 
     // 5. Commit to Durable Journal
     let journalRecord: IngressJournalRecord;
     try {
-      journalRecord = await this.journal.append(validated);
+      journalRecord = await this.#journal.append(validated);
     } catch (err) {
       return {
         status: 'REJECTED',
@@ -228,14 +263,14 @@ export class CanonicalIngress implements ObservationIngressPort {
     };
 
     const committed = Object.freeze(committedData) as CommittedEnvelope;
-    this.authenticCommittedEnvelopes.add(committed);
+    this.#authenticCommittedEnvelopes.add(committed);
 
     // 7. Authoritatively commit deduplication state
-    this.seenObservations.add(observation.observationId);
+    this.#seenObservations.add(observation.observationId);
 
     // 8. Downstream Authoritative Notification
     // Invariant: Strictly executed ONLY AFTER durable journal commit.
-    this.pendingDeliveries.set(observation.observationId, committed);
+    this.#pendingDeliveries.set(observation.observationId, committed);
     const delivered = await this.deliverPending(observation.observationId);
 
     return delivered ? {
@@ -252,7 +287,7 @@ export class CanonicalIngress implements ObservationIngressPort {
 
   public async retryPendingDeliveries(): Promise<number> {
     let delivered = 0;
-    for (const observationId of this.pendingDeliveries.keys()) {
+    for (const observationId of this.#pendingDeliveries.keys()) {
       if (await this.deliverPending(observationId)) delivered++;
     }
     return delivered;
@@ -260,8 +295,8 @@ export class CanonicalIngress implements ObservationIngressPort {
 
   private async deliverPending(observationId: string): Promise<boolean> {
     let resolveMutex!: () => void;
-    const previous = this.deliveryMutex;
-    this.deliveryMutex = new Promise<void>(resolve => { resolveMutex = resolve; });
+    const previous = this.#deliveryMutex;
+    this.#deliveryMutex = new Promise<void>(resolve => { resolveMutex = resolve; });
     await previous;
     try {
       return await this.deliverPendingExclusive(observationId);
@@ -271,15 +306,15 @@ export class CanonicalIngress implements ObservationIngressPort {
   }
 
   private async deliverPendingExclusive(observationId: string): Promise<boolean> {
-    const committed = this.pendingDeliveries.get(observationId);
+    const committed = this.#pendingDeliveries.get(observationId);
     if (!committed) return true;
     try {
-      while (this.deliveryCursor < this.subscribers.length) {
-        await this.subscribers[this.deliveryCursor](committed);
-        this.deliveryCursor++;
+      while (this.#deliveryCursor < this.#subscribers.length) {
+        await this.#subscribers[this.#deliveryCursor](committed);
+        this.#deliveryCursor++;
       }
-      this.pendingDeliveries.delete(observationId);
-      this.deliveryCursor = 0;
+      this.#pendingDeliveries.delete(observationId);
+      this.#deliveryCursor = 0;
       return true;
     } catch {
       // Keep the exact durable envelope available for explicit retry.
@@ -360,7 +395,9 @@ export class DefaultTruthValidator implements TruthValidator {
       validatedAtMs: Date.now(),
       rawPayloadHash: obs.rawPayloadHash,
       signatureVerified: false,
-      schemaCompliant: true,
+      // Only the versioned Solana log compiler currently enforces a recognized
+      // event schema. Generic/test decoders must not claim schema validation.
+      schemaCompliant: compiled.compilerVersion.startsWith('solana-pump-') && compiled.decodedEvents.length > 0,
       verificationMethod: 'OBSERVATION_HASH_AND_LOG_DECODING_ONLY',
     };
 
@@ -468,15 +505,20 @@ export interface CreateCanonicalSolanaIngressOptions {
   onCommitted?: (committed: CommittedEnvelope) => Promise<void> | void;
 }
 
-/** Adapts the Store audit transaction to the ingress journal contract. The resolved Store
- * acknowledgement follows SQLite COMMIT with WAL + synchronous=FULL, so downstream work
- * cannot run before the durable transaction completes. */
+/** Adapts the Store audit transaction to the ingress journal contract. Before writing,
+ * the worker must prove its live connection is file-backed, in WAL mode, and synchronous=FULL. */
 export class StoreIngressJournal implements IngressDurableJournal {
-  constructor(private readonly store: AuditEventJournal) {
-    if (!store || typeof store.appendAuditEvent !== 'function') throw new Error('INGRESS_DURABLE_JOURNAL_REQUIRED');
+  readonly #store: StoreIngressCapability;
+
+  constructor(store: Store & AuditEventJournal) {
+    const capability = getStoreIngressCapability(store);
+    if (!capability) throw new Error('INGRESS_DURABLE_JOURNAL_REQUIRED');
+    this.#store = capability;
+    storeIngressJournalInstances.add(this);
   }
 
   async append(validated: ValidatedFusionEnvelope): Promise<IngressJournalRecord> {
+    await this.#store.assertDurable();
     const { observation, envelopeId, compilerVersion, decodedEvents } = validated.compiledEnvelope;
     const { truthEvidence, validationId, validatorVersion } = validated;
     const payload = {
@@ -516,7 +558,7 @@ export class StoreIngressJournal implements IngressDurableJournal {
     const entryHash = createHash('sha256').update(canonicalPayload).digest('hex') as Hash256;
     let result: { inserted: boolean; auditId?: number };
     try {
-      result = await this.store.appendAuditEvent('canonical_ingress_committed_v1', { ...payload, entryHash }, stableEventId);
+      result = await this.#store.appendAuditEvent('canonical_ingress_committed_v1', { ...payload, entryHash }, stableEventId);
     } catch (error) {
       if (!(error instanceof Error) || error.message !== 'DUPLICATE_EVENT_ID_CONTENT_CONFLICT') throw error;
       const existing = await this.findByObservationId(observation.observationId);
@@ -526,11 +568,13 @@ export class StoreIngressJournal implements IngressDurableJournal {
     if (!result.inserted && result.auditId === undefined) throw new Error('INGRESS_JOURNAL_ID_MISSING');
     const sequence = result.auditId;
     if (!Number.isSafeInteger(sequence) || sequence! <= 0) throw new Error('INGRESS_JOURNAL_SEQUENCE_INVALID');
-    return { sequence: BigInt(sequence!), entryHash };
+    const durableRecord = await this.findByObservationId(observation.observationId);
+    if (!durableRecord || durableRecord.sequence !== BigInt(sequence!)) throw new Error('INGRESS_JOURNAL_COMMIT_NOT_READABLE');
+    return durableRecord;
   }
 
   async findByObservationId(observationId: string): Promise<IngressJournalRecord | null> {
-    const row = await this.store.getAuditEventByStableId(`ingress:${observationId}`);
+    const row = await this.#store.getAuditEventByStableId(`ingress:${observationId}`);
     if (row?.pruned) {
       if (typeof row.eventHash !== 'string' || !/^[a-f0-9]{64}$/.test(row.eventHash)) throw new Error('INGRESS_JOURNAL_DEDUPE_ROW_INVALID');
       return { sequence: BigInt(row.id), entryHash: row.eventHash as Hash256 };
@@ -539,12 +583,18 @@ export class StoreIngressJournal implements IngressDurableJournal {
       if (candidate.body === null) continue;
       let payload: any;
       try { payload = JSON.parse(candidate.body); } catch { throw new Error('INGRESS_JOURNAL_ROW_INVALID'); }
-      if (payload?.observationId === observationId) {
-        if (typeof payload.entryHash !== 'string' || !/^[a-f0-9]{64}$/.test(payload.entryHash)) throw new Error('INGRESS_JOURNAL_ROW_INVALID');
-        const { entryHash, ...entryPayload } = payload;
-        if (createHash('sha256').update(JSON.stringify(entryPayload)).digest('hex') !== entryHash) throw new Error('INGRESS_JOURNAL_HASH_MISMATCH');
-        return { sequence: BigInt(candidate.id), entryHash: payload.entryHash as Hash256 };
+      if (candidate.event !== 'canonical_ingress_committed_v1' || payload?.observationId !== observationId ||
+          typeof candidate.eventHash !== 'string' || !/^[a-f0-9]{64}$/.test(candidate.eventHash)) {
+        throw new Error('INGRESS_JOURNAL_ROW_INVALID');
       }
+      if (typeof payload.entryHash !== 'string' || !/^[a-f0-9]{64}$/.test(payload.entryHash)) throw new Error('INGRESS_JOURNAL_ROW_INVALID');
+      const { entryHash, ...entryPayload } = payload;
+      if (createHash('sha256').update(JSON.stringify(entryPayload)).digest('hex') !== entryHash) {
+        throw new Error('INGRESS_JOURNAL_HASH_MISMATCH');
+      }
+      const expectedHash = createHash('sha256').update(`${candidate.event}:${candidate.body}`).digest('hex');
+      if (expectedHash !== candidate.eventHash) throw new Error('INGRESS_JOURNAL_HASH_MISMATCH');
+      return { sequence: BigInt(candidate.id), entryHash: candidate.eventHash as Hash256 };
     }
     return null;
   }

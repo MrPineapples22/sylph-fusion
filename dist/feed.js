@@ -25,7 +25,7 @@ function validateSource(source) {
 }
 export class Feed {
     cfg;
-    ingress;
+    #ingress;
     sourceId = 'feed-solana-pump';
     seen = new BoundedSet(100_000, 300_000);
     sockets = new Set();
@@ -36,25 +36,12 @@ export class Feed {
     last = 0;
     slot = 0;
     readySince = 0;
-    _parser;
     constructor(cfg, _connection, ingress) {
         this.cfg = cfg;
-        this.ingress = ingress;
         if (typeof ingress === 'function' || !ingress || typeof ingress.submit !== 'function') {
             throw new Error('FEED_CALLBACK_BYPASS_FORBIDDEN: Feed requires an ObservationIngressPort instance. Arbitrary callback functions are strictly prohibited.');
         }
-    }
-    get parser() {
-        if (this.ingress?.compiler?.parser) {
-            return this.ingress.compiler.parser;
-        }
-        return this._parser;
-    }
-    set parser(p) {
-        this._parser = p;
-        if (this.ingress?.compiler) {
-            this.ingress.compiler.parser = p;
-        }
+        this.#ingress = ingress;
     }
     healthy() { const age = Date.now() - this.last; return !this.stopped && this.last > 0 && age >= 0 && age < this.cfg.FEED_STALE_MS && Date.now() - this.readySince >= this.cfg.MIN_AGE_MS; }
     async accept(signature, slot, logs, source = { sourceId: 'unknown', providerId: 'unknown', transport: 'unknown', commitment: 'unknown' }) {
@@ -110,7 +97,7 @@ export class Feed {
             return;
         let receipt;
         try {
-            receipt = await this.ingress.submit(observation);
+            receipt = await this.#ingress.submit(observation);
         }
         catch (err) {
             this.last = 0;
@@ -149,7 +136,7 @@ export class Feed {
         return receipt;
     }
     async start(sink, signal) {
-        if (sink !== this.ingress)
+        if (sink !== this.#ingress)
             throw new Error('OBSERVATION_INGRESS_MISMATCH');
         signal.addEventListener('abort', () => { void this.stop(); }, { once: true });
         await this.run();

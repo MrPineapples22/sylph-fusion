@@ -13,9 +13,16 @@ import { exitDecision, log, mulBps, settle, recordFailure, recordEquity, pruneRi
 import { startDashboard } from './dashboard.js';
 import { RpcPool } from './rpc.js';
 import { Feed, type MarketEvent } from './feed.js';
-import { CanonicalIngress, createCanonicalSolanaIngress, StoreIngressJournal } from './platform/ingress/canonical-ingress.js';
+import { CanonicalIngress, createCanonicalSolanaIngress, StoreIngressJournal, isDurableCanonicalIngress } from './platform/ingress/canonical-ingress.js';
 import type { CommittedEnvelope, UnvalidatedObservation } from './platform/ingress/types.js';
 import { CanonicalReducer, type FusionStateRootV2, type StateTransitionProof } from './platform/reducer/index.js';
+import {
+  isIntelligenceInput,
+  createAuthoritativeDecision,
+  type IntelligenceInput,
+  type AuthoritativeDecision,
+  type DecisionAction,
+} from './intelligence/provenance/index.js';
 import { Market, type Snapshot } from './market.js';
 import { Executor } from './execution.js';
 import { type ExecutionAuthority, SimulationExecutionAuthority, LiveExecutionAuthority, simulationExecutionCosts, simulationSellProceeds } from './platform/execution/authority.js';
@@ -247,7 +254,6 @@ export class Engine {
   private canonicalState: FusionStateRootV2 = CanonicalReducer.createGenesisState();
   private lastTransitionProof: StateTransitionProof | null = null;
   readonly feed: Feed;
-  get ingress(): CanonicalIngress { return this.#ingress; }
   readonly runtimeUnit: UnifiedPipelineUnit;
   divergenceAuditor?: RuntimeDivergenceAuditor;
 
@@ -257,6 +263,50 @@ export class Engine {
 
   public getLastTransitionProof(): StateTransitionProof | null {
     return this.lastTransitionProof;
+  }
+
+  /**
+   * Authority Decision Gateway (Section 28).
+   * Engine must only evaluate through an authenticated IntelligenceInput.
+   * Forbids MarketEvent, UnvalidatedObservation, CompiledFusionEnvelope, ValidatedFusionEnvelope.
+   */
+  public evaluate(input: IntelligenceInput): AuthoritativeDecision {
+    if (!isIntelligenceInput(input)) {
+      throw new Error('ILLEGAL_ENGINE_EVALUATE_INPUT: Engine.evaluate requires an authenticated IntelligenceInput');
+    }
+
+    const releaseRoot = input.state.releaseRoot && /^[0-9a-fA-F]{64}$/.test(input.state.releaseRoot)
+      ? input.state.releaseRoot
+      : '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+
+    const controlRoot = input.state.proofGraphRoot && /^[0-9a-fA-F]{64}$/.test(input.state.proofGraphRoot)
+      ? input.state.proofGraphRoot
+      : 'fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210';
+
+    const features = input.snapshot.features;
+    const targetMint = features[0]?.sourceObservationId ? features[0].sourceObservationId : 'default_mint';
+
+    let action: DecisionAction = 'HOLD';
+    if (features.length > 0) {
+      action = 'HOLD';
+    }
+
+    const evaluation: Record<string, unknown> = {
+      evaluatedAtMs: input.decisionTimeMs,
+      featureCount: input.snapshot.featureCount,
+      stateRoot: input.state.stateRoot,
+      journalSeq: input.proof.journalSeq.toString(),
+    };
+
+    return createAuthoritativeDecision({
+      input,
+      decisionId: `dec_${input.proof.journalSeq}_${input.decisionTimeMs}`,
+      targetMint,
+      action,
+      evaluation,
+      releaseRoot,
+      controlRoot,
+    });
   }
   constructor(
     readonly cfg: Config,
@@ -274,15 +324,17 @@ export class Engine {
     ingress?: CanonicalIngress,
     feed?: Feed,
   ) {
-    if (ingress) {
+    if (ingress && isDurableCanonicalIngress(ingress)) {
       this.#ingress = ingress;
-    } else if (store && typeof (store as any).appendAuditEvent === 'function') {
+    } else if (ingress) {
+      throw new Error('INGRESS_DURABLE_JOURNAL_REQUIRED');
+    } else if (store instanceof Store && typeof store.appendAuditEvent === 'function') {
       this.#ingress = createCanonicalSolanaIngress({ journal: new StoreIngressJournal(store as any) });
     } else {
       throw new Error('INGRESS_DURABLE_JOURNAL_REQUIRED');
     }
     this.#ingress.subscribe(async (committed: CommittedEnvelope) => {
-      await this.onCommitted(committed);
+      await this.#onCommitted(committed);
     });
     this.feed = feed ?? new Feed(cfg, rpc.connection, this.#ingress);
     this.feed.gapReconciler.setRecoveryCertificateJournal({
@@ -901,7 +953,7 @@ export class Engine {
     };
   }
 
-  private async onCommitted(committed: CommittedEnvelope): Promise<void> {
+  async #onCommitted(committed: CommittedEnvelope): Promise<void> {
     if (!this.#ingress.issued(committed)) {
       throw new Error('COMMITTED_ENVELOPE_NOT_ISSUED_BY_CANONICAL_INGRESS');
     }

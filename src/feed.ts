@@ -26,6 +26,7 @@ function validateSource(source: { sourceId: string; providerId: string; transpor
 
 export type MarketEvent = { name: string; data: Record<string, any>; signature: string; slot: number; received: number; observation: RawObservationEnvelope | UnvalidatedObservation };
 export class Feed implements ObservationSource {
+  readonly #ingress: ObservationIngressPort;
   readonly sourceId = 'feed-solana-pump';
   private seen = new BoundedSet(100_000, 300_000);
   private sockets = new Set<WebSocket>();
@@ -36,28 +37,14 @@ export class Feed implements ObservationSource {
   last = 0;
   slot = 0;
   readySince = 0;
-  private _parser?: any;
 
-  constructor(private cfg: Config, _connection: Connection, private readonly ingress: ObservationIngressPort) {
+  constructor(private cfg: Config, _connection: Connection, ingress: ObservationIngressPort) {
     if (typeof ingress === 'function' || !ingress || typeof ingress.submit !== 'function') {
       throw new Error(
         'FEED_CALLBACK_BYPASS_FORBIDDEN: Feed requires an ObservationIngressPort instance. Arbitrary callback functions are strictly prohibited.'
       );
     }
-  }
-
-  get parser(): any {
-    if ((this.ingress as any)?.compiler?.parser) {
-      return (this.ingress as any).compiler.parser;
-    }
-    return this._parser;
-  }
-
-  set parser(p: any) {
-    this._parser = p;
-    if ((this.ingress as any)?.compiler) {
-      (this.ingress as any).compiler.parser = p;
-    }
+    this.#ingress = ingress;
   }
 
   healthy() { const age = Date.now() - this.last; return !this.stopped && this.last > 0 && age >= 0 && age < this.cfg.FEED_STALE_MS && Date.now() - this.readySince >= this.cfg.MIN_AGE_MS; }
@@ -134,7 +121,7 @@ export class Feed implements ObservationSource {
 
     let receipt: IngressReceipt;
     try {
-      receipt = await this.ingress.submit(observation);
+      receipt = await this.#ingress.submit(observation);
     } catch (err) {
       this.last = 0;
       this.readySince = now;
@@ -172,7 +159,7 @@ export class Feed implements ObservationSource {
   }
 
   async start(sink: ObservationIngressPort, signal: AbortSignal): Promise<void> {
-    if (sink !== this.ingress) throw new Error('OBSERVATION_INGRESS_MISMATCH');
+    if (sink !== this.#ingress) throw new Error('OBSERVATION_INGRESS_MISMATCH');
     signal.addEventListener('abort', () => { void this.stop(); }, { once: true });
     await this.run();
   }

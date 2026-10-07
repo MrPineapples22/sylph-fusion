@@ -20,7 +20,7 @@ import {
   exportSessionArtifact,
 } from '../terminal/soak-reader.mjs';
 import { aggregateSessionStats } from '../terminal/src/paper-baseline-eval.js';
-import { CanonicalIngress, DefaultFusionEnvelopeCompiler, DefaultTruthValidator, InMemoryIngressJournal } from '../dist/platform/ingress/canonical-ingress.js';
+import { CanonicalIngress, DefaultFusionEnvelopeCompiler, DefaultTruthValidator, StoreIngressJournal } from '../dist/platform/ingress/canonical-ingress.js';
 import { createUnvalidatedObservation } from '../dist/platform/ingress/observation-factory.js';
 
 const makeKey = (seed) => Keypair.fromSeed(Buffer.alloc(32, seed));
@@ -193,7 +193,7 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
         },
       },
       validator: new DefaultTruthValidator(),
-      journal: new InMemoryIngressJournal(),
+      journal: new StoreIngressJournal(store),
     });
     const engine = new Engine(
       cfg,
@@ -218,12 +218,12 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
     const cCreator = creatorPub.toBase58();
     const eventTime = Date.now() - 15_000;
 
-    const feedCommitted = async (engineInstance, event) => {
+    const feedCommitted = async (_engineInstance, event) => {
       const { observation: _testOnlyObservation, ...eventPayload } = event;
       const rawPayload = Buffer.from(JSON.stringify(eventPayload, (_key, value) =>
         typeof value === 'bigint' ? value.toString() : value?.toBase58?.() ?? value
       ));
-      const receipt = await engineInstance.ingress.submit(createUnvalidatedObservation({
+      const receipt = await e2eIngress.submit(createUnvalidatedObservation({
         sourceId: 'test-provider', providerId: 'prov-test', transport: 'test_feed',
         receivedAtMs: Number(event.received ?? Date.now()), observedAtMs: Number(event.received ?? Date.now()),
         slot: Number(event.slot ?? 100), commitment: 'confirmed', signature: event.signature || 'sig-1',
@@ -329,7 +329,7 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
     const snapshotRecord = JSON.parse(snapshotAudit[0].body);
     assert.equal(snapshotRecord.candidateGenerationId, discoveryRecord.candidateId);
     assert.equal(snapshotRecord.snapshot.candidateId, candSnapshot.candidateId);
-    assert.equal(snapshotRecord.sourceObservation.observationId, 'obs-create-sig-1');
+    assert.equal(snapshotRecord.sourceObservation.observationId, candidate.sourceObservation.observationId);
     assert.equal(snapshotRecord.snapshot.featureSealHash, candSnapshot.featureSealHash);
 
     // Durable point-in-time storage must not depend on optional SESSION_DIR files.
@@ -653,7 +653,7 @@ test('Engine paper marks match executable simulation sell proceeds and disappear
     };
     const rpc = {};
     const authority = new SimulationExecutionAuthority(cfg, market, key.publicKey);
-    store = { save: async () => {} };
+    store = new Store(join(rootDir, 'fusion.sqlite'));
 
     const makeEngine = (position, initialCash = 1_000_000_000n) => {
       const state = {
@@ -665,7 +665,7 @@ test('Engine paper marks match executable simulation sell proceeds and disappear
       const ingress = new CanonicalIngress({
         compiler: new DefaultFusionEnvelopeCompiler(),
         validator: new DefaultTruthValidator(),
-        journal: new InMemoryIngressJournal(),
+        journal: new StoreIngressJournal(store),
       });
       const engine = new Engine(cfg, rpc, market, authority, store, state, undefined, undefined, undefined, undefined, undefined, undefined, ingress);
       engine.feed.last = Date.now();
@@ -707,7 +707,7 @@ test('Engine paper marks match executable simulation sell proceeds and disappear
     assert.equal(graduatedEngine.state.performance?.count ?? 0, fillsBefore,
       'no fabricated sell fill is recorded for an unavailable graduated-venue quote');
   } finally {
-    if (typeof store?.close === 'function') store.close();
+    if (typeof store?.close === 'function') await store.close();
     await rm(rootDir, { recursive: true, force: true });
   }
 });

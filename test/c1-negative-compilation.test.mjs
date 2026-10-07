@@ -1,10 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import ts from 'typescript';
-import { resolve, dirname } from 'node:path';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Feed } from '../dist/feed.js';
-import { CanonicalIngress, DefaultFusionEnvelopeCompiler, DefaultTruthValidator, InMemoryIngressJournal } from '../dist/platform/ingress/canonical-ingress.js';
+import { CanonicalIngress, DefaultFusionEnvelopeCompiler, DefaultTruthValidator, InMemoryIngressJournal, StoreIngressJournal } from '../dist/platform/ingress/canonical-ingress.js';
+import { Store } from '../dist/store.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -114,7 +117,17 @@ test('C1 Negative Compilation: external engine.onCommitted access fails compilat
     engine.onCommitted(forged);
   `;
   const diagnostics = compileSnippet(snippet);
-  assert.ok(diagnostics.some(d => d.message.includes("Property 'onCommitted' is private")), JSON.stringify(diagnostics));
+  assert.ok(diagnostics.some(d => d.message.includes("Property 'onCommitted' does not exist")), JSON.stringify(diagnostics));
+});
+
+test('C1 Negative Compilation: Engine does not expose its ingress authority', () => {
+  const snippet = `
+    import { Engine } from './fusion.js';
+    declare const engine: Engine;
+    engine.ingress;
+  `;
+  const diagnostics = compileSnippet(snippet);
+  assert.ok(diagnostics.some(d => d.message.includes("Property 'ingress' does not exist")), JSON.stringify(diagnostics));
 });
 
 test('C1 Negative Compilation: UnvalidatedObservation cannot satisfy ValidatedFusionEnvelope', () => {
@@ -192,19 +205,47 @@ test('C1 Runtime Guard: new Feed with function callback throws FEED_CALLBACK_BYP
   );
 });
 
-test('C1 Runtime Guard: Engine rejects structurally forged committed envelopes', async () => {
+test('C1 Runtime Guard: Engine rejects forged and replayed committed envelopes', async t => {
   const { Engine } = await import('../dist/fusion.js');
-  const ingress = new CanonicalIngress({ compiler: new DefaultFusionEnvelopeCompiler(), validator: new DefaultTruthValidator(), journal: new InMemoryIngressJournal() });
+  const dir = await mkdtemp(join(tmpdir(), 'c1-engine-authority-'));
+  const store = new Store(join(dir, 'state.sqlite'));
+  t.after(async () => { await store.close(); await rm(dir, { recursive: true, force: true }); });
+  const ingress = new CanonicalIngress({ compiler: new DefaultFusionEnvelopeCompiler(), validator: new DefaultTruthValidator(), journal: new StoreIngressJournal(store) });
   const engine = new Engine({ MODE: 'paper_standard' }, { connection: {} }, {}, {}, {}, { mode: 'paper_standard' }, undefined, undefined, 'deterministic_only', undefined, undefined, undefined, ingress);
+  assert.throws(
+    () => new Engine({ MODE: 'paper_standard' }, { connection: {} }, {}, {}, {}, { mode: 'paper_standard' }),
+    /INGRESS_DURABLE_JOURNAL_REQUIRED/,
+    'Engine must not silently create an in-memory production journal'
+  );
+  const inMemoryIngress = new CanonicalIngress({ compiler: new DefaultFusionEnvelopeCompiler(), validator: new DefaultTruthValidator(), journal: new InMemoryIngressJournal() });
+  assert.throws(
+    () => new Engine({ MODE: 'paper_standard' }, { connection: {} }, {}, {}, store, { mode: 'paper_standard' }, undefined, undefined, 'deterministic_only', undefined, undefined, undefined, inMemoryIngress),
+    /INGRESS_DURABLE_JOURNAL_REQUIRED/,
+    'an explicitly supplied in-memory journal must not be accepted as FSYNC authority'
+  );
   const forged = {
     journalSeq: 1n, envelopeHash: 'a'.repeat(64), durability: 'FSYNC_COMMITTED', committedAtMs: Date.now(),
     validatedEnvelope: { compiledEnvelope: { decodedEvents: [] } },
   };
-  await assert.rejects(() => engine.onCommitted({
-    ...forged,
-  }), /COMMITTED_ENVELOPE_NOT_ISSUED_BY_CANONICAL_INGRESS/);
+  assert.equal(engine.onCommitted, undefined, 'Engine must not expose a JavaScript-callable delivery handler');
+  assert.equal(engine.ingress, undefined, 'Engine must not expose its dispatcher to caller-controlled subscriptions');
+  assert.equal(engine['#onCommitted'], undefined, 'a captured envelope cannot reach the private dispatch method by property lookup');
+  assert.equal(engine.feed.ingress, undefined, 'Feed must not expose a replaceable JavaScript ingress property');
+  assert.equal(engine.feed['#ingress'], undefined, 'Feed ingress is held in a JavaScript private field');
   assert.equal(typeof ingress.registerAuthenticForTesting, 'undefined');
+  assert.equal(ingress.authenticCommittedEnvelopes, undefined, 'runtime issuer WeakSet must remain JavaScript private');
   assert.equal(ingress.issued(forged), false);
+  let captured;
+  ingress.subscribe(committed => { captured = committed; });
+  const { createUnvalidatedObservation } = await import('../dist/platform/ingress/observation-factory.js');
+  const receipt = await ingress.submit(createUnvalidatedObservation({
+    sourceId: 'runtime-test', providerId: 'runtime-test', transport: 'test_feed',
+    receivedAtMs: Date.now(), slot: 1, commitment: 'confirmed', signature: 'captured-test',
+    transactionVersion: 0, rawPayload: Buffer.from('[]'), schemaVersion: 'test-v1', processingIntent: 'LIVE',
+  }));
+  assert.equal(receipt.status, 'ACCEPTED');
+  assert.equal(ingress.issued(captured), true, 'the captured object is genuinely issued by ingress');
+  assert.equal(engine.onCommitted, undefined, 'capturing an authentic envelope does not create a replay entrypoint');
 });
 
 import { createUnvalidatedObservation } from '../dist/platform/ingress/observation-factory.js';
@@ -232,8 +273,7 @@ test('C1 Runtime Guard: CanonicalIngress rejects non-FSYNC_COMMITTED durability 
     processingIntent: 'LIVE',
   });
 
-  await assert.rejects(
-    () => ingress.submit(mockObs),
-    /DURABILITY_BARRIER_VIOLATION/
-  );
+  const receipt = await ingress.submit(mockObs);
+  assert.equal(receipt.status, 'REJECTED');
+  assert.match(receipt.reason, /DURABLE_STORE_INGRESS_JOURNAL_REQUIRED/);
 });

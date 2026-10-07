@@ -109,6 +109,7 @@ function auditSourceAst() {
   let adapterAuthorityImports = 0;
   let feedCallbackBypasses = 0;
   let directStateMutators = 0;
+  let unprovenancedDecisions = 0;
 
   const violations = [];
 
@@ -187,12 +188,23 @@ function auditSourceAst() {
         if (ts.isClassDeclaration(node) && node.name?.text === 'Engine') {
           for (const member of node.members) {
             // Public/alternate event delivery methods bypass the single ingress subscriber.
-            if (ts.isMethodDeclaration(member) && member.modifiers?.some(m => m.kind === ts.SyntaxKind.PublicKeyword) && ['onEvent', 'onCommitted'].includes(member.name.getText(sourceFile))) {
+            const deliveryMethodName = ts.isMethodDeclaration(member) ? member.name.getText(sourceFile) : '';
+            if (ts.isMethodDeclaration(member) && ['onEvent', 'onCommitted'].includes(deliveryMethodName)) {
               rawToEnginePaths++;
               violations.push({
                 category: 'RAW_TO_ENGINE_PATHS',
                 file: relPath,
-                detail: `Engine exposes an event-delivery method '${member.name.getText(sourceFile)}' outside canonical ingress`,
+                detail: `Engine has a JavaScript-callable event-delivery method '${deliveryMethodName}' outside canonical ingress`,
+              });
+            }
+            if ((ts.isGetAccessorDeclaration(member) || ts.isPropertyDeclaration(member)) &&
+                member.name.getText(sourceFile) === 'ingress' &&
+                !member.modifiers?.some(m => m.kind === ts.SyntaxKind.PrivateKeyword)) {
+              rawToEnginePaths++;
+              violations.push({
+                category: 'RAW_TO_ENGINE_PATHS',
+                file: relPath,
+                detail: 'Engine exposes its canonical ingress instance to callers outside the private dispatch boundary',
               });
             }
             // In constructor: check Feed construction
@@ -274,6 +286,7 @@ function auditSourceAst() {
     adapterAuthorityImports,
     feedCallbackBypasses,
     directStateMutators,
+    unprovenancedDecisions,
     violations,
   };
 }
@@ -405,6 +418,44 @@ function runNegativeCompilationGuards() {
   `, 'StateTransitionProof');
   if (!g8.success) { negativeGuardFailures++; guardResults.push({ name: 'Proof Brand Guard', error: g8.reason }); }
 
+  // Guard 9: MarketEvent -> Engine.evaluate
+  const g9 = testSnippet(`
+    import { Engine } from './fusion.js';
+    import { type MarketEvent } from './feed.js';
+    declare const e: Engine;
+    declare const m: MarketEvent;
+    e.evaluate(m);
+  `, 'IntelligenceInput');
+  if (!g9.success) { negativeGuardFailures++; guardResults.push({ name: 'MarketEvent -> Engine.evaluate Guard', error: g9.reason }); }
+
+  // Guard 10: UnvalidatedObservation -> Engine.evaluate
+  const g10 = testSnippet(`
+    import { Engine } from './fusion.js';
+    import { type UnvalidatedObservation } from './platform/ingress/types.js';
+    declare const e: Engine;
+    declare const obs: UnvalidatedObservation;
+    e.evaluate(obs);
+  `, 'IntelligenceInput');
+  if (!g10.success) { negativeGuardFailures++; guardResults.push({ name: 'UnvalidatedObservation -> Engine.evaluate Guard', error: g10.reason }); }
+
+  // Guard 11: ValidatedFusionEnvelope -> Engine.evaluate
+  const g11 = testSnippet(`
+    import { Engine } from './fusion.js';
+    import { type ValidatedFusionEnvelope } from './platform/ingress/types.js';
+    declare const e: Engine;
+    declare const val: ValidatedFusionEnvelope;
+    e.evaluate(val);
+  `, 'IntelligenceInput');
+  if (!g11.success) { negativeGuardFailures++; guardResults.push({ name: 'ValidatedEnvelope -> Engine.evaluate Guard', error: g11.reason }); }
+
+  // Guard 12: Forging VerifiedDecision without ProvenanceVerifier
+  const g12 = testSnippet(`
+    import { type VerifiedDecision, type AuthoritativeDecision } from './intelligence/provenance/types.js';
+    declare const d: AuthoritativeDecision;
+    const v: VerifiedDecision = { decision: d, verificationHash: 'a', verifiedAtMs: 1, canonicalBranch: 'main' };
+  `, 'VerifiedDecision');
+  if (!g12.success) { negativeGuardFailures++; guardResults.push({ name: 'VerifiedDecision Brand Guard', error: g12.reason }); }
+
   return { negativeGuardFailures, guardResults };
 }
 
@@ -414,7 +465,12 @@ function runNegativeCompilationGuards() {
 function runRuntimeTests() {
   const tests = [
     { name: 'C1 Durability Integration', file: 'test/platform/canonical-ingress-durability.test.mjs' },
+    { name: 'C1 Durable Delivery Crash/Restart Recovery', file: 'test/platform/canonical-ingress-crash-recovery.test.mjs' },
+    { name: 'C1 Runtime Authority Guards', file: 'test/c1-negative-compilation.test.mjs' },
     { name: 'C2 Mutation Exclusivity & Real Immutability', file: 'test/c2-mutation-exclusivity.test.mjs' },
+    { name: 'C2 Negative Compilation Guards', file: 'test/c2-negative-compilation.test.mjs' },
+    { name: 'C3 Decision Provenance & PIT Causality', file: 'test/c3-decision-provenance.test.mjs' },
+    { name: 'C3 Negative Compilation Guards', file: 'test/c3-negative-compilation.test.mjs' },
   ];
 
   let passed = true;
@@ -440,6 +496,15 @@ function runRuntimeTests() {
   return { passed, results };
 }
 
+function runEngineBuild() {
+  try {
+    const output = execSync('npm run build:engine', { cwd: projectRoot, stdio: 'pipe', encoding: 'utf8' });
+    return { passed: true, output: output.trim() };
+  } catch (err) {
+    return { passed: false, output: err.stdout || err.stderr || err.message };
+  }
+}
+
 /**
  * Main execution
  */
@@ -457,6 +522,10 @@ async function main() {
   console.log(`Timestamp:   ${timestamp}`);
   console.log('-'.repeat(80));
 
+  console.log('Building current TypeScript sources before runtime verification...');
+  const buildResult = runEngineBuild();
+  console.log(`ENGINE_BUILD_PASSED: ${buildResult.passed}`);
+
   // 1. AST Analysis
   console.log('Running static AST inspection across src/...');
   const astResults = auditSourceAst();
@@ -467,7 +536,7 @@ async function main() {
 
   // 3. Runtime Physical Verification
   console.log('Executing physical runtime integration tests...');
-  const runtimeResults = runRuntimeTests();
+  const runtimeResults = buildResult.passed ? runRuntimeTests() : { passed: false, results: [{ name: 'Engine Build', passed: false, error: buildResult.output }] };
 
   // Aggregate Metrics
   const metrics = {
@@ -478,6 +547,7 @@ async function main() {
     ADAPTER_AUTHORITY_IMPORTS: astResults.adapterAuthorityImports,
     FEED_CALLBACK_BYPASSES: astResults.feedCallbackBypasses,
     DIRECT_STATE_MUTATORS: astResults.directStateMutators,
+    UNPROVENANCED_DECISIONS: astResults.unprovenancedDecisions,
     NEGATIVE_GUARD_FAILURES: guardResults.negativeGuardFailures,
   };
 
@@ -490,6 +560,7 @@ async function main() {
   console.log(`  ADAPTER_AUTHORITY_IMPORTS:  ${metrics.ADAPTER_AUTHORITY_IMPORTS}`);
   console.log(`  FEED_CALLBACK_BYPASSES:     ${metrics.FEED_CALLBACK_BYPASSES}`);
   console.log(`  DIRECT_STATE_MUTATORS:      ${metrics.DIRECT_STATE_MUTATORS}`);
+  console.log(`  UNPROVENANCED_DECISIONS:    ${metrics.UNPROVENANCED_DECISIONS}`);
   console.log(`  NEGATIVE_GUARD_FAILURES:    ${metrics.NEGATIVE_GUARD_FAILURES}`);
   console.log(`  RUNTIME_TESTS_PASSED:       ${runtimeResults.passed}`);
   console.log('-'.repeat(80));
@@ -501,38 +572,74 @@ async function main() {
     'src/platform/ingress/port.ts', 'src/platform/ingress/canonical-ingress.ts',
     'src/platform/reducer/types.ts', 'src/platform/reducer/canonical-reducer.ts',
     'src/platform/reducer/index.ts',
+    'src/intelligence/provenance/types.ts', 'src/intelligence/provenance/pit-snapshot.ts',
+    'src/intelligence/provenance/intelligence-input.ts', 'src/intelligence/provenance/decision-provenance.ts',
+    'src/intelligence/provenance/provenance-verifier.ts', 'src/intelligence/provenance/index.ts',
   ];
   const requiredPresent = requiredFiles.every(path => existsSync(resolve(projectRoot, path)));
 
-  const c1Pass = zeroMetrics && requiredPresent && runtimeResults.passed;
-  const c2Pass = zeroMetrics && requiredPresent && runtimeResults.passed && metrics.DIRECT_STATE_MUTATORS === 0;
+  const deliveryRecoveryTestPresent = existsSync(resolve(projectRoot, 'test/platform/canonical-ingress-crash-recovery.test.mjs'));
+  const c1Pass = zeroMetrics && requiredPresent && runtimeResults.passed && deliveryRecoveryTestPresent;
+  const c2Pass = c1Pass && zeroMetrics && requiredPresent && runtimeResults.passed && metrics.DIRECT_STATE_MUTATORS === 0;
+  const c3Pass = c2Pass && zeroMetrics && requiredPresent && runtimeResults.passed && metrics.UNPROVENANCED_DECISIONS === 0;
 
   const manifest = {
     auditor: 'scripts/audit-single-authority-door.mjs',
-    auditorVersion: '2.0.0-c1-c2',
+    auditorVersion: '3.0.0-c1-c3',
     timestamp,
     commitSha,
     treeSha,
     workingTreeState: getWorkingTreeState(),
     metrics,
+    engineBuild: buildResult,
     violations: astResults.violations,
     negativeGuardFailures: guardResults.guardResults,
     runtimeTestResults: runtimeResults.results,
+    blockers: c3Pass ? [] : [
+      ...(!zeroMetrics ? ['SINGLE_AUTHORITY_STOPPING_METRICS_NONZERO'] : []),
+      ...(!requiredPresent ? ['REQUIRED_ARCHITECTURE_FILES_MISSING'] : []),
+      ...(!buildResult.passed ? ['ENGINE_BUILD_FAILED'] : []),
+      ...(!runtimeResults.passed ? ['REQUIRED_RUNTIME_TESTS_FAILED'] : []),
+      ...(!deliveryRecoveryTestPresent ? ['DURABLE_DELIVERY_CRASH_RECOVERY_UNVERIFIED'] : []),
+    ],
     auditedFiles: {
+      'scripts/audit-single-authority-door.mjs': hashFile(resolve(projectRoot, 'scripts', 'audit-single-authority-door.mjs')),
+      'package.json': hashFile(resolve(projectRoot, 'package.json')),
+      'package-lock.json': hashFile(resolve(projectRoot, 'package-lock.json')),
+      'tsconfig.json': hashFile(resolve(projectRoot, 'tsconfig.json')),
+      'src/store.ts': hashFile(resolve(projectRoot, 'src', 'store.ts')),
+      'src/db-worker.ts': hashFile(resolve(projectRoot, 'src', 'db-worker.ts')),
+      'src/platform/storage/filesystem-policy.ts': hashFile(resolve(projectRoot, 'src', 'platform', 'storage', 'filesystem-policy.ts')),
       'src/feed.ts': hashFile(resolve(projectRoot, 'src', 'feed.ts')),
       'src/fusion.ts': hashFile(resolve(projectRoot, 'src', 'fusion.ts')),
       'src/platform/ingress/types.ts': hashFile(resolve(projectRoot, 'src', 'platform', 'ingress', 'types.ts')),
       'src/platform/ingress/observation-factory.ts': hashFile(resolve(projectRoot, 'src', 'platform', 'ingress', 'observation-factory.ts')),
       'src/platform/ingress/port.ts': hashFile(resolve(projectRoot, 'src', 'platform', 'ingress', 'port.ts')),
       'src/platform/ingress/canonical-ingress.ts': hashFile(resolve(projectRoot, 'src', 'platform', 'ingress', 'canonical-ingress.ts')),
+      'test/platform/canonical-ingress-durability.test.mjs': hashFile(resolve(projectRoot, 'test', 'platform', 'canonical-ingress-durability.test.mjs')),
+      'test/platform/canonical-ingress-crash-recovery.test.mjs': hashFile(resolve(projectRoot, 'test', 'platform', 'canonical-ingress-crash-recovery.test.mjs')),
+      'test/c1-negative-compilation.test.mjs': hashFile(resolve(projectRoot, 'test', 'c1-negative-compilation.test.mjs')),
+      'test/c2-mutation-exclusivity.test.mjs': hashFile(resolve(projectRoot, 'test', 'c2-mutation-exclusivity.test.mjs')),
+      'test/c2-negative-compilation.test.mjs': hashFile(resolve(projectRoot, 'test', 'c2-negative-compilation.test.mjs')),
+      'test/c3-decision-provenance.test.mjs': hashFile(resolve(projectRoot, 'test', 'c3-decision-provenance.test.mjs')),
+      'test/c3-negative-compilation.test.mjs': hashFile(resolve(projectRoot, 'test', 'c3-negative-compilation.test.mjs')),
+      'dist/store.js': hashFile(resolve(projectRoot, 'dist', 'store.js')),
+      'dist/db-worker.js': hashFile(resolve(projectRoot, 'dist', 'db-worker.js')),
+      'dist/platform/ingress/canonical-ingress.js': hashFile(resolve(projectRoot, 'dist', 'platform', 'ingress', 'canonical-ingress.js')),
       'src/platform/reducer/types.ts': hashFile(resolve(projectRoot, 'src', 'platform', 'reducer', 'types.ts')),
       'src/platform/reducer/canonical-reducer.ts': hashFile(resolve(projectRoot, 'src', 'platform', 'reducer', 'canonical-reducer.ts')),
       'src/platform/reducer/index.ts': hashFile(resolve(projectRoot, 'src', 'platform', 'reducer', 'index.ts')),
+      'src/intelligence/provenance/types.ts': hashFile(resolve(projectRoot, 'src', 'intelligence', 'provenance', 'types.ts')),
+      'src/intelligence/provenance/pit-snapshot.ts': hashFile(resolve(projectRoot, 'src', 'intelligence', 'provenance', 'pit-snapshot.ts')),
+      'src/intelligence/provenance/intelligence-input.ts': hashFile(resolve(projectRoot, 'src', 'intelligence', 'provenance', 'intelligence-input.ts')),
+      'src/intelligence/provenance/decision-provenance.ts': hashFile(resolve(projectRoot, 'src', 'intelligence', 'provenance', 'decision-provenance.ts')),
+      'src/intelligence/provenance/provenance-verifier.ts': hashFile(resolve(projectRoot, 'src', 'intelligence', 'provenance', 'provenance-verifier.ts')),
+      'src/intelligence/provenance/index.ts': hashFile(resolve(projectRoot, 'src', 'intelligence', 'provenance', 'index.ts')),
     },
     gateStatuses: {
-      C1: c1Pass ? 'PASS' : 'FAIL',
-      C2: c2Pass ? 'PASS' : 'FAIL',
-      C3: 'NOT PHYSICALLY VERIFIED',
+      C1: c1Pass ? 'PASS' : 'NOT PHYSICALLY VERIFIED',
+      C2: c2Pass ? 'PASS' : 'NOT PHYSICALLY VERIFIED',
+      C3: c3Pass ? 'PASS' : 'NOT PHYSICALLY VERIFIED',
       C4: 'NOT PHYSICALLY VERIFIED',
       C5: 'NOT RUN',
       C6: 'NOT RUN',
@@ -542,6 +649,7 @@ async function main() {
       C10: 'NOT RUN',
       SINGLE_AUTHORITY_DOOR_STRUCTURALLY_VERIFIED: c1Pass ? 'TRUE' : 'FALSE',
       MUTATION_EXCLUSIVITY_VERIFIED: c2Pass ? 'TRUE' : 'FALSE',
+      DECISION_PROVENANCE_VERIFIED: c3Pass ? 'TRUE' : 'FALSE',
       UNIFIED_PIPELINE_CERTIFIED: 'FALSE',
       LIVE_CAPITAL_AUTHORITY: 'BLOCKED',
     },
@@ -555,27 +663,36 @@ async function main() {
   if (!existsSync(evidenceDir)) mkdirSync(evidenceDir, { recursive: true });
   const manifestPathC1 = join(evidenceDir, 'c1-single-authority-door.json');
   const manifestPathC2 = join(evidenceDir, 'c2-mutation-exclusivity.json');
+  const manifestPathC3 = join(evidenceDir, 'c3-decision-provenance.json');
   writeFileSync(manifestPathC1, JSON.stringify(manifest, null, 2), 'utf8');
   writeFileSync(manifestPathC2, JSON.stringify(manifest, null, 2), 'utf8');
+  writeFileSync(manifestPathC3, JSON.stringify(manifest, null, 2), 'utf8');
 
   console.log(`Saved physical evidence manifest to: ${relative(projectRoot, manifestPathC1)}`);
   console.log(`Saved physical evidence manifest to: ${relative(projectRoot, manifestPathC2)}`);
+  console.log(`Saved physical evidence manifest to: ${relative(projectRoot, manifestPathC3)}`);
   console.log(`Evidence Manifest SHA-256: ${manifestHash}`);
   console.log('='.repeat(80));
 
-  if (c1Pass && c2Pass) {
+  if (c1Pass && c2Pass && c3Pass) {
     console.log('C1 STATUS: PASS');
     console.log('C2 STATUS: PASS');
+    console.log('C3 STATUS: PASS');
     console.log('SINGLE_AUTHORITY_DOOR_STRUCTURALLY_VERIFIED: TRUE');
     console.log('MUTATION_EXCLUSIVITY_VERIFIED: TRUE');
-    console.log('C3: NOT PHYSICALLY VERIFIED');
+    console.log('DECISION_PROVENANCE_VERIFIED: TRUE');
     console.log('C4: NOT PHYSICALLY VERIFIED');
     console.log('='.repeat(80));
     process.exit(0);
   } else {
+    console.log(`C1 STATUS: ${c1Pass ? 'PASS' : 'NOT PHYSICALLY VERIFIED'}`);
+    console.log(`C2 STATUS: ${c2Pass ? 'PASS' : 'NOT PHYSICALLY VERIFIED'}`);
+    console.log(`C3 STATUS: ${c3Pass ? 'PASS' : 'NOT PHYSICALLY VERIFIED'}`);
+    if (!deliveryRecoveryTestPresent) console.log('BLOCKER: DURABLE_DELIVERY_CRASH_RECOVERY_UNVERIFIED');
     console.error('AUDIT FAILED:');
     if (!zeroMetrics) console.error('Non-zero stopping metrics:', JSON.stringify(metrics, null, 2));
     if (!runtimeResults.passed) console.error('Runtime tests failed:', JSON.stringify(runtimeResults.results, null, 2));
+    if (!deliveryRecoveryTestPresent) console.error('C1 remains NOT PHYSICALLY VERIFIED: durable commit-to-delivery crash recovery has no physical test.');
     process.exit(1);
   }
 }

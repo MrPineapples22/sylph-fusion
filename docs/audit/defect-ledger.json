@@ -6,17 +6,19 @@
     {
       "id": "C1-INGRESS-001",
       "title": "Canonical ingress must be durably journaled before authoritative delivery",
-      "status": "IMPLEMENTED_PENDING_INDEPENDENT_REVIEW",
+      "status": "PARTIALLY_IMPLEMENTED_PENDING_INDEPENDENT_REVIEW",
       "severity": "CRITICAL",
       "evidence": [
         "Production composition supplies StoreIngressJournal backed by Store.appendAuditEvent.",
         "SQLite worker acknowledges append only after COMMIT; configured database uses WAL and synchronous=FULL.",
-        "test/platform/canonical-ingress-durability.test.mjs verifies downstream sees committed row and replay is recognized by a fresh ingress instance."
+        "A module-private Store capability checks the live worker database path, WAL mode, and synchronous=FULL; overriding the old public check method on Store(':memory:') does not grant a durable ingress capability.",
+        "CanonicalIngress rejects caller-supplied journals before creating or notifying a CommittedEnvelope.",
+        "test/platform/canonical-ingress-durability.test.mjs verifies memory-store rejection, arbitrary-journal rejection, commit-before-notification, and duplicate recognition after reopen."
       ],
       "remaining": [
-        "Independent Astra review of exact worktree snapshot.",
-        "Crash-injection test at commit acknowledgement and downstream delivery boundary.",
-        "Runtime-source integration with an explicit owner and recovery policy for committed but undelivered entries."
+        "Independent Astra review of the latest module-private Store capability and committed-envelope gate.",
+        "The auditor now rebuilds and runs test/platform/canonical-ingress-crash-recovery.test.mjs; it fails because restart dedupe returns DUPLICATE without redispatching the unacknowledged committed envelope.",
+        "Persist delivery state and provide deterministic recovery with idempotent downstream application or atomic downstream checkpoint plus acknowledgement."
       ],
       "owner": "Astra Verification",
       "nextAction": "Resolve independent review findings, then rerun targeted and full repository tests."
@@ -43,7 +45,8 @@
       "severity": "CRITICAL",
       "evidence": [
         "DefaultTruthValidator verifies payload digest and metadata shape.",
-        "signatureVerified currently reflects signature string length rather than cryptographic verification or finalized transaction evidence."
+        "signatureVerified is now always false; the validator still cannot establish cryptographic signature or finalized transaction evidence.",
+        "schemaCompliant is now false for generic/test compilers and true only for the versioned Solana compiler with decoded events; that compiler path still does not establish chain inclusion or signature authenticity."
       ],
       "remaining": [
         "Replace this claim with independently verified transaction inclusion/execution evidence or mark authenticity unavailable and keep dependent authority gated."
@@ -53,15 +56,18 @@
     },
     {
       "id": "C1-ENGINE-001",
-      "title": "Legacy Engine constructor can still synthesize Feed and ingress defaults",
-      "status": "OPEN",
+      "title": "Engine still owns Feed construction, though its journal construction now fails closed",
+      "status": "PARTIALLY_RESOLVED",
       "severity": "HIGH",
       "evidence": [
         "runEngine explicitly constructs and injects Store-backed ingress and Feed.",
-        "Engine constructor retains fallback construction for compatibility fixtures."
+        "Engine no longer falls back to InMemoryIngressJournal and requires explicit Store-backed ingress or an injected test ingress.",
+        "Engine's ingress and committed handler are JavaScript private, and Engine no longer exposes an ingress getter.",
+        "Feed ingress is JavaScript private.",
+        "Engine continues to construct Feed when no Feed is injected; full RuntimeComposition ownership remains incomplete."
       ],
       "remaining": [
-        "Move all Engine construction to RuntimeComposition and remove fallback once callers and tests inject explicit dependencies."
+        "Move Feed construction out of Engine into RuntimeComposition."
       ],
       "owner": "Astra Architecture",
       "nextAction": "Inventory and migrate Engine constructors without introducing a test-only production fallback."
@@ -73,7 +79,8 @@
       "severity": "CRITICAL",
       "evidence": [
         "Independent Astra review reproduced the design gap by inspecting CanonicalIngress pendingDeliveries and Engine.onCommitted.",
-        "A process restart after SQLite commit but before successful downstream completion leaves the journal record committed while the new ingress instance returns DUPLICATE without redispatch."
+        "The physical test test/platform/canonical-ingress-crash-recovery.test.mjs reproduces a subscriber failure after durable commit, reopens the Store, and observes zero redispatches on duplicate submission.",
+        "npm run audit:c1 includes the crash/restart test and reports C1 NOT PHYSICALLY VERIFIED when it fails."
       ],
       "remaining": [
         "Persist outbox delivery state and provide deterministic recovery on startup.",
@@ -84,15 +91,17 @@
     },
     {
       "id": "C1-AUDIT-001",
-      "title": "Physical auditor cannot yet certify C1 runtime delivery semantics",
+      "title": "Physical auditor must require commit-to-delivery crash recovery before C1",
       "status": "PARTIALLY_CONTAINED",
       "severity": "HIGH",
       "evidence": [
-        "Auditor now checks public Engine.onCommitted methods and generates a non-passing status while runtime evidence and independent review are incomplete.",
+        "Auditor rebuilds TypeScript before runtime tests and now executes the crash/restart test rather than treating file presence as evidence.",
+        "The latest audit reports zero static authority-path metrics and passing C1 authority guards, but withholds C1 because the crash/restart test proves delivery loss.",
+        "The manifest binds Store, worker, ingress source, crash/durability tests, built JS files, auditor source, and exact runtime results.",
         "Static import and negative-compile checks cannot establish durable exactly-once or recoverable downstream effects."
       ],
       "remaining": [
-        "Bind auditor output to fresh source hashes, focused runtime evidence, full test results, and independent review receipt."
+        "Retain the failure result until actual outbox replay and downstream idempotency or atomic checkpoint recovery pass under process death."
       ],
       "owner": "Astra Certification",
       "nextAction": "Extend evidence contract after delivery recovery is implemented."
@@ -103,11 +112,11 @@
       "status": "OPEN",
       "severity": "HIGH",
       "evidence": [
-        "npm run test:core: 456 passed, 39 failed in the current shared checkout.",
-        "Failures include uncommitted C2 reducer fixtures using unsupported REALTIME_INGRESS and Engine test double compositions that lack explicit ingress."
+        "The latest focused C1/E2E run passed 16 tests and failed one required crash/restart recovery assertion because no delivery replay exists.",
+        "The repository-wide core run has not been repeated against the latest shared worktree; a previous run failed on Engine test doubles and prototype-only Engine fixtures after private authority changes."
       ],
       "remaining": [
-        "Coordinate C1 API updates and concurrent C2 changes; rerun full core and repository suites after repairs."
+        "Repair committed delivery recovery, migrate affected test fixtures to durable Store journals, then rerun core and full repository suites."
       ],
       "owner": "Sol QA",
       "nextAction": "Fix fixture/API mismatches and rerun tests against fresh dist output."

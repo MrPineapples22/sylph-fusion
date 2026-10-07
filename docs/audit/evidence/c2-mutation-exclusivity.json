@@ -1,10 +1,10 @@
 {
   "auditor": "scripts/audit-single-authority-door.mjs",
-  "auditorVersion": "2.0.0-c1-c2",
-  "timestamp": "2026-10-07T07:48:21.880Z",
-  "commitSha": "34a44a6d19ec3b6eeefdd7f0529861d4b04d99bb",
-  "treeSha": "9fd824b05291fb4a63903ed69fb3733483c4dbc7",
-  "workingTreeState": "M README.md\n M dist/db-worker.js\n M dist/db-worker.js.map\n M dist/feed.js\n M dist/feed.js.map\n M dist/fusion.js\n M dist/fusion.js.map\n M dist/platform/ingress/canonical-ingress.js\n M dist/platform/ingress/canonical-ingress.js.map\n M dist/platform/ingress/observation-factory.js\n M dist/platform/ingress/observation-factory.js.map\n M dist/platform/ingress/types.js\n M dist/platform/ingress/types.js.map\n M dist/platform/pipeline/index.js\n M dist/platform/pipeline/index.js.map\n M dist/store.js\n M dist/store.js.map\n M docker-compose.yml\n M docs/audit/evidence/c1-single-authority-door.json\n M scripts/audit-single-authority-door.mjs\n M src/db-worker.ts\n M src/feed.ts\n M src/fusion.ts\n M src/platform/ingress/canonical-ingress.ts\n M src/platform/ingress/observation-factory.ts\n M src/platform/ingress/types.ts\n M src/platform/pipeline/index.ts\n M src/store.ts\n M terminal/local-request.mjs\n M terminal/server.mjs\n M terminal/test/evidence-boundaries.test.mjs\n M terminal/test/local-bind.test.mjs\n M test/c1-negative-compilation.test.mjs\n M test/e2e-settlement-pipeline.test.mjs\n M test/feed-freshness.test.mjs\n M test/feed-repair.test.mjs\n M test/feed-validation-boundary.test.mjs\n?? dist/platform/reducer/\n?? docs/audit/defect-ledger.json\n?? docs/audit/evidence/c2-mutation-exclusivity.json\n?? src/platform/reducer/\n?? terminal/network-binding.mjs\n?? terminal/test/network-binding.test.mjs\n?? test/c2-mutation-exclusivity.test.mjs\n?? test/c2-negative-compilation.test.mjs\n?? test/platform/canonical-ingress-durability.test.mjs",
+  "auditorVersion": "3.0.0-c1-c3",
+  "timestamp": "2026-10-07T08:34:56.594Z",
+  "commitSha": "b9e35ff995abe98dd4b93571c1b58d29b48af390",
+  "treeSha": "35edfc4e004dbafa6a95d737f3e7611af28581bd",
+  "workingTreeState": "M dist/db-worker.js\n M dist/db-worker.js.map\n M dist/feed.js\n M dist/feed.js.map\n M dist/fusion.js\n M dist/fusion.js.map\n M dist/platform/ingress/canonical-ingress.js\n M dist/platform/ingress/canonical-ingress.js.map\n M dist/platform/pipeline/index.js\n M dist/platform/pipeline/index.js.map\n M dist/store.js\n M dist/store.js.map\n M docs/audit/defect-ledger.json\n M docs/audit/evidence/c1-single-authority-door.json\n M docs/audit/evidence/c2-mutation-exclusivity.json\n M docs/audit/unresolved_risks.md\n M scripts/audit-single-authority-door.mjs\n M src/db-worker.ts\n M src/feed.ts\n M src/fusion.ts\n M src/platform/ingress/canonical-ingress.ts\n M src/platform/pipeline/index.ts\n M src/store.ts\n M test/c1-negative-compilation.test.mjs\n M test/e2e-settlement-pipeline.test.mjs\n M test/feed-freshness.test.mjs\n M test/feed-repair.test.mjs\n M test/feed-validation-boundary.test.mjs\n M test/platform/canonical-ingress-durability.test.mjs\n?? dist/intelligence/provenance/\n?? docs/audit/evidence/c3-decision-provenance.json\n?? src/intelligence/provenance/\n?? test/c3-decision-provenance.test.mjs\n?? test/c3-negative-compilation.test.mjs\n?? test/platform/canonical-ingress-crash-recovery.test.mjs\n?? test/support/",
   "metrics": {
     "RAW_TO_ENGINE_PATHS": 0,
     "RAW_TO_RISK_PATHS": 0,
@@ -13,7 +13,12 @@
     "ADAPTER_AUTHORITY_IMPORTS": 0,
     "FEED_CALLBACK_BYPASSES": 0,
     "DIRECT_STATE_MUTATORS": 0,
+    "UNPROVENANCED_DECISIONS": 0,
     "NEGATIVE_GUARD_FAILURES": 0
+  },
+  "engineBuild": {
+    "passed": true,
+    "output": "> sylph-fusion@1.0.0 build:engine\n> node ./node_modules/typescript/bin/tsc -p tsconfig.json"
   },
   "violations": [],
   "negativeGuardFailures": [],
@@ -23,25 +28,69 @@
       "passed": true
     },
     {
+      "name": "C1 Durable Delivery Crash/Restart Recovery",
+      "passed": true
+    },
+    {
+      "name": "C1 Runtime Authority Guards",
+      "passed": true
+    },
+    {
       "name": "C2 Mutation Exclusivity & Real Immutability",
+      "passed": true
+    },
+    {
+      "name": "C2 Negative Compilation Guards",
+      "passed": true
+    },
+    {
+      "name": "C3 Decision Provenance & PIT Causality",
+      "passed": true
+    },
+    {
+      "name": "C3 Negative Compilation Guards",
       "passed": true
     }
   ],
+  "blockers": [],
   "auditedFiles": {
-    "src/feed.ts": "c9515f041a8cfe19ec3c915762b35283da3ea798a84c43e4d200280a8dba2a61",
-    "src/fusion.ts": "801e6b59f9315b9e3790de67d9a76ded3edb7a4574759374afc4e475c3c342fe",
+    "scripts/audit-single-authority-door.mjs": "f5cff2a976c4c04c2039f6fdea3abe260698909d21227e8e9b0f9df3ed9e3c98",
+    "package.json": "52001418cd9fdd2485c6161991b55b322a3200f6d74e90c274d41eca1952082a",
+    "package-lock.json": "b3d47545d7b7279926d49711ffdf7ba179dfbc9a1840dc38a4f32962c48266f3",
+    "tsconfig.json": "5ab104f8d8ae19b1ceae721102489547b19dd362ab95f852cc6f83757662a737",
+    "src/store.ts": "8bb2a83b06ed85911cb6b7a9171b88d074b4556ff0c30dac0deaf984791beed4",
+    "src/db-worker.ts": "a5a51d1c602b01bade1543d67cf8d8877995896802264670b3a880bb974eb8cf",
+    "src/platform/storage/filesystem-policy.ts": "a0d0d1c350daee22967b0148d63f913d457deab0ae23902fdadfa13a3dc6aa85",
+    "src/feed.ts": "e2f924ac583eb7cdcf15987b4949beb6820d1337c509280827c2ab72fadaa8fb",
+    "src/fusion.ts": "a5903fea46a49cbe2999af36f9acada46948aa9896137a87ec2c9ee179341c75",
     "src/platform/ingress/types.ts": "e1906778f69a4eb800b9e693a41148186a124ecf59eac15da2fd8ae5fca2eb35",
     "src/platform/ingress/observation-factory.ts": "77785e9abae162d88698770746c6d4628191ea8ab9725b59ff3df7897bea412c",
     "src/platform/ingress/port.ts": "5738d2386bc30211e131593e65da6d54e1634e7f5dea5b731250b5339bab9216",
-    "src/platform/ingress/canonical-ingress.ts": "a1a023491440fbde7fd432408bfc102f35aea93dafd7a032d63c3ff7ab5a121b",
+    "src/platform/ingress/canonical-ingress.ts": "86ae9247fb39f648e4f3e7a10bd466ee68cfcee464afd52357749daac8e7ca2b",
+    "test/platform/canonical-ingress-durability.test.mjs": "fa3d5cb4704f091c0f6bd8fb3ed1181f550885a370fb28cda411b3d632ed46b4",
+    "test/platform/canonical-ingress-crash-recovery.test.mjs": "8693b021e3bc1f82dc63887f252c9d59c0f42b93a3c38b6b847e9dfbaf409e13",
+    "test/c1-negative-compilation.test.mjs": "183c4fc0c27a278ff3ffa8d91c4af6af449ea5480e7d2446649ea6e655a9a96c",
+    "test/c2-mutation-exclusivity.test.mjs": "b84d8003cfb92a6bcc3e7ce36728e79615d62c22b78f7c6412715256fad41ec3",
+    "test/c2-negative-compilation.test.mjs": "4fcda4a08eee0fcca5d342e4ded354e81786d0141e29ce9cbdedd9e636186a23",
+    "test/c3-decision-provenance.test.mjs": "a90e5b35dde7a2a43b0e521d4f19bcf48dbadc9f5a868f5a47283cad6cb10ce0",
+    "test/c3-negative-compilation.test.mjs": "e3bcee665e58a69ba330b8e76bb4de6d2a53c694846fe17af9600b930884b04c",
+    "dist/store.js": "e2ad8c25a3e297ac2351b7c71aec2b2fc00ebeeb6aed8d887b9d88495311e8dc",
+    "dist/db-worker.js": "c188e788403ce096e49507d336fb4eecd1393b3c7d60ca084bca2d7436570179",
+    "dist/platform/ingress/canonical-ingress.js": "7d6c2520936a2589a2e2403e9a0c9e3a9704eb1d5e50f59b99c6633639fb4f4f",
     "src/platform/reducer/types.ts": "d070034903640e35c438bc86cc711d59f6727f1d559bf5a73b16b2ac0b72af33",
     "src/platform/reducer/canonical-reducer.ts": "bf841db8cf256c56c87e322e2153ccacb667aa94c885cc2c8adcd31b31327e00",
-    "src/platform/reducer/index.ts": "fd4c84af494fc94362364b213cca1f1eb0f099ed88dd3e3b3bed6744dfa3b80d"
+    "src/platform/reducer/index.ts": "fd4c84af494fc94362364b213cca1f1eb0f099ed88dd3e3b3bed6744dfa3b80d",
+    "src/intelligence/provenance/types.ts": "b6dc0acd1c22983ebbd377f5e98f5b751b687dccbb487b3d1cb57b9252ff3621",
+    "src/intelligence/provenance/pit-snapshot.ts": "16ba172992837e7b9cc566bb62b1616d7a61c58d4179419871d200958df8920f",
+    "src/intelligence/provenance/intelligence-input.ts": "5358c1f621da4fc0090bbfe02bbd0666a41a849beaba6cb1542581e6ff95f75a",
+    "src/intelligence/provenance/decision-provenance.ts": "1b0ff06ef2246c9f48341473240a462ce53031b86ae44c4d0933b278891fa9fc",
+    "src/intelligence/provenance/provenance-verifier.ts": "8d420d77acb27dc2125d828d30602629d5bc4d15bc99f25fa08672dcda6b8936",
+    "src/intelligence/provenance/index.ts": "a0a912a10d332d786445ce7778b18f140aea7eb7339f71dad64625c33befc529"
   },
   "gateStatuses": {
     "C1": "PASS",
     "C2": "PASS",
-    "C3": "NOT PHYSICALLY VERIFIED",
+    "C3": "PASS",
     "C4": "NOT PHYSICALLY VERIFIED",
     "C5": "NOT RUN",
     "C6": "NOT RUN",
@@ -51,8 +100,9 @@
     "C10": "NOT RUN",
     "SINGLE_AUTHORITY_DOOR_STRUCTURALLY_VERIFIED": "TRUE",
     "MUTATION_EXCLUSIVITY_VERIFIED": "TRUE",
+    "DECISION_PROVENANCE_VERIFIED": "TRUE",
     "UNIFIED_PIPELINE_CERTIFIED": "FALSE",
     "LIVE_CAPITAL_AUTHORITY": "BLOCKED"
   },
-  "manifestHash": "a835538707b74dc4a082b2c94373987aead376d5319e6f21ed68d39b0e316bfb"
+  "manifestHash": "ed5167e5926262dcc0108c88723ee87aa5e7dde8bf7b4e7409877327f0e43980"
 }
