@@ -1,8 +1,9 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, lstatSync, mkdtempSync, rmSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, createPublicKey, verify as verifySignature } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
 import { hashCanonicalV10 } from './canonicalization-v10.mjs';
 import { verifyCertificationManifest } from './generate-certification-manifest.mjs';
@@ -14,6 +15,10 @@ const HASH = /^[a-f0-9]{64}$/;
 const SHA1 = /^[a-f0-9]{40}$/;
 const SPAN_ID = /^[a-f0-9]{16}$/;
 const TRACE_ID = /^[a-f0-9]{32}$/;
+const GENERATED_PHYSICAL_AUDIT_PATHS = [
+  'docs/audit/evidence/c1-single-authority-door.json', 'docs/audit/evidence/c2-mutation-exclusivity.json',
+  'docs/audit/evidence/c3-decision-provenance.json', 'docs/audit/evidence/c4-authority-ancestry.json',
+];
 // Captures are produced every 250 ms by default (and at most every 60 s).
 // Five minutes tolerates scheduling and short publication delays while bounding
 // replay exposure. This is a verifier policy constant, not a caller setting.
@@ -138,51 +143,195 @@ export function verifyRuntimeTelemetryCertificationBinding(value, {
   return { valid: true, sourceCommitSha: expectedCommitSha, sourceTreeSha: expectedTreeSha };
 }
 
-function resolveGit(args) {
-  return execFileSync('git', args, { cwd: ROOT_DIR, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim().toLowerCase();
+/** Read verifier time only after all upstream source/audit work is complete. */
+export function verifyRuntimeTelemetryAfterSourceResolution(value, source, clock = Date.now) {
+  if (!source?.valid) return source ?? { valid: false, reason: 'C5_CURRENT_SOURCE_IDENTITY_UNAVAILABLE' };
+  return verifyRuntimeTelemetryCertificationBinding(value, {
+    expectedCommitSha: source.commitSha, expectedTreeSha: source.treeSha, worktreeClean: true, nowMs: clock(),
+  });
 }
 
-/** Establish identity from checked-in certification inputs, never from the receipt. */
-function loadCurrentCertificationSourceIdentity() {
+/** Orchestrate source freshness and durable-store checks; dependencies permit
+ * deterministic testing of expensive audit/store work without runtime secrets. */
+export function appraiseRuntimeTelemetryBindings(value, {
+  resolveSource = loadCurrentCertificationSourceIdentity,
+  verifyStore = verifyRuntimeTelemetryStoreBinding,
+  clock = Date.now,
+} = {}) {
+  const source = resolveSource();
+  if (!source?.valid) return source ?? { valid: false, reason: 'C5_CURRENT_SOURCE_IDENTITY_UNAVAILABLE' };
+  const initialBinding = verifyRuntimeTelemetryAfterSourceResolution(value, source, clock);
+  if (!initialBinding.valid) return initialBinding;
+  const storeBinding = verifyStore(value);
+  if (!storeBinding.valid) return storeBinding;
+  const finalBinding = verifyRuntimeTelemetryAfterSourceResolution(value, source, clock);
+  if (!finalBinding.valid) return finalBinding;
+  return { valid: true, source, storeBinding };
+}
+
+export function resolveGitBinary() {
+  for (const c of ['git', 'C:\\Program Files\\Git\\cmd\\git.exe', 'C:\\Program Files\\Git\\bin\\git.exe', 'C:\\Program Files (x86)\\Git\\cmd\\git.exe']) {
+    try {
+      execFileSync(c, ['--version'], { stdio: 'ignore' });
+      return c;
+    } catch {}
+  }
+  return 'git';
+}
+
+function resolveGit(args) {
+  return execFileSync(resolveGitBinary(), args, { cwd: ROOT_DIR, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim().toLowerCase();
+}
+
+/**
+ * Verify tracked checkout bytes against HEAD, including files hidden from
+ * ordinary status by assume-unchanged/skip-worktree index flags. Only the
+ * caller's explicitly named generated outputs may differ, and only unstaged.
+ */
+export function verifyGitWorkingTreeAgainstHead(repoRoot, allowedMutablePaths = []) {
+  try {
+    const root = resolve(repoRoot);
+    const gitBinary = resolveGitBinary();
+    const git = (args, input) => execFileSync(gitBinary, args, { cwd: root, input, stdio: ['pipe', 'pipe', 'ignore'] });
+    const allowed = new Set(allowedMutablePaths);
+
+    const indexEntries = git(['ls-files', '-t', '-v', '-z']).toString('utf8').split('\0').filter(Boolean);
+    if (indexEntries.some(entry => entry.length < 3 || entry[1] !== ' ' || entry[0] !== 'H')) return false;
+
+    // Staged changes mean the current index no longer describes HEAD.
+    if (git(['diff', '--cached', '--name-only', '--no-renames', '-z', 'HEAD', '--']).toString('utf8') !== '') return false;
+
+    const statusEntries = git(['status', '--porcelain=v1', '-z', '--untracked-files=all']).toString('utf8').split('\0').filter(Boolean);
+    for (const entry of statusEntries) {
+      const status = entry.slice(0, 2);
+      const path = entry.slice(3);
+      if (status !== ' M' || !allowed.has(path)) return false;
+    }
+
+    const treeEntries = git(['ls-tree', '-r', '-z', '--full-tree', 'HEAD']).toString('utf8').split('\0').filter(Boolean);
+    const pathsToHash = [];
+    const expectedObjectIds = [];
+    for (const entry of treeEntries) {
+      const tab = entry.indexOf('\t');
+      if (tab < 0) return false;
+      const [mode, type, objectId] = entry.slice(0, tab).split(' ');
+      const path = entry.slice(tab + 1);
+      if (type !== 'blob' || !['100644', '100755'].includes(mode)) return false;
+      if (allowed.has(path)) continue;
+      // hash-object's batched stdin-path mode is newline-delimited. Reject the
+      // unusual newline path case rather than parse it ambiguously.
+      if (path.includes('\n') || path.includes('\r')) return false;
+      const fullPath = resolve(root, path);
+      if (!fullPath.startsWith(`${root}/`) && !fullPath.startsWith(`${root}\\`)) return false;
+      const fileStat = lstatSync(fullPath);
+      if (!fileStat.isFile()) return false;
+      // Git's executable bit is meaningful on POSIX. Windows worktrees do not
+      // reliably preserve Unix mode bits, so Git's own tracked mode is used there.
+      if (process.platform !== 'win32' && Boolean(fileStat.mode & 0o111) !== (mode === '100755')) return false;
+      pathsToHash.push(path);
+      expectedObjectIds.push(objectId);
+    }
+    if (pathsToHash.length > 0) {
+      const nul = String.fromCharCode(0);
+      const attributeNames = ['filter', 'working-tree-encoding', 'ident'];
+      const attributes = git(['check-attr', '--stdin', '-z', ...attributeNames],
+        Buffer.from(`${pathsToHash.join(nul)}${nul}`)).toString('utf8').split(nul).filter(Boolean);
+      if (attributes.length !== pathsToHash.length * attributeNames.length * 3) return false;
+      for (let pathIndex = 0; pathIndex < pathsToHash.length; pathIndex++) {
+        for (let attributeIndex = 0; attributeIndex < attributeNames.length; attributeIndex++) {
+          const offset = (pathIndex * attributeNames.length + attributeIndex) * 3;
+          if (attributes[offset] !== pathsToHash[pathIndex] || attributes[offset + 1] !== attributeNames[attributeIndex] ||
+              !['unspecified', 'unset'].includes(attributes[offset + 2])) return false;
+        }
+      }
+      // Do not execute repository/user-defined clean filter programs while
+      // hashing. Built-in Git text/EOL normalization remains available.
+      const actualObjectIds = git(['hash-object', '--stdin-paths'], Buffer.from(`${pathsToHash.join('\n')}\n`))
+        .toString('utf8').trim().split(/\r?\n/);
+      if (actualObjectIds.length !== expectedObjectIds.length ||
+          actualObjectIds.some((objectId, index) => objectId !== expectedObjectIds[index])) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Establish the current source identity from Git and the verified manifest. */
+export function verifyCurrentCertificationCheckoutIdentity() {
   try {
     const manifestPath = resolve(ROOT_DIR, 'artifacts', 'connectivity', 'CERTIFICATION_MANIFEST.json');
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
     const commitSha = resolveGit(['rev-parse', 'HEAD']);
     const treeSha = resolveGit(['rev-parse', 'HEAD^{tree}']);
     verifyCertificationManifest(manifest, { expectedCommitSha: commitSha });
-    const statusLines = resolveGit(['status', '--porcelain=v1', '--untracked-files=all']).split('\n').filter(Boolean);
-    const generatedAuditFiles = new Set([
-      'docs/audit/evidence/c1-single-authority-door.json', 'docs/audit/evidence/c2-mutation-exclusivity.json',
-      'docs/audit/evidence/c3-decision-provenance.json', 'docs/audit/evidence/c4-authority-ancestry.json',
-    ]);
-    // The physical audit rewrites these four tracked projections as its output.
-    // Permit only their ordinary unstaged edits; all implementation, test, and
-    // other documentation changes still make current source identity unusable.
-    if (statusLines.some(line => line.slice(0, 3) !== ' M ' || !generatedAuditFiles.has(line.slice(3)))) {
-      return { valid: false, reason: 'C5_CURRENT_SOURCE_IDENTITY_UNAVAILABLE' };
-    }
-
-    // The physical C1–C4 report independently records the commit and Git tree.
-    // Require the four persisted projections to be the same valid report.
-    const evidenceDir = resolve(ROOT_DIR, 'docs', 'audit', 'evidence');
-    const files = ['c1-single-authority-door.json', 'c2-mutation-exclusivity.json',
-      'c3-decision-provenance.json', 'c4-authority-ancestry.json'];
-    const reports = files.map(file => JSON.parse(readFileSync(resolve(evidenceDir, file), 'utf8')));
-    const first = reports[0];
-    const { manifestHash, ...payload } = first;
-    if (typeof manifestHash !== 'string' || createHash('sha256').update(JSON.stringify(payload)).digest('hex') !== manifestHash ||
-        reports.some(report => report.manifestHash !== manifestHash || JSON.stringify(report) !== JSON.stringify(first)) ||
-        first.auditorVersion !== '4.0.0-c1-c4' || first.commitSha !== commitSha || first.treeSha !== treeSha ||
-        ['C1', 'C2', 'C3', 'C4'].some(level => first.gateStatuses?.[level] !== 'PASS') ||
-        !first.metrics || Object.values(first.metrics).some(metric => metric !== 0) ||
-        !Array.isArray(first.blockers) || first.blockers.length !== 0 ||
-        Object.keys(first.workingTreeFileHashes ?? {}).length !== 0 || first.workingTreeState !== '') {
+    if (!verifyGitWorkingTreeAgainstHead(ROOT_DIR, GENERATED_PHYSICAL_AUDIT_PATHS)) {
       return { valid: false, reason: 'C5_CURRENT_SOURCE_IDENTITY_UNAVAILABLE' };
     }
     return { valid: true, commitSha, treeSha };
   } catch {
     return { valid: false, reason: 'C5_CURRENT_SOURCE_IDENTITY_UNAVAILABLE' };
   }
+}
+
+/** Establish identity and require fresh physical C1–C4 recomputation. */
+function loadCurrentCertificationSourceIdentity() {
+  const before = verifyCurrentCertificationCheckoutIdentity();
+  if (!before.valid) return before;
+  const freshAudit = runFreshPhysicalAudit(before.commitSha, before.treeSha);
+  if (!freshAudit.valid) return freshAudit;
+  const after = verifyCurrentCertificationCheckoutIdentity();
+  if (!after.valid || after.commitSha !== before.commitSha || after.treeSha !== before.treeSha) {
+    return { valid: false, reason: 'C5_CURRENT_SOURCE_CHANGED_DURING_AUDIT' };
+  }
+  return { valid: true, commitSha: before.commitSha, treeSha: before.treeSha, physicalAuditRoot: freshAudit.root };
+}
+
+/** Recompute C1–C4 in a child process; persisted JSON projections are not authority. */
+function runFreshPhysicalAudit(commitSha, treeSha) {
+  const outputDir = mkdtempSync(resolve(tmpdir(), 'sylph-c5-physical-audit-'));
+  const startedAtMs = Date.now();
+  try {
+    const auditorPath = resolve(ROOT_DIR, 'scripts', 'audit-single-authority-door.mjs');
+    execFileSync(process.execPath, [auditorPath, '--output-dir', outputDir], {
+      cwd: ROOT_DIR, stdio: ['ignore', 'pipe', 'pipe'], timeout: 10 * 60 * 1000,
+      maxBuffer: 64 * 1024 * 1024, windowsHide: true,
+    });
+    const reportPath = resolve(outputDir, 'c1-single-authority-door.json');
+    const report = JSON.parse(readFileSync(reportPath, 'utf8'));
+    const { manifestHash, ...payload } = report;
+    const completedAtMs = Date.now();
+    if (typeof manifestHash !== 'string' || createHash('sha256').update(JSON.stringify(payload)).digest('hex') !== manifestHash ||
+        report.auditorVersion !== '4.0.0-c1-c4' || report.commitSha !== commitSha || report.treeSha !== treeSha ||
+        !Number.isFinite(Date.parse(report.timestamp)) || Date.parse(report.timestamp) < startedAtMs - 1_000 ||
+        Date.parse(report.timestamp) > completedAtMs ||
+        ['C1', 'C2', 'C3', 'C4'].some(level => report.gateStatuses?.[level] !== 'PASS') ||
+        !report.metrics || Object.values(report.metrics).some(metric => metric !== 0) ||
+        !Array.isArray(report.blockers) || report.blockers.length !== 0 ||
+        !Array.isArray(report.runtimeTestResults) || report.runtimeTestResults.length === 0 ||
+        report.runtimeTestResults.some(result => result.passed !== true) ||
+        report.workingTreeState !== '' || Object.keys(report.workingTreeFileHashes ?? {}).length !== 0 ||
+        !verifyAuditedFileHashes(report.auditedFiles) ||
+        !verifyGitWorkingTreeAgainstHead(ROOT_DIR, GENERATED_PHYSICAL_AUDIT_PATHS)) {
+      return { valid: false, reason: 'C5_FRESH_PHYSICAL_AUDIT_INVALID' };
+    }
+    return { valid: true, root: manifestHash };
+  } catch {
+    return { valid: false, reason: 'C5_FRESH_PHYSICAL_AUDIT_FAILED' };
+  } finally {
+    rmSync(outputDir, { recursive: true, force: true });
+  }
+}
+
+function verifyAuditedFileHashes(auditedFiles) {
+  if (!auditedFiles || typeof auditedFiles !== 'object' || Array.isArray(auditedFiles)) return false;
+  for (const [relativePath, expectedHash] of Object.entries(auditedFiles)) {
+    if (!HASH.test(expectedHash)) return false;
+    const path = resolve(ROOT_DIR, relativePath);
+    if ((!path.startsWith(`${ROOT_DIR}/`) && !path.startsWith(`${ROOT_DIR}\\`)) ||
+        !existsSync(path) || createHash('sha256').update(readFileSync(path)).digest('hex') !== expectedHash) return false;
+  }
+  return true;
 }
 
 /**
@@ -238,21 +387,17 @@ export function verifyRuntimeTelemetryStoreBinding(value, { databasePath = proce
   }
 }
 
-export function loadRuntimeTelemetryEvidence(path = RUNTIME_TELEMETRY_EVIDENCE_PATH, { nowMs = Date.now() } = {}) {
+export function loadRuntimeTelemetryEvidence(path = RUNTIME_TELEMETRY_EVIDENCE_PATH, { clock = Date.now } = {}) {
   if (!existsSync(path)) return { valid: false, reason: 'C5_DURABLE_RUNTIME_EVIDENCE_MISSING' };
   try {
     const config = JSON.parse(readFileSync(CERTIFICATION_CONFIG_PATH, 'utf8'));
     const parsed = JSON.parse(readFileSync(path, 'utf8'));
     const verification = verifyRuntimeTelemetryEvidence(parsed, { trustedPublicKeyPem: config.runtimeAttestationPublicKeyPem });
     if (!verification.valid) return verification;
-    const source = loadCurrentCertificationSourceIdentity();
-    if (!source.valid) return source;
-    const binding = verifyRuntimeTelemetryCertificationBinding(parsed, {
-      expectedCommitSha: source.commitSha, expectedTreeSha: source.treeSha, worktreeClean: true, nowMs,
-    });
-    if (!binding.valid) return binding;
-    const storeBinding = verifyRuntimeTelemetryStoreBinding(parsed);
-    return storeBinding.valid ? { ...verification, storeBinding, evidence: parsed } : storeBinding;
+    const appraisal = appraiseRuntimeTelemetryBindings(parsed, { clock });
+    if (!appraisal.valid) return appraisal;
+    return { ...verification, storeBinding: appraisal.storeBinding,
+      physicalAuditRoot: appraisal.source.physicalAuditRoot, evidence: parsed };
   } catch {
     return { valid: false, reason: 'C5_DURABLE_RUNTIME_EVIDENCE_INVALID' };
   }

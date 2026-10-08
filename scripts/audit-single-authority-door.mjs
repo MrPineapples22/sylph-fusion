@@ -100,7 +100,12 @@ function getGitTreeSha() {
 function getWorkingTreeState() {
   const gitCmd = getGitExecutable();
   try {
-    return execSync(`"${gitCmd}" status --porcelain=v1`, { cwd: projectRoot, encoding: 'utf8' }).trim();
+    const generatedAuditFiles = new Set([
+      'docs/audit/evidence/c1-single-authority-door.json', 'docs/audit/evidence/c2-mutation-exclusivity.json',
+      'docs/audit/evidence/c3-decision-provenance.json', 'docs/audit/evidence/c4-authority-ancestry.json',
+    ]);
+    return execSync(`"${gitCmd}" status --porcelain=v1 -z --untracked-files=all`, { cwd: projectRoot, encoding: 'buffer' })
+      .toString('utf8').split('\0').filter(Boolean).filter(entry => !generatedAuditFiles.has(entry.slice(3))).join('\n');
   } catch {
     return 'UNKNOWN_WORKING_TREE';
   }
@@ -642,7 +647,7 @@ function runEngineBuild() {
 /**
  * Main execution
  */
-async function main() {
+async function main({ outputDir } = {}) {
   console.log('='.repeat(80));
   console.log('SYLPH FUSION — C1, C2, C3 & C4 ARCHITECTURAL PHYSICAL AUDIT');
   console.log('='.repeat(80));
@@ -821,7 +826,7 @@ async function main() {
   manifest.manifestHash = manifestHash;
 
   // Persist manifests
-  const evidenceDir = resolve(projectRoot, 'docs', 'audit', 'evidence');
+  const evidenceDir = resolve(outputDir ?? resolve(projectRoot, 'docs', 'audit', 'evidence'));
   if (!existsSync(evidenceDir)) mkdirSync(evidenceDir, { recursive: true });
   const manifestPathC1 = join(evidenceDir, 'c1-single-authority-door.json');
   const manifestPathC2 = join(evidenceDir, 'c2-mutation-exclusivity.json');
@@ -864,7 +869,13 @@ async function main() {
   }
 }
 
-main().catch(err => {
+const outputFlag = process.argv.indexOf('--output-dir');
+if (outputFlag >= 0 && !process.argv[outputFlag + 1]) {
+  console.error('AUDIT_OUTPUT_DIR_REQUIRED: --output-dir needs a path');
+  process.exit(1);
+}
+const outputDir = outputFlag >= 0 ? resolve(projectRoot, process.argv[outputFlag + 1]) : undefined;
+main({ outputDir }).catch(err => {
   console.error('[AUDIT_FATAL_ERROR]', err);
   process.exit(1);
 });

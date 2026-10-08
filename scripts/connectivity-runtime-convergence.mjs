@@ -19,16 +19,18 @@
  * 5. Saves report to artifacts/connectivity/RUNTIME_CONVERGENCE_REPORT.json.
  */
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { tmpdir } from 'node:os';
 import {
   canonicalJsonV10,
   hashCanonicalV10,
   EMPTY_SHA256_HEX,
 } from './canonicalization-v10.mjs';
 import { verifyCanaryCampaign } from './canary-campaign-verifier.mjs';
-import { loadRuntimeTelemetryEvidence } from './runtime-telemetry-evidence.mjs';
+import { loadRuntimeTelemetryEvidence, verifyCurrentCertificationCheckoutIdentity } from './runtime-telemetry-evidence.mjs';
+import { runConnectivityCompiler } from './connectivity-compiler.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -60,11 +62,40 @@ export function evaluateRuntimeConvergence(evidenceBundle = {}, options = {}) {
 
   // 1. Verify C0–C4 baseline
   let staticScorecard = null;
-  if (existsSync(SCORECARD_PATH)) {
+  if (mode !== 'certify' && existsSync(SCORECARD_PATH)) {
     staticScorecard = JSON.parse(readFileSync(SCORECARD_PATH, 'utf8'));
   }
 
-  const baselineLevel = options.baselineLevel ?? staticScorecard?.systemScore?.highestProvenLevel ?? 'C0';
+  let baselineLevel;
+  let staticBaselineRoot = null;
+  if (mode === 'certify') {
+    // Saved scorecard JSON is mutable. Recompute static integration from current
+    // source and a source-bound test receipt in an isolated artifact directory.
+    // Caller-supplied baselineLevel and persisted scorecard are ignored.
+    const sourceBefore = verifyCurrentCertificationCheckoutIdentity();
+    if (!sourceBefore.valid) {
+      baselineLevel = 'C0';
+    } else {
+      const temporaryArtifacts = mkdtempSync(resolve(tmpdir(), 'sylph-c5-static-'));
+      try {
+        const computed = runConnectivityCompiler({ outputDir: temporaryArtifacts });
+        const sourceAfter = verifyCurrentCertificationCheckoutIdentity();
+        if (computed.success && sourceAfter.valid && sourceAfter.commitSha === sourceBefore.commitSha &&
+            sourceAfter.treeSha === sourceBefore.treeSha) {
+          baselineLevel = computed.highestProvenLevel;
+          staticBaselineRoot = hashCanonicalV10(JSON.parse(readFileSync(resolve(temporaryArtifacts, 'c0-c10-scorecard.json'), 'utf8')));
+        } else {
+          baselineLevel = 'C0';
+        }
+      } catch {
+        baselineLevel = 'C0';
+      } finally {
+        rmSync(temporaryArtifacts, { recursive: true, force: true });
+      }
+    }
+  } else {
+    baselineLevel = options.baselineLevel ?? staticScorecard?.systemScore?.highestProvenLevel ?? 'C0';
+  }
   const baselinePass = baselineLevel === 'C4';
 
   const ladder = {
@@ -84,6 +115,7 @@ export function evaluateRuntimeConvergence(evidenceBundle = {}, options = {}) {
   let highestProvenLevel = baselineLevel;
   let stopReason = '';
   let runtimeTelemetryRoot = null;
+  let physicalAuditRoot = null;
 
   if (!baselinePass) {
     stopReason = `C4_GATE_HALT: Static scorecard level is '${baselineLevel}'. C4 static integration is required before C5-C10 can be evaluated.`;
@@ -118,6 +150,7 @@ export function evaluateRuntimeConvergence(evidenceBundle = {}, options = {}) {
       ladder.C5.reason = `Physical runtime telemetry observed with ${c5Evidence.spans.length} spans. Provenance: ${c5Evidence.provenanceClass}.`;
       highestProvenLevel = 'C5';
       runtimeTelemetryRoot = mode === 'certify' ? loadedC5.evidenceHash : null;
+      physicalAuditRoot = mode === 'certify' ? loadedC5.physicalAuditRoot : null;
 
     // LEVEL C6: CRYPTOGRAPHIC CONTINUITY
     const c6Evidence = evidenceBundle.artifactContinuity;
@@ -219,6 +252,8 @@ export function evaluateRuntimeConvergence(evidenceBundle = {}, options = {}) {
     mode,
     highestProvenLevel,
     runtimeTelemetryRoot,
+    physicalAuditRoot,
+    staticBaselineRoot,
     evaluatedAt: new Date().toISOString(),
     ladder,
     stopReason: stopReason || 'ALL_LEVELS_PASSED',

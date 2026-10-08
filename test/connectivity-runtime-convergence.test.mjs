@@ -1,16 +1,21 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, existsSync, writeFileSync, statSync, utimesSync, mkdirSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { randomUUID, createHash, generateKeyPairSync, sign } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { evaluateRuntimeConvergence } from '../scripts/connectivity-runtime-convergence.mjs';
 import { loadMandatoryEdgeConfig } from '../scripts/canary-campaign-verifier.mjs';
+import { runConnectivityCompiler } from '../scripts/connectivity-compiler.mjs';
 import { hashCanonicalV10 } from '../scripts/canonicalization-v10.mjs';
 import { verifyRuntimeTelemetryEvidence, verifyRuntimeTelemetryStoreBinding,
-  verifyRuntimeTelemetryCertificationBinding, RUNTIME_EVIDENCE_MAX_AGE_MS } from '../scripts/runtime-telemetry-evidence.mjs';
+  verifyRuntimeTelemetryCertificationBinding, verifyGitWorkingTreeAgainstHead,
+  verifyCurrentCertificationCheckoutIdentity, verifyRuntimeTelemetryAfterSourceResolution,
+  appraiseRuntimeTelemetryBindings,
+  resolveGitBinary, RUNTIME_EVIDENCE_MAX_AGE_MS } from '../scripts/runtime-telemetry-evidence.mjs';
 
 const TEST_ARTIFACT_DIR = mkdtempSync(join(tmpdir(), `sylph-convergence-test-${randomUUID()}-`));
 const TEST_REPORT_PATH = resolve(TEST_ARTIFACT_DIR, 'RUNTIME_CONVERGENCE_REPORT.json');
@@ -22,6 +27,15 @@ const productionReportHash = productionReportExisted
   : null;
 const evaluateTestConvergence = (evidence = {}, options = {}) =>
   evaluateRuntimeConvergence(evidence, { ...options, outputPath: TEST_REPORT_PATH });
+function recomputeStaticBaseline() {
+  const before = verifyCurrentCertificationCheckoutIdentity();
+  if (!before.valid) return 'C0';
+  const outputDir = join(TEST_ARTIFACT_DIR, `static-${randomUUID()}`);
+  const result = runConnectivityCompiler({ outputDir });
+  const after = verifyCurrentCertificationCheckoutIdentity();
+  return after.valid && after.commitSha === before.commitSha && after.treeSha === before.treeSha
+    ? result.highestProvenLevel : 'C0';
+}
 after(() => rmSync(TEST_ARTIFACT_DIR, { recursive: true, force: true }));
 
 function buildValidCanary(provenanceClass = 'TEST_FIXTURE') {
@@ -84,16 +98,20 @@ test('Step 6 Convergence: Absence of runtime telemetry strictly halts at C4', ()
   assert.match(report.certifiedPayload.ladder.C5.reason, /C5_HALT/);
 });
 
-test('Step 6 Convergence: Level-skipping attack is blocked (providing C10 without C5 stops at C4)', () => {
+test('Step 6 Convergence: Level-skipping attack cannot elevate a fresh certify baseline', () => {
   const canary = buildValidCanary('REAL_CANARY');
+  const currentBaseline = recomputeStaticBaseline();
   // Provide canary (C10) without telemetry (C5)
-  const report = evaluateTestConvergence({ canaryCampaign: canary }, { mode: 'certify', baselineLevel: 'C4' });
-  assert.equal(report.certifiedPayload.highestProvenLevel, 'C4');
+  const report = evaluateTestConvergence({ canaryCampaign: canary }, {
+    mode: 'certify', baselineLevel: 'C4', staticScorecard: { systemScore: { highestProvenLevel: 'C4' } },
+  });
+  assert.equal(report.certifiedPayload.highestProvenLevel, currentBaseline);
   assert.equal(report.certifiedPayload.ladder.C5.awarded, false);
   assert.equal(report.certifiedPayload.ladder.C10.awarded, false);
 });
 
-test('Step 6 Convergence: Ineligible provenance in CERTIFY mode halts at C4', () => {
+test('Step 6 Convergence: Ineligible provenance cannot override the fresh certify baseline', () => {
+  const currentBaseline = recomputeStaticBaseline();
   const report = evaluateTestConvergence(
     {
       runtimeTelemetry: {
@@ -101,17 +119,19 @@ test('Step 6 Convergence: Ineligible provenance in CERTIFY mode halts at C4', ()
         provenanceClass: 'TEST_FIXTURE', // Ineligible for certify
       },
     },
-    { mode: 'certify', baselineLevel: 'C4' }
+    { mode: 'certify', baselineLevel: 'C4', staticScorecard: { systemScore: { highestProvenLevel: 'C4' } } }
   );
-  assert.equal(report.certifiedPayload.highestProvenLevel, 'C4');
-  assert.match(report.certifiedPayload.ladder.C5.reason, /C5_DURABLE_RUNTIME_EVIDENCE_MISSING/);
+  assert.equal(report.certifiedPayload.highestProvenLevel, currentBaseline);
+  assert.equal(report.certifiedPayload.ladder.C5.awarded, false);
+  assert.match(report.certifiedPayload.stopReason, /C4_GATE_HALT|C5_HALT/);
 });
 
-test('Step 6 Convergence: CERTIFY mode ignores caller-asserted REAL_RUNTIME spans', () => {
+test('Step 6 Convergence: CERTIFY mode ignores caller runtime claims and saved baseline override', () => {
+  const currentBaseline = recomputeStaticBaseline();
   const report = evaluateTestConvergence({
     runtimeTelemetry: { spans: [{ id: 'forged' }], provenanceClass: 'REAL_RUNTIME' },
-  }, { mode: 'certify', baselineLevel: 'C4' });
-  assert.equal(report.certifiedPayload.highestProvenLevel, 'C4');
+  }, { mode: 'certify', baselineLevel: 'C4', staticScorecard: { systemScore: { highestProvenLevel: 'C4' } } });
+  assert.equal(report.certifiedPayload.highestProvenLevel, currentBaseline);
   assert.equal(report.certifiedPayload.ladder.C5.awarded, false);
   assert.equal(report.certifiedPayload.runtimeTelemetryRoot, null);
 });
@@ -197,6 +217,102 @@ test('C5 certification binding rejects replay, future timestamps, dirty checkout
     'C5_EVIDENCE_TIMESTAMP_FUTURE_OR_INVALID');
   assert.equal(verifyRuntimeTelemetryCertificationBinding({ ...evidence,
     captureEndedAtMs: 1_000 - RUNTIME_EVIDENCE_MAX_AGE_MS - 1 }, expected).reason, 'C5_EVIDENCE_STALE');
+});
+
+test('C5 freshness clock is sampled after source audit completion and cannot be extended by audit duration', () => {
+  const source = { valid: true, commitSha: '1'.repeat(40), treeSha: '2'.repeat(40) };
+  const evidence = { sourceCommitSha: source.commitSha, sourceTreeSha: source.treeSha, captureEndedAtMs: 1_000 };
+  let appraisalTime = 1_000 + RUNTIME_EVIDENCE_MAX_AGE_MS - 1;
+  const clock = () => appraisalTime;
+  // Model source/audit work consuming the remaining freshness window.
+  appraisalTime += 2;
+  assert.equal(verifyRuntimeTelemetryAfterSourceResolution(evidence, source, clock).reason, 'C5_EVIDENCE_STALE');
+  appraisalTime = 1_000;
+  assert.equal(verifyRuntimeTelemetryAfterSourceResolution(evidence, source, clock).valid, true);
+});
+
+test('C5 loader orchestration samples freshness after source audit and durable-store binding', () => {
+  const source = { valid: true, commitSha: '1'.repeat(40), treeSha: '2'.repeat(40), physicalAuditRoot: 'a'.repeat(64) };
+  const evidence = { sourceCommitSha: source.commitSha, sourceTreeSha: source.treeSha, captureEndedAtMs: 1_000 };
+  const events = [];
+  let verifierTime = 1_000;
+  const appraisal = appraiseRuntimeTelemetryBindings(evidence, {
+    resolveSource: () => {
+      events.push('audit-start');
+      verifierTime += RUNTIME_EVIDENCE_MAX_AGE_MS - 1;
+      events.push('audit-complete');
+      return source;
+    },
+    clock: () => { events.push('clock'); return verifierTime; },
+    verifyStore: () => {
+      events.push('store-start');
+      verifierTime += 2;
+      events.push('store-complete');
+      return { valid: true, storeAuditId: 7 };
+    },
+  });
+  assert.equal(appraisal.reason, 'C5_EVIDENCE_STALE', 'store-read duration crossing expiry must reject');
+  assert.deepEqual(events, ['audit-start', 'audit-complete', 'clock', 'store-start', 'store-complete', 'clock']);
+});
+
+test('C5 source identity detects assume-unchanged, skip-worktree, and same-size preserved-mtime edits in an isolated Git repo', t => {
+  const container = mkdtempSync(join(tmpdir(), `sylph-c5-git-${randomUUID()}-`));
+  const directory = join(container, 'repo');
+  mkdirSync(directory);
+  t.after(() => rmSync(container, { recursive: true, force: true }));
+  const globalConfig = join(container, 'empty-global-config');
+  writeFileSync(globalConfig, '');
+  const git = args => execFileSync(resolveGitBinary(), args, { cwd: directory, stdio: 'ignore', env: {
+    ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: globalConfig,
+  } });
+  git(['-c', 'init.defaultBranch=main', 'init', '-q']);
+  git(['config', 'user.name', 'C5 Test']);
+  git(['config', 'user.email', 'c5-test@example.invalid']);
+  const sourcePath = join(directory, 'source.txt');
+  writeFileSync(sourcePath, 'source-v1');
+  if (process.platform !== 'win32') chmodSync(sourcePath, 0o755);
+  git(['add', 'source.txt']);
+  git(['commit', '-qm', 'fixture']);
+  assert.equal(verifyGitWorkingTreeAgainstHead(directory), true);
+
+  if (process.platform !== 'win32') {
+    chmodSync(sourcePath, 0o644);
+    assert.equal(verifyGitWorkingTreeAgainstHead(directory), false, 'executable mode mismatch must fail closed');
+    chmodSync(sourcePath, 0o755);
+  }
+
+  const originalStat = statSync(sourcePath);
+  writeFileSync(sourcePath, 'source-v2'); // same byte length as committed content
+  utimesSync(sourcePath, originalStat.atime, originalStat.mtime);
+  assert.equal(verifyGitWorkingTreeAgainstHead(directory), false, 'byte comparison must detect preserved-mtime edits');
+
+  writeFileSync(sourcePath, 'source-v1');
+  utimesSync(sourcePath, originalStat.atime, originalStat.mtime);
+  git(['update-index', '--assume-unchanged', 'source.txt']);
+  writeFileSync(sourcePath, 'source-v2');
+  utimesSync(sourcePath, originalStat.atime, originalStat.mtime);
+  assert.equal(verifyGitWorkingTreeAgainstHead(directory), false, 'assume-unchanged flag must fail closed');
+
+  git(['update-index', '--no-assume-unchanged', 'source.txt']);
+  writeFileSync(sourcePath, 'source-v1');
+  utimesSync(sourcePath, originalStat.atime, originalStat.mtime);
+  git(['update-index', '--skip-worktree', 'source.txt']);
+  writeFileSync(sourcePath, 'source-v2');
+  utimesSync(sourcePath, originalStat.atime, originalStat.mtime);
+  assert.equal(verifyGitWorkingTreeAgainstHead(directory), false, 'skip-worktree flag must fail closed');
+
+  git(['update-index', '--no-skip-worktree', 'source.txt']);
+  writeFileSync(sourcePath, 'source-v1');
+  utimesSync(sourcePath, originalStat.atime, originalStat.mtime);
+  writeFileSync(join(directory, '.gitattributes'), 'source.txt working-tree-encoding=UTF-8\n');
+  git(['add', '.gitattributes']);
+  git(['commit', '-qm', 'encoding attribute fixture']);
+  assert.equal(verifyGitWorkingTreeAgainstHead(directory), false, 'working-tree-encoding attribute must fail closed');
+
+  writeFileSync(join(directory, '.gitattributes'), 'source.txt ident\n');
+  git(['add', '.gitattributes']);
+  git(['commit', '-qm', 'ident attribute fixture']);
+  assert.equal(verifyGitWorkingTreeAgainstHead(directory), false, 'ident attribute must fail closed');
 });
 
 test('C5 signed runtime receipt must resolve to the exact unpruned SQLite audit row and matching content', t => {
