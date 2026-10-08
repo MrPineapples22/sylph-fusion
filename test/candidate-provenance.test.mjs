@@ -8,6 +8,7 @@ import {syncBuiltinESMExports} from 'node:module';
 import {candidateVerificationArgs, validateCandidateIdentity, verifyCandidateProvenance,
   hashArtifact, CANDIDATE_REPOSITORY, CANDIDATE_WORKFLOW, CANDIDATE_REF} from '../scripts/candidate-provenance.mjs';
 import {prepareCiCandidate} from '../scripts/prepare-ci-candidate.mjs';
+import {verifyExtractedCandidate} from '../scripts/candidate-extracted-integrity.mjs';
 
 const expected = {sourceCommitSha: 'a'.repeat(40), sourceTreeSha: 'b'.repeat(40)};
 function fixture() {
@@ -160,6 +161,14 @@ test('candidate CI packager binds a real archive to source identity and rejects 
   assert.equal(identity.runtimeAuthority, false);
   const archived = childProcess.execFileSync('tar', ['-tzf', path.join(destination, identity.artifactName)], {encoding: 'utf8', windowsHide: true});
   for (const required of ['./.env.example', './RELEASE_MANIFEST.json', './dist/fusion.js', './terminal/dist/index.html']) assert.ok(archived.split(/\r?\n/).includes(required), required);
+  const bundle = path.join(scratch, 'fixture-bundle.json'); fs.writeFileSync(bundle, 'test-only gh stub');
+  const realExec = childProcess.execFileSync;
+  withGhStub((command, args, options) => command === 'gh' ? verifiedOutput(args[2]) : realExec(command, args, options), () => {
+    const verified = verifyExtractedCandidate({archive:path.join(destination, identity.artifactName),
+      identityFile:path.join(destination, 'candidate-identity.json'), bundle,
+      expected:{sourceCommitSha:identity.sourceCommitSha, sourceTreeSha:identity.sourceTreeSha}, extractedDirectory:path.join(destination, 'candidate')});
+    assert.equal(verified.status, 'VERIFIED_EXTRACTED_CANDIDATE', 'real producer USTAR must match the strict parser subset');
+  });
   assert.throws(() => prepareCiCandidate(root, destination, env), /OUTPUT_EXISTS/);
   assert.throws(() => prepareCiCandidate(root, path.join(root, 'nested'), env), /OUTPUT_MUST_BE_OUTSIDE_SOURCE/);
   fs.appendFileSync(path.join(root, 'terminal/server.mjs'), '// edited');

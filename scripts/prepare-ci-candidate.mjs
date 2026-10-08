@@ -43,7 +43,7 @@ function getGitExecutable() {
   const packaged = path.join(destination, 'candidate');
   packageCandidate(root, packaged);
   const artifactName = 'sylph-windows-candidate.tar.gz', archive = path.join(destination, artifactName);
-  execFileSync('tar', ['-czf', archive, '-C', packaged, '.'], {cwd: root, windowsHide: true, timeout: 120_000});
+  execFileSync('tar', ['--format=ustar', '-czf', archive, '-C', packaged, '.'], {cwd: root, windowsHide: true, timeout: 120_000});
   const identity = {schemaVersion: 'sylph.candidate.identity.v1', repository: CANDIDATE_REPOSITORY,
     workflow: CANDIDATE_WORKFLOW, sourceRef: CANDIDATE_REF, sourceCommitSha, sourceTreeSha,
     artifactName, artifactSha256: hashArtifact(archive), releaseStatus: 'UNVERIFIED_CANDIDATE', runtimeAuthority: false};
