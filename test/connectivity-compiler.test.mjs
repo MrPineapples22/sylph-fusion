@@ -1,17 +1,25 @@
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { existsSync, readFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { tmpdir } from 'node:os';
+import { randomUUID, createHash } from 'node:crypto';
 import { runConnectivityCompiler } from '../scripts/connectivity-compiler.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const ROOT_DIR = resolve(__dirname, '..');
-const ARTIFACTS_DIR = resolve(ROOT_DIR, 'artifacts', 'connectivity');
+const ARTIFACTS_DIR = mkdtempSync(join(tmpdir(), `sylph-connectivity-test-${randomUUID()}-`));
+after(() => rmSync(ARTIFACTS_DIR, { recursive: true, force: true }));
+const PRODUCTION_SCORECARD = resolve(ROOT_DIR, 'artifacts', 'connectivity', 'c0-c10-scorecard.json');
+const productionScorecardExisted = existsSync(PRODUCTION_SCORECARD);
+const productionScorecardHash = productionScorecardExisted
+  ? createHash('sha256').update(readFileSync(PRODUCTION_SCORECARD)).digest('hex')
+  : null;
 
 test('Step 1 Static Compiler: Complete execution and artifact generation', () => {
-  const result = runConnectivityCompiler({ receiptPath: 'artifacts/connectivity/missing-test-receipt.json' });
+  const result = runConnectivityCompiler({ outputDir: ARTIFACTS_DIR, receiptPath: 'artifacts/connectivity/missing-test-receipt.json' });
   assert.equal(result.success, true);
   assert.ok(result.modulesAudited > 0);
   assert.ok(result.nodesCount > 0);
@@ -69,12 +77,18 @@ test('Step 1 Static Compiler: Enforce strict C4 ceiling law', () => {
 });
 
 test('compiler ignores the former caller-controlled test-run flag', () => {
-  const result = runConnectivityCompiler({ testRunPassed: true, receiptPath: 'artifacts/connectivity/missing-test-receipt.json' });
+  const result = runConnectivityCompiler({ outputDir: ARTIFACTS_DIR, testRunPassed: true, receiptPath: 'artifacts/connectivity/missing-test-receipt.json' });
   assert.equal(result.highestProvenLevel, 'C1');
   const scorecard = JSON.parse(readFileSync(resolve(ARTIFACTS_DIR, 'c0-c10-scorecard.json'), 'utf8'));
   assert.equal(scorecard.systemScore.C2_unit_tested, false);
   assert.equal(scorecard.metadata.testRunReceipt, null);
   assert.match(scorecard.metadata.testRunEvidence, /UNPROVEN/);
+  assert.equal(existsSync(PRODUCTION_SCORECARD), productionScorecardExisted,
+    'test compiler output must not create or remove the production certification scorecard');
+  if (productionScorecardExisted) {
+    assert.equal(createHash('sha256').update(readFileSync(PRODUCTION_SCORECARD)).digest('hex'), productionScorecardHash,
+      'test compiler output must not overwrite the production certification scorecard');
+  }
 });
 
 test('Step 1 Static Compiler: Validate Section 6 classification taxonomy', () => {

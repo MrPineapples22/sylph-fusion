@@ -1,15 +1,27 @@
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { generateKeyPairSync, sign } from 'node:crypto';
-import { createHash } from 'node:crypto';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { resolve, join } from 'node:path';
+import { randomUUID, createHash, generateKeyPairSync, sign } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { evaluateRuntimeConvergence } from '../scripts/connectivity-runtime-convergence.mjs';
 import { loadMandatoryEdgeConfig } from '../scripts/canary-campaign-verifier.mjs';
 import { hashCanonicalV10 } from '../scripts/canonicalization-v10.mjs';
 import { verifyRuntimeTelemetryEvidence, verifyRuntimeTelemetryStoreBinding } from '../scripts/runtime-telemetry-evidence.mjs';
+
+const TEST_ARTIFACT_DIR = mkdtempSync(join(tmpdir(), `sylph-convergence-test-${randomUUID()}-`));
+const TEST_REPORT_PATH = resolve(TEST_ARTIFACT_DIR, 'RUNTIME_CONVERGENCE_REPORT.json');
+const ROOT_DIR = resolve(fileURLToPath(new URL('..', import.meta.url)));
+const PRODUCTION_REPORT_PATH = resolve(ROOT_DIR, 'artifacts', 'connectivity', 'RUNTIME_CONVERGENCE_REPORT.json');
+const productionReportExisted = existsSync(PRODUCTION_REPORT_PATH);
+const productionReportHash = productionReportExisted
+  ? createHash('sha256').update(readFileSync(PRODUCTION_REPORT_PATH)).digest('hex')
+  : null;
+const evaluateTestConvergence = (evidence = {}, options = {}) =>
+  evaluateRuntimeConvergence(evidence, { ...options, outputPath: TEST_REPORT_PATH });
+after(() => rmSync(TEST_ARTIFACT_DIR, { recursive: true, force: true }));
 
 function buildValidCanary(provenanceClass = 'TEST_FIXTURE') {
   const mandatoryEdges = loadMandatoryEdgeConfig();
@@ -56,7 +68,7 @@ function buildValidCanary(provenanceClass = 'TEST_FIXTURE') {
 }
 
 test('Step 6 Convergence: Static baseline below C4 halts with C4_GATE_HALT', () => {
-  const report = evaluateRuntimeConvergence({}, { mode: 'test', baselineLevel: 'C1' });
+  const report = evaluateTestConvergence({}, { mode: 'test', baselineLevel: 'C1' });
   assert.equal(report.certifiedPayload.highestProvenLevel, 'C1');
   assert.equal(report.certifiedPayload.ladder.C4.awarded, false);
   assert.match(report.certifiedPayload.ladder.C4.reason, /C4_GATE_HALT|UNPROVEN/);
@@ -64,7 +76,7 @@ test('Step 6 Convergence: Static baseline below C4 halts with C4_GATE_HALT', () 
 });
 
 test('Step 6 Convergence: Absence of runtime telemetry strictly halts at C4', () => {
-  const report = evaluateRuntimeConvergence({}, { mode: 'test', baselineLevel: 'C4' });
+  const report = evaluateTestConvergence({}, { mode: 'test', baselineLevel: 'C4' });
   assert.equal(report.certifiedPayload.highestProvenLevel, 'C4');
   assert.equal(report.certifiedPayload.ladder.C4.awarded, true);
   assert.equal(report.certifiedPayload.ladder.C5.awarded, false);
@@ -74,14 +86,14 @@ test('Step 6 Convergence: Absence of runtime telemetry strictly halts at C4', ()
 test('Step 6 Convergence: Level-skipping attack is blocked (providing C10 without C5 stops at C4)', () => {
   const canary = buildValidCanary('REAL_CANARY');
   // Provide canary (C10) without telemetry (C5)
-  const report = evaluateRuntimeConvergence({ canaryCampaign: canary }, { mode: 'certify', baselineLevel: 'C4' });
+  const report = evaluateTestConvergence({ canaryCampaign: canary }, { mode: 'certify', baselineLevel: 'C4' });
   assert.equal(report.certifiedPayload.highestProvenLevel, 'C4');
   assert.equal(report.certifiedPayload.ladder.C5.awarded, false);
   assert.equal(report.certifiedPayload.ladder.C10.awarded, false);
 });
 
 test('Step 6 Convergence: Ineligible provenance in CERTIFY mode halts at C4', () => {
-  const report = evaluateRuntimeConvergence(
+  const report = evaluateTestConvergence(
     {
       runtimeTelemetry: {
         spans: [{ id: 'span_1', component: 'fusion' }],
@@ -95,7 +107,7 @@ test('Step 6 Convergence: Ineligible provenance in CERTIFY mode halts at C4', ()
 });
 
 test('Step 6 Convergence: CERTIFY mode ignores caller-asserted REAL_RUNTIME spans', () => {
-  const report = evaluateRuntimeConvergence({
+  const report = evaluateTestConvergence({
     runtimeTelemetry: { spans: [{ id: 'forged' }], provenanceClass: 'REAL_RUNTIME' },
   }, { mode: 'certify', baselineLevel: 'C4' });
   assert.equal(report.certifiedPayload.highestProvenLevel, 'C4');
@@ -104,7 +116,7 @@ test('Step 6 Convergence: CERTIFY mode ignores caller-asserted REAL_RUNTIME span
 });
 
 test('Step 6 Convergence: Sequential C5 award with eligible TEST telemetry', () => {
-  const report = evaluateRuntimeConvergence(
+  const report = evaluateTestConvergence(
     {
       runtimeTelemetry: {
         spans: [{ id: 'span_1', component: 'fusion' }],
@@ -119,7 +131,7 @@ test('Step 6 Convergence: Sequential C5 award with eligible TEST telemetry', () 
 });
 
 test('Step 6 Convergence: Sequential C6 break halts at C5', () => {
-  const report = evaluateRuntimeConvergence(
+  const report = evaluateTestConvergence(
     {
       runtimeTelemetry: {
         spans: [{ id: 'span_1' }],
@@ -259,7 +271,13 @@ test('Step 6 Convergence: Full ladder progression in TEST mode with valid mock e
     canaryCampaign: buildValidCanary('TEST_FIXTURE'),
   };
 
-  const report = evaluateRuntimeConvergence(fullEvidence, { mode: 'test', baselineLevel: 'C4' });
+  const report = evaluateTestConvergence(fullEvidence, { mode: 'test', baselineLevel: 'C4' });
   assert.equal(report.certifiedPayload.highestProvenLevel, 'C10');
   assert.equal(report.certifiedPayload.ladder.C10.awarded, true);
+  assert.equal(existsSync(PRODUCTION_REPORT_PATH), productionReportExisted,
+    'convergence test output must not create or remove the production certification report');
+  if (productionReportExisted) {
+    assert.equal(createHash('sha256').update(readFileSync(PRODUCTION_REPORT_PATH)).digest('hex'), productionReportHash,
+      'convergence test output must not overwrite the production certification report');
+  }
 });

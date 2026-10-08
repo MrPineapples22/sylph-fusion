@@ -37,7 +37,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const ROOT_DIR = resolve(__dirname, '..');
 const SRC_DIR = resolve(ROOT_DIR, 'src');
-const ARTIFACTS_DIR = resolve(ROOT_DIR, 'artifacts', 'connectivity');
+const DEFAULT_ARTIFACTS_DIR = resolve(ROOT_DIR, 'artifacts', 'connectivity');
 
 // Designated system entry points that are not orphans despite 0 incoming internal imports
 const KNOWN_ENTRY_POINTS = new Set([
@@ -200,6 +200,7 @@ function classifyComponent(relPath, analysis) {
  */
 export function runConnectivityCompiler(options = {}) {
   console.log('[CONNECTIVITY_COMPILER] Initializing TypeScript Compiler & AST Program...');
+  const ARTIFACTS_DIR = resolve(options.outputDir ?? DEFAULT_ARTIFACTS_DIR);
 
   const configPath = ts.findConfigFile(ROOT_DIR, ts.sys.fileExists, 'tsconfig.json');
   if (!configPath) {

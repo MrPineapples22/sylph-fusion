@@ -15,8 +15,12 @@
  * 10. Forged / Arbitrary Claimed Root Attack
  */
 
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { resolve, join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import {
   canonicalJsonV10,
   hashCanonicalV10,
@@ -26,6 +30,12 @@ import { verifySystemIntegrationCertificate } from '../scripts/verify-system-int
 import { verifyCanaryCampaign, loadMandatoryEdgeConfig } from '../scripts/canary-campaign-verifier.mjs';
 import { evaluateRuntimeConvergence } from '../scripts/connectivity-runtime-convergence.mjs';
 import { generateSystemIntegrationCertificate } from '../scripts/generate-system-integration-certificate.mjs';
+
+const TEST_ARTIFACT_DIR = mkdtempSync(join(tmpdir(), `sylph-negative-controls-${randomUUID()}-`));
+const TEST_CONVERGENCE_REPORT = resolve(TEST_ARTIFACT_DIR, 'RUNTIME_CONVERGENCE_REPORT.json');
+const evaluateTestConvergence = (evidence = {}, options = {}) =>
+  evaluateRuntimeConvergence(evidence, { ...options, outputPath: TEST_CONVERGENCE_REPORT });
+after(() => rmSync(TEST_ARTIFACT_DIR, { recursive: true, force: true }));
 
 function buildMockValidCanary(provenanceClass = 'TEST_FIXTURE') {
   const mandatoryEdges = loadMandatoryEdgeConfig();
@@ -111,7 +121,7 @@ test('Negative Control 2: Single byte mutation in certificate fails verifier clo
 
 // 3. Artifact Hash Continuity Tamper Attack
 test('Negative Control 3: Corrupted intermediate artifact hash breaks C6 cryptographic continuity', () => {
-  const report = evaluateRuntimeConvergence(
+  const report = evaluateTestConvergence(
     {
       runtimeTelemetry: {
         spans: [{ id: 's1' }],
@@ -138,7 +148,7 @@ test('Negative Control 3: Corrupted intermediate artifact hash breaks C6 cryptog
 
 // 4. Deterministic Replay Divergence Attack
 test('Negative Control 4: Replay state divergence halts at C7 and denies C8', () => {
-  const report = evaluateRuntimeConvergence(
+  const report = evaluateTestConvergence(
     {
       runtimeTelemetry: { spans: [{ id: 's1' }], provenanceClass: 'TEST_FIXTURE' },
       artifactContinuity: { pairs: [{ producer: 'A', consumer: 'B', outputHash: 'a'.repeat(64), inputHash: 'a'.repeat(64) }] },
@@ -162,7 +172,7 @@ test('Negative Control 4: Replay state divergence halts at C7 and denies C8', ()
 
 // 5. Fault Containment Escape Attack
 test('Negative Control 5: Escaped fault containment halts at C8 and denies C9', () => {
-  const report = evaluateRuntimeConvergence(
+  const report = evaluateTestConvergence(
     {
       runtimeTelemetry: { spans: [{ id: 's1' }], provenanceClass: 'TEST_FIXTURE' },
       artifactContinuity: { pairs: [{ producer: 'A', consumer: 'B', outputHash: 'a'.repeat(64), inputHash: 'a'.repeat(64) }] },
@@ -233,7 +243,7 @@ test('Negative Control 8: Mock / fixture provenance in CERTIFY mode halts immedi
 test('Negative Control 9: Level skipping is strictly blocked', () => {
   const canary = buildMockValidCanary('TEST_FIXTURE');
   // Provide only canary without preceding ladder evidence
-  const report = evaluateRuntimeConvergence({ canaryCampaign: canary }, { mode: 'test', baselineLevel: 'C4' });
+  const report = evaluateTestConvergence({ canaryCampaign: canary }, { mode: 'test', baselineLevel: 'C4' });
   assert.equal(report.certifiedPayload.highestProvenLevel, 'C4');
   assert.equal(report.certifiedPayload.ladder.C5.awarded, false);
   assert.equal(report.certifiedPayload.ladder.C10.awarded, false);

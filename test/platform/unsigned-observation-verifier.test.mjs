@@ -197,6 +197,8 @@ test('simulation explicitly requests and records bounded RPC inner-instruction t
   const r = root(); const receipt = await r.client.observe(r.issueDisclosure(request()));
   const simulation = calls.find(call => call.parsed.method === 'simulateTransaction');
   assert.equal(simulation.parsed.params[1].innerInstructions, true);
+  assert.equal(simulation.parsed.params[1].sigVerify, false);
+  assert.equal(simulation.parsed.params[1].replaceRecentBlockhash, false);
   const metadata = r.client.inspect(receipt).metadata;
   assert.equal(metadata.innerInstructionTraceStatus, 'STRUCTURALLY_VALID');
   assert.equal(metadata.innerInstructionGroupCount, 1);

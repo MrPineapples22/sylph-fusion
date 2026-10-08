@@ -1,14 +1,17 @@
 {
   "auditor": "scripts/audit-single-authority-door.mjs",
   "auditorVersion": "4.0.0-c1-c4",
-  "timestamp": "2026-10-08T15:20:07.622Z",
-  "commitSha": "8d314748cd8ad1b19b54613a1eacef884c80e9f9",
-  "treeSha": "5fc70eb9c92ead1a435c9dfbe2a1c6bb8e5527d8",
-  "workingTreeState": "M docs/audit/evidence/c1-single-authority-door.json\n M docs/audit/evidence/c2-mutation-exclusivity.json\n M docs/audit/evidence/c3-decision-provenance.json\n M docs/audit/evidence/c4-authority-ancestry.json\n M docs/audit/unresolved_risks.md\n M scripts/generate-certification-manifest.mjs\n M test/certification-manifest.test.mjs",
+  "timestamp": "2026-10-08T15:50:30.672Z",
+  "commitSha": "ddf1396500f7563d47255336d593c99a9d75b4fb",
+  "treeSha": "11189dcb4311ca6a40c6b0ee491c44a5861ca26e",
+  "workingTreeState": "M docs/audit/evidence/c1-single-authority-door.json\n M docs/audit/evidence/c2-mutation-exclusivity.json\n M docs/audit/evidence/c3-decision-provenance.json\n M docs/audit/evidence/c4-authority-ancestry.json\n M docs/audit/unresolved_risks.md\n M scripts/connectivity-compiler.mjs\n M scripts/connectivity-runtime-convergence.mjs\n M test/certification-negative-controls.test.mjs\n M test/connectivity-compiler.test.mjs\n M test/connectivity-runtime-convergence.test.mjs",
   "workingTreeFileHashes": {
-    "docs/audit/unresolved_risks.md": "f7ccfa6ca9ecdfdd5e55d024de3c18f124b3f0eeb651e72538ecfa3230a0b24f",
-    "scripts/generate-certification-manifest.mjs": "90d598b436be8fd2a7b564d920ac9679e846e6c48a1216322b8844c7a5e5c40f",
-    "test/certification-manifest.test.mjs": "fd8ebcd01a8b39c1c206759c35d009f69f9db9a8ce78d35d863409b0cce6937a"
+    "docs/audit/unresolved_risks.md": "e0e869cd1f936ba67c22d89cca4cafcc5ad4a59b763f7b3e64e6f6a4b088b492",
+    "scripts/connectivity-compiler.mjs": "c2fb3d9c8e78e1c8e184532d41c9f37f7dd15ebca44295c611f630d387cfc6f2",
+    "scripts/connectivity-runtime-convergence.mjs": "eed3cf03625ce40ecc0271610939965cde47ff2eea146b078c06e3408b8d6b9a",
+    "test/certification-negative-controls.test.mjs": "7e9cf88878e82e3863a2889492768f5dc86d51aabdf8a7eeec1e42f17d2aaf12",
+    "test/connectivity-compiler.test.mjs": "dca9c6c3ec66c713c09babea56c31f83f06623d0f0b183e2558a209957a756f7",
+    "test/connectivity-runtime-convergence.test.mjs": "103ebc8088b3d7f8921e8eb8e2e9f0731a215bc26c8eff3855b38c95db2e7265"
   },
   "metrics": {
     "RAW_TO_ENGINE_PATHS": 0,
@@ -128,5 +131,5 @@
     "UNIFIED_PIPELINE_CERTIFIED": "FALSE",
     "LIVE_CAPITAL_AUTHORITY": "BLOCKED"
   },
-  "manifestHash": "320e4224306736fe507c5192550f700d5d7cac10d3d171bc148e36cd3fe8dbd3"
+  "manifestHash": "ed81c72219a6f11ba998b608ee683397835735db3f89c054234e28501dea4812"
 }

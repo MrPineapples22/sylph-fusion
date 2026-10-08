@@ -52,6 +52,7 @@ const CERTIFY_ELIGIBLE = new Set([
  * @returns {object} Convergence evaluation report
  */
 export function evaluateRuntimeConvergence(evidenceBundle = {}, options = {}) {
+  const outputPath = resolve(options.outputPath ?? OUTPUT_PATH);
   const mode = options.mode ?? (process.argv.includes('--mode') ? process.argv[process.argv.indexOf('--mode') + 1] : 'test');
   if (mode !== 'test' && mode !== 'certify') {
     throw new Error(`INVALID_MODE: Mode must be 'test' or 'certify', received '${mode}'`);
@@ -232,7 +233,7 @@ export function evaluateRuntimeConvergence(evidenceBundle = {}, options = {}) {
     certifiedPayload,
   };
 
-  writeFileSync(OUTPUT_PATH, canonicalJsonV10(report), 'utf8');
+  writeFileSync(outputPath, canonicalJsonV10(report), 'utf8');
 
   console.log(`[CONVERGENCE_ENGINE] Evaluation Completed in '${mode}' mode:`);
   console.log(` - Highest Proven Level: ${highestProvenLevel}`);
