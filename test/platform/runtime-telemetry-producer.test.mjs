@@ -10,7 +10,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { Store, getStoreIngressCapability } from '../../dist/store.js';
 import { CanonicalIngress, DefaultFusionEnvelopeCompiler, DefaultTruthValidator, StoreIngressJournal, InMemoryIngressJournal } from '../../dist/platform/ingress/canonical-ingress.js';
 import { createUnvalidatedObservation } from '../../dist/platform/ingress/observation-factory.js';
-import { verifyRuntimeTelemetryEvidence, verifyRuntimeTelemetryStoreBinding } from '../../scripts/runtime-telemetry-evidence.mjs';
+import { verifyRuntimeTelemetryEvidence, verifyRuntimeTelemetryStoreBinding, verifyRuntimeTelemetryProcessBinding,
+  resolveLiveProcessImageIdentity } from '../../scripts/runtime-telemetry-evidence.mjs';
 import { hashCanonicalV10 } from '../../scripts/canonicalization-v10.mjs';
 import { RuntimeTelemetryExporter } from '../../dist/platform/ingress/runtime-telemetry-exporter.js';
 import { closeEngineResources } from '../../dist/fusion.js';
@@ -38,7 +39,7 @@ test('C5 producer records actual ingress spans, persists before signing, and ver
   const f = await fixture(t, telemetry);
   let signed = 0;
   telemetry.signer.signRuntimeTelemetryRoot = async root => {
-    const rows = await f.store.getAuditEvents('runtime_telemetry_observed_v2');
+    const rows = await f.store.getAuditEvents('runtime_telemetry_observed_v3');
     assert.equal(rows.length, 1);
     assert.equal(JSON.parse(rows[0].body).spans.length, 5, 'all measured lifecycle operations were durable before signing');
     signed++;
@@ -47,13 +48,18 @@ test('C5 producer records actual ingress spans, persists before signing, and ver
   assert.equal((await f.ingress.submit(observation())).status, 'ACCEPTED');
   const evidence = await f.ingress.captureRuntimeTelemetry();
   assert.equal(signed, 1);
-  assert.equal(evidence.schemaVersion, 'SYLPH_RUNTIME_TELEMETRY_V2');
+  assert.equal(evidence.schemaVersion, 'SYLPH_RUNTIME_TELEMETRY_V3');
+  assert.equal(evidence.processId, process.pid);
+  assert.equal(typeof evidence.processImageIdentity.executableSha256, 'string');
+  assert.match(evidence.processImageIdentity.executableSha256, /^[a-f0-9]{64}$/);
   assert.deepEqual(evidence.spans.map(s => s.name), ['ingress.compile', 'ingress.validate', 'ingress.commit', 'ingress.delivery', 'ingress.observation']);
   assert.ok(evidence.spans.every(s => s.status === 'OK' && BigInt(s.endedAtNs) >= BigInt(s.startedAtNs)));
   assert.equal(new Set(evidence.spans.map(s => s.spanId)).size, 5);
   assert.equal(new Set(evidence.spans.map(s => s.traceId)).size, 1);
   assert.ok(evidence.spans.slice(0, 4).every(s => s.parentSpanId === evidence.spans[4].spanId));
   assert.equal(verifyRuntimeTelemetryEvidence(evidence, { trustedPublicKeyPem }).valid, true);
+  assert.equal(verifyRuntimeTelemetryProcessBinding(evidence, resolveLiveProcessImageIdentity(process.pid)).valid, true,
+    'the independent verifier observes the same live process image and creation FILETIME');
   assert.equal(verifyRuntimeTelemetryEvidence(evidence).reason, 'C5_RUNTIME_ATTESTATION_TRUST_ROOT_MISSING');
   await f.store.close();
   const reopened = new Store(f.path);
@@ -74,10 +80,10 @@ test('C5 signer failure retains exact durable batch and retries idempotently wit
   const f = await fixture(t, telemetry, () => { deliveries++; });
   assert.equal((await f.ingress.submit(observation())).status, 'ACCEPTED');
   await assert.rejects(f.ingress.captureRuntimeTelemetry(), /signer unavailable/);
-  const before = await f.store.getAuditEvents('runtime_telemetry_observed_v2');
+  const before = await f.store.getAuditEvents('runtime_telemetry_observed_v3');
   await assert.rejects(f.ingress.captureRuntimeTelemetry(), /C5_ATTESTATION_SIGNATURE_INVALID/);
   const artifact = await f.ingress.captureRuntimeTelemetry();
-  assert.deepEqual(await f.store.getAuditEvents('runtime_telemetry_observed_v2'), before);
+  assert.deepEqual(await f.store.getAuditEvents('runtime_telemetry_observed_v3'), before);
   assert.equal(artifact.durability.storeAuditId, before[0].id);
   assert.equal(deliveries, 1);
   await assert.rejects(f.ingress.captureRuntimeTelemetry(), /C5_CAPTURE_EMPTY/);
@@ -88,10 +94,26 @@ test('C5 missing signer/trust pin cannot emit or persist an artifact and never a
     const f = await fixture(t, { ...options(), ...change });
     assert.equal((await f.ingress.submit(observation())).status, 'ACCEPTED');
     await assert.rejects(f.ingress.captureRuntimeTelemetry(), reason);
-    assert.equal((await f.store.getAuditEvents('runtime_telemetry_observed_v2')).length, 0);
+    assert.equal((await f.store.getAuditEvents('runtime_telemetry_observed_v3')).length, 0);
   }
   assert.throws(() => new CanonicalIngress({ compiler: new DefaultFusionEnvelopeCompiler(), validator: new DefaultTruthValidator(),
     journal: new InMemoryIngressJournal(), runtimeTelemetry: options() }), /C5_DURABLE_STORE_REQUIRED/);
+});
+
+test('C5 producer fails closed when the trusted Windows process-query environment is unavailable', async t => {
+  const f = await fixture(t);
+  await f.ingress.submit(observation());
+  const systemRoot = process.env.SystemRoot, windir = process.env.WINDIR;
+  try {
+    delete process.env.SystemRoot;
+    delete process.env.WINDIR;
+    await assert.rejects(f.ingress.captureRuntimeTelemetry(), /C5_PROCESS_IMAGE_IDENTITY_UNAVAILABLE/);
+    assert.equal((await f.store.getAuditEvents('runtime_telemetry_observed_v3')).length, 0,
+      'identity failure happens before the durable receipt is appended');
+  } finally {
+    if (systemRoot === undefined) delete process.env.SystemRoot; else process.env.SystemRoot = systemRoot;
+    if (windir === undefined) delete process.env.WINDIR; else process.env.WINDIR = windir;
+  }
 });
 
 test('C5 Store binding rejects wrong identity, changed body bytes and consistently rehashed span mismatch', async t => {
@@ -110,7 +132,7 @@ test('C5 Store binding rejects wrong identity, changed body bytes and consistent
     const changed = JSON.parse(body);
     changed.spans[0].status = 'ERROR';
     const changedBody = JSON.stringify(changed);
-    const hash = createHash('sha256').update(`runtime_telemetry_observed_v2:${changedBody}`).digest('hex');
+    const hash = createHash('sha256').update(`runtime_telemetry_observed_v3:${changedBody}`).digest('hex');
     db.prepare('UPDATE audit SET body=? WHERE id=?').run(changedBody, artifact.durability.storeAuditId);
     db.prepare('UPDATE audit_event_dedupe SET event_hash=? WHERE event_id=?').run(hash, artifact.durability.storeEventId);
     const edited = { ...artifact, durability: { ...artifact.durability, storeEventHash: hash } };
@@ -152,7 +174,7 @@ test('runtime publication commit point prevents false timeout during delayed ren
   let captures = 0, renames = 0;
   const errors = [];
   const exporter = new RuntimeTelemetryExporter({ async captureRuntimeTelemetry() { captures++; return f.ingress.captureRuntimeTelemetry(); } },
-    { ...options(), artifactPath, captureIntervalMs: 25, captureTimeoutMs: 500 }, code => errors.push(code), {
+    { ...options(), artifactPath, captureIntervalMs: 25, captureTimeoutMs: 30_000 }, code => errors.push(code), {
       async rename(from, to) { renames++; enteredRename(); await release; await rename(from, to); },
     });
   t.after(async () => { releaseRename(); await exporter.close(); });
@@ -179,7 +201,7 @@ test('runtime publication commit point prevents false timeout during delayed ren
   assert.deepEqual(errors, []);
 });
 
-test('C5 V2 verifier rejects independently re-signed disconnected, cross-trace and out-of-root spans', async t => {
+test('C5 V3 verifier rejects independently re-signed disconnected, cross-trace and out-of-root spans', async t => {
   const f = await fixture(t);
   await f.ingress.submit(observation());
   const artifact = await f.ingress.captureRuntimeTelemetry();
@@ -198,7 +220,7 @@ test('runtime export publishes verified evidence periodically and drains final i
   const f = await fixture(t);
   const artifactPath = join(f.directory, 'evidence.json');
   const errors = [];
-  const exporter = new RuntimeTelemetryExporter(f.ingress, { ...options(), artifactPath, captureIntervalMs: 25, captureTimeoutMs: 1000 }, code => errors.push(code));
+  const exporter = new RuntimeTelemetryExporter(f.ingress, { ...options(), artifactPath, captureIntervalMs: 25, captureTimeoutMs: 30_000 }, code => errors.push(code));
   t.after(() => exporter.close());
   await f.ingress.submit(observation(1));
   for (let i = 0; i < 100 && !existsSync(artifactPath); i++) await new Promise(resolve => setTimeout(resolve, 10));

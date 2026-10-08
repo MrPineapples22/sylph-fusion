@@ -6,6 +6,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {packageCandidate, isDirectInvocation, runtimeModuleClosure} from '../scripts/package-windows-release.mjs';
+import {runtimeTelemetryWindowsProcessHelperPath} from '../dist/platform/ingress/runtime-telemetry.js';
 const root = fileURLToPath(new URL('../', import.meta.url));
 
 test('release packager recognizes direct invocation using canonical file URLs', () => {
@@ -22,9 +23,12 @@ test('candidate package includes runtime helpers, UI, lockfiles and correct laun
   assert.equal(manifest.releaseStatus, 'UNVERIFIED_CANDIDATE');
   const paths = manifest.files.map(file => file.path);
   for (const required of ['terminal/evidence-view.mjs', 'terminal/local-request.mjs', 'terminal/astra-feed.mjs',
-    'terminal/soak-reader.mjs', 'terminal/static-files.mjs', 'terminal/goal-loop-health.mjs', 'ui/index.html', 'ui/app.js', 'ui/style.css', 'pnpm-lock.yaml', 'pnpm-workspace.yaml']) {
+    'terminal/soak-reader.mjs', 'terminal/static-files.mjs', 'terminal/goal-loop-health.mjs', 'scripts/windows-process-identity.ps1',
+    'ui/index.html', 'ui/app.js', 'ui/style.css', 'pnpm-lock.yaml', 'pnpm-workspace.yaml']) {
     assert.ok(paths.includes(required), required);
   }
+  assert.equal(runtimeTelemetryWindowsProcessHelperPath(pathToFileURL(path.join(target, 'dist/platform/ingress/runtime-telemetry.js')).href),
+    path.join(target, 'scripts', 'windows-process-identity.ps1'), 'extracted package resolves the helper beside its packaged root');
   assert.ok(!paths.some(name => name === '.env' || name.startsWith('data/') || name.startsWith('sessions/') || name.startsWith('node_modules/')));
   // Resolve the copied server graph from the candidate itself, never the source tree.
   assert.deepEqual(runtimeModuleClosure(target), runtimeModuleClosure(root));

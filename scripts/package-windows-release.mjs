@@ -6,6 +6,7 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 const files = ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.env.example',
+  'scripts/windows-process-identity.ps1',
   'terminal/server.mjs', 'terminal/astra-feed.mjs', 'terminal/soak-reader.mjs',
   'terminal/evidence-view.mjs', 'terminal/local-request.mjs'];
 const trees = ['dist', 'terminal/dist', 'ui'];

@@ -285,6 +285,17 @@ test('C5 Windows resolver observes this test process through Win32 and independe
   assert.match(observed.executableSha256, /^[a-f0-9]{64}$/);
 });
 
+test('C5 Windows process helper rejects exit after its final metadata snapshot', () => {
+  const helper = readFileSync(resolve(ROOT_DIR, 'scripts', 'windows-process-identity.ps1'), 'utf8');
+  const secondSnapshot = helper.indexOf('Snapshot second = ReadSnapshot(handle);');
+  const finalWait = helper.indexOf('uint finalWait = WaitForSingleObject(handle, 0);');
+  const returnObject = helper.indexOf('return new { processId = processId', secondSnapshot);
+  assert.ok(secondSnapshot >= 0 && finalWait > secondSnapshot && returnObject > finalWait,
+    'the process handle must receive a final live check after the second snapshot and before output');
+  assert.match(helper.slice(finalWait, returnObject), /if \(finalWait != WAIT_TIMEOUT\)/,
+    'only a still-running process may produce an identity observation');
+});
+
 test('C5 certification binding rejects replay, future timestamps, dirty checkout, and source commit/tree splices', () => {
   const expectedCommitSha = '1'.repeat(40);
   const expectedTreeSha = '2'.repeat(40);

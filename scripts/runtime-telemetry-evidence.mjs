@@ -243,15 +243,17 @@ export function resolveLiveProcessImageIdentity(processId, { platform = process.
 }
 
 function resolvePowerShellBinary() {
-  for (const candidate of ['powershell.exe', 'pwsh.exe']) {
-    try {
-      execFileSync(candidate, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '$PSVersionTable.PSVersion.ToString()'], {
-        stdio: 'ignore', timeout: 5_000, windowsHide: true,
-      });
-      return candidate;
-    } catch {}
-  }
-  throw new Error('PowerShell unavailable');
+  // SystemRoot/WINDIR are caller-process environment values. The C5 appraisal
+  // requires a trusted verifier environment; spoofed values can redirect this
+  // helper to an attacker-controlled interpreter and invalidate observation.
+  const systemRoot = process.env.SystemRoot ?? process.env.WINDIR;
+  if (!systemRoot || !win32.isAbsolute(systemRoot)) throw new Error('Windows system root unavailable');
+  const candidate = win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  if (!existsSync(candidate)) throw new Error('Inbox PowerShell unavailable');
+  execFileSync(candidate, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '$PSVersionTable.PSVersion.ToString()'], {
+    stdio: 'ignore', timeout: 5_000, windowsHide: true,
+  });
+  return candidate;
 }
 
 function hashObservedExecutable(path) {
@@ -526,7 +528,10 @@ export function verifyRuntimeTelemetryStoreBinding(value, { databasePath = proce
       ...(v3 ? ['processImageIdentity'] : [])]) ||
         body.schemaVersion !== (v3 ? 'SYLPH_RUNTIME_TELEMETRY_STORE_V3' : v2 ? 'SYLPH_RUNTIME_TELEMETRY_STORE_V2' : 'SYLPH_RUNTIME_TELEMETRY_STORE_V1') ||
         (v2 && body.storeInstanceId !== value.durability.storeInstanceId) ||
-        (v3 && JSON.stringify(body.processImageIdentity) !== JSON.stringify(value.processImageIdentity)) ||
+        (v3 && (!exactKeys(body.processImageIdentity, ['imagePath', 'executableSha256', 'creationFileTime100ns']) ||
+          body.processImageIdentity.imagePath !== value.processImageIdentity.imagePath ||
+          body.processImageIdentity.executableSha256 !== value.processImageIdentity.executableSha256 ||
+          body.processImageIdentity.creationFileTime100ns !== value.processImageIdentity.creationFileTime100ns)) ||
         body.runtimeInstanceId !== value.runtimeInstanceId || body.sourceCommitSha !== value.sourceCommitSha ||
         body.sourceTreeSha !== value.sourceTreeSha || body.processId !== value.processId ||
         body.processStartedAtMs !== value.processStartedAtMs || body.captureStartedAtMs !== value.captureStartedAtMs ||

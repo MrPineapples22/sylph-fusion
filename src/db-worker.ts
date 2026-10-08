@@ -182,7 +182,7 @@ parentPort!.on('message', (m: { id: number; op: string; body?: string; event?: s
         const eventHash = createHash('sha256').update(`${m.event}:${m.body}`).digest('hex');
         db.exec('BEGIN IMMEDIATE');
         try {
-          if (m.event === 'runtime_telemetry_observed_v2') {
+          if (m.event === 'runtime_telemetry_observed_v2' || m.event === 'runtime_telemetry_observed_v3') {
             assertRuntimeDurability();
             const identity = db.prepare('SELECT instance_id FROM runtime_store_identity_v1 WHERE singleton=1').get();
             if (!identity || identity.instance_id !== payload.storeInstanceId) throw new Error('RUNTIME_STORE_IDENTITY_MISMATCH');

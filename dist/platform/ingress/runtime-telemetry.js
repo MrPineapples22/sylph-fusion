@@ -1,7 +1,88 @@
 import { createHash, createPublicKey, randomBytes, verify } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { closeSync, fstatSync, openSync, readSync, statSync } from 'node:fs';
+import { dirname, join, win32 } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { hashCanonical } from '../pipeline/canonical-hashing.js';
-const EVENT = 'runtime_telemetry_observed_v2';
-const PROCESS_STARTED_AT = Math.floor(performance.timeOrigin);
+const EVENT = 'runtime_telemetry_observed_v3';
+const FILETIME_EPOCH_100NS = 116444736000000000n;
+/** Resolve the bundled Win32 helper from the compiled module's package root. */
+export function runtimeTelemetryWindowsProcessHelperPath(moduleUrl = import.meta.url) {
+    const packageRoot = dirname(dirname(dirname(dirname(fileURLToPath(moduleUrl)))));
+    return join(packageRoot, 'scripts', 'windows-process-identity.ps1');
+}
+/** Obtain this process identity from a Win32 process handle, never from caller options. */
+function resolveCurrentProcessImageIdentity() {
+    if (process.platform !== 'win32' || !Number.isSafeInteger(process.pid) || process.pid < 1 || process.pid > 2_147_483_647) {
+        throw new Error('C5_PROCESS_IMAGE_IDENTITY_UNAVAILABLE');
+    }
+    try {
+        const systemRoot = process.env.SystemRoot ?? process.env.WINDIR;
+        if (!systemRoot || !win32.isAbsolute(systemRoot))
+            throw new Error('Windows PowerShell path unavailable');
+        const powershell = win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+        const helperPath = runtimeTelemetryWindowsProcessHelperPath();
+        const packageRoot = dirname(dirname(helperPath));
+        const output = execFileSync(powershell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+            '-File', helperPath, '-ProcessId', String(process.pid)], {
+            cwd: packageRoot, encoding: 'utf8', timeout: 10_000,
+            maxBuffer: 64 * 1024, windowsHide: true,
+        }).trim();
+        const observed = JSON.parse(output);
+        if (!observed || Object.keys(observed).sort().join(',') !== 'creationFileTime100ns,imagePath,processId,processStartedAtMs' ||
+            observed.processId !== process.pid || !Number.isSafeInteger(observed.processStartedAtMs) || observed.processStartedAtMs < 1 ||
+            typeof observed.creationFileTime100ns !== 'string' || !/^[1-9][0-9]{0,19}$/.test(observed.creationFileTime100ns) ||
+            typeof observed.imagePath !== 'string' || observed.imagePath.length < 4 || observed.imagePath.length > 32_767 ||
+            observed.imagePath.includes('\0') || !win32.isAbsolute(observed.imagePath))
+            throw new Error('Invalid Win32 process identity');
+        const fileTime = BigInt(observed.creationFileTime100ns);
+        const delta = fileTime - FILETIME_EPOCH_100NS;
+        if (delta < 0n || fileTime > 9223372036854775807n || Number(delta / 10000n) !== observed.processStartedAtMs) {
+            throw new Error('Win32 process creation time mismatch');
+        }
+        return { ...observed, processImageIdentity: { imagePath: observed.imagePath,
+                executableSha256: hashStableExecutable(observed.imagePath), creationFileTime100ns: observed.creationFileTime100ns } };
+    }
+    catch {
+        throw new Error('C5_PROCESS_IMAGE_IDENTITY_UNAVAILABLE');
+    }
+}
+function hashStableExecutable(path) {
+    const initialStat = statSync(path, { bigint: true });
+    const before = initialStat;
+    if (!initialStat.isFile() || before.size < 1n || before.size > 512n * 1024n * 1024n)
+        throw new Error('Executable outside hash bounds');
+    const fd = openSync(path, 'r');
+    try {
+        const openedBefore = fstatSync(fd, { bigint: true });
+        if (!sameFileVersion(before, openedBefore))
+            throw new Error('Executable changed before hashing');
+        const hash = createHash('sha256');
+        const buffer = Buffer.allocUnsafe(1024 * 1024);
+        let total = 0n;
+        while (true) {
+            const bytes = readSync(fd, buffer, 0, buffer.length, null);
+            if (bytes === 0)
+                break;
+            total += BigInt(bytes);
+            if (total > 512n * 1024n * 1024n)
+                throw new Error('Executable exceeds hash bound');
+            hash.update(buffer.subarray(0, bytes));
+        }
+        const openedAfter = fstatSync(fd, { bigint: true });
+        const pathAfter = statSync(path, { bigint: true });
+        if (total !== before.size || !sameFileVersion(openedBefore, openedAfter) || !sameFileVersion(openedAfter, pathAfter)) {
+            throw new Error('Executable changed while hashing');
+        }
+        return hash.digest('hex');
+    }
+    finally {
+        closeSync(fd);
+    }
+}
+function sameFileVersion(a, b) {
+    return a.dev === b.dev && a.ino === b.ino && a.size === b.size && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs;
+}
 const nonzeroId = (bytes) => {
     let id;
     do {
@@ -95,9 +176,13 @@ export class RuntimeTelemetryCapture {
             // There are no awaits between the final state check and snapshot sealing.
             if (this.#active || this.#overflow)
                 throw new Error('C5_CAPTURE_OPERATIONS_PENDING');
-            const body = Object.freeze({ schemaVersion: 'SYLPH_RUNTIME_TELEMETRY_STORE_V2', storeInstanceId,
+            const processIdentity = resolveCurrentProcessImageIdentity();
+            if (processIdentity.processId !== process.pid)
+                throw new Error('C5_PROCESS_IMAGE_IDENTITY_UNAVAILABLE');
+            const body = Object.freeze({ schemaVersion: 'SYLPH_RUNTIME_TELEMETRY_STORE_V3', storeInstanceId,
                 runtimeInstanceId: this.#runtimeInstanceId, sourceCommitSha, sourceTreeSha, processId: process.pid,
-                processStartedAtMs: PROCESS_STARTED_AT, captureStartedAtMs: this.#captureStartedAtMs,
+                processStartedAtMs: processIdentity.processStartedAtMs, processImageIdentity: processIdentity.processImageIdentity,
+                captureStartedAtMs: this.#captureStartedAtMs,
                 captureEndedAtMs: Date.now(), spans: Object.freeze(this.#spans.splice(0)) });
             this.#captureStartedAtMs = Date.now();
             this.#pending = { body, storeEventId: `runtime:${hashCanonical(body)}` };
@@ -113,7 +198,7 @@ export class RuntimeTelemetryCapture {
             throw new Error('C5_DURABLE_STORE_RECORD_MISMATCH');
         }
         const { schemaVersion: _schemaVersion, storeInstanceId: _storeInstanceId, ...observation } = body;
-        const payload = { schemaVersion: 'SYLPH_RUNTIME_TELEMETRY_V2', provenanceClass: 'REAL_RUNTIME', ...observation,
+        const payload = { schemaVersion: 'SYLPH_RUNTIME_TELEMETRY_V3', provenanceClass: 'REAL_RUNTIME', ...observation,
             nodeVersion: process.version, durability: { barrier: 'FSYNC_COMMITTED', storeInstanceId,
                 storeEventId, storeAuditId: row.id, storeEventHash: expectedHash } };
         // All payload strings are controlled ASCII, so the runtime canonical hash

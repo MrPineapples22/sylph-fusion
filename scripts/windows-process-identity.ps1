@@ -70,6 +70,9 @@ public static class SylphWindowsProcessIdentity {
                 !String.Equals(first.CreationFileTime100ns, second.CreationFileTime100ns, StringComparison.Ordinal) ||
                 !String.Equals(first.ImagePath, second.ImagePath, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("Process identity changed during query.");
+            uint finalWait = WaitForSingleObject(handle, 0);
+            if (finalWait != WAIT_TIMEOUT)
+                throw new InvalidOperationException("Process exited after the final identity snapshot.");
             return new { processId = processId, processStartedAtMs = second.ProcessStartedAtMs,
                 creationFileTime100ns = second.CreationFileTime100ns, imagePath = second.ImagePath };
         } finally {
