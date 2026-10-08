@@ -13,6 +13,7 @@ import { createUnvalidatedObservation } from '../../dist/platform/ingress/observ
 import { verifyRuntimeTelemetryEvidence, verifyRuntimeTelemetryStoreBinding, verifyRuntimeTelemetryProcessBinding,
   resolveLiveProcessImageIdentity } from '../../scripts/runtime-telemetry-evidence.mjs';
 import { hashCanonicalV10 } from '../../scripts/canonicalization-v10.mjs';
+import { hashCanonical, hashCanonicalV10 as hashCanonicalV10Producer } from '../../dist/platform/pipeline/canonical-hashing.js';
 import { RuntimeTelemetryExporter } from '../../dist/platform/ingress/runtime-telemetry-exporter.js';
 import { closeEngineResources } from '../../dist/fusion.js';
 
@@ -41,7 +42,8 @@ test('C5 producer records actual ingress spans, persists before signing, and ver
   telemetry.signer.signRuntimeTelemetryRoot = async root => {
     const rows = await f.store.getAuditEvents('runtime_telemetry_observed_v3');
     assert.equal(rows.length, 1);
-    assert.equal(JSON.parse(rows[0].body).spans.length, 5, 'all measured lifecycle operations were durable before signing');
+    const storedBody = JSON.parse(rows[0].body);
+    assert.equal(storedBody.spans.length, 5, 'all measured lifecycle operations were durable before signing');
     signed++;
     return sign(null, Buffer.from(root, 'hex'), privateKey).toString('base64');
   };
@@ -57,6 +59,13 @@ test('C5 producer records actual ingress spans, persists before signing, and ver
   assert.equal(new Set(evidence.spans.map(s => s.spanId)).size, 5);
   assert.equal(new Set(evidence.spans.map(s => s.traceId)).size, 1);
   assert.ok(evidence.spans.slice(0, 4).every(s => s.parentSpanId === evidence.spans[4].spanId));
+  const storeDb = new DatabaseSync(f.path, { readOnly: true });
+  try {
+    const row = storeDb.prepare('SELECT body FROM audit WHERE id=?').get(evidence.durability.storeAuditId);
+    const event = storeDb.prepare('SELECT event_id FROM audit_event_dedupe WHERE audit_id=?').get(evidence.durability.storeAuditId);
+    assert.equal(event.event_id, `runtime:${hashCanonicalV10(JSON.parse(row.body))}`,
+      'V3 stable event identity uses the same V10 Unicode normalization as the signed receipt');
+  } finally { storeDb.close(); }
   assert.equal(verifyRuntimeTelemetryEvidence(evidence, { trustedPublicKeyPem }).valid, true);
   assert.equal(verifyRuntimeTelemetryProcessBinding(evidence, resolveLiveProcessImageIdentity(process.pid)).valid, true,
     'the independent verifier observes the same live process image and creation FILETIME');
@@ -116,6 +125,25 @@ test('C5 producer fails closed when the trusted Windows process-query environmen
   }
 });
 
+test('C5 V3 signature and evidence hashing follow verifier NFC canonicalization for Unicode paths', async t => {
+  const f = await fixture(t);
+  await f.ingress.submit(observation());
+  const evidence = await f.ingress.captureRuntimeTelemetry();
+  const decomposedPath = evidence.processImageIdentity.imagePath + '\\Cafe\u0301.exe';
+  const changed = { ...evidence, processImageIdentity: { ...evidence.processImageIdentity, imagePath: decomposedPath } };
+  delete changed.attestation;
+  delete changed.evidenceHash;
+  const v10Root = hashCanonicalV10(changed);
+  const producerRoot = hashCanonicalV10Producer(changed);
+  assert.equal(producerRoot, v10Root, 'the TypeScript producer and independent verifier share the V10 preimage');
+  assert.notEqual(hashCanonical(changed), v10Root, 'legacy hashing would disagree for decomposed path bytes');
+  const attested = { ...changed, attestation: { algorithm: 'Ed25519',
+    signatureBase64: sign(null, Buffer.from(producerRoot, 'hex'), privateKey).toString('base64') } };
+  const artifact = { ...attested, evidenceHash: hashCanonicalV10Producer(attested) };
+  assert.equal(verifyRuntimeTelemetryEvidence(artifact, { trustedPublicKeyPem }).valid, true,
+    'the verifier accepts exactly the V10 preimage despite a decomposed Unicode OS path');
+});
+
 test('C5 Store binding rejects wrong identity, changed body bytes and consistently rehashed span mismatch', async t => {
   const f = await fixture(t);
   await f.ingress.submit(observation());
@@ -167,14 +195,15 @@ test('C5 observation root is ERROR when the compiler returns a rejected ingress 
 test('runtime publication commit point prevents false timeout during delayed rename and fences duplicate publication', async t => {
   const f = await fixture(t);
   await f.ingress.submit(observation());
+  const precomputedArtifact = await f.ingress.captureRuntimeTelemetry();
   const artifactPath = join(f.directory, 'committed-publication.json');
   let releaseRename, enteredRename;
   const entered = new Promise(resolve => { enteredRename = resolve; });
   const release = new Promise(resolve => { releaseRename = resolve; });
   let captures = 0, renames = 0;
   const errors = [];
-  const exporter = new RuntimeTelemetryExporter({ async captureRuntimeTelemetry() { captures++; return f.ingress.captureRuntimeTelemetry(); } },
-    { ...options(), artifactPath, captureIntervalMs: 25, captureTimeoutMs: 30_000 }, code => errors.push(code), {
+  const exporter = new RuntimeTelemetryExporter({ async captureRuntimeTelemetry() { captures++; return precomputedArtifact; } },
+    { ...options(), artifactPath, captureIntervalMs: 25, captureTimeoutMs: 500 }, code => errors.push(code), {
       async rename(from, to) { renames++; enteredRename(); await release; await rename(from, to); },
     });
   t.after(async () => { releaseRename(); await exporter.close(); });
@@ -220,7 +249,7 @@ test('runtime export publishes verified evidence periodically and drains final i
   const f = await fixture(t);
   const artifactPath = join(f.directory, 'evidence.json');
   const errors = [];
-  const exporter = new RuntimeTelemetryExporter(f.ingress, { ...options(), artifactPath, captureIntervalMs: 25, captureTimeoutMs: 30_000 }, code => errors.push(code));
+  const exporter = new RuntimeTelemetryExporter(f.ingress, { ...options(), artifactPath, captureIntervalMs: 25, captureTimeoutMs: 5_000 }, code => errors.push(code));
   t.after(() => exporter.close());
   await f.ingress.submit(observation(1));
   for (let i = 0; i < 100 && !existsSync(artifactPath); i++) await new Promise(resolve => setTimeout(resolve, 10));

@@ -523,6 +523,9 @@ export function verifyRuntimeTelemetryStoreBinding(value, { databasePath = proce
       return { valid: false, reason: 'C5_DURABLE_STORE_RECORD_MISMATCH' };
     }
     const body = JSON.parse(row.body);
+    if (v3 && value.durability.storeEventId !== `runtime:${hashCanonicalV10(body)}`) {
+      return { valid: false, reason: 'C5_DURABLE_STORE_CONTENT_MISMATCH' };
+    }
     if (!exactKeys(body, ['schemaVersion', 'runtimeInstanceId', 'sourceCommitSha', 'sourceTreeSha', 'processId',
       'processStartedAtMs', 'captureStartedAtMs', 'captureEndedAtMs', 'spans', ...(v2 ? ['storeInstanceId'] : []),
       ...(v3 ? ['processImageIdentity'] : [])]) ||

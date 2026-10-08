@@ -514,6 +514,7 @@ test('C5 V3 SQLite receipt binds process image identity into the durable row', t
     captureEndedAtMs: evidence.captureEndedAtMs, spans: evidence.spans, storeInstanceId: '5'.repeat(32),
     processImageIdentity: evidence.processImageIdentity,
   };
+  evidence.durability.storeEventId = `runtime:${hashCanonicalV10(storeBody)}`;
   const body = JSON.stringify(storeBody);
   const event = 'runtime_telemetry_observed_v3';
   const storeEventHash = createHash('sha256').update(`${event}:${body}`).digest('hex');

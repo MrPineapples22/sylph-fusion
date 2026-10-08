@@ -85,4 +85,54 @@ export function hashCanonical(value) {
     const json = canonicalJson(value);
     return createHash('sha256').update(json, 'utf8').digest('hex');
 }
+/** Canonicalization V10 for signed runtime telemetry JSON trees: NFC-normalized
+ * strings and keys, finite JSON numbers, sorted object keys, and array-order preservation. */
+export function hashCanonicalV10(value) {
+    const seen = new WeakSet();
+    const normalize = (input, inArray = false) => {
+        if (input === null)
+            return null;
+        if (input === undefined)
+            return inArray ? null : undefined;
+        if (typeof input === 'string')
+            return input.normalize('NFC');
+        if (typeof input === 'boolean')
+            return input;
+        if (typeof input === 'number') {
+            if (!Number.isFinite(input))
+                throw new Error('CANONICAL_V10_ERROR: Non-finite number rejected');
+            return Object.is(input, -0) ? 0 : input;
+        }
+        if (typeof input === 'bigint')
+            return `${input}n`;
+        if (input instanceof Date) {
+            if (!Number.isFinite(input.getTime()))
+                throw new Error('CANONICAL_V10_ERROR: Invalid Date rejected');
+            return input.toISOString();
+        }
+        if (typeof input !== 'object')
+            throw new Error(`CANONICAL_V10_ERROR: Unsupported ${typeof input}`);
+        if (seen.has(input))
+            throw new Error('CANONICAL_V10_ERROR: Circular reference detected');
+        seen.add(input);
+        try {
+            if (Array.isArray(input))
+                return input.map(item => normalize(item, true));
+            const result = Object.create(null);
+            for (const key of Object.keys(input).sort()) {
+                const normalized = normalize(input[key]);
+                if (normalized !== undefined)
+                    result[key.normalize('NFC')] = normalized;
+            }
+            return result;
+        }
+        finally {
+            seen.delete(input);
+        }
+    };
+    const json = JSON.stringify(normalize(value));
+    if (json === undefined || json.length === 0)
+        throw new Error('CANONICAL_V10_ERROR: Empty payload rejected');
+    return createHash('sha256').update(json, 'utf8').digest('hex');
+}
 //# sourceMappingURL=canonical-hashing.js.map

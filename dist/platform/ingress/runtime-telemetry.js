@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { closeSync, fstatSync, openSync, readSync, statSync } from 'node:fs';
 import { dirname, join, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { hashCanonical } from '../pipeline/canonical-hashing.js';
+import { hashCanonicalV10 } from '../pipeline/canonical-hashing.js';
 const EVENT = 'runtime_telemetry_observed_v3';
 const FILETIME_EPOCH_100NS = 116444736000000000n;
 /** Resolve the bundled Win32 helper from the compiled module's package root. */
@@ -185,7 +185,7 @@ export class RuntimeTelemetryCapture {
                 captureStartedAtMs: this.#captureStartedAtMs,
                 captureEndedAtMs: Date.now(), spans: Object.freeze(this.#spans.splice(0)) });
             this.#captureStartedAtMs = Date.now();
-            this.#pending = { body, storeEventId: `runtime:${hashCanonical(body)}` };
+            this.#pending = { body, storeEventId: `runtime:${hashCanonicalV10(body)}` };
         }
         const { body, storeEventId } = this.#pending;
         if (body.storeInstanceId !== storeInstanceId)
@@ -201,9 +201,9 @@ export class RuntimeTelemetryCapture {
         const payload = { schemaVersion: 'SYLPH_RUNTIME_TELEMETRY_V3', provenanceClass: 'REAL_RUNTIME', ...observation,
             nodeVersion: process.version, durability: { barrier: 'FSYNC_COMMITTED', storeInstanceId,
                 storeEventId, storeAuditId: row.id, storeEventHash: expectedHash } };
-        // All payload strings are controlled ASCII, so the runtime canonical hash
-        // equals V10; the independent verifier tests that contract on emitted bytes.
-        const root = hashCanonical(payload);
+        // The OS-reported image path is Unicode-capable, so signed bytes use the
+        // same NFC-normalizing V10 contract as the independent verifier.
+        const root = hashCanonicalV10(payload);
         const signatureBase64 = await signer.signRuntimeTelemetryRoot(root);
         if (typeof signatureBase64 !== 'string' || !/^[A-Za-z0-9+/]{86}==$/.test(signatureBase64))
             throw new Error('C5_ATTESTATION_SIGNATURE_INVALID');
@@ -211,7 +211,7 @@ export class RuntimeTelemetryCapture {
         if (signature.toString('base64') !== signatureBase64 || !verify(null, Buffer.from(root, 'hex'), publicKey, signature))
             throw new Error('C5_ATTESTATION_SIGNATURE_INVALID');
         const attested = { ...payload, attestation: { algorithm: 'Ed25519', signatureBase64 } };
-        const artifact = { ...attested, evidenceHash: hashCanonical(attested) };
+        const artifact = { ...attested, evidenceHash: hashCanonicalV10(attested) };
         this.#pending = null;
         // Defensive JSON snapshot: caller mutation cannot change retained evidence.
         return Object.freeze(JSON.parse(JSON.stringify(artifact)));
