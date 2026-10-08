@@ -14,7 +14,8 @@ import { hashCanonicalV10 } from '../scripts/canonicalization-v10.mjs';
 import { verifyRuntimeTelemetryEvidence, verifyRuntimeTelemetryStoreBinding,
   verifyRuntimeTelemetryCertificationBinding, verifyGitWorkingTreeAgainstHead,
   verifyCurrentCertificationCheckoutIdentity, verifyRuntimeTelemetryAfterSourceResolution,
-  appraiseRuntimeTelemetryBindings,
+  appraiseRuntimeTelemetryBindings, verifyRuntimeTelemetryProcessBinding,
+  resolveLiveProcessImageIdentity,
   resolveGitBinary, RUNTIME_EVIDENCE_MAX_AGE_MS } from '../scripts/runtime-telemetry-evidence.mjs';
 
 const TEST_ARTIFACT_DIR = mkdtempSync(join(tmpdir(), `sylph-convergence-test-${randomUUID()}-`));
@@ -198,6 +199,61 @@ test('C5 runtime evidence requires a complete durable schema and detects byte-le
   assert.deepEqual(verifyRuntimeTelemetryEvidence({ ...evidence, spans: [{ id: 'span_1' }] }, { trustedPublicKeyPem: trustRoot }), { valid: false, reason: 'C5_SPAN_INVALID' });
 });
 
+test('C5 V3 binds signed evidence to live Windows process instance, image path, and executable hash', () => {
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+  const evidence = {
+    schemaVersion: 'SYLPH_RUNTIME_TELEMETRY_V3', provenanceClass: 'REAL_RUNTIME',
+    sourceCommitSha: '1'.repeat(40), sourceTreeSha: '2'.repeat(40), runtimeInstanceId: '3'.repeat(32),
+    processId: 4321, nodeVersion: 'v24.11.0', processStartedAtMs: 1_000, captureStartedAtMs: 1_100, captureEndedAtMs: 1_200,
+    processImageIdentity: { imagePath: 'C:\\Program Files\\nodejs\\node.exe', executableSha256: 'a'.repeat(64) },
+    durability: { barrier: 'FSYNC_COMMITTED', storeEventId: 'runtime:v3-1', storeAuditId: 9,
+      storeEventHash: '4'.repeat(64), storeInstanceId: '5'.repeat(32) },
+    spans: [
+      { spanId: '6'.repeat(16), traceId: '7'.repeat(32), parentSpanId: null, name: 'ingress.observation',
+        startedAtNs: '1000', endedAtNs: '3000', status: 'OK' },
+      { spanId: '8'.repeat(16), traceId: '7'.repeat(32), parentSpanId: '6'.repeat(16), name: 'ingress.commit',
+        startedAtNs: '1200', endedAtNs: '2000', status: 'OK' },
+    ],
+  };
+  const attestedRoot = hashCanonicalV10(evidence);
+  evidence.attestation = { algorithm: 'Ed25519', signatureBase64: sign(null, Buffer.from(attestedRoot, 'hex'), privateKey).toString('base64') };
+  evidence.evidenceHash = hashCanonicalV10(evidence);
+  const trustedPublicKeyPem = publicKey.export({ type: 'spki', format: 'pem' });
+  assert.equal(verifyRuntimeTelemetryEvidence(evidence, { trustedPublicKeyPem }).valid, true);
+  const live = { valid: true, processId: evidence.processId, processStartedAtMs: evidence.processStartedAtMs,
+    imagePath: evidence.processImageIdentity.imagePath, executableSha256: evidence.processImageIdentity.executableSha256 };
+  assert.equal(verifyRuntimeTelemetryProcessBinding(evidence, live).valid, true);
+  assert.equal(verifyRuntimeTelemetryProcessBinding({ ...evidence, schemaVersion: 'SYLPH_RUNTIME_TELEMETRY_V2' }, live).reason,
+    'C5_PROCESS_IDENTITY_REQUIRED');
+  assert.equal(verifyRuntimeTelemetryProcessBinding(evidence, { ...live, processId: live.processId + 1 }).reason,
+    'C5_LIVE_PROCESS_INSTANCE_MISMATCH');
+  assert.equal(verifyRuntimeTelemetryProcessBinding(evidence, { ...live, processStartedAtMs: live.processStartedAtMs + 1 }).reason,
+    'C5_LIVE_PROCESS_INSTANCE_MISMATCH', 'a reused PID with another creation time must fail');
+  assert.equal(verifyRuntimeTelemetryProcessBinding(evidence, { ...live, imagePath: 'C:\\Other\\node.exe' }).reason,
+    'C5_LIVE_PROCESS_IMAGE_PATH_MISMATCH');
+  assert.equal(verifyRuntimeTelemetryProcessBinding(evidence, { ...live, executableSha256: 'b'.repeat(64) }).reason,
+    'C5_LIVE_PROCESS_IMAGE_HASH_MISMATCH');
+  assert.equal(verifyRuntimeTelemetryProcessBinding(evidence, { valid: false, reason: 'exited' }).reason,
+    'C5_LIVE_PROCESS_IDENTITY_UNAVAILABLE');
+  assert.equal(resolveLiveProcessImageIdentity(evidence.processId, { platform: 'linux' }).reason,
+    'C5_LIVE_PROCESS_IDENTITY_UNAVAILABLE');
+
+  const invalidMetadata = { ...evidence, processImageIdentity: { ...evidence.processImageIdentity, imagePath: 'node.exe' } };
+  assert.equal(verifyRuntimeTelemetryEvidence(invalidMetadata, { trustedPublicKeyPem }).reason,
+    'C5_PROCESS_IMAGE_SCHEMA_INVALID');
+  const forgedImage = { ...evidence, processImageIdentity: { ...evidence.processImageIdentity, executableSha256: 'b'.repeat(64) } };
+  assert.equal(verifyRuntimeTelemetryEvidence(forgedImage, { trustedPublicKeyPem }).reason, 'C5_ATTESTATION_SIGNATURE_INVALID');
+
+  let observations = 0;
+  const appraisal = appraiseRuntimeTelemetryBindings(evidence, {
+    resolveProcessIdentity: () => ++observations < 3 ? live : { ...live, processStartedAtMs: live.processStartedAtMs + 1 },
+    resolveSource: () => ({ valid: true, commitSha: evidence.sourceCommitSha, treeSha: evidence.sourceTreeSha }),
+    verifyStore: () => ({ valid: true }), clock: () => evidence.captureEndedAtMs,
+  });
+  assert.equal(appraisal.reason, 'C5_LIVE_PROCESS_INSTANCE_MISMATCH', 'process identity must be rechecked after store work');
+  assert.equal(observations, 3);
+});
+
 test('C5 certification binding rejects replay, future timestamps, dirty checkout, and source commit/tree splices', () => {
   const expectedCommitSha = '1'.repeat(40);
   const expectedTreeSha = '2'.repeat(40);
@@ -233,10 +289,15 @@ test('C5 freshness clock is sampled after source audit completion and cannot be 
 
 test('C5 loader orchestration samples freshness after source audit and durable-store binding', () => {
   const source = { valid: true, commitSha: '1'.repeat(40), treeSha: '2'.repeat(40), physicalAuditRoot: 'a'.repeat(64) };
-  const evidence = { sourceCommitSha: source.commitSha, sourceTreeSha: source.treeSha, captureEndedAtMs: 1_000 };
+  const evidence = { schemaVersion: 'SYLPH_RUNTIME_TELEMETRY_V3', sourceCommitSha: source.commitSha,
+    sourceTreeSha: source.treeSha, processId: 12, processStartedAtMs: 900, captureEndedAtMs: 1_000,
+    processImageIdentity: { imagePath: 'C:\\Program Files\\nodejs\\node.exe', executableSha256: 'c'.repeat(64) } };
+  const liveProcess = { valid: true, processId: 12, processStartedAtMs: 900,
+    imagePath: 'C:\\Program Files\\nodejs\\node.exe', executableSha256: 'c'.repeat(64) };
   const events = [];
   let verifierTime = 1_000;
   const appraisal = appraiseRuntimeTelemetryBindings(evidence, {
+    resolveProcessIdentity: () => { events.push('process-check'); return liveProcess; },
     resolveSource: () => {
       events.push('audit-start');
       verifierTime += RUNTIME_EVIDENCE_MAX_AGE_MS - 1;
@@ -252,7 +313,8 @@ test('C5 loader orchestration samples freshness after source audit and durable-s
     },
   });
   assert.equal(appraisal.reason, 'C5_EVIDENCE_STALE', 'store-read duration crossing expiry must reject');
-  assert.deepEqual(events, ['audit-start', 'audit-complete', 'clock', 'store-start', 'store-complete', 'clock']);
+  assert.deepEqual(events, ['process-check', 'audit-start', 'audit-complete', 'process-check', 'clock',
+    'store-start', 'store-complete', 'process-check', 'clock']);
 });
 
 test('C5 source identity detects assume-unchanged, skip-worktree, and same-size preserved-mtime edits in an isolated Git repo', t => {
@@ -379,6 +441,47 @@ test('C5 signed runtime receipt must resolve to the exact unpruned SQLite audit 
   db.close();
   db = undefined;
   assert.equal(verifyRuntimeTelemetryStoreBinding(evidence, { databasePath }).reason, 'C5_DURABLE_STORE_RECORD_PRUNED');
+});
+
+test('C5 V3 SQLite receipt binds process image identity into the durable row', t => {
+  const directory = mkdtempSync(join(tmpdir(), 'sylph-c5-v3-store-'));
+  const databasePath = join(directory, 'runtime.sqlite');
+  let db = new DatabaseSync(databasePath);
+  t.after(() => { db?.close(); rmSync(directory, { recursive: true, force: true }); });
+  db.exec(`CREATE TABLE audit(id INTEGER PRIMARY KEY,at INTEGER NOT NULL,event TEXT,body TEXT);
+    CREATE TABLE audit_event_dedupe(event_id TEXT PRIMARY KEY,event_hash TEXT NOT NULL,audit_id INTEGER,created_at_ms INTEGER NOT NULL);
+    CREATE TABLE runtime_store_identity_v1(singleton INTEGER PRIMARY KEY,instance_id TEXT NOT NULL);
+    INSERT INTO runtime_store_identity_v1(singleton,instance_id) VALUES(1,'${'5'.repeat(32)}');`);
+  const evidence = {
+    schemaVersion: 'SYLPH_RUNTIME_TELEMETRY_V3', runtimeInstanceId: '3'.repeat(32),
+    sourceCommitSha: '1'.repeat(40), sourceTreeSha: '2'.repeat(40), processId: 10,
+    processStartedAtMs: 100, captureStartedAtMs: 101, captureEndedAtMs: 110,
+    processImageIdentity: { imagePath: 'C:\\Program Files\\nodejs\\node.exe', executableSha256: 'a'.repeat(64) },
+    durability: { barrier: 'FSYNC_COMMITTED', storeEventId: 'runtime:v3-store-1', storeAuditId: 9,
+      storeEventHash: '0'.repeat(64), storeInstanceId: '5'.repeat(32) },
+    spans: [{ spanId: '5'.repeat(16), traceId: '6'.repeat(32), parentSpanId: null, name: 'ingress.observation',
+      startedAtNs: '1000', endedAtNs: '1200', status: 'OK' }],
+  };
+  const storeBody = {
+    schemaVersion: 'SYLPH_RUNTIME_TELEMETRY_STORE_V3', runtimeInstanceId: evidence.runtimeInstanceId,
+    sourceCommitSha: evidence.sourceCommitSha, sourceTreeSha: evidence.sourceTreeSha, processId: evidence.processId,
+    processStartedAtMs: evidence.processStartedAtMs, captureStartedAtMs: evidence.captureStartedAtMs,
+    captureEndedAtMs: evidence.captureEndedAtMs, spans: evidence.spans, storeInstanceId: '5'.repeat(32),
+    processImageIdentity: evidence.processImageIdentity,
+  };
+  const body = JSON.stringify(storeBody);
+  const event = 'runtime_telemetry_observed_v3';
+  const storeEventHash = createHash('sha256').update(`${event}:${body}`).digest('hex');
+  evidence.durability.storeEventHash = storeEventHash;
+  db.prepare('INSERT INTO audit(id,at,event,body) VALUES(9,110,?,?)').run(event, body);
+  db.prepare('INSERT INTO audit_event_dedupe(event_id,event_hash,audit_id,created_at_ms) VALUES(?,?,9,110)')
+    .run(evidence.durability.storeEventId, storeEventHash);
+  db.close();
+  db = undefined;
+  assert.equal(verifyRuntimeTelemetryStoreBinding(evidence, { databasePath }).valid, true);
+  const mismatchedImage = { ...evidence, processImageIdentity: { ...evidence.processImageIdentity, executableSha256: 'b'.repeat(64) } };
+  assert.equal(verifyRuntimeTelemetryStoreBinding(mismatchedImage, { databasePath }).reason,
+    'C5_DURABLE_STORE_CONTENT_MISMATCH');
 });
 
 test('Step 6 Convergence: Full ladder progression in TEST mode with valid mock evidence', () => {

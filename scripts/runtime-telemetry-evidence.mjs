@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, lstatSync, mkdtempSync, rmSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { existsSync, readFileSync, lstatSync, mkdtempSync, rmSync, openSync, readSync, fstatSync, statSync, closeSync } from 'node:fs';
+import { resolve, dirname, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, createPublicKey, verify as verifySignature } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -31,10 +31,12 @@ function exactKeys(value, expected) {
 }
 
 export function verifyRuntimeTelemetryEvidence(value, { trustedPublicKeyPem } = {}) {
-  const v2 = value?.schemaVersion === 'SYLPH_RUNTIME_TELEMETRY_V2';
+  const v3 = value?.schemaVersion === 'SYLPH_RUNTIME_TELEMETRY_V3';
+  const v2 = v3 || value?.schemaVersion === 'SYLPH_RUNTIME_TELEMETRY_V2';
   const required = ['schemaVersion', 'provenanceClass', 'sourceCommitSha', 'sourceTreeSha', 'runtimeInstanceId',
-    'processId', 'nodeVersion', 'processStartedAtMs', 'captureStartedAtMs', 'captureEndedAtMs', 'durability', 'spans', 'attestation', 'evidenceHash'];
-  if (!exactKeys(value, required) || (!v2 && value.schemaVersion !== 'SYLPH_RUNTIME_TELEMETRY_V1') || value.provenanceClass !== 'REAL_RUNTIME') {
+    'processId', 'nodeVersion', 'processStartedAtMs', 'captureStartedAtMs', 'captureEndedAtMs',
+    ...(v3 ? ['processImageIdentity'] : []), 'durability', 'spans', 'attestation', 'evidenceHash'];
+  if (!exactKeys(value, required) || (!v3 && !v2 && value.schemaVersion !== 'SYLPH_RUNTIME_TELEMETRY_V1') || value.provenanceClass !== 'REAL_RUNTIME') {
     return { valid: false, reason: 'C5_EVIDENCE_SCHEMA_INVALID' };
   }
   if (!SHA1.test(value.sourceCommitSha) || !SHA1.test(value.sourceTreeSha) ||
@@ -47,6 +49,13 @@ export function verifyRuntimeTelemetryEvidence(value, { trustedPublicKeyPem } = 
       value.processStartedAtMs < 1 || value.captureStartedAtMs < value.processStartedAtMs ||
       value.captureEndedAtMs < value.captureStartedAtMs) {
     return { valid: false, reason: 'C5_RUNTIME_INTERVAL_INVALID' };
+  }
+  if (v3 && (!exactKeys(value.processImageIdentity, ['imagePath', 'executableSha256']) ||
+      typeof value.processImageIdentity.imagePath !== 'string' || value.processImageIdentity.imagePath.length < 4 ||
+      value.processImageIdentity.imagePath.length > 32_767 || value.processImageIdentity.imagePath.includes('\0') ||
+      !/^(?:[a-zA-Z]:\\|\\\\[^\\]+\\[^\\]+)/.test(value.processImageIdentity.imagePath) ||
+      typeof value.processImageIdentity.executableSha256 !== 'string' || !HASH.test(value.processImageIdentity.executableSha256))) {
+    return { valid: false, reason: 'C5_PROCESS_IMAGE_SCHEMA_INVALID' };
   }
   const d = value.durability;
   if (!exactKeys(d, ['barrier', 'storeEventId', 'storeAuditId', 'storeEventHash', ...(v2 ? ['storeInstanceId'] : [])]) || d.barrier !== 'FSYNC_COMMITTED' ||
@@ -151,22 +160,128 @@ export function verifyRuntimeTelemetryAfterSourceResolution(value, source, clock
   });
 }
 
+/** Compare signed V3 process identity with an independent same-host observation. */
+export function verifyRuntimeTelemetryProcessBinding(value, observed) {
+  if (value?.schemaVersion !== 'SYLPH_RUNTIME_TELEMETRY_V3') {
+    return { valid: false, reason: 'C5_PROCESS_IDENTITY_REQUIRED' };
+  }
+  if (!observed?.valid || !Number.isSafeInteger(observed.processId) ||
+      !Number.isSafeInteger(observed.processStartedAtMs) || typeof observed.imagePath !== 'string' ||
+      typeof observed.executableSha256 !== 'string' || !HASH.test(observed.executableSha256)) {
+    return { valid: false, reason: 'C5_LIVE_PROCESS_IDENTITY_UNAVAILABLE' };
+  }
+  const claimedPath = win32.normalize(value.processImageIdentity.imagePath).toLocaleLowerCase('en-US');
+  const observedPath = win32.normalize(observed.imagePath).toLocaleLowerCase('en-US');
+  if (observed.processId !== value.processId || observed.processStartedAtMs !== value.processStartedAtMs) {
+    return { valid: false, reason: 'C5_LIVE_PROCESS_INSTANCE_MISMATCH' };
+  }
+  if (claimedPath !== observedPath) return { valid: false, reason: 'C5_LIVE_PROCESS_IMAGE_PATH_MISMATCH' };
+  if (observed.executableSha256 !== value.processImageIdentity.executableSha256) {
+    return { valid: false, reason: 'C5_LIVE_PROCESS_IMAGE_HASH_MISMATCH' };
+  }
+  return { valid: true, processId: observed.processId, processStartedAtMs: observed.processStartedAtMs,
+    imagePath: observed.imagePath, executableSha256: observed.executableSha256 };
+}
+
+/** Read current Windows process identity through a native Win32 handle, then
+ * hash the OS-reported executable path independently in this verifier. */
+export function resolveLiveProcessImageIdentity(processId, { platform = process.platform } = {}) {
+  if (platform !== 'win32' || !Number.isSafeInteger(processId) || processId < 1 || processId > 2_147_483_647) {
+    return { valid: false, reason: 'C5_LIVE_PROCESS_IDENTITY_UNAVAILABLE' };
+  }
+  try {
+    const powershell = resolvePowerShellBinary();
+    const helperPath = resolve(ROOT_DIR, 'scripts', 'windows-process-identity.ps1');
+    const output = execFileSync(powershell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+      '-File', helperPath, '-ProcessId', String(processId)], {
+      cwd: ROOT_DIR, encoding: 'utf8', timeout: 10_000, maxBuffer: 64 * 1024, windowsHide: true,
+    }).trim();
+    const observed = JSON.parse(output);
+    if (!exactKeys(observed, ['processId', 'processStartedAtMs', 'imagePath']) ||
+        observed.processId !== processId || !Number.isSafeInteger(observed.processStartedAtMs) ||
+        observed.processStartedAtMs < 1 || typeof observed.imagePath !== 'string' ||
+        observed.imagePath.length < 4 || observed.imagePath.length > 32_767 ||
+        !win32.isAbsolute(observed.imagePath) || observed.imagePath.includes('\0')) {
+      return { valid: false, reason: 'C5_LIVE_PROCESS_IDENTITY_UNAVAILABLE' };
+    }
+    const executableSha256 = hashObservedExecutable(observed.imagePath);
+    return { valid: true, ...observed, executableSha256 };
+  } catch {
+    return { valid: false, reason: 'C5_LIVE_PROCESS_IDENTITY_UNAVAILABLE' };
+  }
+}
+
+function resolvePowerShellBinary() {
+  for (const candidate of ['powershell.exe', 'pwsh.exe']) {
+    try {
+      execFileSync(candidate, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '$PSVersionTable.PSVersion.ToString()'], {
+        stdio: 'ignore', timeout: 5_000, windowsHide: true,
+      });
+      return candidate;
+    } catch {}
+  }
+  throw new Error('PowerShell unavailable');
+}
+
+function hashObservedExecutable(path) {
+  const before = statSync(path, { bigint: true });
+  if (!before.isFile() || before.size < 1n || before.size > 512n * 1024n * 1024n) throw new Error('Executable file outside bounds');
+  const fd = openSync(path, 'r');
+  try {
+    const openedBefore = fstatSync(fd, { bigint: true });
+    if (!sameFileVersion(before, openedBefore)) throw new Error('Executable changed before hashing');
+    const hash = createHash('sha256');
+    const buffer = Buffer.allocUnsafe(1024 * 1024);
+    let total = 0n;
+    while (true) {
+      const bytes = readSync(fd, buffer, 0, buffer.length, null);
+      if (bytes === 0) break;
+      total += BigInt(bytes);
+      if (total > 512n * 1024n * 1024n) throw new Error('Executable exceeds hash bound');
+      hash.update(buffer.subarray(0, bytes));
+    }
+    const openedAfter = fstatSync(fd, { bigint: true });
+    const pathAfter = statSync(path, { bigint: true });
+    if (total !== before.size || !sameFileVersion(openedBefore, openedAfter) || !sameFileVersion(openedAfter, pathAfter)) {
+      throw new Error('Executable changed while hashing');
+    }
+    return hash.digest('hex');
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function sameFileVersion(a, b) {
+  return a.dev === b.dev && a.ino === b.ino && a.size === b.size && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs;
+}
+
 /** Orchestrate source freshness and durable-store checks; dependencies permit
  * deterministic testing of expensive audit/store work without runtime secrets. */
 export function appraiseRuntimeTelemetryBindings(value, {
   resolveSource = loadCurrentCertificationSourceIdentity,
   verifyStore = verifyRuntimeTelemetryStoreBinding,
+  resolveProcessIdentity = resolveLiveProcessImageIdentity,
   clock = Date.now,
 } = {}) {
+  if (value?.schemaVersion !== 'SYLPH_RUNTIME_TELEMETRY_V3') {
+    return { valid: false, reason: 'C5_PROCESS_IDENTITY_REQUIRED' };
+  }
+  const checkProcess = () => verifyRuntimeTelemetryProcessBinding(value, resolveProcessIdentity(value.processId));
+  const initialProcessBinding = checkProcess();
+  if (!initialProcessBinding.valid) return initialProcessBinding;
   const source = resolveSource();
   if (!source?.valid) return source ?? { valid: false, reason: 'C5_CURRENT_SOURCE_IDENTITY_UNAVAILABLE' };
+  const sourceProcessBinding = checkProcess();
+  if (!sourceProcessBinding.valid) return sourceProcessBinding;
   const initialBinding = verifyRuntimeTelemetryAfterSourceResolution(value, source, clock);
   if (!initialBinding.valid) return initialBinding;
   const storeBinding = verifyStore(value);
   if (!storeBinding.valid) return storeBinding;
+  const finalProcessBinding = checkProcess();
+  if (!finalProcessBinding.valid) return finalProcessBinding;
   const finalBinding = verifyRuntimeTelemetryAfterSourceResolution(value, source, clock);
   if (!finalBinding.valid) return finalBinding;
-  return { valid: true, source, storeBinding };
+  return { valid: true, source, storeBinding, processBinding: finalProcessBinding };
 }
 
 export function resolveGitBinary() {
@@ -345,7 +460,8 @@ export function verifyRuntimeTelemetryStoreBinding(value, { databasePath = proce
     const absolutePath = resolve(databasePath);
     db = new DatabaseSync(absolutePath, { readOnly: true, allowExtension: false });
     db.exec('PRAGMA query_only=ON; PRAGMA trusted_schema=OFF;');
-    const v2 = value.schemaVersion === 'SYLPH_RUNTIME_TELEMETRY_V2';
+    const v3 = value.schemaVersion === 'SYLPH_RUNTIME_TELEMETRY_V3';
+    const v2 = v3 || value.schemaVersion === 'SYLPH_RUNTIME_TELEMETRY_V2';
     if (v2) {
       const present = db.prepare("SELECT 1 AS present FROM sqlite_schema WHERE type='table' AND name='runtime_store_identity_v1'").get();
       const identities = present ? db.prepare('SELECT singleton,instance_id FROM runtime_store_identity_v1').all() : [];
@@ -362,16 +478,18 @@ export function verifyRuntimeTelemetryStoreBinding(value, { databasePath = proce
     if (row.pruned || typeof row.body !== 'string' || typeof row.event !== 'string') {
       return { valid: false, reason: 'C5_DURABLE_STORE_RECORD_PRUNED' };
     }
-    if (row.id !== value.durability.storeAuditId || row.event !== (v2 ? 'runtime_telemetry_observed_v2' : 'runtime_telemetry_observed_v1') ||
+    if (row.id !== value.durability.storeAuditId || row.event !== (v3 ? 'runtime_telemetry_observed_v3' : v2 ? 'runtime_telemetry_observed_v2' : 'runtime_telemetry_observed_v1') ||
         typeof row.eventHash !== 'string' || row.eventHash !== value.durability.storeEventHash ||
         createHash('sha256').update(`${row.event}:${row.body}`).digest('hex') !== row.eventHash) {
       return { valid: false, reason: 'C5_DURABLE_STORE_RECORD_MISMATCH' };
     }
     const body = JSON.parse(row.body);
     if (!exactKeys(body, ['schemaVersion', 'runtimeInstanceId', 'sourceCommitSha', 'sourceTreeSha', 'processId',
-      'processStartedAtMs', 'captureStartedAtMs', 'captureEndedAtMs', 'spans', ...(v2 ? ['storeInstanceId'] : [])]) ||
-        body.schemaVersion !== (v2 ? 'SYLPH_RUNTIME_TELEMETRY_STORE_V2' : 'SYLPH_RUNTIME_TELEMETRY_STORE_V1') ||
+      'processStartedAtMs', 'captureStartedAtMs', 'captureEndedAtMs', 'spans', ...(v2 ? ['storeInstanceId'] : []),
+      ...(v3 ? ['processImageIdentity'] : [])]) ||
+        body.schemaVersion !== (v3 ? 'SYLPH_RUNTIME_TELEMETRY_STORE_V3' : v2 ? 'SYLPH_RUNTIME_TELEMETRY_STORE_V2' : 'SYLPH_RUNTIME_TELEMETRY_STORE_V1') ||
         (v2 && body.storeInstanceId !== value.durability.storeInstanceId) ||
+        (v3 && JSON.stringify(body.processImageIdentity) !== JSON.stringify(value.processImageIdentity)) ||
         body.runtimeInstanceId !== value.runtimeInstanceId || body.sourceCommitSha !== value.sourceCommitSha ||
         body.sourceTreeSha !== value.sourceTreeSha || body.processId !== value.processId ||
         body.processStartedAtMs !== value.processStartedAtMs || body.captureStartedAtMs !== value.captureStartedAtMs ||
