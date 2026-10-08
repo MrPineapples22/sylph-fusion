@@ -9,7 +9,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { evaluateRuntimeConvergence } from '../scripts/connectivity-runtime-convergence.mjs';
 import { loadMandatoryEdgeConfig } from '../scripts/canary-campaign-verifier.mjs';
 import { hashCanonicalV10 } from '../scripts/canonicalization-v10.mjs';
-import { verifyRuntimeTelemetryEvidence, verifyRuntimeTelemetryStoreBinding } from '../scripts/runtime-telemetry-evidence.mjs';
+import { verifyRuntimeTelemetryEvidence, verifyRuntimeTelemetryStoreBinding,
+  verifyRuntimeTelemetryCertificationBinding, RUNTIME_EVIDENCE_MAX_AGE_MS } from '../scripts/runtime-telemetry-evidence.mjs';
 
 const TEST_ARTIFACT_DIR = mkdtempSync(join(tmpdir(), `sylph-convergence-test-${randomUUID()}-`));
 const TEST_REPORT_PATH = resolve(TEST_ARTIFACT_DIR, 'RUNTIME_CONVERGENCE_REPORT.json');
@@ -175,6 +176,27 @@ test('C5 runtime evidence requires a complete durable schema and detects byte-le
   const altered = { ...evidence, spans: [{ ...evidence.spans[0], status: 'ERROR' }] };
   assert.deepEqual(verifyRuntimeTelemetryEvidence(altered, { trustedPublicKeyPem: trustRoot }), { valid: false, reason: 'C5_ATTESTATION_SIGNATURE_INVALID' });
   assert.deepEqual(verifyRuntimeTelemetryEvidence({ ...evidence, spans: [{ id: 'span_1' }] }, { trustedPublicKeyPem: trustRoot }), { valid: false, reason: 'C5_SPAN_INVALID' });
+});
+
+test('C5 certification binding rejects replay, future timestamps, dirty checkout, and source commit/tree splices', () => {
+  const expectedCommitSha = '1'.repeat(40);
+  const expectedTreeSha = '2'.repeat(40);
+  const evidence = { sourceCommitSha: expectedCommitSha, sourceTreeSha: expectedTreeSha,
+    captureEndedAtMs: 1_000 };
+  const expected = { expectedCommitSha, expectedTreeSha, worktreeClean: true, nowMs: 1_000 };
+  assert.deepEqual(verifyRuntimeTelemetryCertificationBinding(evidence, expected), {
+    valid: true, sourceCommitSha: expectedCommitSha, sourceTreeSha: expectedTreeSha,
+  });
+  assert.equal(verifyRuntimeTelemetryCertificationBinding({ ...evidence, sourceCommitSha: '3'.repeat(40) }, expected).reason,
+    'C5_SOURCE_IDENTITY_MISMATCH');
+  assert.equal(verifyRuntimeTelemetryCertificationBinding({ ...evidence, sourceTreeSha: '4'.repeat(40) }, expected).reason,
+    'C5_SOURCE_IDENTITY_MISMATCH');
+  assert.equal(verifyRuntimeTelemetryCertificationBinding(evidence, { ...expected, worktreeClean: false }).reason,
+    'C5_CURRENT_SOURCE_IDENTITY_UNAVAILABLE');
+  assert.equal(verifyRuntimeTelemetryCertificationBinding({ ...evidence, captureEndedAtMs: 1_001 }, expected).reason,
+    'C5_EVIDENCE_TIMESTAMP_FUTURE_OR_INVALID');
+  assert.equal(verifyRuntimeTelemetryCertificationBinding({ ...evidence,
+    captureEndedAtMs: 1_000 - RUNTIME_EVIDENCE_MAX_AGE_MS - 1 }, expected).reason, 'C5_EVIDENCE_STALE');
 });
 
 test('C5 signed runtime receipt must resolve to the exact unpruned SQLite audit row and matching content', t => {

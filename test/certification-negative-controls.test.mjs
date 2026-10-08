@@ -35,6 +35,31 @@ const TEST_ARTIFACT_DIR = mkdtempSync(join(tmpdir(), `sylph-negative-controls-${
 const TEST_CONVERGENCE_REPORT = resolve(TEST_ARTIFACT_DIR, 'RUNTIME_CONVERGENCE_REPORT.json');
 const evaluateTestConvergence = (evidence = {}, options = {}) =>
   evaluateRuntimeConvergence(evidence, { ...options, outputPath: TEST_CONVERGENCE_REPORT });
+const generateTestCertificate = () => generateSystemIntegrationCertificate({
+  dryRun: true,
+  physicalAudit: { root: 'a'.repeat(64) },
+  manifest: {
+    manifestRoot: 'b'.repeat(64),
+    certifiedPayload: { repositoryCommitSha: 'fixture-commit' },
+  },
+  scorecard: {
+    metadata: { sourceInventoryRoot: 'c'.repeat(64) },
+    systemScore: { highestProvenLevel: 'C4' },
+  },
+  authorityGraph: { fixture: 'authority' },
+  staticGraph: { fixture: 'static' },
+  convergenceReport: {
+    schemaVersion: '1.0.0',
+    convergenceRoot: 'd'.repeat(64),
+    certifiedPayload: {
+      highestProvenLevel: 'C4',
+      mode: 'test',
+      isFullyCertified: false,
+      stopReason: 'fixture boundary',
+      ladder: {},
+    },
+  },
+});
 after(() => rmSync(TEST_ARTIFACT_DIR, { recursive: true, force: true }));
 
 function buildMockValidCanary(provenanceClass = 'TEST_FIXTURE') {
@@ -107,7 +132,7 @@ test('Negative Control 1: Empty payload is strictly rejected', () => {
 
 // 2. Bit-Flip / Byte Tamper Mutation Attack
 test('Negative Control 2: Single byte mutation in certificate fails verifier closed', () => {
-  const { certificate } = generateSystemIntegrationCertificate({ dryRun: true });
+  const { certificate } = generateTestCertificate();
   const tampered = JSON.parse(JSON.stringify(certificate));
   tampered.certifiedPayload.systemId = 'TAMPERED_SYLPH_SYSTEM';
 
@@ -251,7 +276,7 @@ test('Negative Control 9: Level skipping is strictly blocked', () => {
 
 // 10. Forged Claimed Root Attack
 test('Negative Control 10: Forged certificate root fails closed', () => {
-  const { certificate } = generateSystemIntegrationCertificate({ dryRun: true });
+  const { certificate } = generateTestCertificate();
   const forged = {
     ...certificate,
     certificateRoot: 'f'.repeat(64), // Forged root

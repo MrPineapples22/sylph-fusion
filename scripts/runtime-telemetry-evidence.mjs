@@ -2,8 +2,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, createPublicKey, verify as verifySignature } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { hashCanonicalV10 } from './canonicalization-v10.mjs';
+import { verifyCertificationManifest } from './generate-certification-manifest.mjs';
 
 const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const RUNTIME_TELEMETRY_EVIDENCE_PATH = resolve(ROOT_DIR, 'artifacts', 'connectivity', 'runtime-telemetry.json');
@@ -12,6 +14,10 @@ const HASH = /^[a-f0-9]{64}$/;
 const SHA1 = /^[a-f0-9]{40}$/;
 const SPAN_ID = /^[a-f0-9]{16}$/;
 const TRACE_ID = /^[a-f0-9]{32}$/;
+// Captures are produced every 250 ms by default (and at most every 60 s).
+// Five minutes tolerates scheduling and short publication delays while bounding
+// replay exposure. This is a verifier policy constant, not a caller setting.
+export const RUNTIME_EVIDENCE_MAX_AGE_MS = 5 * 60 * 1000;
 const SPAN_NAMES = new Set(['ingress.observation', 'ingress.compile', 'ingress.validate', 'ingress.commit', 'ingress.delivery']);
 
 function exactKeys(value, expected) {
@@ -110,6 +116,76 @@ export function verifyRuntimeTelemetryEvidence(value, { trustedPublicKeyPem } = 
 }
 
 /**
+ * Bind signed runtime claims to a verifier-derived checkout identity and apply
+ * a bounded timestamp freshness policy. `nowMs` is exposed for deterministic
+ * tests; certification callers use the local verifier clock.
+ */
+export function verifyRuntimeTelemetryCertificationBinding(value, {
+  expectedCommitSha, expectedTreeSha, worktreeClean, nowMs = Date.now(),
+} = {}) {
+  if (worktreeClean !== true || !SHA1.test(expectedCommitSha ?? '') || !SHA1.test(expectedTreeSha ?? '')) {
+    return { valid: false, reason: 'C5_CURRENT_SOURCE_IDENTITY_UNAVAILABLE' };
+  }
+  if (value.sourceCommitSha !== expectedCommitSha || value.sourceTreeSha !== expectedTreeSha) {
+    return { valid: false, reason: 'C5_SOURCE_IDENTITY_MISMATCH' };
+  }
+  if (!Number.isSafeInteger(nowMs) || value.captureEndedAtMs > nowMs) {
+    return { valid: false, reason: 'C5_EVIDENCE_TIMESTAMP_FUTURE_OR_INVALID' };
+  }
+  if (nowMs - value.captureEndedAtMs > RUNTIME_EVIDENCE_MAX_AGE_MS) {
+    return { valid: false, reason: 'C5_EVIDENCE_STALE' };
+  }
+  return { valid: true, sourceCommitSha: expectedCommitSha, sourceTreeSha: expectedTreeSha };
+}
+
+function resolveGit(args) {
+  return execFileSync('git', args, { cwd: ROOT_DIR, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim().toLowerCase();
+}
+
+/** Establish identity from checked-in certification inputs, never from the receipt. */
+function loadCurrentCertificationSourceIdentity() {
+  try {
+    const manifestPath = resolve(ROOT_DIR, 'artifacts', 'connectivity', 'CERTIFICATION_MANIFEST.json');
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    const commitSha = resolveGit(['rev-parse', 'HEAD']);
+    const treeSha = resolveGit(['rev-parse', 'HEAD^{tree}']);
+    verifyCertificationManifest(manifest, { expectedCommitSha: commitSha });
+    const statusLines = resolveGit(['status', '--porcelain=v1', '--untracked-files=all']).split('\n').filter(Boolean);
+    const generatedAuditFiles = new Set([
+      'docs/audit/evidence/c1-single-authority-door.json', 'docs/audit/evidence/c2-mutation-exclusivity.json',
+      'docs/audit/evidence/c3-decision-provenance.json', 'docs/audit/evidence/c4-authority-ancestry.json',
+    ]);
+    // The physical audit rewrites these four tracked projections as its output.
+    // Permit only their ordinary unstaged edits; all implementation, test, and
+    // other documentation changes still make current source identity unusable.
+    if (statusLines.some(line => line.slice(0, 3) !== ' M ' || !generatedAuditFiles.has(line.slice(3)))) {
+      return { valid: false, reason: 'C5_CURRENT_SOURCE_IDENTITY_UNAVAILABLE' };
+    }
+
+    // The physical C1–C4 report independently records the commit and Git tree.
+    // Require the four persisted projections to be the same valid report.
+    const evidenceDir = resolve(ROOT_DIR, 'docs', 'audit', 'evidence');
+    const files = ['c1-single-authority-door.json', 'c2-mutation-exclusivity.json',
+      'c3-decision-provenance.json', 'c4-authority-ancestry.json'];
+    const reports = files.map(file => JSON.parse(readFileSync(resolve(evidenceDir, file), 'utf8')));
+    const first = reports[0];
+    const { manifestHash, ...payload } = first;
+    if (typeof manifestHash !== 'string' || createHash('sha256').update(JSON.stringify(payload)).digest('hex') !== manifestHash ||
+        reports.some(report => report.manifestHash !== manifestHash || JSON.stringify(report) !== JSON.stringify(first)) ||
+        first.auditorVersion !== '4.0.0-c1-c4' || first.commitSha !== commitSha || first.treeSha !== treeSha ||
+        ['C1', 'C2', 'C3', 'C4'].some(level => first.gateStatuses?.[level] !== 'PASS') ||
+        !first.metrics || Object.values(first.metrics).some(metric => metric !== 0) ||
+        !Array.isArray(first.blockers) || first.blockers.length !== 0 ||
+        Object.keys(first.workingTreeFileHashes ?? {}).length !== 0 || first.workingTreeState !== '') {
+      return { valid: false, reason: 'C5_CURRENT_SOURCE_IDENTITY_UNAVAILABLE' };
+    }
+    return { valid: true, commitSha, treeSha };
+  } catch {
+    return { valid: false, reason: 'C5_CURRENT_SOURCE_IDENTITY_UNAVAILABLE' };
+  }
+}
+
+/**
  * Bind the signed receipt to the configured SQLite store. The durable row is a
  * separately persisted runtime event; its body must carry the same runtime,
  * source, interval, and span observations as the signed certificate.
@@ -162,13 +238,19 @@ export function verifyRuntimeTelemetryStoreBinding(value, { databasePath = proce
   }
 }
 
-export function loadRuntimeTelemetryEvidence(path = RUNTIME_TELEMETRY_EVIDENCE_PATH) {
+export function loadRuntimeTelemetryEvidence(path = RUNTIME_TELEMETRY_EVIDENCE_PATH, { nowMs = Date.now() } = {}) {
   if (!existsSync(path)) return { valid: false, reason: 'C5_DURABLE_RUNTIME_EVIDENCE_MISSING' };
   try {
     const config = JSON.parse(readFileSync(CERTIFICATION_CONFIG_PATH, 'utf8'));
     const parsed = JSON.parse(readFileSync(path, 'utf8'));
     const verification = verifyRuntimeTelemetryEvidence(parsed, { trustedPublicKeyPem: config.runtimeAttestationPublicKeyPem });
     if (!verification.valid) return verification;
+    const source = loadCurrentCertificationSourceIdentity();
+    if (!source.valid) return source;
+    const binding = verifyRuntimeTelemetryCertificationBinding(parsed, {
+      expectedCommitSha: source.commitSha, expectedTreeSha: source.treeSha, worktreeClean: true, nowMs,
+    });
+    if (!binding.valid) return binding;
     const storeBinding = verifyRuntimeTelemetryStoreBinding(parsed);
     return storeBinding.valid ? { ...verification, storeBinding, evidence: parsed } : storeBinding;
   } catch {
