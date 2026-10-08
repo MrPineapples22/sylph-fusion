@@ -1,18 +1,14 @@
 {
   "auditor": "scripts/audit-single-authority-door.mjs",
   "auditorVersion": "4.0.0-c1-c4",
-  "timestamp": "2026-10-08T15:03:08.362Z",
-  "commitSha": "95dad9681a4a316c7da6df2665f8e83cb9796918",
-  "treeSha": "408f0f664e6d4e96926a460b558bbba834dedfb0",
-  "workingTreeState": "M docs/audit/evidence/c1-single-authority-door.json\n M docs/audit/evidence/c2-mutation-exclusivity.json\n M docs/audit/evidence/c3-decision-provenance.json\n M docs/audit/evidence/c4-authority-ancestry.json\n M docs/audit/unresolved_risks.md\n M scripts/generate-certification-manifest.mjs\n M scripts/generate-system-integration-certificate.mjs\n M scripts/verify-system-integration-certificate.mjs\n M test/certification-manifest.test.mjs\n M test/generate-system-integration-certificate.test.mjs\n M test/verify-system-integration-certificate.test.mjs",
+  "timestamp": "2026-10-08T15:20:07.622Z",
+  "commitSha": "8d314748cd8ad1b19b54613a1eacef884c80e9f9",
+  "treeSha": "5fc70eb9c92ead1a435c9dfbe2a1c6bb8e5527d8",
+  "workingTreeState": "M docs/audit/evidence/c1-single-authority-door.json\n M docs/audit/evidence/c2-mutation-exclusivity.json\n M docs/audit/evidence/c3-decision-provenance.json\n M docs/audit/evidence/c4-authority-ancestry.json\n M docs/audit/unresolved_risks.md\n M scripts/generate-certification-manifest.mjs\n M test/certification-manifest.test.mjs",
   "workingTreeFileHashes": {
-    "docs/audit/unresolved_risks.md": "488b3727bb78833369c31271ecf5d4ba32e8fa85d0ff71fb23c15523faf5618a",
-    "scripts/generate-certification-manifest.mjs": "53f18024e2841d550ebeee590a7dff83f909b2fb0fa279744e2993e5b413b2a5",
-    "scripts/generate-system-integration-certificate.mjs": "1390964ba5e3fb098141a642a707fc0dd5500ab4c495bdd79a243d70f4a2987b",
-    "scripts/verify-system-integration-certificate.mjs": "5e14012da9b847044258a9fcc6c5fc424dc67262ed9c50fdb2f34f072d7734ba",
-    "test/certification-manifest.test.mjs": "c8dc23a9a7e7e7b92de5b603dd424a490c2139c8f60faf5b4e2d0f4fa3ffda6b",
-    "test/generate-system-integration-certificate.test.mjs": "9eb26198e5cdebd47e5a99ec7050865c25e86e7997d145292c46121e1011e0a3",
-    "test/verify-system-integration-certificate.test.mjs": "326677ed9838d4f0532717c9e94200fce8efb6d27870bf84849a24c47f17a71d"
+    "docs/audit/unresolved_risks.md": "f7ccfa6ca9ecdfdd5e55d024de3c18f124b3f0eeb651e72538ecfa3230a0b24f",
+    "scripts/generate-certification-manifest.mjs": "90d598b436be8fd2a7b564d920ac9679e846e6c48a1216322b8844c7a5e5c40f",
+    "test/certification-manifest.test.mjs": "fd8ebcd01a8b39c1c206759c35d009f69f9db9a8ce78d35d863409b0cce6937a"
   },
   "metrics": {
     "RAW_TO_ENGINE_PATHS": 0,
@@ -132,5 +128,5 @@
     "UNIFIED_PIPELINE_CERTIFIED": "FALSE",
     "LIVE_CAPITAL_AUTHORITY": "BLOCKED"
   },
-  "manifestHash": "6d705b3b640090e73c02737c11220e4bf05b1653f5a1a74c7a262389542010cd"
+  "manifestHash": "320e4224306736fe507c5192550f700d5d7cac10d3d171bc148e36cd3fe8dbd3"
 }

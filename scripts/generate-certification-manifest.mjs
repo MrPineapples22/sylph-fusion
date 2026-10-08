@@ -126,6 +126,7 @@ function resolveNpmVersion() {
  * Generates the immutable Certification Manifest.
  * @param {object} [options]
  * @param {boolean} [options.dryRun=false] If true, compute but do not persist the manifest.
+ * @param {string} [options.outputPath] Optional artifact destination for isolated verification.
  * @returns {object} Manifest object containing certifiedPayload and manifestRoot
  */
 export function generateCertificationManifest(options = {}) {
@@ -184,7 +185,7 @@ export function generateCertificationManifest(options = {}) {
     mkdirSync(ARTIFACTS_DIR, { recursive: true });
   }
 
-  const outputPath = resolve(ARTIFACTS_DIR, 'CERTIFICATION_MANIFEST.json');
+  const outputPath = options.outputPath ?? resolve(ARTIFACTS_DIR, 'CERTIFICATION_MANIFEST.json');
   if (options.dryRun !== true) writeFileSync(outputPath, canonicalJsonV10(manifest), 'utf8');
 
   console.log('[CERTIFICATION_MANIFEST] Successfully generated Certification Manifest:');
