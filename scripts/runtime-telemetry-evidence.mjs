@@ -15,6 +15,7 @@ const HASH = /^[a-f0-9]{64}$/;
 const SHA1 = /^[a-f0-9]{40}$/;
 const SPAN_ID = /^[a-f0-9]{16}$/;
 const TRACE_ID = /^[a-f0-9]{32}$/;
+const FILETIME_EPOCH_100NS = 116444736000000000n;
 const GENERATED_PHYSICAL_AUDIT_PATHS = [
   'docs/audit/evidence/c1-single-authority-door.json', 'docs/audit/evidence/c2-mutation-exclusivity.json',
   'docs/audit/evidence/c3-decision-provenance.json', 'docs/audit/evidence/c4-authority-ancestry.json',
@@ -55,9 +56,12 @@ export function verifyRuntimeTelemetryEvidence(value, { trustedPublicKeyPem } = 
       value.captureEndedAtMs < value.captureStartedAtMs) {
     return { valid: false, reason: 'C5_RUNTIME_INTERVAL_INVALID' };
   }
-  if (v3 && (!exactKeys(value.processImageIdentity, ['imagePath', 'executableSha256']) ||
+  if (v3 && (!exactKeys(value.processImageIdentity, ['imagePath', 'executableSha256', 'creationFileTime100ns']) ||
       !validWindowsImagePath(value.processImageIdentity.imagePath) ||
-      typeof value.processImageIdentity.executableSha256 !== 'string' || !HASH.test(value.processImageIdentity.executableSha256))) {
+      typeof value.processImageIdentity.executableSha256 !== 'string' || !HASH.test(value.processImageIdentity.executableSha256) ||
+      typeof value.processImageIdentity.creationFileTime100ns !== 'string' ||
+      !/^[1-9][0-9]{0,19}$/.test(value.processImageIdentity.creationFileTime100ns) ||
+      processStartedAtMsFromFileTime(value.processImageIdentity.creationFileTime100ns) !== value.processStartedAtMs)) {
     return { valid: false, reason: 'C5_PROCESS_IMAGE_SCHEMA_INVALID' };
   }
   const d = value.durability;
@@ -132,6 +136,18 @@ export function verifyRuntimeTelemetryEvidence(value, { trustedPublicKeyPem } = 
   return { valid: true, evidenceHash, attestedRoot, spanCount: value.spans.length, provenanceClass: value.provenanceClass };
 }
 
+function processStartedAtMsFromFileTime(fileTime) {
+  try {
+    const ticks = BigInt(fileTime);
+    const delta = ticks - FILETIME_EPOCH_100NS;
+    if (delta < 0n || ticks > 9_223_372_036_854_775_807n) return null;
+    const milliseconds = delta / 10_000n;
+    return milliseconds <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(milliseconds) : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Bind signed runtime claims to a verifier-derived checkout identity and apply
  * a bounded timestamp freshness policy. `nowMs` is exposed for deterministic
@@ -168,8 +184,11 @@ export function verifyRuntimeTelemetryProcessBinding(value, observed) {
   if (value?.schemaVersion !== 'SYLPH_RUNTIME_TELEMETRY_V3') {
     return { valid: false, reason: 'C5_PROCESS_IDENTITY_REQUIRED' };
   }
-  if (!exactKeys(value.processImageIdentity, ['imagePath', 'executableSha256']) ||
-      !validWindowsImagePath(value.processImageIdentity.imagePath) || !HASH.test(value.processImageIdentity.executableSha256 ?? '')) {
+  if (!exactKeys(value.processImageIdentity, ['imagePath', 'executableSha256', 'creationFileTime100ns']) ||
+      !validWindowsImagePath(value.processImageIdentity.imagePath) || !HASH.test(value.processImageIdentity.executableSha256 ?? '') ||
+      typeof value.processImageIdentity.creationFileTime100ns !== 'string' ||
+      !/^[1-9][0-9]{0,19}$/.test(value.processImageIdentity.creationFileTime100ns) ||
+      processStartedAtMsFromFileTime(value.processImageIdentity.creationFileTime100ns) !== value.processStartedAtMs) {
     return { valid: false, reason: 'C5_PROCESS_IMAGE_SCHEMA_INVALID' };
   }
   if (!observed?.valid || !Number.isSafeInteger(observed.processId) ||
@@ -182,12 +201,16 @@ export function verifyRuntimeTelemetryProcessBinding(value, observed) {
   if (observed.processId !== value.processId || observed.processStartedAtMs !== value.processStartedAtMs) {
     return { valid: false, reason: 'C5_LIVE_PROCESS_INSTANCE_MISMATCH' };
   }
+  if (observed.creationFileTime100ns !== value.processImageIdentity.creationFileTime100ns) {
+    return { valid: false, reason: 'C5_LIVE_PROCESS_INSTANCE_MISMATCH' };
+  }
   if (claimedPath !== observedPath) return { valid: false, reason: 'C5_LIVE_PROCESS_IMAGE_PATH_MISMATCH' };
   if (observed.executableSha256 !== value.processImageIdentity.executableSha256) {
     return { valid: false, reason: 'C5_LIVE_PROCESS_IMAGE_HASH_MISMATCH' };
   }
   return { valid: true, processId: observed.processId, processStartedAtMs: observed.processStartedAtMs,
-    imagePath: observed.imagePath, executableSha256: observed.executableSha256 };
+    creationFileTime100ns: observed.creationFileTime100ns, imagePath: observed.imagePath,
+    executableSha256: observed.executableSha256 };
 }
 
 /** Read current Windows process identity through a native Win32 handle, then
@@ -204,9 +227,12 @@ export function resolveLiveProcessImageIdentity(processId, { platform = process.
       cwd: ROOT_DIR, encoding: 'utf8', timeout: 10_000, maxBuffer: 64 * 1024, windowsHide: true,
     }).trim();
     const observed = JSON.parse(output);
-    if (!exactKeys(observed, ['processId', 'processStartedAtMs', 'imagePath']) ||
+    if (!exactKeys(observed, ['processId', 'processStartedAtMs', 'creationFileTime100ns', 'imagePath']) ||
         observed.processId !== processId || !Number.isSafeInteger(observed.processStartedAtMs) ||
-        observed.processStartedAtMs < 1 || !validWindowsImagePath(observed.imagePath)) {
+        observed.processStartedAtMs < 1 || !validWindowsImagePath(observed.imagePath) ||
+        typeof observed.creationFileTime100ns !== 'string' ||
+        !/^[1-9][0-9]{0,19}$/.test(observed.creationFileTime100ns) ||
+        processStartedAtMsFromFileTime(observed.creationFileTime100ns) !== observed.processStartedAtMs) {
       return { valid: false, reason: 'C5_LIVE_PROCESS_IDENTITY_UNAVAILABLE' };
     }
     const executableSha256 = hashObservedExecutable(observed.imagePath);

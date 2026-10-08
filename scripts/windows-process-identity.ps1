@@ -34,6 +34,7 @@ public static class SylphWindowsProcessIdentity {
 
     private sealed class Snapshot {
         public long ProcessStartedAtMs { get; set; }
+        public string CreationFileTime100ns { get; set; }
         public string ImagePath { get; set; }
     }
 
@@ -51,9 +52,12 @@ public static class SylphWindowsProcessIdentity {
         uint size = (uint)buffer.Capacity;
         if (!QueryFullProcessImageName(handle, 0, buffer, ref size))
             throw new InvalidOperationException("QueryFullProcessImageNameW failed: " + Marshal.GetLastWin32Error());
-        long unixMs = (ToInt64(creation) - 116444736000000000L) / 10000L;
+        long creationFileTime = ToInt64(creation);
+        long unixMs = (creationFileTime - 116444736000000000L) / 10000L;
         if (unixMs < 1) throw new InvalidOperationException("Invalid process creation time.");
-        return new Snapshot { ProcessStartedAtMs = unixMs, ImagePath = buffer.ToString() };
+        return new Snapshot { ProcessStartedAtMs = unixMs,
+            CreationFileTime100ns = creationFileTime.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ImagePath = buffer.ToString() };
     }
 
     public static object Read(uint processId) {
@@ -63,9 +67,11 @@ public static class SylphWindowsProcessIdentity {
             Snapshot first = ReadSnapshot(handle);
             Snapshot second = ReadSnapshot(handle);
             if (first.ProcessStartedAtMs != second.ProcessStartedAtMs ||
+                !String.Equals(first.CreationFileTime100ns, second.CreationFileTime100ns, StringComparison.Ordinal) ||
                 !String.Equals(first.ImagePath, second.ImagePath, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("Process identity changed during query.");
-            return new { processId = processId, processStartedAtMs = second.ProcessStartedAtMs, imagePath = second.ImagePath };
+            return new { processId = processId, processStartedAtMs = second.ProcessStartedAtMs,
+                creationFileTime100ns = second.CreationFileTime100ns, imagePath = second.ImagePath };
         } finally {
             CloseHandle(handle);
         }

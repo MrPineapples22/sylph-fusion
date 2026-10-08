@@ -205,7 +205,8 @@ test('C5 V3 binds signed evidence to live Windows process instance, image path, 
     schemaVersion: 'SYLPH_RUNTIME_TELEMETRY_V3', provenanceClass: 'REAL_RUNTIME',
     sourceCommitSha: '1'.repeat(40), sourceTreeSha: '2'.repeat(40), runtimeInstanceId: '3'.repeat(32),
     processId: 4321, nodeVersion: 'v24.11.0', processStartedAtMs: 1_000, captureStartedAtMs: 1_100, captureEndedAtMs: 1_200,
-    processImageIdentity: { imagePath: 'C:\\Program Files\\nodejs\\node.exe', executableSha256: 'a'.repeat(64) },
+    processImageIdentity: { imagePath: 'C:\\Program Files\\nodejs\\node.exe', executableSha256: 'a'.repeat(64),
+      creationFileTime100ns: '116444736010000000' },
     durability: { barrier: 'FSYNC_COMMITTED', storeEventId: 'runtime:v3-1', storeAuditId: 9,
       storeEventHash: '4'.repeat(64), storeInstanceId: '5'.repeat(32) },
     spans: [
@@ -232,14 +233,20 @@ test('C5 V3 binds signed evidence to live Windows process instance, image path, 
   assert.equal(appraiseRuntimeTelemetryBindings(legacyV2).reason, 'C5_PROCESS_IDENTITY_REQUIRED',
     'legacy evidence cannot satisfy certify-mode C5');
   const live = { valid: true, processId: evidence.processId, processStartedAtMs: evidence.processStartedAtMs,
+    creationFileTime100ns: evidence.processImageIdentity.creationFileTime100ns,
     imagePath: evidence.processImageIdentity.imagePath, executableSha256: evidence.processImageIdentity.executableSha256 };
   assert.equal(verifyRuntimeTelemetryProcessBinding(evidence, live).valid, true);
+  assert.equal(verifyRuntimeTelemetryProcessBinding(evidence, { ...live,
+    imagePath: 'c:\\program files\\NODEJS\\node.exe' }).valid, true, 'Windows path comparison is case-insensitive');
   assert.equal(verifyRuntimeTelemetryProcessBinding({ ...evidence, schemaVersion: 'SYLPH_RUNTIME_TELEMETRY_V2' }, live).reason,
     'C5_PROCESS_IDENTITY_REQUIRED');
   assert.equal(verifyRuntimeTelemetryProcessBinding(evidence, { ...live, processId: live.processId + 1 }).reason,
     'C5_LIVE_PROCESS_INSTANCE_MISMATCH');
   assert.equal(verifyRuntimeTelemetryProcessBinding(evidence, { ...live, processStartedAtMs: live.processStartedAtMs + 1 }).reason,
     'C5_LIVE_PROCESS_INSTANCE_MISMATCH', 'a reused PID with another creation time must fail');
+  assert.equal(verifyRuntimeTelemetryProcessBinding(evidence, { ...live,
+    creationFileTime100ns: (BigInt(live.creationFileTime100ns) + 1n).toString() }).reason,
+    'C5_LIVE_PROCESS_INSTANCE_MISMATCH', '100 ns creation time distinguishes a reused PID within the same millisecond');
   assert.equal(verifyRuntimeTelemetryProcessBinding(evidence, { ...live, imagePath: 'C:\\Other\\node.exe' }).reason,
     'C5_LIVE_PROCESS_IMAGE_PATH_MISMATCH');
   assert.equal(verifyRuntimeTelemetryProcessBinding(evidence, { ...live, executableSha256: 'b'.repeat(64) }).reason,
@@ -273,6 +280,7 @@ test('C5 Windows resolver observes this test process through Win32 and independe
   assert.equal(observed.valid, true, observed.reason);
   assert.equal(observed.processId, process.pid);
   assert.ok(Number.isSafeInteger(observed.processStartedAtMs) && observed.processStartedAtMs > 0);
+  assert.match(observed.creationFileTime100ns, /^[1-9][0-9]{0,19}$/);
   assert.match(observed.imagePath, /^[a-zA-Z]:\\/);
   assert.match(observed.executableSha256, /^[a-f0-9]{64}$/);
 });
@@ -314,9 +322,10 @@ test('C5 loader orchestration samples freshness after source audit and durable-s
   const source = { valid: true, commitSha: '1'.repeat(40), treeSha: '2'.repeat(40), physicalAuditRoot: 'a'.repeat(64) };
   const evidence = { schemaVersion: 'SYLPH_RUNTIME_TELEMETRY_V3', sourceCommitSha: source.commitSha,
     sourceTreeSha: source.treeSha, processId: 12, processStartedAtMs: 900, captureEndedAtMs: 1_000,
-    processImageIdentity: { imagePath: 'C:\\Program Files\\nodejs\\node.exe', executableSha256: 'c'.repeat(64) } };
+    processImageIdentity: { imagePath: 'C:\\Program Files\\nodejs\\node.exe', executableSha256: 'c'.repeat(64),
+      creationFileTime100ns: '116444736009000000' } };
   const liveProcess = { valid: true, processId: 12, processStartedAtMs: 900,
-    imagePath: 'C:\\Program Files\\nodejs\\node.exe', executableSha256: 'c'.repeat(64) };
+    creationFileTime100ns: '116444736009000000', imagePath: 'C:\\Program Files\\nodejs\\node.exe', executableSha256: 'c'.repeat(64) };
   const events = [];
   let verifierTime = 1_000;
   const appraisal = appraiseRuntimeTelemetryBindings(evidence, {
@@ -480,7 +489,8 @@ test('C5 V3 SQLite receipt binds process image identity into the durable row', t
     schemaVersion: 'SYLPH_RUNTIME_TELEMETRY_V3', runtimeInstanceId: '3'.repeat(32),
     sourceCommitSha: '1'.repeat(40), sourceTreeSha: '2'.repeat(40), processId: 10,
     processStartedAtMs: 100, captureStartedAtMs: 101, captureEndedAtMs: 110,
-    processImageIdentity: { imagePath: 'C:\\Program Files\\nodejs\\node.exe', executableSha256: 'a'.repeat(64) },
+    processImageIdentity: { imagePath: 'C:\\Program Files\\nodejs\\node.exe', executableSha256: 'a'.repeat(64),
+      creationFileTime100ns: '116444736001000000' },
     durability: { barrier: 'FSYNC_COMMITTED', storeEventId: 'runtime:v3-store-1', storeAuditId: 9,
       storeEventHash: '0'.repeat(64), storeInstanceId: '5'.repeat(32) },
     spans: [{ spanId: '5'.repeat(16), traceId: '6'.repeat(32), parentSpanId: null, name: 'ingress.observation',
