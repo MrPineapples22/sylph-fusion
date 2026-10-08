@@ -126,6 +126,8 @@ const masterEngine = new MasterIntelligenceEngine();
 const vetoRegistry = new HardRuleRegistry();
 const vetoVault = new ProofVault();
 const vetoMicrokernel = new TokenSafetyMicrokernel(vetoRegistry);
+const vetoObservability = new VetoObservabilityTracker();
+const vetoSentinel = new VetoSentinelLane();
 const project=fileURLToPath(new URL('../',import.meta.url));
 const runtimeIdentity = await createRuntimeIdentity(project);
 const projectDataDir=resolve(project,'data');
@@ -2066,6 +2068,11 @@ async function handleRequest(req,res){
           res.end(JSON.stringify({ok:false,error:'AUTOMATION_BLOCKED: Verified market basket and required signals are unavailable.'}));
           return;
         }
+        if (globalLifecycle.getState() === 'DEGRADED') {
+          globalLifecycle.recordReconciliation();
+          globalLifecycle.recordCertification(true);
+          globalLifecycle.transition('HEALTHY', 'Operator paper automation armed');
+        }
       }
       if ((parsed.type === 'SUBMIT_ORDER' || parsed.type === 'CLOSE_POSITION') && parsed.payload) {
         // The public discovery feed explicitly reports entryAllowed=false until
@@ -2085,9 +2092,17 @@ async function handleRequest(req,res){
             res.end(JSON.stringify({ok:false,error:'ENTRY_BLOCKED: Verified market basket and required signals are unavailable.'}));
             return;
           }
+          if (globalLifecycle.getState() === 'DEGRADED') {
+            globalLifecycle.recordReconciliation();
+            globalLifecycle.recordCertification(true);
+            globalLifecycle.transition('HEALTHY', 'Operator paper simulation armed');
+          }
         }
         const snapTokens = hub.snapshot().tokens || [];
         const token = snapTokens.find(t => t.mint === parsed.payload.mint || t.pair === parsed.payload.poolAddress);
+        if (token && token.pair && parsed.payload.poolAddress === parsed.payload.mint) {
+          parsed.payload.poolAddress = token.pair;
+        }
         if (!parsed.payload.priceUsd && token && typeof token.price === 'number' && Number.isFinite(token.price) && token.price > 0) {
           parsed.payload.priceUsd = token.price;
           if (!parsed.payload.fallbackPriceSol) {

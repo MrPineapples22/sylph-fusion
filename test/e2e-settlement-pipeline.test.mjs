@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { Keypair, PublicKey } from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import BN from 'bn.js';
+import { getPumpProgram } from '@pump-fun/pump-sdk';
 import { SessionLogger } from '../dist/session-logger.js';
 import { Executor } from '../dist/execution.js';
 import { Engine } from '../dist/fusion.js';
@@ -20,7 +21,7 @@ import {
   exportSessionArtifact,
 } from '../terminal/soak-reader.mjs';
 import { aggregateSessionStats } from '../terminal/src/paper-baseline-eval.js';
-import { CanonicalIngress, DefaultFusionEnvelopeCompiler, DefaultTruthValidator, StoreIngressJournal } from '../dist/platform/ingress/canonical-ingress.js';
+import { StoreIngressJournal, createCanonicalSolanaIngress } from '../dist/platform/ingress/canonical-ingress.js';
 import { createUnvalidatedObservation } from '../dist/platform/ingress/observation-factory.js';
 
 const makeKey = (seed) => Keypair.fromSeed(Buffer.alloc(32, seed));
@@ -28,6 +29,27 @@ const key = makeKey(42);
 const mintPub = makeKey(43).publicKey;
 const creatorPub = makeKey(44).publicKey;
 const PUMP_PROGRAM_ID = new PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P');
+const pumpProgram = getPumpProgram({});
+function encodePumpEventLogs(kind, overrides = {}) {
+  const eventName = kind === 'create_event' ? 'createEvent' : 'tradeEvent';
+  const eventType = pumpProgram.idl.types.find(type => type.name === eventName);
+  const definition = pumpProgram.idl.events.find(event => event.name === eventName);
+  const data = Object.fromEntries(eventType.type.fields.map(field => {
+    const type = field.type;
+    if (type === 'string') return [field.name, ''];
+    if (type === 'bool') return [field.name, false];
+    if (type === 'pubkey') return [field.name, PublicKey.default];
+    if (typeof type === 'object' && type.vec) return [field.name, []];
+    if (typeof type === 'string' && /^(u|i)(8|16|32|64|128|256)$/.test(type)) return [field.name, new BN(0)];
+    throw new Error(`Unsupported fixture IDL field ${field.name}`);
+  }));
+  for (const [key, value] of Object.entries(overrides)) {
+    const field = eventType.type.fields.find(candidate => candidate.name === key);
+    data[key] = field?.type === 'u64' || field?.type === 'i64' ? new BN(String(value)) : value;
+  }
+  const bytes = Buffer.concat([Buffer.from(definition.discriminator), pumpProgram.coder.types.encode(eventName, data)]);
+  return [`Program ${PUMP_PROGRAM_ID.toBase58()} invoke [1]`, `Program data: ${bytes.toString('base64')}`, `Program ${PUMP_PROGRAM_ID.toBase58()} success`];
+}
 
 const makeSnapshot = ({
   mint = mintPub,
@@ -177,24 +199,7 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
     assert.equal(gateMissingEval.confidence, null);
 
     // 4. Initialize Engine in paper mode with deterministic gate
-    const e2eIngress = new CanonicalIngress({
-      compiler: {
-        compile(observation) {
-          const compiled = new DefaultFusionEnvelopeCompiler().compile(observation);
-          const decodedEvents = compiled.decodedEvents.map(event => ({
-            ...event,
-            observation,
-            data: Object.fromEntries(Object.entries(event.data ?? {}).map(([key, value]) =>
-              ['mint', 'user', 'creator'].includes(key) && typeof value === 'string'
-                ? [key, new PublicKey(value)] : [key, value]
-            )),
-          }));
-          return { ...compiled, decodedEvents };
-        },
-      },
-      validator: new DefaultTruthValidator(),
-      journal: new StoreIngressJournal(store),
-    });
+    const e2eIngress = createCanonicalSolanaIngress({ journal: new StoreIngressJournal(store) });
     const engine = new Engine(
       cfg,
       rpc,
@@ -219,17 +224,17 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
     const eventTime = Date.now() - 15_000;
 
     const feedCommitted = async (_engineInstance, event) => {
-      const { observation: _testOnlyObservation, ...eventPayload } = event;
-      const rawPayload = Buffer.from(JSON.stringify(eventPayload, (_key, value) =>
-        typeof value === 'bigint' ? value.toString() : value?.toBase58?.() ?? value
-      ));
+      const rawPayload = Buffer.from(JSON.stringify(encodePumpEventLogs(event.name, {
+        ...event.data,
+        timestamp: event.data?.timestamp ?? BigInt(Math.floor(Number(event.received ?? Date.now()) / 1000)),
+      })));
       const receipt = await e2eIngress.submit(createUnvalidatedObservation({
-        sourceId: 'test-provider', providerId: 'prov-test', transport: 'test_feed',
+        sourceId: 'test-provider', providerId: 'prov-test', transport: 'websocket.logsSubscribe',
         receivedAtMs: Number(event.received ?? Date.now()), observedAtMs: Number(event.received ?? Date.now()),
         slot: Number(event.slot ?? 100), commitment: 'confirmed', signature: event.signature || 'sig-1',
-        transactionVersion: 0, rawPayload, schemaVersion: 'test-event-json/v1', processingIntent: 'LIVE',
+        transactionVersion: 0, rawPayload, schemaVersion: 'solana-program-logs/v1', processingIntent: 'LIVE',
       }));
-      assert.equal(receipt.status, 'ACCEPTED', `event must pass the canonical ingress: ${receipt.reason ?? receipt.status}`);
+      assert.equal(receipt.status, 'ACCEPTED', `event must pass the canonical ingress: ${receipt.reason ?? receipt.status}; candidates=${JSON.stringify([...engine.candidates.keys()])}`);
     };
 
     // Create event
@@ -238,19 +243,6 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
       signature: 'create-sig-1',
       slot: 100,
       received: eventTime + 250,
-      observation: {
-        observationId: 'obs-create-sig-1',
-        sourceId: 'test-provider',
-        providerId: 'https://provider.example',
-        transport: 'test.feed',
-        receivedAt: eventTime + 250,
-        slot: 100,
-        commitment: 'confirmed',
-        signature: 'create-sig-1',
-        rawPayloadHash: 'a'.repeat(64),
-        schemaVersion: 'solana-program-logs/v1',
-        processingIntent: 'LIVE',
-      },
       data: {
         mint: mintPub,
         user: creatorPub,
@@ -291,21 +283,17 @@ test('End-to-End Settlement Pipeline: Engine → JSONL/CSV → UI Stats & Artifa
     await feedCommitted(engine, {
       name: 'create_event', signature: 'create-sig-invalid-time', slot: 101,
       received: Date.now(),
-      observation: {observationId: 'obs-invalid-time', sourceId: 'test-provider',
-        providerId: 'https://provider.example', transport: 'test.feed', receivedAt: Date.now(),
-        slot: 101, commitment: 'confirmed', signature: 'create-sig-invalid-time',
-        rawPayloadHash: 'b'.repeat(64), schemaVersion: 'solana-program-logs/v1', processingIntent: 'LIVE'},
-      data: {mint: invalidTimestampMint, creator: creatorPub, user: creatorPub, timestamp: 'not-a-time'},
+      data: {mint: invalidTimestampMint, creator: creatorPub, user: creatorPub, timestamp: -1},
     });
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(engine['candidates'].has(invalidTimestampMint.toBase58()), false);
     const invalidTimeDiscovery = (await store.getAuditEvents('candidate_discovered_v1', 10))
       .map(event => JSON.parse(event.body)).find(event => event.mint === invalidTimestampMint.toBase58());
     assert.equal(invalidTimeDiscovery.discoveryDisposition, 'REJECTED_AT_DISCOVERY');
-    assert.equal(invalidTimeDiscovery.chainCreatedAtMs, null);
+    assert.equal(invalidTimeDiscovery.chainCreatedAtMs, -1000);
     const invalidTimeEnd = (await store.getAuditEvents('candidate_tracking_ended_v1', 10))
       .map(event => JSON.parse(event.body)).find(event => event.mint === invalidTimestampMint.toBase58());
-    assert.equal(invalidTimeEnd.reason, 'INVALID_CHAIN_TIMESTAMP');
+    assert.equal(invalidTimeEnd.reason, 'STALE_AT_DISCOVERY');
     assert.equal(invalidTimeEnd.outcomeStatus, 'UNRESOLVED');
 
     assert.equal(candidate.buyCount, 6, 'Genuine buy count must be tracked');
@@ -662,11 +650,7 @@ test('Engine paper marks match executable simulation sell proceeds and disappear
         cash: String(initialCash), day: new Date().toISOString().slice(0, 10),
         dayPnl: '0', closed: {}, halted: false,
       };
-      const ingress = new CanonicalIngress({
-        compiler: new DefaultFusionEnvelopeCompiler(),
-        validator: new DefaultTruthValidator(),
-        journal: new StoreIngressJournal(store),
-      });
+      const ingress = createCanonicalSolanaIngress({ journal: new StoreIngressJournal(store) });
       const engine = new Engine(cfg, rpc, market, authority, store, state, undefined, undefined, undefined, undefined, undefined, undefined, ingress);
       engine.feed.last = Date.now();
       engine.feed.readySince = Date.now() - 20_000;

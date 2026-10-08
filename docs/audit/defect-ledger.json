@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "project": "MrPineapples22/sylph-fusion",
-  "updatedAt": "2026-10-07",
+  "updatedAt": "2026-10-08",
   "items": [
     {
       "id": "C1-INGRESS-001",
       "title": "Canonical ingress must be durably journaled before authoritative delivery",
-      "status": "RESOLVED",
+      "status": "PARTIALLY_CONTAINED",
       "severity": "CRITICAL",
       "evidence": [
         "Production composition supplies StoreIngressJournal backed by Store.appendAuditEvent.",
@@ -20,10 +20,24 @@
         "Research cycle 135 classifies pre-outbox rows as LEGACY_UNKNOWN, retains dedupe evidence, emits a durable uncertainty marker, and prevents unsafe automatic replay.",
         "Engine projection checkpoint and outbox delivery acknowledgement commit atomically in canonical_ingress_engine_projection_v1 under BEGIN IMMEDIATE (cycle 147).",
         "Implemented IngressVersionRegistry and versioned compiler/validator contracts (compileForVersion, validateForVersion, isVersionSupported) in canonical-ingress.ts (cycle 148).",
+        "Current C1 repair: only createCanonicalSolanaIngress can confer Engine-accepted reviewed provenance; direct CanonicalIngress instances backed by Store remain untrusted because their compiler/validator are caller supplied.",
+        "Current C1 repair: the reviewed factory accepts no caller compiler, validator, or coder; it constructs the fixed repository Pump compiler and DefaultTruthValidator before granting reviewed provenance.",
+        "Current C1 repair: submit snapshots caller-owned payload bytes before its first await and checks the digest after compile, validation, and before append; StoreIngressJournal copies and verifies bytes again after its durability await before serialization.",
+        "Current C1 repair: each ordinary subscriber receives a detached object graph with separately copied byte views, preserving decoded Solana value classes such as PublicKey and BN; one subscriber cannot mutate the committed bytes observed by the next.",
+        "Engine now verifies the reviewed ingress is bound to the exact Store used for projection; the Store no longer exposes its Worker message channel, closing direct postMessage acknowledgement bypass.",
+        "Current C1 repair: StoreIngressJournal accepts only the exact base class and freezes instances/prototype, preventing subclass or per-instance method replacement from retaining its brand.",
+        "Current C1 repair: committed envelope object graphs are deep-frozen (excluding binary views), and subscriber registration seals before first dispatch.",
+        "Current C1 repair: Engine occupies the terminal-delivery position; reviewed ingress has no generic journal ACK fallback and requires the outbox row to be absent after the terminal callback.",
+        "Store's general ingress capability exposes neither Engine owner binding nor projection load/commit; the Engine projection bridge is a separate internal module imported by fusion.ts.",
+        "Store.call rejects raw acknowledgement and projection-commit operations after reviewed ingress is created; unreviewed journal compatibility remains available for non-Engine test/adaptor pathways.",
+        "The C1 auditor now counts and rejects imports of the restricted Engine projection module outside src/fusion.ts, and imports of its underlying Store bridge outside the dedicated adapter.",
         "restoreCommittedEnvelope validates both compiler and validator versions against the IngressVersionRegistry, failing closed with INGRESS_OUTBOX_COMPILER_DRIFT and INGRESS_OUTBOX_VALIDATION_IDENTITY_MISMATCH if unsupported or drifting.",
         "test/platform/canonical-ingress-durability.test.mjs covers fail-closed compiler drift, validator drift, unreviewed version rejection, and successful recovery when historical versions are reviewed in the registry."
       ],
-      "remaining": [],
+      "remaining": [
+        "JavaScript does not provide secrecy from arbitrary code executing in-process: code that intentionally imports the internal Store bridge can access its opaque projection capability. The enforced boundary is repository source trust plus the C1 auditor allowlist, not a sandbox against malicious same-process plugins.",
+        "The production factory pins the active compiler and validator but does not yet provide a separately governed historical implementation registry."
+      ],
       "owner": "Astra Verification",
       "nextAction": "Maintain version registry entries as compiler and validator versions evolve."
     },
@@ -43,6 +57,7 @@
       ],
       "remaining": [
         "Implement and independently review a trusted transport capture/decoder boundary that binds actual protobuf bytes to the event derived from those bytes in live Yellowstone gRPC stream.",
+        "Feed.accept still accepts independently supplied signature, slot, logs, rawPayload, and encoding fields; validate their cross-field and transport compatibility before treating this as a bound observation. Ordinary JSON.stringify output is not RFC 8785 canonical JSON, so existing *_JSON_CANONICAL labels need correction or a canonical serializer.",
         "No payload hash or encoding declaration establishes transaction authenticity, chain inclusion, or source identity."
       ],
       "owner": "Sol Provider Integration",
@@ -70,7 +85,7 @@
     {
       "id": "C1-ENGINE-001",
       "title": "Engine still owns Feed construction, though its journal construction now fails closed",
-      "status": "RESOLVED",
+      "status": "PARTIALLY_CONTAINED",
       "severity": "HIGH",
       "evidence": [
         "RuntimeComposition records Feed and CanonicalIngress references, and runEngine constructs and injects them paired into Engine.",
@@ -80,23 +95,31 @@
         "Validation executes before registering any subscriber on the ingress, preventing phantom subscriptions on construction failure.",
         "test/runtime-composition.test.mjs and test/c1-negative-compilation.test.mjs verify matched, mismatched, and missing Feed/ingress pairings."
       ],
-      "remaining": [],
+      "remaining": [
+        "The C1 source/runtime auditor must independently enforce the reviewed factory boundary and terminal subscriber ordering before this defect can be closed.",
+        "The factory pins the current Solana compiler and validator implementation; historical compiler/validator code provenance and review-registry governance still require independent verification."
+      ],
       "owner": "Astra Architecture",
       "nextAction": "Maintain verified Feed/Ingress pairing across runtime composition entrypoints."
     },
     {
       "id": "C1-DELIVERY-001",
       "title": "Committed ingress delivery is memory-only and can be lost or partially replayed",
-      "status": "RESOLVED",
+      "status": "PARTIALLY_CONTAINED",
       "severity": "CRITICAL",
       "evidence": [
         "SQLite canonical_ingress_delivery_v1 persists the committed payload and acknowledgement state in the same database as the ingress audit journal.",
         "Recovery on startup and duplicate submit revalidates and redispatches unacknowledged rows; pruning retains unacknowledged rows and stable dedupe records.",
         "Engine projection checkpoint and delivery acknowledgement commit atomically in canonical_ingress_engine_projection_v1 under BEGIN IMMEDIATE.",
+        "Engine is registered in CanonicalIngress's reserved terminal slot. Registration seals at dispatch start, and reviewed ingress cannot use generic journal ACK even if terminal setup is absent or incomplete.",
         "Downstream Engine event handling is idempotent via stable event IDs in audit_event_dedupe.",
         "test/platform/canonical-ingress-crash-recovery.test.mjs passes crash/reopen, prune-before-replay, replay, acknowledgement, prune-after-ack, crash after projection commit, and crash after in-memory effect before projection commit."
       ],
-      "remaining": [],
+      "remaining": [
+        "The physical auditor and recovery tests must enforce terminal-slot ownership, immutable committed graphs, and subscriber-seal behavior across async dispatch.",
+        "Engine projection capability remains a same-process internal module export; C1 enforcement assumes trusted repository source and the C1 auditor allowlist, not hostile same-process plugins.",
+        "Engine in-memory candidate/state effects still precede the durable projection commit; restart rollback is the recovery mechanism and requires the crash suite to remain green."
+      ],
       "owner": "Astra Architecture",
       "nextAction": "Preserve atomic projection checkpointing across future downstream handlers."
     },

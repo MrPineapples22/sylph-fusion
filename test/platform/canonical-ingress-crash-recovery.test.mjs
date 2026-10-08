@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store, getStoreIngressCapability } from '../../dist/store.js';
 import { Engine } from '../../dist/fusion.js';
-import { createHash } from 'node:crypto';
+import { Keypair, PublicKey } from '@solana/web3.js';
 import { CanonicalReducer } from '../../dist/platform/reducer/index.js';
 import { createUnvalidatedObservation } from '../../dist/platform/ingress/observation-factory.js';
 import {
@@ -13,7 +13,31 @@ import {
   DefaultFusionEnvelopeCompiler,
   DefaultTruthValidator,
   StoreIngressJournal,
+  createCanonicalSolanaIngress,
 } from '../../dist/platform/ingress/canonical-ingress.js';
+
+function encodeCreateEventLogs({ mint, creator, user, timestamp }) {
+  const u32 = value => { const out = Buffer.alloc(4); out.writeUInt32LE(value); return out; };
+  const string = value => { const bytes = Buffer.from(value); return Buffer.concat([u32(bytes.length), bytes]); };
+  const pubkey = value => new PublicKey(value).toBuffer();
+  const u64 = value => { const out = Buffer.alloc(8); out.writeBigUInt64LE(BigInt(value)); return out; };
+  const i64 = value => { const out = Buffer.alloc(8); out.writeBigInt64LE(BigInt(value)); return out; };
+  const bool = value => Buffer.from([value ? 1 : 0]);
+  const event = Buffer.concat([
+    Buffer.from([27, 114, 169, 77, 222, 235, 99, 118]),
+    string('Fixture token'), string('FIX'), string('https://example.invalid/metadata'),
+    pubkey(mint), pubkey(Keypair.generate().publicKey), pubkey(user), pubkey(creator),
+    i64(timestamp), u64(1_000_000), u64(2_000_000), u64(3_000_000), u64(4_000_000),
+    pubkey(PublicKey.default), bool(false), bool(false), pubkey(PublicKey.default),
+    u64(2_000_000), u64(100), bool(false),
+  ]);
+  const programId = '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
+  return [
+    `Program ${programId} invoke [1]`,
+    `Program data: ${event.toString('base64')}`,
+    `Program ${programId} success`,
+  ];
+}
 
 function createSampleObservation(receivedAtMs = Date.now()) {
   return createUnvalidatedObservation({
@@ -89,53 +113,24 @@ test('Canonical ingress redispatches a durably committed delivery after restart'
   assert.equal(firstAttempts, 1);
 });
 
-test('Engine projection checkpoint and ingress acknowledgement commit atomically', async t => {
+test('general ingress adapters cannot bind Engine or commit projection acknowledgements', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'ingress-projection-atomic-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const dbPath = join(dir, 'state.sqlite');
-  const observation = createSampleObservation();
-  let store = new Store(dbPath);
+  const store = new Store(dbPath);
   const capability = getStoreIngressCapability(store);
   assert.ok(capability);
-  let effects = 0;
   try {
-    const ingress = new CanonicalIngress({
-      compiler: new DefaultFusionEnvelopeCompiler(), validator: new DefaultTruthValidator(),
-      journal: new StoreIngressJournal(store),
-      downstreamSubscriber: async committed => {
-        effects++;
-        const sequence = Number(committed.journalSeq);
-        const observationId = committed.validatedEnvelope.compiledEnvelope.observation.observationId;
-        const projection = { schemaVersion: 1, sequence, observationId, entryHash: committed.envelopeHash, effects };
-        await capability.commitEngineProjection(observationId, sequence, committed.envelopeHash,
-          JSON.stringify(projection), JSON.stringify({ version: 1, wallet: 'fixture', mode: 'paper' }));
-        // Models a crash after the atomic commit but before callback completion.
-        throw new Error('SIMULATED_CRASH_AFTER_PROJECTION_COMMIT');
-      },
-    });
-    const receipt = await ingress.submit(observation);
-    assert.equal(receipt.status, 'REJECTED');
-    assert.equal((await new StoreIngressJournal(store).getPendingDeliveries(0, 10)).length, 0,
-      'the projection transaction must acknowledge the event in the same commit');
-    assert.equal((await store.getAuditEvents('canonical_ingress_delivery_ack_v1')).length, 1);
-  } finally { await store.close(); }
-
-  store = new Store(dbPath);
-  try {
-    const recovered = await getStoreIngressCapability(store).loadEngineProjection();
-    assert.ok(recovered);
-    const parsed = JSON.parse(recovered.projectionJson);
-    assert.equal(parsed.sequence, recovered.sequence);
-    assert.equal(parsed.observationId, observation.observationId);
-    assert.equal(parsed.effects, 1, 'the committed projection is durable after reopen');
-    assert.equal(JSON.parse(recovered.stateJson).wallet, 'fixture');
-    const retryIngress = new CanonicalIngress({
-      compiler: new DefaultFusionEnvelopeCompiler(), validator: new DefaultTruthValidator(),
-      journal: new StoreIngressJournal(store), downstreamSubscriber: () => { effects++; },
-    });
-    assert.equal((await retryIngress.submit(observation)).status, 'DUPLICATE');
-    assert.equal(effects, 1, 'an already checkpointed observation must not reapply its effect');
-    assert.equal((await store.getAuditEvents('canonical_ingress_delivery_ack_v1')).length, 1);
+    assert.equal(typeof capability.bindEngineProjectionOwner, 'undefined');
+    assert.equal(typeof capability.commitEngineProjection, 'undefined');
+    assert.equal(typeof capability.acknowledgeIngress, 'undefined');
+    const reviewedJournal = new StoreIngressJournal(store);
+    createCanonicalSolanaIngress({ journal: reviewedJournal });
+    await assert.rejects(store.call('commit-engine-projection', '{}'), /ENGINE_PROJECTION_CAPABILITY_REQUIRED/);
+    await assert.rejects(store.call('acknowledge-ingress', '{}'), /ENGINE_PROJECTION_CAPABILITY_REQUIRED/);
+    const journal = reviewedJournal;
+    await assert.rejects(journal.acknowledgeDelivery('a'.repeat(64), 1, 'b'.repeat(64)), /INGRESS_ENGINE_ATOMIC_ACK_REQUIRED/);
+    assert.equal((await journal.getPendingDeliveries(0, 10)).length, 0);
   } finally { await store.close(); }
 });
 
@@ -143,24 +138,16 @@ test('Engine restores canonical state and active candidate projection before ing
   const dir = await mkdtemp(join(tmpdir(), 'engine-projection-restart-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const dbPath = join(dir, 'state.sqlite');
-  const mint = 'EngineProjectionMint11111111111111111111111111111';
-  const creator = 'EngineProjectionCreator111111111111111111111111';
+  const mint = Keypair.generate().publicKey.toBase58();
+  const creator = Keypair.generate().publicKey.toBase58();
+  const user = Keypair.generate().publicKey.toBase58();
   const receivedAtMs = Date.now();
   const observation = createUnvalidatedObservation({
     sourceId: 'projection-test', providerId: 'fixture-provider', transport: 'fixture', receivedAtMs,
     observedAtMs: receivedAtMs, slot: 301, commitment: 'confirmed', signature: 'projection-test-signature-301',
-    rawPayload: Buffer.from('{}'), schemaVersion: 'fixture/v1', processingIntent: 'DETERMINISTIC_REPLAY',
+    rawPayload: Buffer.from(JSON.stringify(encodeCreateEventLogs({ mint, creator, user, timestamp: Math.floor(receivedAtMs / 1000) }))),
+    schemaVersion: 'solana-program-logs/v1', processingIntent: 'DETERMINISTIC_REPLAY',
   });
-  const compiler = {
-    compile(obs) {
-      const decodedEvents = [{ name: 'CreateEvent', signature: obs.signature, slot: obs.slot, received: obs.receivedAtMs,
-        observation: obs, data: { mint: { toBase58: () => mint }, creator: { toBase58: () => creator },
-          user: { toBase58: () => 'EngineProjectionLaunchUser11111111111111111' },
-          timestamp: { toString: () => String(Math.floor(receivedAtMs / 1000)) } } }];
-      return { envelopeId: createHash('sha256').update(`fixture:${obs.observationId}`).digest('hex'),
-        observation: obs, compiledAtMs: receivedAtMs, decodedEvents, compilerVersion: 'engine-projection-fixture/v1' };
-    },
-  };
   const cfg = { MODE: 'paper_standard', MAX_TRACKED: 20, MAX_AGE_MS: 300_000, MIN_AGE_MS: 1_000,
     MIN_BUYERS: 2, MIN_BUY_SELL_RATIO_BPS: 1_000, POLL_MS: 10, CHECKPOINT_INTERVAL_MS: 60_000 };
   const stateFor = () => ({ version: 1, wallet: 'projection-wallet', mode: 'paper_standard', positions: {}, closed: {},
@@ -170,7 +157,7 @@ test('Engine restores canonical state and active candidate projection before ing
     gapReconciler: { setRecoveryCertificateJournal() {} },
     run: async () => { engine.stop(); }, stop() {}, healthy: () => false, last: 0, slot: 0
   });
-  const makeIngress = store => new CanonicalIngress({ compiler, validator: new DefaultTruthValidator(), journal: new StoreIngressJournal(store) });
+  const makeIngress = store => createCanonicalSolanaIngress({ journal: new StoreIngressJournal(store) });
   const makeEngine = (store, state, ingress) => {
     let engine;
     engine = new Engine(cfg, { connection: {} }, {}, {}, store, state, undefined, undefined,
@@ -186,7 +173,8 @@ test('Engine restores canonical state and active candidate projection before ing
     const receipt = await ingress.submit(observation);
     assert.equal(receipt.status, 'ACCEPTED');
     assert.equal(subscribedEngine.getCanonicalState().revision, 1n);
-    const checkpoint = await getStoreIngressCapability(store).loadEngineProjection();
+    const rawCheckpoint = await store.call('load-engine-projection');
+    const checkpoint = rawCheckpoint ? JSON.parse(rawCheckpoint) : null;
     assert.ok(checkpoint);
     assert.equal(JSON.parse(checkpoint.projectionJson).candidates.length, 1);
     assert.equal((await new StoreIngressJournal(store).getPendingDeliveries(0, 10)).length, 0);
@@ -200,12 +188,12 @@ test('Engine restores canonical state and active candidate projection before ing
     assert.equal(restarted.getCanonicalState().revision, 1n, 'canonical root is restored rather than reset to genesis');
     assert.equal(CanonicalReducer.isStateRootV2(restarted.getCanonicalState()), true);
     assert.equal(CanonicalReducer.isStateTransitionProof(restarted.getLastTransitionProof()), true);
-    assert.equal(JSON.parse((await getStoreIngressCapability(store).loadEngineProjection()).projectionJson).candidates[0].mint, mint,
+    assert.equal(JSON.parse(JSON.parse(await store.call('load-engine-projection')).projectionJson).candidates[0].mint, mint,
       'the active candidate projection survives process restart');
   } finally { await store.close(); }
 });
 
-test('Crash after in-memory effect before projection commit rolls back and replays cleanly from prior durable checkpoint', async t => {
+test('unreviewed adapter crash after in-memory effect retains legacy replay semantics', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'ingress-crash-before-commit-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const dbPath = join(dir, 'state.sqlite');
@@ -230,7 +218,7 @@ test('Crash after in-memory effect before projection commit rolls back and repla
     assert.equal(memoryEffects, 1);
     assert.equal((await new StoreIngressJournal(store).getPendingDeliveries(0, 10)).length, 1,
       'pending outbox entry must remain unacknowledged when commit did not occur');
-    assert.equal(await capability.loadEngineProjection(), null,
+    assert.equal(await store.call('load-engine-projection'), null,
       'no projection checkpoint must exist when commit was never executed');
   } finally { await store.close(); }
 
@@ -241,27 +229,17 @@ test('Crash after in-memory effect before projection commit rolls back and repla
     const restartedJournal = new StoreIngressJournal(store);
     assert.equal((await restartedJournal.getPendingDeliveries(0, 10)).length, 1,
       'pending delivery survives crash');
-    const restartedCapability = getStoreIngressCapability(store);
     const restartedIngress = new CanonicalIngress({
       compiler: new DefaultFusionEnvelopeCompiler(), validator: new DefaultTruthValidator(),
       journal: restartedJournal,
-      downstreamSubscriber: async committed => {
-        durableEffects++;
-        const sequence = Number(committed.journalSeq);
-        const observationId = committed.validatedEnvelope.compiledEnvelope.observation.observationId;
-        const projection = { schemaVersion: 1, sequence, observationId, entryHash: committed.envelopeHash, durableEffects };
-        await restartedCapability.commitEngineProjection(observationId, sequence, committed.envelopeHash,
-          JSON.stringify(projection), JSON.stringify({ version: 1, wallet: 'fixture', mode: 'paper' }));
-      },
+      downstreamSubscriber: async () => { durableEffects++; },
     });
     const recoveredCount = await restartedIngress.recoverPendingDeliveries();
-    assert.equal(recoveredCount, 1, 'must redispatch the unacknowledged delivery');
+    assert.equal(recoveredCount, 1, 'unreviewed test adapter can use the legacy journal acknowledgement route');
     assert.equal(durableEffects, 1, 'effect is now applied and committed exactly once');
     assert.equal((await restartedJournal.getPendingDeliveries(0, 10)).length, 0,
-      'outbox row is acknowledged after successful commit');
-    const checkpoint = await restartedCapability.loadEngineProjection();
-    assert.ok(checkpoint);
-    assert.equal(JSON.parse(checkpoint.projectionJson).durableEffects, 1);
+      'unreviewed adapter acknowledgement clears its delivery');
+    assert.equal(await store.call('load-engine-projection'), null);
 
     // Duplicate submit check
     const dupReceipt = await restartedIngress.submit(observation);

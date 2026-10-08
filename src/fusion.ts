@@ -13,7 +13,7 @@ import { exitDecision, log, mulBps, settle, recordFailure, recordEquity, pruneRi
 import { startDashboard } from './dashboard.js';
 import { RpcPool } from './rpc.js';
 import { Feed, type MarketEvent } from './feed.js';
-import { CanonicalIngress, createCanonicalSolanaIngress, StoreIngressJournal, isDurableCanonicalIngress } from './platform/ingress/canonical-ingress.js';
+import { CanonicalIngress, createCanonicalSolanaIngress, StoreIngressJournal, isDurableCanonicalIngress, isDurableCanonicalIngressForStore } from './platform/ingress/canonical-ingress.js';
 import { RuntimeTelemetryExporter, type RuntimeTelemetryExportOptions } from './platform/ingress/runtime-telemetry-exporter.js';
 import type { CommittedEnvelope, UnvalidatedObservation } from './platform/ingress/types.js';
 import { CanonicalReducer, type FusionStateRootV2, type StateTransitionProof } from './platform/reducer/index.js';
@@ -28,6 +28,7 @@ import { Market, type Snapshot } from './market.js';
 import { Executor } from './execution.js';
 import { type ExecutionAuthority, SimulationExecutionAuthority, LiveExecutionAuthority, simulationExecutionCosts, simulationSellProceeds } from './platform/execution/authority.js';
 import { Store, getStoreIngressCapability } from './store.js';
+import { getEngineProjectionCapability } from './platform/ingress/engine-projection-capability.js';
 import { strategyStatuses } from './strategy.js';
 import { SessionLogger } from './session-logger.js';
 import { ExecutionRegretEngine } from './intelligence/forensics/counterfactual-regret-store.js';
@@ -286,6 +287,7 @@ export function checkCandidateReserveDrift(
 }
 export class Engine {
   readonly #ingress: CanonicalIngress;
+  readonly #projectionCapability: NonNullable<ReturnType<typeof getEngineProjectionCapability>>;
   private candidates = new Map<string, Candidate>();
   private stopped = false;
   private lastHealth = 0;
@@ -387,15 +389,20 @@ export class Engine {
     ingress?: CanonicalIngress,
     feed?: Feed,
   ) {
-    if (ingress && isDurableCanonicalIngress(ingress)) {
+    if (ingress && isDurableCanonicalIngress(ingress) && isDurableCanonicalIngressForStore(ingress, store)) {
       this.#ingress = ingress;
     } else if (ingress) {
-      throw new Error('INGRESS_DURABLE_JOURNAL_REQUIRED');
+      throw new Error(isDurableCanonicalIngress(ingress) ? 'INGRESS_STORE_MISMATCH' : 'INGRESS_DURABLE_JOURNAL_REQUIRED');
     } else if (store instanceof Store && typeof store.appendAuditEvent === 'function') {
       this.#ingress = createCanonicalSolanaIngress({ journal: new StoreIngressJournal(store as any) });
     } else {
       throw new Error('INGRESS_DURABLE_JOURNAL_REQUIRED');
     }
+    const projectionCapability = getStoreIngressCapability(this.store);
+    if (!projectionCapability) throw new Error('ENGINE_PROJECTION_DURABLE_STORE_REQUIRED');
+    const internalProjectionCapability = getEngineProjectionCapability(this.store);
+    if (!internalProjectionCapability) throw new Error('ENGINE_PROJECTION_DURABLE_STORE_REQUIRED');
+    this.#projectionCapability = internalProjectionCapability;
     if (feed) {
       if (!ingress) {
         throw new Error('FEED_REQUIRES_COMPOSITION_INGRESS: Cannot inject Feed without also injecting its CanonicalIngress');
@@ -404,7 +411,7 @@ export class Engine {
         throw new Error('FEED_INGRESS_MISMATCH: Injected Feed must be bound to the exact same CanonicalIngress instance');
       }
     }
-    this.#ingress.subscribe(async (committed: CommittedEnvelope) => {
+    this.#ingress.subscribeTerminal(async (committed: CommittedEnvelope) => {
       await this.#onCommitted(committed);
     });
     this.feed = feed ?? new Feed(cfg, rpc.connection, this.#ingress);
@@ -1042,11 +1049,6 @@ export class Engine {
     for (const event of committed.validatedEnvelope.compiledEnvelope.decodedEvents) {
       this.processCommittedEvent(event);
     }
-    const capability = getStoreIngressCapability(this.store);
-    if (!capability) {
-      this.stop();
-      throw new Error('ENGINE_PROJECTION_DURABLE_STORE_REQUIRED');
-    }
     try {
       const projection = {
         schemaVersion: 1,
@@ -1058,7 +1060,7 @@ export class Engine {
         candidates: [...this.candidates.values()].map(serializeCandidateProjection),
         counterfactual: [...this.counterfactualObservations.entries()],
       };
-      await capability.commitEngineProjection(observationId, sequence, committed.envelopeHash,
+      await this.#projectionCapability.commitEngineProjection(observationId, sequence, committed.envelopeHash,
         JSON.stringify(projection), JSON.stringify(this.state));
       this.projectionSequence = sequence;
     } catch (error) {
@@ -1076,9 +1078,7 @@ export class Engine {
   }
 
   private async restoreIngressProjection(): Promise<void> {
-    const capability = getStoreIngressCapability(this.store);
-    if (!capability) throw new Error('ENGINE_PROJECTION_DURABLE_STORE_REQUIRED');
-    const checkpoint = await capability.loadEngineProjection();
+    const checkpoint = await this.#projectionCapability.loadEngineProjection();
     if (!checkpoint) return;
     let projection: any, persistedState: any;
     try { projection = JSON.parse(checkpoint.projectionJson); persistedState = JSON.parse(checkpoint.stateJson); }
@@ -2239,7 +2239,6 @@ export async function runEngine(options: {
       ? 'PAPER_MAX_RISK'
       : 'PAPER_STANDARD';
     const ingress = createCanonicalSolanaIngress({
-      connectionOrCoder: rpc.connection,
       journal: new StoreIngressJournal(store),
       durability: 'FSYNC_COMMITTED',
       runtimeTelemetry: options.runtimeTelemetry,

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Feed } from '../dist/feed.js';
-import { CanonicalIngress, DefaultFusionEnvelopeCompiler, DefaultTruthValidator, InMemoryIngressJournal, StoreIngressJournal } from '../dist/platform/ingress/canonical-ingress.js';
+import { CanonicalIngress, DefaultFusionEnvelopeCompiler, DefaultTruthValidator, InMemoryIngressJournal, StoreIngressJournal, createCanonicalSolanaIngress } from '../dist/platform/ingress/canonical-ingress.js';
 import { Store } from '../dist/store.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -210,7 +210,7 @@ test('C1 Runtime Guard: Engine rejects forged and replayed committed envelopes',
   const dir = await mkdtemp(join(tmpdir(), 'c1-engine-authority-'));
   const store = new Store(join(dir, 'state.sqlite'));
   t.after(async () => { await store.close(); await rm(dir, { recursive: true, force: true }); });
-  const ingress = new CanonicalIngress({ compiler: new DefaultFusionEnvelopeCompiler(), validator: new DefaultTruthValidator(), journal: new StoreIngressJournal(store) });
+  const ingress = createCanonicalSolanaIngress({ journal: new StoreIngressJournal(store) });
   const engine = new Engine({ MODE: 'paper_standard' }, { connection: {} }, {}, {}, store, { mode: 'paper_standard' }, undefined, undefined, 'deterministic_only', undefined, undefined, undefined, ingress);
   assert.throws(
     () => new Engine({ MODE: 'paper_standard' }, { connection: {} }, {}, {}, {}, { mode: 'paper_standard' }),
@@ -229,7 +229,12 @@ test('C1 Runtime Guard: Engine rejects forged and replayed committed envelopes',
   const otherDir = await mkdtemp(join(tmpdir(), 'c1-other-'));
   const otherStore = new Store(join(otherDir, 'other.sqlite'));
   t.after(async () => { await otherStore.close(); await rm(otherDir, { recursive: true, force: true }); });
-  const otherIngress = new CanonicalIngress({ compiler: new DefaultFusionEnvelopeCompiler(), validator: new DefaultTruthValidator(), journal: new StoreIngressJournal(otherStore) });
+  const otherIngress = createCanonicalSolanaIngress({ journal: new StoreIngressJournal(otherStore) });
+  assert.throws(
+    () => new Engine({ MODE: 'paper_standard' }, { connection: {} }, {}, {}, store, { mode: 'paper_standard' }, undefined, undefined, 'deterministic_only', undefined, undefined, undefined, otherIngress),
+    /INGRESS_STORE_MISMATCH/,
+    'Engine must reject an ingress backed by a different Store than its projection journal'
+  );
   const feedOther = new Feed({ MODE: 'paper_standard', FEED_STALE_MS: 1000, MIN_AGE_MS: 0 }, { connection: {} }, otherIngress);
 
   assert.throws(
@@ -245,7 +250,7 @@ test('C1 Runtime Guard: Engine rejects forged and replayed committed envelopes',
   const injDir = await mkdtemp(join(tmpdir(), 'c1-inj-'));
   const injStore = new Store(join(injDir, 'inj.sqlite'));
   t.after(async () => { await injStore.close(); await rm(injDir, { recursive: true, force: true }); });
-  const injIngress = new CanonicalIngress({ compiler: new DefaultFusionEnvelopeCompiler(), validator: new DefaultTruthValidator(), journal: new StoreIngressJournal(injStore) });
+  const injIngress = createCanonicalSolanaIngress({ journal: new StoreIngressJournal(injStore) });
   const injFeed = new Feed({ MODE: 'paper_standard', FEED_STALE_MS: 1000, MIN_AGE_MS: 0 }, { connection: {} }, injIngress);
 
   const injectedEngine = new Engine({ MODE: 'paper_standard' }, { connection: {} }, {}, {}, injStore, { mode: 'paper_standard' }, undefined, undefined, 'deterministic_only', undefined, undefined, undefined, injIngress, injFeed);
@@ -266,17 +271,15 @@ test('C1 Runtime Guard: Engine rejects forged and replayed committed envelopes',
   assert.equal(typeof ingress.registerAuthenticForTesting, 'undefined');
   assert.equal(ingress.authenticCommittedEnvelopes, undefined, 'runtime issuer WeakSet must remain JavaScript private');
   assert.equal(ingress.issued(forged), false);
-  let captured;
-  ingress.subscribe(committed => { captured = committed; });
-  const { createUnvalidatedObservation } = await import('../dist/platform/ingress/observation-factory.js');
-  const receipt = await ingress.submit(createUnvalidatedObservation({
-    sourceId: 'runtime-test', providerId: 'runtime-test', transport: 'test_feed',
-    receivedAtMs: Date.now(), slot: 1, commitment: 'confirmed', signature: 'captured-test',
-    transactionVersion: 0, rawPayload: Buffer.from('[]'), schemaVersion: 'test-v1', processingIntent: 'LIVE',
-  }));
-  assert.equal(receipt.status, 'ACCEPTED', `durable Store-backed subscriber should accept fixture event: ${receipt.reason}`);
-  assert.equal(ingress.issued(captured), true, 'the captured object is genuinely issued by ingress');
-  assert.equal(engine.onCommitted, undefined, 'capturing an authentic envelope does not create a replay entrypoint');
+  const callerConfiguredIngress = new CanonicalIngress({
+    compiler: new DefaultFusionEnvelopeCompiler(), validator: new DefaultTruthValidator(), journal: new StoreIngressJournal(store),
+  });
+  assert.throws(
+    () => new Engine({ MODE: 'paper_standard' }, { connection: {} }, {}, {}, store, { mode: 'paper_standard' }, undefined, undefined, 'deterministic_only', undefined, undefined, undefined, callerConfiguredIngress),
+    /INGRESS_DURABLE_JOURNAL_REQUIRED/,
+    'a caller-configured compiler/validator pair cannot become Engine-accepted provenance merely by using SQLite'
+  );
+  assert.equal(engine.onCommitted, undefined, 'Engine does not expose a JavaScript-callable delivery handler');
 });
 
 import { createUnvalidatedObservation } from '../dist/platform/ingress/observation-factory.js';

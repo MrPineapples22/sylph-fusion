@@ -13,6 +13,8 @@ import {
   DefaultIngressVersionRegistry,
   DefaultTruthValidator,
   StoreIngressJournal,
+  createCanonicalSolanaIngress,
+  isDurableCanonicalIngress,
 } from '../../dist/platform/ingress/canonical-ingress.js';
 
 const observation = (receivedAtMs = Date.now()) => createUnvalidatedObservation({
@@ -41,6 +43,122 @@ test('canonical ingress cannot issue a committed envelope from a caller supplied
   assert.equal(receipt.status, 'REJECTED');
   assert.match(receipt.reason, /DURABLE_STORE_INGRESS_JOURNAL_REQUIRED/);
   assert.equal(notifications, 0);
+});
+
+test('only the reviewed Solana factory grants Engine-accepted ingress provenance', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'canonical-ingress-review-provenance-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const store = new Store(join(dir, 'state.sqlite'));
+  try {
+    const arbitrary = new CanonicalIngress({
+      compiler: new DefaultFusionEnvelopeCompiler(), validator: new DefaultTruthValidator(),
+      journal: new StoreIngressJournal(store),
+    });
+    assert.equal(isDurableCanonicalIngress(arbitrary), false,
+      'a real durable Store cannot confer compiler/validator review provenance');
+    const reviewedJournal = new StoreIngressJournal(store);
+    let customCompilerInvoked = false;
+    let customValidatorInvoked = false;
+    const reviewed = createCanonicalSolanaIngress({
+      journal: reviewedJournal,
+      connectionOrCoder: { coder: { events: { decode: () => ({ name: 'ForgedEvent', data: {} }) } } },
+      compiler: { compile() { customCompilerInvoked = true; throw new Error('unreviewed compiler must not run'); } },
+      validator: { async validate() { customValidatorInvoked = true; return { valid: true }; } },
+    });
+    assert.equal(isDurableCanonicalIngress(reviewed), true);
+    await reviewed.submit(observation());
+    assert.equal(customCompilerInvoked, false, 'reviewed factory ignores caller-provided compilers');
+    assert.equal(customValidatorInvoked, false, 'reviewed factory ignores caller-provided validators');
+    assert.equal(Object.isFrozen(reviewed), true);
+    assert.equal('worker' in store, false, 'Store does not expose its privileged worker message channel');
+    assert.throws(() => Object.defineProperty(reviewed, 'subscribeTerminal', { value: () => {} }));
+    assert.throws(() => Object.setPrototypeOf(reviewed, {}));
+    await assert.rejects(reviewedJournal.acknowledgeDelivery('a'.repeat(64), 1, 'b'.repeat(64)), /INGRESS_ENGINE_ATOMIC_ACK_REQUIRED/);
+    const capability = getStoreIngressCapability(store);
+    assert.equal(typeof capability.acknowledgeIngress, 'undefined', 'general Store ingress capability has no ACK method');
+    await assert.rejects(store.call('acknowledge-ingress', '{}'), /ENGINE_PROJECTION_CAPABILITY_REQUIRED/);
+    await assert.rejects(store.call('commit-engine-projection', '{}'), /ENGINE_PROJECTION_CAPABILITY_REQUIRED/);
+    assert.equal(Object.hasOwn(capability, 'bindEngineProjectionOwner'), false);
+    assert.equal(Object.hasOwn(capability, 'commitEngineProjection'), false);
+    assert.equal(Object.hasOwn(capability, 'loadEngineProjection'), false);
+    assert.equal(typeof capability.bindEngineProjectionOwner, 'undefined', 'general adapters cannot pre-bind Engine authority');
+    assert.equal(typeof capability.commitEngineProjection, 'undefined', 'general adapters have no direct projection/ACK operation');
+    await assert.rejects(new StoreIngressJournal(store).acknowledgeDelivery('a'.repeat(64), 1, 'b'.repeat(64)), /INGRESS_ENGINE_ATOMIC_ACK_REQUIRED|ENGINE_PROJECTION_CAPABILITY_REQUIRED/);
+    class JournalSubclass extends StoreIngressJournal {}
+    assert.throws(() => new JournalSubclass(store), /INGRESS_UNTRUSTED_JOURNAL_SUBCLASS/);
+  } finally { await store.close(); }
+});
+
+test('committed envelope object graphs are immutable across ordinary subscribers', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'canonical-ingress-envelope-freeze-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const store = new Store(join(dir, 'state.sqlite'));
+  const nested = { value: 1 };
+  try {
+    const ingress = new CanonicalIngress({
+      compiler: { compile: obs => ({ envelopeId: 'a'.repeat(64), observation: obs, compiledAtMs: obs.receivedAtMs,
+        decodedEvents: [{ name: 'Fixture', data: { nested } }], compilerVersion: 'fixture/v1' }) },
+      validator: new DefaultTruthValidator(), journal: new StoreIngressJournal(store),
+      downstreamSubscriber(committed) {
+        assert.equal(Object.isFrozen(committed.validatedEnvelope.compiledEnvelope.decodedEvents[0].data.nested), true);
+        assert.throws(() => { committed.validatedEnvelope.compiledEnvelope.decodedEvents[0].data.nested.value = 2; });
+        committed.validatedEnvelope.compiledEnvelope.observation.rawPayload[0] ^= 0xff;
+      },
+    });
+    let observed;
+    ingress.subscribe(committed => {
+      observed = committed.validatedEnvelope.compiledEnvelope.decodedEvents[0].data.nested.value;
+      assert.equal(committed.validatedEnvelope.compiledEnvelope.observation.rawPayload[0], observation().rawPayload[0],
+        'mutations to one subscriber copy cannot change the next observer evidence');
+    });
+    const receipt = await ingress.submit(observation());
+    assert.equal(receipt.status, 'ACCEPTED', receipt.reason);
+    assert.equal(observed, 1);
+  } finally { await store.close(); }
+});
+
+test('Engine terminal delivery runs after all ordinary subscribers, including later registrations', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'canonical-ingress-terminal-delivery-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const store = new Store(join(dir, 'state.sqlite'));
+  const order = [];
+  try {
+    const ingress = new CanonicalIngress({
+      compiler: new DefaultFusionEnvelopeCompiler(), validator: new DefaultTruthValidator(),
+      journal: new StoreIngressJournal(store), downstreamSubscriber: () => order.push('first'),
+    });
+    ingress.subscribeTerminal(() => order.push('engine-terminal'));
+    ingress.subscribe(() => order.push('registered-later'));
+    const receipt = await ingress.submit(observation());
+    assert.deepEqual(order, ['first', 'registered-later', 'engine-terminal']);
+    assert.equal(receipt.status, 'REJECTED', 'a terminal subscriber without the Engine atomic ACK must not acknowledge delivery');
+    assert.equal((await new StoreIngressJournal(store).getPendingDeliveries(0, 10)).length, 1);
+    assert.throws(() => ingress.subscribeTerminal(() => {}), /INGRESS_SUBSCRIBERS_SEALED|INGRESS_TERMINAL_SUBSCRIBER_ALREADY_REGISTERED/);
+  } finally { await store.close(); }
+});
+
+test('subscriber registration seals before async delivery and cannot race terminal ACK', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'canonical-ingress-seal-race-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const store = new Store(join(dir, 'state.sqlite'));
+  let release;
+  let announceStarted;
+  const waiting = new Promise(resolve => { release = resolve; });
+  const started = new Promise(resolve => { announceStarted = resolve; });
+  try {
+    const ingress = new CanonicalIngress({
+      compiler: new DefaultFusionEnvelopeCompiler(), validator: new DefaultTruthValidator(),
+      journal: new StoreIngressJournal(store),
+    });
+    ingress.subscribeTerminal(async () => { announceStarted(); await waiting; });
+    const submission = ingress.submit(observation());
+    await started;
+    assert.throws(() => ingress.subscribe(() => {}), /INGRESS_SUBSCRIBERS_SEALED/);
+    release();
+    const receipt = await submission;
+    assert.equal(receipt.status, 'REJECTED', 'a terminal handler without Engine atomic ACK leaves the row pending');
+    assert.equal((await new StoreIngressJournal(store).getPendingDeliveries(0, 10)).length, 1);
+  } finally { release(); await store.close(); }
 });
 
 test('Store ingress commits before notifying and detects replay after a fresh instance', async t => {
@@ -167,6 +285,34 @@ test('ingress refuses tampered raw payload before compiling or journaling', asyn
   assert.equal(result.status, 'REJECTED');
   assert.match(result.reason, /RAW_PAYLOAD_HASH_MISMATCH/);
   assert.equal(compiles, 0);
+});
+
+test('submit snapshots caller-owned raw bytes before asynchronous compilation', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'canonical-ingress-input-snapshot-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const store = new Store(join(dir, 'state.sqlite'));
+  const input = observation();
+  const originalBytes = Buffer.from(input.rawPayload);
+  const compiler = new DefaultFusionEnvelopeCompiler();
+  let beginCompile;
+  let releaseCompile;
+  const compiling = new Promise(resolve => { beginCompile = resolve; });
+  const barrier = new Promise(resolve => { releaseCompile = resolve; });
+  const ingress = new CanonicalIngress({
+    compiler: { async compile(snapshot) { beginCompile(); await barrier; return compiler.compile(snapshot); } },
+    validator: new DefaultTruthValidator(), journal: new StoreIngressJournal(store), downstreamSubscriber() {},
+  });
+  try {
+    const submission = ingress.submit(input);
+    await compiling;
+    input.rawPayload[0] ^= 0xff;
+    releaseCompile();
+    const receipt = await submission;
+    assert.equal(receipt.status, 'ACCEPTED', receipt.reason);
+    const row = JSON.parse((await store.getAuditEvents('canonical_ingress_committed_v1'))[0].body);
+    assert.deepEqual(Buffer.from(row.rawPayloadBase64, 'base64'), originalBytes);
+    assert.equal(row.rawPayloadHash, createHash('sha256').update(originalBytes).digest('hex'));
+  } finally { releaseCompile(); await store.close(); }
 });
 
 test('truth validator strictly marks transaction authenticity and block inclusion proof unavailable for observations', async () => {

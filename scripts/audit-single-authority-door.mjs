@@ -161,6 +161,7 @@ function auditSourceAst() {
   let unboundCertificateBuilders = 0;
   let callerAssertedAuthorityRoots = 0;
   let authorityAncestryBypasses = 0;
+  let engineProjectionBoundaryViolations = 0;
 
   const violations = [];
 
@@ -190,9 +191,39 @@ function auditSourceAst() {
       continue;
     }
 
+    const restrictedProjectionReference = sourceFile.getFullText();
+    if ((restrictedProjectionReference.includes('engine-projection-capability') && relPath !== 'src/fusion.ts' &&
+         relPath !== 'src/platform/ingress/engine-projection-capability.ts') ||
+        (restrictedProjectionReference.includes('getInternalEngineProjectionCapability') &&
+         relPath !== 'src/store.ts' && relPath !== 'src/platform/ingress/engine-projection-capability.ts')) {
+      engineProjectionBoundaryViolations++;
+      violations.push({ category: 'ENGINE_PROJECTION_BOUNDARY', file: relPath,
+        detail: 'Restricted Engine projection capability referenced outside the Engine/store bridge allowlist.' });
+    }
+
     const isReducerModule = relPath.startsWith('src/platform/reducer/');
     const isAssuranceModule = relPath.startsWith('src/platform/assurance/');
     const isUnifiedUnit = relPath === 'src/platform/pipeline/unified-unit.ts';
+
+    // Engine projection is an internal authority bridge. Permit its dedicated
+    // adapter only from fusion.ts, and permit the underlying Store bridge only
+    // from that adapter. This enforces the repository source trust boundary.
+    ts.forEachChild(sourceFile, node => {
+      if (!ts.isImportDeclaration(node) || !ts.isStringLiteral(node.moduleSpecifier)) return;
+      const specifier = node.moduleSpecifier.text.replace(/\\/g, '/');
+      const importsProjectionAdapter = specifier.endsWith('/engine-projection-capability.js') ||
+        specifier === './platform/ingress/engine-projection-capability.js';
+      const importsInternalStoreBridge = specifier.endsWith('/store.js') &&
+        node.importClause?.namedBindings && ts.isNamedImports(node.importClause.namedBindings) &&
+        node.importClause.namedBindings.elements.some(element => element.propertyName?.text === 'getInternalEngineProjectionCapability' || element.name.text === 'getInternalEngineProjectionCapability');
+      const allowed = importsProjectionAdapter ? relPath === 'src/fusion.ts' :
+        importsInternalStoreBridge ? relPath === 'src/platform/ingress/engine-projection-capability.ts' : true;
+      if (!allowed) {
+        engineProjectionBoundaryViolations++;
+        violations.push({ category: 'ENGINE_PROJECTION_BOUNDARY', file: relPath,
+          detail: `Restricted Engine projection capability imported outside its allowlisted module: ${specifier}` });
+      }
+    });
 
     // Check A: Adapter authority import boundaries
     if (adapterFiles.has(filePath)) {
@@ -362,6 +393,7 @@ function auditSourceAst() {
     unboundCertificateBuilders,
     callerAssertedAuthorityRoots,
     authorityAncestryBypasses,
+    engineProjectionBoundaryViolations,
     violations,
   };
 }
@@ -654,6 +686,7 @@ async function main() {
     UNBOUND_CERTIFICATE_BUILDERS: astResults.unboundCertificateBuilders,
     CALLER_ASSERTED_AUTHORITY_ROOTS: astResults.callerAssertedAuthorityRoots,
     AUTHORITY_ANCESTRY_BYPASSES: astResults.authorityAncestryBypasses,
+    ENGINE_PROJECTION_BOUNDARY_VIOLATIONS: astResults.engineProjectionBoundaryViolations,
     NEGATIVE_GUARD_FAILURES: guardResults.negativeGuardFailures,
   };
 
@@ -671,6 +704,7 @@ async function main() {
   console.log(`  UNBOUND_CERTIFICATE_BUILDERS:     ${metrics.UNBOUND_CERTIFICATE_BUILDERS}`);
   console.log(`  CALLER_ASSERTED_AUTHORITY_ROOTS:  ${metrics.CALLER_ASSERTED_AUTHORITY_ROOTS}`);
   console.log(`  AUTHORITY_ANCESTRY_BYPASSES:      ${metrics.AUTHORITY_ANCESTRY_BYPASSES}`);
+  console.log(`  ENGINE_PROJECTION_BOUNDARY_VIOLATIONS: ${metrics.ENGINE_PROJECTION_BOUNDARY_VIOLATIONS}`);
   console.log(`  NEGATIVE_GUARD_FAILURES:          ${metrics.NEGATIVE_GUARD_FAILURES}`);
   console.log(`  RUNTIME_TESTS_PASSED:             ${runtimeResults.passed}`);
   console.log('-'.repeat(80));

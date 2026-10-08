@@ -66,12 +66,14 @@ export function discoverySnapshot(input) {
         // Volume is not a transaction count. Never turn a rough estimate into an
         // observed fact in the operator trace.
         const observedTxs = token.txs ?? token.txCount ?? null;
+        const isPaper = input.mode?.toLowerCase() === 'paper' || input.mode?.toLowerCase() === 'shadow';
         const canonicalState = token.crossValidationStatus === 'CONFLICTING' ? 'FAIL'
-            : token.crossValidationStatus === 'VERIFIED' ? 'PASS' : 'PENDING';
+            : token.crossValidationStatus === 'VERIFIED' ? 'PASS'
+                : (isPaper && (token.crossValidationStatus === 'SINGLE_SOURCE' || token.crossValidationStatus === 'PARTIALLY_VERIFIED' || marketFresh)) ? 'PASS'
+                    : 'PENDING';
         const securityState = structuralFindings.length ? 'FAIL'
             : riskFresh && risk.safe === true && !risk.rugged && !risk.authorities.freeze ? 'PASS' : 'PENDING';
         const posCount = (input.positions || []).length;
-        const isPaper = input.mode?.toLowerCase() === 'paper' || input.mode?.toLowerCase() === 'shadow';
         const atCapacity = posCount >= 3;
         const riskAuthStatus = !isPaper ? 'NOT_RUN' : input.feedStale ? 'BLOCKED' : atCapacity ? 'BLOCKED' : 'PASS';
         const riskAuthObserved = !isPaper ? 'LOCKED' : input.feedStale ? 'FEED_STALE' : atCapacity ? `AT_CAPACITY (${posCount}/3)` : `CAPACITY_OPEN (${posCount}/3)`;
@@ -85,7 +87,7 @@ export function discoverySnapshot(input) {
                         : 'Simulated paper execution available via manual ⚡ Paper Buy';
         const decisionTrace = [
             { stage: 'DISCOVERY', label: 'Discovery Stream', status: 'PASS', observed: token.pair || token.mint, requirement: 'Active feed', meaning: 'Token discovered on feed' },
-            { stage: 'CANONICAL_STATE', label: 'Canonical State', status: canonicalState, observed: token.crossValidationStatus || 'UNKNOWN', requirement: isPaper ? 'Active market feed (DexScreener)' : 'Cross-provider verified', meaning: canonicalState === 'PASS' ? 'Market state cross-validated' : canonicalState === 'FAIL' ? 'Market sources conflict' : isPaper ? 'Single source observed (DexScreener) — non-blocking for paper simulation' : 'Cross-provider validation incomplete' },
+            { stage: 'CANONICAL_STATE', label: 'Canonical State', status: canonicalState, observed: token.crossValidationStatus || (marketFresh ? 'SINGLE_SOURCE' : 'UNKNOWN'), requirement: isPaper ? 'Active market feed (DexScreener)' : 'Cross-provider verified', meaning: canonicalState === 'PASS' ? (isPaper && token.crossValidationStatus !== 'VERIFIED' ? 'Single source observed (DexScreener) — non-blocking for paper simulation' : 'Market state cross-validated') : canonicalState === 'FAIL' ? 'Market sources conflict' : isPaper ? 'Single source observed (DexScreener) — non-blocking for paper simulation' : 'Cross-provider validation incomplete' },
             { stage: 'FRESHNESS', label: 'Observation Freshness', status: marketFresh ? 'PASS' : 'FAIL', observed: token.at ? `${Math.max(0, now - token.at)}ms` : 'Unknown', requirement: `<= ${DISCOVERY_FRESH_MS}ms`, meaning: 'Observation fresh' },
             { stage: 'LIQUIDITY', label: 'Liquidity Depth', status: Number.isFinite(token.liquidity) && token.liquidity > 0 ? 'PASS' : 'PENDING', observed: Number.isFinite(token.liquidity) ? `$${Math.round(token.liquidity)}` : 'Awaiting', requirement: 'Depth > 0', meaning: 'Liquidity depth verified' },
             { stage: 'MARKET_CAP', label: 'Market Cap', status: Number.isFinite(token.cap) && token.cap > 0 ? 'PASS' : 'PENDING', observed: Number.isFinite(token.cap) ? `$${Math.round(token.cap)}` : 'Awaiting', requirement: 'Cap > 0', meaning: 'Market cap calculated' },

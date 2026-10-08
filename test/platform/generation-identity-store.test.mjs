@@ -7,6 +7,7 @@ import {fork} from 'node:child_process';
 import {once} from 'node:events';
 import {DatabaseSync} from 'node:sqlite';
 import {Store} from '../../dist/store.js';
+import {terminateStoreWorkerForTest} from '../../dist/store.js';
 import {DurableLiveSigner,signingMessageHash} from '../../dist/platform/signing/durable-live-signer.js';
 import {snapshotRegistration} from '../../dist/platform/storage/generation-identity.js';
 import {sqliteRuntimeEligible,openGenerationDatabase,registerInitialGenerationSync,immediateTransaction} from '../../dist/platform/storage/generation-sqlite.js';
@@ -285,7 +286,7 @@ test('worker death rejects accepted registrations as unknown and public process 
   const holder=f.child('lock');await message(holder,'ready');
   const pending=store.registerInitialGeneration(request('worker-death'));
   const rejected=assert.rejects(pending,code('STORAGE_OUTCOME_UNKNOWN'));
-  await store.worker.terminate();await rejected;
+  await terminateStoreWorkerForTest(store);await rejected;
   holder.send('release');await holder.exited;
   const recovered=f.store();assert.equal((await recovered.readGenerationIdentity('worker-death')).kind,'MISSING');
   const child=f.child('register');await message(child,'ready');

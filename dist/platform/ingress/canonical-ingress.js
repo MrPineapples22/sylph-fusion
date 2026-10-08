@@ -52,12 +52,85 @@ export class DefaultIngressVersionRegistry {
         return this.supportedValidatorVersions.has(version);
     }
 }
-const durableCanonicalIngressInstances = new WeakSet();
+// This capability is granted only by the reviewed production factory below.
+// A durable Store alone says nothing about the compiler/validator that created
+// the envelope, so direct CanonicalIngress construction is never production
+// provenance even when its journal happens to be SQLite-backed.
+const reviewedCanonicalIngressInstances = new WeakSet();
+const reviewedCanonicalIngressStores = new WeakMap();
+const reviewedStoreIngressJournalInstances = new WeakSet();
 const storeIngressJournalInstances = new WeakSet();
 const storeIngressJournalCapabilities = new WeakMap();
-/** True only for a CanonicalIngress whose journal is backed by the real Store class. */
+function deepFreezeEnvelope(value, seen = new WeakSet()) {
+    if (!value || typeof value !== 'object')
+        return value;
+    const object = value;
+    if (seen.has(object))
+        return value;
+    if (ArrayBuffer.isView(object) || object instanceof ArrayBuffer)
+        return value;
+    const prototype = Object.getPrototypeOf(object);
+    // Library value objects such as BN expose methods that update internal
+    // fields even for reads. Keep those values intact; subscriber copies detach
+    // their own fields below while the committed plain-data graph stays frozen.
+    if (!Array.isArray(object) && prototype !== Object.prototype && prototype !== null)
+        return value;
+    seen.add(object);
+    for (const key of Reflect.ownKeys(object)) {
+        const descriptor = Object.getOwnPropertyDescriptor(object, key);
+        if (descriptor && 'value' in descriptor)
+            deepFreezeEnvelope(descriptor.value, seen);
+    }
+    return Object.freeze(value);
+}
+function cloneSubscriberValue(value, seen = new WeakMap(), freezePlain = true) {
+    if (!value || typeof value !== 'object')
+        return value;
+    if (Buffer.isBuffer(value))
+        return Buffer.from(value);
+    if (value instanceof Uint8Array)
+        return Uint8Array.from(value);
+    if (value instanceof ArrayBuffer)
+        return value.slice(0);
+    const object = value;
+    const existing = seen.get(object);
+    if (existing)
+        return existing;
+    const prototype = Object.getPrototypeOf(object);
+    // Decoder value classes (for example PublicKey and BN) carry methods and
+    // mutable internal bookkeeping. Clone their own data while keeping the
+    // prototype, rather than freezing or flattening them.
+    const classInstance = !Array.isArray(object) && prototype !== Object.prototype && prototype !== null;
+    if (classInstance && (object instanceof Date || object instanceof Map || object instanceof Set))
+        return value;
+    const copy = Array.isArray(object) ? [] : Object.create(prototype);
+    seen.set(object, copy);
+    for (const key of Reflect.ownKeys(object)) {
+        const descriptor = Object.getOwnPropertyDescriptor(object, key);
+        if (!descriptor)
+            continue;
+        if ('value' in descriptor)
+            descriptor.value = cloneSubscriberValue(descriptor.value, seen, classInstance ? false : freezePlain);
+        Object.defineProperty(copy, key, descriptor);
+    }
+    return classInstance || !freezePlain ? copy : Object.freeze(copy);
+}
+function cloneCommittedEnvelope(value) {
+    // Detach non-freezable bytes per observer while preserving decoder classes.
+    return cloneSubscriberValue(value);
+}
+function rawEvidenceMatches(observation) {
+    return observation.rawPayloadHash === createHash('sha256').update(observation.rawPayload).digest('hex');
+}
+/** True only for an ingress produced by the reviewed Solana factory and real Store journal. */
 export function isDurableCanonicalIngress(value) {
-    return !!value && typeof value === 'object' && durableCanonicalIngressInstances.has(value);
+    return !!value && typeof value === 'object' && reviewedCanonicalIngressInstances.has(value);
+}
+export function isDurableCanonicalIngressForStore(value, store) {
+    if (!isDurableCanonicalIngress(value) || !store || typeof store !== 'object')
+        return false;
+    const ingressStore = reviewedCanonicalIngressStores.get(value);
+    return ingressStore !== undefined && ingressStore === getStoreIngressCapability(store);
 }
 /**
  * Canonical single-door ingress implementation enforcing the strict type-state progression
@@ -71,6 +144,8 @@ export class CanonicalIngress {
     #journal;
     #durability;
     #subscribers = [];
+    #terminalSubscriber;
+    #dispatchStarted = false;
     #seenObservations = new Set();
     #pendingDeliveries = new Map();
     #deliveryCursors = new Map();
@@ -88,14 +163,40 @@ export class CanonicalIngress {
                 throw new Error('C5_DURABLE_STORE_REQUIRED');
             this.#telemetry = new RuntimeTelemetryCapture(store, options.runtimeTelemetry);
         }
-        if (storeIngressJournalInstances.has(options.journal))
-            durableCanonicalIngressInstances.add(this);
         if (options.downstreamSubscriber) {
             this.#subscribers.push(options.downstreamSubscriber);
         }
+        // Capture registration logic as a non-writable own method. The reviewed
+        // factory later freezes the instance, preventing prototype/own-method
+        // replacement before Engine installs the atomic projection handler.
+        Object.defineProperty(this, 'subscribeTerminal', {
+            configurable: false,
+            enumerable: false,
+            writable: false,
+            value: (subscriber) => {
+                if (this.#dispatchStarted)
+                    throw new Error('INGRESS_SUBSCRIBERS_SEALED');
+                if (this.#terminalSubscriber)
+                    throw new Error('INGRESS_TERMINAL_SUBSCRIBER_ALREADY_REGISTERED');
+                this.#terminalSubscriber = subscriber;
+            },
+        });
     }
     subscribe(subscriber) {
+        if (this.#dispatchStarted)
+            throw new Error('INGRESS_SUBSCRIBERS_SEALED');
         this.#subscribers.push(subscriber);
+    }
+    /**
+     * Reserve the final delivery position for Engine's projection+outbox commit.
+     * Ordinary subscribers always run before this handler, including subscribers
+     * added later, so no callback can fail after Engine has atomically ACKed.
+     */
+    subscribeTerminal(subscriber) {
+        // The method body is supplied as an own, non-writable property in the
+        // constructor so a caller cannot replace it on an instance.
+        void subscriber;
+        throw new Error('INGRESS_TERMINAL_SUBSCRIBER_REGISTRATION_UNAVAILABLE');
     }
     /** Explicit export only; failures neither authorize nor roll back ingress work. */
     captureRuntimeTelemetry() {
@@ -114,6 +215,14 @@ export class CanonicalIngress {
                 reason: 'INVALID_OBSERVATION_PAYLOAD: Null or non-object observation submitted',
             };
         }
+        // Snapshot caller-owned bytes before the first asynchronous boundary. The
+        // factory freezes the observation shell, but typed-array contents remain
+        // mutable and the caller still owns the original byte view.
+        const originalHash = createHash('sha256').update(observation.rawPayload).digest('hex');
+        if (observation.rawPayloadHash !== originalHash) {
+            return { status: 'REJECTED', observationId: observation.observationId, reason: 'RAW_PAYLOAD_HASH_MISMATCH' };
+        }
+        observation = Object.freeze({ ...observation, rawPayload: Uint8Array.from(observation.rawPayload) });
         // 1. In-flight / seen deduplication check
         if (this.#seenObservations.has(observation.observationId)) {
             return {
@@ -138,9 +247,6 @@ export class CanonicalIngress {
             catch (err) {
                 return { status: 'REJECTED', observationId: observation.observationId, reason: `JOURNAL_LOOKUP_FAILED: ${err instanceof Error ? err.message : String(err)}` };
             }
-        }
-        if (observation.rawPayloadHash !== createHash('sha256').update(observation.rawPayload).digest('hex')) {
-            return { status: 'REJECTED', observationId: observation.observationId, reason: 'RAW_PAYLOAD_HASH_MISMATCH' };
         }
         if (this.inFlightObservations.has(observation.observationId)) {
             return { status: 'DUPLICATE', observationId: observation.observationId, reason: 'OBSERVATION_IN_FLIGHT' };
@@ -169,6 +275,9 @@ export class CanonicalIngress {
                 reason: `COMPILER_ERROR: ${err instanceof Error ? err.message : String(err)}`,
             };
         }
+        if (!rawEvidenceMatches(observation)) {
+            return { status: 'REJECTED', observationId: observation.observationId, reason: 'RAW_PAYLOAD_MUTATED_DURING_COMPILE' };
+        }
         // 3. Validate: CompiledFusionEnvelope -> ValidatedFusionEnvelope
         let validationResult;
         try {
@@ -180,6 +289,9 @@ export class CanonicalIngress {
                 observationId: observation.observationId,
                 reason: `VALIDATOR_EXCEPTION: ${err instanceof Error ? err.message : String(err)}`,
             };
+        }
+        if (!rawEvidenceMatches(observation)) {
+            return { status: 'REJECTED', observationId: observation.observationId, reason: 'RAW_PAYLOAD_MUTATED_DURING_VALIDATION' };
         }
         if (!validationResult.valid) {
             return {
@@ -199,6 +311,9 @@ export class CanonicalIngress {
             };
         }
         // 5. Commit to Durable Journal
+        if (!rawEvidenceMatches(observation)) {
+            return { status: 'REJECTED', observationId: observation.observationId, reason: 'RAW_PAYLOAD_MUTATED_BEFORE_JOURNAL' };
+        }
         let journalRecord;
         try {
             journalRecord = this.#telemetry ? await this.#telemetry.measure('ingress.commit', trace, () => this.#journal.append(validated)) : await this.#journal.append(validated);
@@ -218,7 +333,7 @@ export class CanonicalIngress {
             committedAtMs: Date.now(),
             durability: 'FSYNC_COMMITTED',
         };
-        const committed = Object.freeze(committedData);
+        const committed = deepFreezeEnvelope(committedData);
         this.#authenticCommittedEnvelopes.add(committed);
         // 7. Authoritatively commit deduplication state
         this.#seenObservations.add(observation.observationId);
@@ -289,24 +404,48 @@ export class CanonicalIngress {
         const committed = this.#pendingDeliveries.get(observationId);
         if (!committed)
             return true;
-        if (this.#subscribers.length === 0)
+        this.#dispatchStarted = true;
+        if (this.#subscribers.length === 0 && !this.#terminalSubscriber)
             return false;
         try {
             let cursor = this.#deliveryCursors.get(observationId) ?? 0;
             while (cursor < this.#subscribers.length) {
-                await this.#subscribers[cursor](committed);
+                await this.#subscribers[cursor](cloneCommittedEnvelope(committed));
                 cursor++;
                 this.#deliveryCursors.set(observationId, cursor);
             }
-            if (!this.#journal.acknowledgeDelivery)
+            if (this.#terminalSubscriber) {
+                // The terminal Engine handler owns the projection+ACK transaction.
+                // Never fall back to a generic ACK if a caller registered a no-op or
+                // incomplete terminal handler: that would erase undelivered work.
+                await this.#terminalSubscriber(committed);
+                if (!this.#journal.getPendingDeliveries)
+                    return false;
+                const sequence = Number(committed.journalSeq);
+                const pending = await this.#journal.getPendingDeliveries(sequence - 1, 1);
+                if (pending.some(row => row.sequence === sequence))
+                    return false;
+            }
+            else if (reviewedCanonicalIngressInstances.has(this)) {
+                // A reviewed production ingress has no generic ACK path. It can only
+                // clear its outbox through Engine's atomic projection+ACK transaction.
                 return false;
-            await this.#journal.acknowledgeDelivery(observationId, Number(committed.journalSeq), committed.envelopeHash);
+            }
+            else {
+                if (!this.#journal.acknowledgeDelivery)
+                    return false;
+                await this.#journal.acknowledgeDelivery(observationId, Number(committed.journalSeq), committed.envelopeHash);
+            }
             this.#pendingDeliveries.delete(observationId);
             this.#deliveryCursors.delete(observationId);
             return true;
         }
-        catch {
+        catch (error) {
             // Keep the exact durable envelope available for explicit retry.
+            console.error('canonical_ingress_delivery_pending', {
+                observationId,
+                reason: error instanceof Error ? error.message.slice(0, 256) : 'unknown_error',
+            });
             return false;
         }
     }
@@ -619,17 +758,26 @@ export class SolanaLogFusionEnvelopeCompiler {
  * the worker must prove its live connection is file-backed, in WAL mode, and synchronous=FULL. */
 export class StoreIngressJournal {
     #store;
+    #storeCall;
     constructor(store) {
+        if (new.target !== StoreIngressJournal)
+            throw new Error('INGRESS_UNTRUSTED_JOURNAL_SUBCLASS');
         const capability = getStoreIngressCapability(store);
         if (!capability)
             throw new Error('INGRESS_DURABLE_JOURNAL_REQUIRED');
         this.#store = capability;
+        this.#storeCall = (operation, body) => store.call(operation, body);
         storeIngressJournalCapabilities.set(this, capability);
         storeIngressJournalInstances.add(this);
+        Object.freeze(this);
     }
     async append(validated) {
         await this.#store.assertDurable();
         const { observation, envelopeId, compilerVersion, decodedEvents } = validated.compiledEnvelope;
+        const rawPayload = Uint8Array.from(observation.rawPayload);
+        if (createHash('sha256').update(rawPayload).digest('hex') !== observation.rawPayloadHash) {
+            throw new Error('RAW_PAYLOAD_HASH_MISMATCH_BEFORE_JOURNAL_SERIALIZATION');
+        }
         const { truthEvidence, validationId, validatorVersion } = validated;
         const payload = {
             schemaVersion: 1,
@@ -643,7 +791,7 @@ export class StoreIngressJournal {
             commitment: observation.commitment,
             signature: observation.signature,
             transactionVersion: observation.transactionVersion,
-            rawPayloadBase64: Buffer.from(observation.rawPayload).toString('base64'),
+            rawPayloadBase64: Buffer.from(rawPayload).toString('base64'),
             rawPayloadHash: observation.rawPayloadHash,
             ...(observation.rawPayloadEncoding && observation.rawPayloadEncoding !== 'UNSPECIFIED'
                 ? { rawPayloadEncoding: observation.rawPayloadEncoding }
@@ -736,15 +884,22 @@ export class StoreIngressJournal {
         }));
     }
     async acknowledgeDelivery(observationId, sequence, entryHash) {
+        if (reviewedStoreIngressJournalInstances.has(this))
+            throw new Error('INGRESS_ENGINE_ATOMIC_ACK_REQUIRED');
         await this.#store.assertDurable();
-        await this.#store.acknowledgeIngress(observationId, sequence, entryHash);
+        await this.#storeCall('acknowledge-ingress', JSON.stringify({ observationId, sequence, entryHash }));
     }
 }
+Object.freeze(CanonicalIngress.prototype);
+Object.freeze(StoreIngressJournal.prototype);
 export function createCanonicalSolanaIngress(options) {
-    const compiler = new SolanaLogFusionEnvelopeCompiler(options.connectionOrCoder);
+    // This is the only factory whose instances receive reviewed Engine authority.
+    // Caller-provided decoders, validators, and Anchor coders stay on the
+    // explicitly unreviewed CanonicalIngress construction path.
+    const compiler = new SolanaLogFusionEnvelopeCompiler();
     const validator = new DefaultTruthValidator();
     const journal = options.journal;
-    return new CanonicalIngress({
+    const ingress = new CanonicalIngress({
         compiler,
         validator,
         journal,
@@ -752,6 +907,16 @@ export function createCanonicalSolanaIngress(options) {
         downstreamSubscriber: options.onCommitted,
         runtimeTelemetry: options.runtimeTelemetry,
     });
+    if (storeIngressJournalInstances.has(journal)) {
+        const storeCapability = storeIngressJournalCapabilities.get(journal);
+        storeCapability?.markReviewedEngineIngress();
+        reviewedCanonicalIngressInstances.add(ingress);
+        if (storeCapability)
+            reviewedCanonicalIngressStores.set(ingress, storeCapability);
+        reviewedStoreIngressJournalInstances.add(journal);
+        Object.freeze(ingress);
+    }
+    return ingress;
 }
 /**
  * In-memory implementation of IngressDurableJournal for tests only. Production composition

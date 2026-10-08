@@ -40,7 +40,14 @@ test('decision trace preserves unknown evidence instead of fabricating positive 
   x.risks.get('a').safe=undefined;
   const trace=row(x).decisionTrace;
   assert.equal(trace.find(step=>step.stage==='TRANSACTIONS').observed,'Awaiting trade count');
-  assert.equal(trace.find(step=>step.stage==='CANONICAL_STATE').status,'PENDING');
+  assert.equal(trace.find(step=>step.stage==='CANONICAL_STATE').status,'PASS');
+  assert.equal(trace.find(step=>step.stage==='CANONICAL_STATE').meaning,'Single source observed (DexScreener) — non-blocking for paper simulation');
   assert.equal(trace.find(step=>step.stage==='RUG_SECURITY').status,'PENDING');
+
+  // In live mode, single-source observation remains PENDING until cross-validated
+  x.mode='live';
+  const liveTrace=row(x).decisionTrace;
+  assert.equal(liveTrace.find(step=>step.stage==='CANONICAL_STATE').status,'PENDING');
+  assert.equal(liveTrace.find(step=>step.stage==='CANONICAL_STATE').meaning,'Cross-provider validation incomplete');
 });
 

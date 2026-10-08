@@ -91,9 +91,12 @@ export class OperatorReadModel {
       latencyMs: p.lastSuccess > 0 && Number.isFinite(p.avgLatencyMs) ? p.avgLatencyMs : null,
       circuit: p.circuitState, reason: p.failureReason, capabilityAvailable: p.capabilityAvailable,
     }));
-    const feed = providers.find(p => p.id === 'PUMPPORTAL_WS');
+    const feed = providers.find(p => p.id === 'PUMPPORTAL_WS') || providers.find(p => p.id === 'DEXSCREENER') || providers.find(p => p.role === 'DISCOVERY_STREAM' || p.role === 'MARKET_ENRICHMENT');
     const conflicts = discovery.rows.filter(row => row.crossValidationStatus === 'CONFLICTING').map(row => ({mint: row.mint, reasonCode: 'MARKET_SOURCES_CONFLICT'}));
-    const marketState = conflicts.length ? 'CONFLICTING' : feed?.ageMs == null ? 'UNKNOWN' : discovery.feedStale || feed.ageMs > DISCOVERY_FRESH_MS ? 'STALE' : 'CURRENT';
+    const isPaperMode = gateway.mode === 'paper' || gateway.mode === 'shadow';
+    const hasFreshDiscovery = discovery.rows.some(row => Number.isFinite(row.at) && row.at > 0 && row.at <= now && now - row.at <= DISCOVERY_FRESH_MS);
+    const isFeedFresh = feed?.ageMs != null ? feed.ageMs <= DISCOVERY_FRESH_MS : (isPaperMode && hasFreshDiscovery);
+    const marketState = conflicts.length ? 'CONFLICTING' : (feed?.ageMs == null && (!isPaperMode || !hasFreshDiscovery)) ? 'UNKNOWN' : discovery.feedStale || !isFeedFresh ? 'STALE' : 'CURRENT';
     const halted = ['SAFETY_LOCKED', 'SHUTTING_DOWN'].includes(lifecycle);
     // Live adapters are absent. The simulator is nevertheless an explicit,
     // isolated paper capability and must not be presented as a live readiness.

@@ -10,7 +10,7 @@ export function selectFreshMarketObservation(rows, mint, poolAddress, now, maxAg
   if (!Array.isArray(rows) || typeof mint !== 'string' || typeof poolAddress !== 'string') return null;
   for (const row of rows) {
     const rowMint = row?.mint ?? row?.baseToken?.address;
-    const rowPool = row?.pair ?? row?.pairAddress;
+    const rowPool = row?.pair ?? row?.pairAddress ?? (rowMint === poolAddress ? poolAddress : undefined);
     const priceUsd = Number(row?.priceUsd ?? row?.price);
     const liquidityUsd = Number(row?.liquidityUsd ?? row?.liquidity?.usd ?? row?.liquidity);
     const observedAt = row?.observedAt ?? row?.at;

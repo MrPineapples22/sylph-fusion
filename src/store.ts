@@ -12,15 +12,36 @@ export interface StoreIngressCapability {
   appendAuditEvent(event: string, payload: Readonly<Record<string, unknown>>, stableEventId?: string): Promise<{ inserted: boolean; auditId?: number }>;
   getAuditEventByStableId(stableEventId: string): Promise<{ id: number; at: number; event: string | null; body: string | null; pruned?: boolean; eventHash?: string } | null>;
   getPendingIngress(afterSequence: number, limit: number): Promise<readonly { id: number; at: number; body: string; eventHash: string }[]>;
-  acknowledgeIngress(observationId: string, sequence: number, entryHash: string): Promise<void>;
+  markReviewedEngineIngress(): void;
+}
+export interface EngineProjectionCapability {
   loadEngineProjection(): Promise<{ sequence: number; observationId: string; entryHash: string; projectionJson: string; stateJson: string } | null>;
   commitEngineProjection(observationId: string, sequence: number, entryHash: string, projectionJson: string, stateJson: string): Promise<void>;
 }
 const storeIngressCapabilities = new WeakMap<object, StoreIngressCapability>();
+const engineProjectionCapabilities = new WeakMap<object, EngineProjectionCapability>();
+const reviewedEngineIngressStores = new WeakSet<object>();
+const storeTestHooks = new WeakMap<object, { terminateWorker(): Promise<void> }>();
+
+/** Test-only hook for simulating worker death without exposing its message port. */
+export function terminateStoreWorkerForTest(value: unknown): Promise<void> {
+  if (!value || typeof value !== 'object') throw new Error('STORE_TEST_HOOK_UNAVAILABLE');
+  const hook = storeTestHooks.get(value as object);
+  if (!hook) throw new Error('STORE_TEST_HOOK_UNAVAILABLE');
+  return hook.terminateWorker();
+}
 
 export function getStoreIngressCapability(value: unknown): StoreIngressCapability | null {
   if (!value || typeof value !== 'object') return null;
   return storeIngressCapabilities.get(value as object) ?? null;
+}
+
+// Used only by the restricted Engine projection module. The C1 auditor enforces
+// that module boundary; JS cannot hide a same-process module export from code
+// that deliberately imports internal source modules.
+export function getInternalEngineProjectionCapability(value: unknown): EngineProjectionCapability | null {
+  if (!value || typeof value !== 'object') return null;
+  return engineProjectionCapabilities.get(value as object) ?? null;
 }
 
 export class Store implements
@@ -41,6 +62,7 @@ export class Store implements
   #calls = new Map<number, { op: string; resolve: (value: string | null) => void; reject: (e: Error) => void }>();
   constructor(path: string) {
     this.#worker = new Worker(new URL('./db-worker.js', import.meta.url), { workerData: { path } });
+    storeTestHooks.set(this, { terminateWorker: async () => { await this.#worker.terminate(); } });
     this.#worker.on('message', m => {
       const error = storageErrorCodes.includes(m.code) ? new GenerationStorageError(m.code as StorageErrorCode,
         Number.isSafeInteger(m.sqliteCode) && m.sqliteCode >= 0 && m.sqliteCode <= 0x7fffffff ? m.sqliteCode : undefined) : new Error(m.error);
@@ -67,9 +89,9 @@ export class Store implements
         const text = await this.#call('get-pending-ingress', JSON.stringify({ afterSequence, limit }));
         return Object.freeze(text ? JSON.parse(text) : []);
       },
-      acknowledgeIngress: async (observationId: string, sequence: number, entryHash: string) => {
-        await this.#call('acknowledge-ingress', JSON.stringify({ observationId, sequence, entryHash }));
-      },
+      markReviewedEngineIngress: () => { reviewedEngineIngressStores.add(this); },
+    }));
+    engineProjectionCapabilities.set(this, Object.freeze({
       loadEngineProjection: async () => {
         const text = await this.#call('load-engine-projection');
         return text ? JSON.parse(text) : null;
@@ -96,8 +118,10 @@ export class Store implements
       catch (e) { this.#calls.delete(id); reject(e); }
     });
   }
-  get worker(): Worker { return this.#worker; }
   call(op: string, body?: string, event?: string, eventId?: string): Promise<string | null> {
+    if (reviewedEngineIngressStores.has(this) && (op === 'acknowledge-ingress' || op === 'commit-engine-projection')) {
+      return Promise.reject(new Error('ENGINE_PROJECTION_CAPABILITY_REQUIRED'));
+    }
     return this.#call(op, body, event, eventId);
   }
   async load(): Promise<State | null> { const text = await this.#call('load'); return text ? JSON.parse(text) : null; }

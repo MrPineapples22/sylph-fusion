@@ -2,10 +2,30 @@ import { Worker } from 'node:worker_threads';
 import { serializeRecoveryCertificate } from './platform/ingestion/recovery-certificate.js';
 import { GenerationStorageError, snapshotRegistration, validateGenerationId, storageErrorCodes } from './platform/storage/generation-identity.js';
 const storeIngressCapabilities = new WeakMap();
+const engineProjectionCapabilities = new WeakMap();
+const reviewedEngineIngressStores = new WeakSet();
+const storeTestHooks = new WeakMap();
+/** Test-only hook for simulating worker death without exposing its message port. */
+export function terminateStoreWorkerForTest(value) {
+    if (!value || typeof value !== 'object')
+        throw new Error('STORE_TEST_HOOK_UNAVAILABLE');
+    const hook = storeTestHooks.get(value);
+    if (!hook)
+        throw new Error('STORE_TEST_HOOK_UNAVAILABLE');
+    return hook.terminateWorker();
+}
 export function getStoreIngressCapability(value) {
     if (!value || typeof value !== 'object')
         return null;
     return storeIngressCapabilities.get(value) ?? null;
+}
+// Used only by the restricted Engine projection module. The C1 auditor enforces
+// that module boundary; JS cannot hide a same-process module export from code
+// that deliberately imports internal source modules.
+export function getInternalEngineProjectionCapability(value) {
+    if (!value || typeof value !== 'object')
+        return null;
+    return engineProjectionCapabilities.get(value) ?? null;
 }
 export class Store {
     #worker;
@@ -16,6 +36,7 @@ export class Store {
     #calls = new Map();
     constructor(path) {
         this.#worker = new Worker(new URL('./db-worker.js', import.meta.url), { workerData: { path } });
+        storeTestHooks.set(this, { terminateWorker: async () => { await this.#worker.terminate(); } });
         this.#worker.on('message', m => {
             const error = storageErrorCodes.includes(m.code) ? new GenerationStorageError(m.code, Number.isSafeInteger(m.sqliteCode) && m.sqliteCode >= 0 && m.sqliteCode <= 0x7fffffff ? m.sqliteCode : undefined) : new Error(m.error);
             if (m.fatal) {
@@ -49,9 +70,9 @@ export class Store {
                 const text = await this.#call('get-pending-ingress', JSON.stringify({ afterSequence, limit }));
                 return Object.freeze(text ? JSON.parse(text) : []);
             },
-            acknowledgeIngress: async (observationId, sequence, entryHash) => {
-                await this.#call('acknowledge-ingress', JSON.stringify({ observationId, sequence, entryHash }));
-            },
+            markReviewedEngineIngress: () => { reviewedEngineIngressStores.add(this); },
+        }));
+        engineProjectionCapabilities.set(this, Object.freeze({
             loadEngineProjection: async () => {
                 const text = await this.#call('load-engine-projection');
                 return text ? JSON.parse(text) : null;
@@ -88,8 +109,10 @@ export class Store {
             }
         });
     }
-    get worker() { return this.#worker; }
     call(op, body, event, eventId) {
+        if (reviewedEngineIngressStores.has(this) && (op === 'acknowledge-ingress' || op === 'commit-engine-projection')) {
+            return Promise.reject(new Error('ENGINE_PROJECTION_CAPABILITY_REQUIRED'));
+        }
         return this.#call(op, body, event, eventId);
     }
     async load() { const text = await this.#call('load'); return text ? JSON.parse(text) : null; }
