@@ -1,15 +1,11 @@
 {
   "auditor": "scripts/audit-single-authority-door.mjs",
   "auditorVersion": "4.0.0-c1-c4",
-  "timestamp": "2026-10-08T16:21:33.044Z",
-  "commitSha": "4151a7333361dc71f65725e3254dcf62c134176a",
-  "treeSha": "c66ad8160bbe1de0f48cdb5f6c5caf798bc2eb2d",
-  "workingTreeState": "M docs/audit/evidence/c1-single-authority-door.json\n M docs/audit/evidence/c2-mutation-exclusivity.json\n M docs/audit/evidence/c3-decision-provenance.json\n M docs/audit/evidence/c4-authority-ancestry.json\n M docs/audit/unresolved_risks.md\n M test/certification-negative-controls.test.mjs\n M test/generate-system-integration-certificate.test.mjs",
-  "workingTreeFileHashes": {
-    "docs/audit/unresolved_risks.md": "93de490dd99bb48076185766f975522a889a1dac2d02c736d9c44e1568613c32",
-    "test/certification-negative-controls.test.mjs": "67e357cbcd915b463bf17b552b2ada350252e63864ad28e7030e47b0c0349f4e",
-    "test/generate-system-integration-certificate.test.mjs": "ea29303208a21b70201584aa01833ae3fb8043e69848706cebef35af0f2afea1"
-  },
+  "timestamp": "2026-10-08T16:52:18.254Z",
+  "commitSha": "0393ef2f99f014be6d032902b0caca64c83fe159",
+  "treeSha": "a713ad94e13a5563ec82d1437dd3508947dd7285",
+  "workingTreeState": "",
+  "workingTreeFileHashes": {},
   "metrics": {
     "RAW_TO_ENGINE_PATHS": 0,
     "RAW_TO_RISK_PATHS": 0,
@@ -72,7 +68,7 @@
   ],
   "blockers": [],
   "auditedFiles": {
-    "scripts/audit-single-authority-door.mjs": "9497da8b37ffef23ff149bd615451dd79898d1838a49ee49899739b567fa9609",
+    "scripts/audit-single-authority-door.mjs": "7120949c9039417ff315802a7e6dfcb1301413d4e7856db076b9fd802e0fdaf6",
     "package.json": "afa43724dd47f1724ecf0d3ad7042a4d0c03f0608241e9de345be5062a65fb84",
     "package-lock.json": "b3d47545d7b7279926d49711ffdf7ba179dfbc9a1840dc38a4f32962c48266f3",
     "tsconfig.json": "5ab104f8d8ae19b1ceae721102489547b19dd362ab95f852cc6f83757662a737",
@@ -128,5 +124,5 @@
     "UNIFIED_PIPELINE_CERTIFIED": "FALSE",
     "LIVE_CAPITAL_AUTHORITY": "BLOCKED"
   },
-  "manifestHash": "a65e3b7a722eaf23a2a62d835870dc18ce00213bbbf743fad8e444225372ea72"
+  "manifestHash": "422d39819e3a9588390ec5115c3308e4c899c44f3fe729205363f8a5e66999e0"
 }
