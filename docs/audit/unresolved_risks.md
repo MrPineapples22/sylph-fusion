@@ -1405,3 +1405,29 @@ This follows the outbox pattern's stable event identity and consumer deduplicati
 - Focused suites: `test/platform/canonical-ingress-durability.test.mjs` and `test/platform/canonical-ingress-crash-recovery.test.mjs` passed 11/11 with 100% assertions green.
 - Engine build: `npm run build:engine` compiled cleanly with 0 diagnostics.
 
+## Research cycle 148 — wire payload representation metadata and versioned outbox recovery — 2026-10-07
+
+**Findings and architecture context.**
+1. `C1-INGRESS-002` required explicit wire representation metadata to be preserved throughout observation creation, live Feed ingestion, and durable SQLite outbox storage and recovery.
+2. `C1-INGRESS-001` left open that pending SQLite outbox records failed closed unconditionally if compiler or validator versions drifted or if multiple compiler versions coexisted over time; a reviewed version registry contract was needed to govern valid versions and cross-version recovery.
+
+**Implementation.**
+- `src/platform/ingress/types.ts`: Defined `RawPayloadEncoding` (`'UNSPECIFIED' | 'JSON_FRAME_BYTES' | 'JSON_CANONICAL' | 'DECODED_PROTOBUF_JSON_CANONICAL' | 'PROTOBUF_WIRE_BYTES'`) and `IngressVersionRegistry` interface. Attached `rawPayloadEncoding` to `UnvalidatedObservationData`.
+- `src/platform/ingress/observation-factory.ts`: Validated `rawPayloadEncoding` against allowed values. Bound `rawPayloadEncoding` into observation identity hash deterministically only when explicitly supplied and non-unspecified, guaranteeing backwards-compatible hash identity.
+- `src/feed.ts`: Tagged incoming frames with `JSON_FRAME_BYTES` (WebSocket), `DECODED_PROTOBUF_JSON_CANONICAL` (Yellowstone gRPC updates), and `JSON_CANONICAL` (fallback logs). Ensured consistent fallback wrapper construction for Yellowstone observations when raw payload is omitted.
+- `src/platform/ingress/canonical-ingress.ts`:
+  - Implemented `DefaultIngressVersionRegistry` with configurable supported compiler and validator versions.
+  - Extended `FusionEnvelopeCompiler` and `TruthValidator` with `compileForVersion` and `validateForVersion` and `isVersionSupported`.
+  - Updated `restoreCommittedEnvelope` to validate compiler and validator versions against `IngressVersionRegistry`, throwing `INGRESS_OUTBOX_COMPILER_DRIFT` and `INGRESS_OUTBOX_VALIDATION_IDENTITY_MISMATCH` if unsupported.
+  - Serialized and restored `rawPayloadEncoding` in `StoreIngressJournal` outbox table rows.
+- `test/platform/canonical-ingress-durability.test.mjs`: Added tests for wire encoding persistence/restoration, invalid encoding rejection, fail-closed compiler drift, fail-closed validator drift, version registry rejection, and successful multi-version recovery.
+- `test/feed-validation-boundary.test.mjs`: Added assertions verifying wire representation metadata across transports.
+- `docs/audit/defect-ledger.json`: Updated `C1-INGRESS-001` to `RESOLVED` and updated `C1-INGRESS-002` evidence.
+
+**Verification.**
+- Focused suites: `test/platform/canonical-ingress-durability.test.mjs`, `test/feed-validation-boundary.test.mjs`, and `test/platform/canonical-ingress-crash-recovery.test.mjs` passed 25/25 (100% green).
+- Full certified suite: `npm run test:certified` passed 547/547 tests across Core, Intelligence, Platform, and Terminal suites with 0 failures, generating test run receipt `527e71dad4b36bfdfdfe02bd237d546f33b543bbf21b99209ba58640d1699299`.
+- Static connectivity & C1 physical audit: `npm run audit:connectivity:static` passed C0-C4; `npm run audit:c1` reported all 13 physical stopping metrics strictly 0 and C1-C4 PASS.
+- Convergence certification: `npm run audit:convergence:certify` halted strictly at C5 static ceiling.
+
+

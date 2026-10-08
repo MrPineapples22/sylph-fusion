@@ -56,6 +56,34 @@ test('accepted provider observations carry immutable provenance and a payload ha
   assert.equal(Object.isFrozen(observation),true);
   assert.equal(observation.transactionVersion,'unknown');
   assert.equal(observation.schemaVersion,'solana-program-logs/v1');
+  assert.equal(observation.rawPayloadEncoding,'JSON_CANONICAL');
+});
+
+test('feed carries explicit wire representation metadata across transports', async () => {
+  const events = [];
+  const f = feed(e => events.push(e), { *parseLogs() { yield { name: 'tradeEvent', data: {} }; } });
+
+  await f.accept('sig-ws', 101, ['Program log: valid'], {
+    sourceId: 'ws-1', providerId: 'https://ws.invalid', transport: 'websocket.logsSubscribe',
+    commitment: 'confirmed',
+    rawPayload: Buffer.from(JSON.stringify({ params: { result: { value: { logs: ['Program log: valid'] } } } })),
+    rawPayloadEncoding: 'JSON_FRAME_BYTES',
+  });
+  assert.equal(events[0].observation.rawPayloadEncoding, 'JSON_FRAME_BYTES');
+
+  await f.accept('sig-yellowstone', 102, ['Program log: valid'], {
+    sourceId: 'yellowstone-1', providerId: 'https://grpc.invalid', transport: 'yellowstone.transaction.logs',
+    commitment: 'confirmed',
+    rawPayload: Buffer.from(JSON.stringify({ transaction: { transaction: { meta: { logMessages: ['Program log: valid'] } } } })),
+    rawPayloadEncoding: 'DECODED_PROTOBUF_JSON_CANONICAL',
+  });
+  assert.equal(events[1].observation.rawPayloadEncoding, 'DECODED_PROTOBUF_JSON_CANONICAL');
+
+  await f.accept('sig-yellowstone-inferred', 103, ['Program log: valid'], {
+    sourceId: 'yellowstone-2', providerId: 'https://grpc.invalid', transport: 'yellowstone.transaction.logs',
+    commitment: 'confirmed',
+  });
+  assert.equal(events[2].observation.rawPayloadEncoding, 'DECODED_PROTOBUF_JSON_CANONICAL');
 });
 
 test('observation identity binds provider and transport, and unsafe source metadata is rejected', async () => {

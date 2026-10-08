@@ -17,6 +17,7 @@ import type { ProcessingIntent } from '../ingestion/types.js';
 import type {
   Commitment,
   Hash256,
+  RawPayloadEncoding,
   UnvalidatedObservation,
   UnvalidatedObservationData,
 } from './types.js';
@@ -30,6 +31,13 @@ const VALID_PROCESSING_INTENTS = new Set<ProcessingIntent>([
   'HISTORICAL_REPAIR',
   'DETERMINISTIC_REPLAY',
   'SHADOW_REPLAY',
+]);
+const VALID_RAW_PAYLOAD_ENCODINGS = new Set<string>([
+  'UNSPECIFIED',
+  'JSON_FRAME_BYTES',
+  'JSON_CANONICAL',
+  'DECODED_PROTOBUF_JSON_CANONICAL',
+  'PROTOBUF_WIRE_BYTES',
 ]);
 const factoryObservations = new WeakSet<object>();
 
@@ -48,6 +56,7 @@ export interface CreateObservationParams {
   readonly signature?: string | null;
   readonly transactionVersion?: number | 'legacy' | 'unknown';
   readonly rawPayload: Uint8Array | ArrayBuffer | Buffer;
+  readonly rawPayloadEncoding?: RawPayloadEncoding;
   readonly schemaVersion: string;
   readonly processingIntent: ProcessingIntent;
 }
@@ -135,6 +144,12 @@ export function createUnvalidatedObservation(params: CreateObservationParams): U
     params.rawPayload.byteLength
   ).slice(); // Deep copy ensuring isolation
 
+  if (params.rawPayloadEncoding !== undefined && !VALID_RAW_PAYLOAD_ENCODINGS.has(params.rawPayloadEncoding)) {
+    throw new Error(`OBSERVATION_INVALID_ENCODING: Invalid raw payload encoding '${params.rawPayloadEncoding}'`);
+  }
+  const hasEncoding = params.rawPayloadEncoding !== undefined && params.rawPayloadEncoding !== 'UNSPECIFIED';
+  const rawPayloadEncoding = hasEncoding ? params.rawPayloadEncoding! : 'UNSPECIFIED';
+
   const rawPayloadHash = createHash('sha256')
     .update(rawPayload)
     .digest('hex') as Hash256;
@@ -150,6 +165,7 @@ export function createUnvalidatedObservation(params: CreateObservationParams): U
     signature,
     transactionVersion: params.transactionVersion ?? 'unknown',
     rawPayloadHash,
+    ...(hasEncoding ? { rawPayloadEncoding: params.rawPayloadEncoding } : {}),
     schemaVersion: params.schemaVersion,
     processingIntent: params.processingIntent,
   });
@@ -171,6 +187,7 @@ export function createUnvalidatedObservation(params: CreateObservationParams): U
     transactionVersion: params.transactionVersion ?? 'unknown',
     rawPayload,
     rawPayloadHash,
+    rawPayloadEncoding,
     schemaVersion: params.schemaVersion,
     processingIntent: params.processingIntent,
   };

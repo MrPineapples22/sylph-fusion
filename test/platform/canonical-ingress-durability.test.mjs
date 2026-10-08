@@ -7,7 +7,13 @@ import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
 import { Store, getStoreIngressCapability } from '../../dist/store.js';
 import { createUnvalidatedObservation } from '../../dist/platform/ingress/observation-factory.js';
-import { CanonicalIngress, DefaultFusionEnvelopeCompiler, DefaultTruthValidator, StoreIngressJournal } from '../../dist/platform/ingress/canonical-ingress.js';
+import {
+  CanonicalIngress,
+  DefaultFusionEnvelopeCompiler,
+  DefaultIngressVersionRegistry,
+  DefaultTruthValidator,
+  StoreIngressJournal,
+} from '../../dist/platform/ingress/canonical-ingress.js';
 
 const observation = (receivedAtMs = Date.now()) => createUnvalidatedObservation({
   sourceId: 'test-source', providerId: 'test-provider', transport: 'mock', receivedAtMs,
@@ -177,4 +183,232 @@ test('truth validator strictly marks transaction authenticity and block inclusio
   assert.equal(evidence.inclusionProof, 'UNVERIFIED_LOG_DIGEST', 'block inclusion proof must be marked unverified');
   assert.equal(evidence.schemaCompliant, false, 'generic compiler must not claim schema compliance');
   assert.equal(evidence.verificationMethod, 'OBSERVATION_HASH_AND_LOG_DECODING_ONLY');
+});
+
+test('rawPayloadEncoding is validated, preserved in observation, archived in outbox, and restored on recovery', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'ingress-encoding-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const dbPath = join(dir, 'state.sqlite');
+
+  const obs = createUnvalidatedObservation({
+    sourceId: 'encoding-test',
+    providerId: 'quicknode-mainnet',
+    transport: 'websocket.logsSubscribe',
+    receivedAtMs: Date.now(),
+    slot: 200,
+    commitment: 'confirmed',
+    signature: 'sig-encoding-test-11111111111111111111111',
+    rawPayload: Buffer.from('{"method":"logsNotification"}'),
+    rawPayloadEncoding: 'JSON_FRAME_BYTES',
+    schemaVersion: 'solana-json-rpc-frame/v1',
+    processingIntent: 'LIVE',
+  });
+  assert.equal(obs.rawPayloadEncoding, 'JSON_FRAME_BYTES');
+
+  let store = new Store(dbPath);
+  let journal = new StoreIngressJournal(store);
+  try {
+    const ingress = new CanonicalIngress({
+      compiler: new DefaultFusionEnvelopeCompiler(),
+      validator: new DefaultTruthValidator(),
+      journal,
+      downstreamSubscriber: async () => {
+        throw new Error('SIMULATE_CRASH_BEFORE_ACK');
+      },
+    });
+    const receipt = await ingress.submit(obs);
+    assert.equal(receipt.status, 'REJECTED');
+    const [pending] = await journal.getPendingDeliveries(0, 10);
+    assert.ok(pending);
+    const parsedBody = JSON.parse(pending.body);
+    assert.equal(parsedBody.rawPayloadEncoding, 'JSON_FRAME_BYTES');
+  } finally { await store.close(); }
+
+  // Reopen and recover
+  store = new Store(dbPath);
+  try {
+    journal = new StoreIngressJournal(store);
+    let recoveredEncoding;
+    const restartedIngress = new CanonicalIngress({
+      compiler: new DefaultFusionEnvelopeCompiler(),
+      validator: new DefaultTruthValidator(),
+      journal,
+      downstreamSubscriber: async committed => {
+        recoveredEncoding = committed.validatedEnvelope.compiledEnvelope.observation.rawPayloadEncoding;
+      },
+    });
+    const recovered = await restartedIngress.recoverPendingDeliveries();
+    assert.equal(recovered, 1);
+    assert.equal(recoveredEncoding, 'JSON_FRAME_BYTES');
+  } finally { await store.close(); }
+});
+
+test('createUnvalidatedObservation strictly rejects invalid rawPayloadEncoding', () => {
+  assert.throws(() => {
+    createUnvalidatedObservation({
+      sourceId: 'test-source',
+      providerId: 'test-provider',
+      transport: 'mock',
+      receivedAtMs: Date.now(),
+      rawPayload: Buffer.from('payload'),
+      rawPayloadEncoding: 'FORGED_ENCODING',
+      schemaVersion: 'fixture/v1',
+      processingIntent: 'LIVE',
+    });
+  }, /OBSERVATION_INVALID_ENCODING/);
+});
+
+test('pending records recovery fails closed with INGRESS_OUTBOX_COMPILER_DRIFT on unreviewed compiler version drift', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'ingress-compiler-drift-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const dbPath = join(dir, 'state.sqlite');
+
+  const obs = observation();
+  let store = new Store(dbPath);
+  let journal = new StoreIngressJournal(store);
+  try {
+    const ingress = new CanonicalIngress({
+      compiler: new DefaultFusionEnvelopeCompiler('1.0.0'),
+      validator: new DefaultTruthValidator('1.0.0'),
+      journal,
+      downstreamSubscriber: async () => {
+        throw new Error('SIMULATE_CRASH');
+      },
+    });
+    await ingress.submit(obs);
+    assert.equal((await journal.getPendingDeliveries(0, 10)).length, 1);
+  } finally { await store.close(); }
+
+  // Restart with unreviewed compiler version '2.0.0'
+  store = new Store(dbPath);
+  try {
+    journal = new StoreIngressJournal(store);
+    const restartedIngress = new CanonicalIngress({
+      compiler: new DefaultFusionEnvelopeCompiler('2.0.0'),
+      validator: new DefaultTruthValidator('1.0.0'),
+      journal,
+    });
+    await assert.rejects(restartedIngress.recoverPendingDeliveries(), /INGRESS_OUTBOX_COMPILER_DRIFT/);
+  } finally { await store.close(); }
+});
+
+test('pending records recovery fails closed with INGRESS_OUTBOX_VALIDATION_IDENTITY_MISMATCH on unreviewed validator version drift', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'ingress-validator-drift-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const dbPath = join(dir, 'state.sqlite');
+
+  const obs = observation();
+  let store = new Store(dbPath);
+  let journal = new StoreIngressJournal(store);
+  try {
+    const ingress = new CanonicalIngress({
+      compiler: new DefaultFusionEnvelopeCompiler('1.0.0'),
+      validator: new DefaultTruthValidator('1.0.0'),
+      journal,
+      downstreamSubscriber: async () => {
+        throw new Error('SIMULATE_CRASH');
+      },
+    });
+    await ingress.submit(obs);
+    assert.equal((await journal.getPendingDeliveries(0, 10)).length, 1);
+  } finally { await store.close(); }
+
+  // Restart with unreviewed validator version '2.0.0'
+  store = new Store(dbPath);
+  try {
+    journal = new StoreIngressJournal(store);
+    const restartedIngress = new CanonicalIngress({
+      compiler: new DefaultFusionEnvelopeCompiler('1.0.0'),
+      validator: new DefaultTruthValidator('2.0.0'),
+      journal,
+    });
+    await assert.rejects(restartedIngress.recoverPendingDeliveries(), /INGRESS_OUTBOX_VALIDATION_IDENTITY_MISMATCH/);
+  } finally { await store.close(); }
+});
+
+test('pending records recovery fails closed when version registry rejects unreviewed compiler or validator version', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'ingress-registry-reject-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const dbPath = join(dir, 'state.sqlite');
+
+  const obs = observation();
+  let store = new Store(dbPath);
+  let journal = new StoreIngressJournal(store);
+  try {
+    const ingress = new CanonicalIngress({
+      compiler: new DefaultFusionEnvelopeCompiler('1.0.0'),
+      validator: new DefaultTruthValidator('1.0.0'),
+      journal,
+      downstreamSubscriber: async () => {
+        throw new Error('SIMULATE_CRASH');
+      },
+    });
+    await ingress.submit(obs);
+  } finally { await store.close(); }
+
+  // Restart with registry that only allows version '2.0.0'
+  store = new Store(dbPath);
+  try {
+    journal = new StoreIngressJournal(store);
+    const versionRegistry = new DefaultIngressVersionRegistry({
+      currentCompilerVersion: '2.0.0',
+      supportedCompilerVersions: ['2.0.0'],
+      currentValidatorVersion: '1.0.0',
+      supportedValidatorVersions: ['1.0.0'],
+    });
+    const restartedIngress = new CanonicalIngress({
+      compiler: new DefaultFusionEnvelopeCompiler('2.0.0', ['1.0.0', '2.0.0']),
+      validator: new DefaultTruthValidator('1.0.0'),
+      journal,
+      versionRegistry,
+    });
+    await assert.rejects(restartedIngress.recoverPendingDeliveries(), /INGRESS_OUTBOX_UNSUPPORTED_COMPILER_VERSION/);
+  } finally { await store.close(); }
+});
+
+test('pending records recovery succeeds when historical version is reviewed in version registry and supported versions', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'ingress-registry-pass-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const dbPath = join(dir, 'state.sqlite');
+
+  const obs = observation();
+  let store = new Store(dbPath);
+  let journal = new StoreIngressJournal(store);
+  try {
+    const ingress = new CanonicalIngress({
+      compiler: new DefaultFusionEnvelopeCompiler('1.0.0'),
+      validator: new DefaultTruthValidator('1.0.0'),
+      journal,
+      downstreamSubscriber: async () => {
+        throw new Error('SIMULATE_CRASH');
+      },
+    });
+    await ingress.submit(obs);
+  } finally { await store.close(); }
+
+  // Restart with current compiler '2.0.0' and validator '2.0.0', but with '1.0.0' in reviewed supported versions
+  store = new Store(dbPath);
+  try {
+    journal = new StoreIngressJournal(store);
+    const versionRegistry = new DefaultIngressVersionRegistry({
+      currentCompilerVersion: '2.0.0',
+      supportedCompilerVersions: ['1.0.0', '2.0.0'],
+      currentValidatorVersion: '2.0.0',
+      supportedValidatorVersions: ['1.0.0', '2.0.0'],
+    });
+    let delivered = 0;
+    const restartedIngress = new CanonicalIngress({
+      compiler: new DefaultFusionEnvelopeCompiler('2.0.0', ['1.0.0', '2.0.0']),
+      validator: new DefaultTruthValidator('2.0.0', ['1.0.0', '2.0.0']),
+      journal,
+      versionRegistry,
+      downstreamSubscriber: async () => {
+        delivered++;
+      },
+    });
+    const recovered = await restartedIngress.recoverPendingDeliveries();
+    assert.equal(recovered, 1);
+    assert.equal(delivered, 1);
+    assert.equal((await journal.getPendingDeliveries(0, 10)).length, 0);
+  } finally { await store.close(); }
 });

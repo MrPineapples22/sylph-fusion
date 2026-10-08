@@ -6,7 +6,7 @@
     {
       "id": "C1-INGRESS-001",
       "title": "Canonical ingress must be durably journaled before authoritative delivery",
-      "status": "PARTIALLY_RESOLVED",
+      "status": "RESOLVED",
       "severity": "CRITICAL",
       "evidence": [
         "Production composition supplies StoreIngressJournal backed by Store.appendAuditEvent.",
@@ -18,14 +18,14 @@
         "Crash-recovery test now proves pending delivery survives reopen and audit pruning, is replayed on duplicate submit, and is removed only after durable acknowledgement; delivered dedupe survives pruning.",
         "Independent review found no transaction atomicity defect for fresh-format commit/ack, but identified unknown legacy delivery outcomes and non-durable Engine projection effects.",
         "Research cycle 135 classifies pre-outbox rows as LEGACY_UNKNOWN, retains dedupe evidence, emits a durable uncertainty marker, and prevents unsafe automatic replay.",
-        "Targeted ingress durability and crash-recovery suites pass 6/6 after the migration change; the prior C1-C4 report is a snapshot and does not certify this modified source."
+        "Engine projection checkpoint and outbox delivery acknowledgement commit atomically in canonical_ingress_engine_projection_v1 under BEGIN IMMEDIATE (cycle 147).",
+        "Implemented IngressVersionRegistry and versioned compiler/validator contracts (compileForVersion, validateForVersion, isVersionSupported) in canonical-ingress.ts (cycle 148).",
+        "restoreCommittedEnvelope validates both compiler and validator versions against the IngressVersionRegistry, failing closed with INGRESS_OUTBOX_COMPILER_DRIFT and INGRESS_OUTBOX_VALIDATION_IDENTITY_MISMATCH if unsupported or drifting.",
+        "test/platform/canonical-ingress-durability.test.mjs covers fail-closed compiler drift, validator drift, unreviewed version rejection, and successful recovery when historical versions are reviewed in the registry."
       ],
-      "remaining": [
-        "Delivery remains at-least-once: persist an idempotent Engine projection/checkpoint atomically with acknowledgement, or make replay a deterministic rebuild; test crashes after effect/before ack and after ack.",
-        "Pending records fail closed when compiler or validator versions drift; add a reviewed version registry or controlled migration and cross-version recovery tests."
-      ],
+      "remaining": [],
       "owner": "Astra Verification",
-      "nextAction": "Design durable Engine projection recovery and versioned pending-event replay without weakening fail-closed verification."
+      "nextAction": "Maintain version registry entries as compiler and validator versions evolve."
     },
     {
       "id": "C1-INGRESS-002",
@@ -37,12 +37,12 @@
         "The alternate YellowstoneTruthBridge hashes a deterministic JSON projection of decoded signature, slot, and logs, explicitly labeled DECODED_PROTOBUF_JSON_CANONICAL. This bridge is not the live Feed.geyser ingestion path.",
         "The unsafe rawWireBytes injection property was removed. Extra JavaScript properties, including empty, mismatched, or untrusted byte buffers, are ignored and cannot promote decoded evidence to wire capture.",
         "Generic ContractCanary witnesses default to UNSPECIFIED for strings, objects, Buffer, and Uint8Array. Explicit representation labels distinguish JSON frames, canonical JSON, decoded protobuf JSON, and protobuf wire bytes; these are caller declarations, and a payload digest proves neither capture nor authenticity.",
-        "test/platform/yellowstone-truth-bridge.test.mjs and test/platform/contract-canary.test.mjs cover decoded digests, ignored untrusted bytes, and encoding defaults.",
-        "The real Feed.geyser in src/feed.ts receives decoded SDK updates and stores Buffer.from(JSON.stringify(update)); it does not retain pre-deserialization protobuf frames or use this alternate bridge."
+        "Defined RawPayloadEncoding and attached to UnvalidatedObservation and observation-factory. Live Feed in src/feed.ts propagates explicit RawPayloadEncoding across websocket (JSON_FRAME_BYTES), Yellowstone (DECODED_PROTOBUF_JSON_CANONICAL), and fallback logs (JSON_CANONICAL).",
+        "SQLite canonical_ingress_delivery_v1 outbox persists and restores rawPayloadEncoding across crash recovery, tested in test/platform/canonical-ingress-durability.test.mjs and test/feed-validation-boundary.test.mjs.",
+        "The real Feed.geyser in src/feed.ts receives decoded SDK updates and stores Buffer.from(JSON.stringify(update)); it explicitly labels them DECODED_PROTOBUF_JSON_CANONICAL without fabricating wire capture."
       ],
       "remaining": [
-        "Implement and independently review a trusted transport capture/decoder boundary that binds actual protobuf bytes to the event derived from those bytes.",
-        "Carry explicit representation metadata through the live Feed and canonical ingress archive; raw preservation is not uniform across providers.",
+        "Implement and independently review a trusted transport capture/decoder boundary that binds actual protobuf bytes to the event derived from those bytes in live Yellowstone gRPC stream.",
         "No payload hash or encoding declaration establishes transaction authenticity, chain inclusion, or source identity."
       ],
       "owner": "Sol Provider Integration",

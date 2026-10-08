@@ -9,7 +9,7 @@ import { IngestionGapReconciler } from './platform/ingestion/gap-reconciler.js';
 import type { RawObservationEnvelope, ProcessingIntent } from './platform/ingestion/types.js';
 import type { ObservationIngressPort, ObservationSource } from './platform/ingress/port.js';
 import { createUnvalidatedObservation } from './platform/ingress/observation-factory.js';
-import type { IngressReceipt, UnvalidatedObservation } from './platform/ingress/types.js';
+import type { IngressReceipt, RawPayloadEncoding, UnvalidatedObservation } from './platform/ingress/types.js';
 
 function providerLabel(endpoint: string): string {
   try { return new URL(endpoint).origin; }
@@ -67,6 +67,7 @@ export class Feed implements ObservationSource {
       allowLate?: boolean;
       processingIntent?: ProcessingIntent;
       rawPayload?: Uint8Array;
+      rawPayloadEncoding?: RawPayloadEncoding;
     } = { sourceId: 'unknown', providerId: 'unknown', transport: 'unknown', commitment: 'unknown' }
   ): Promise<IngressReceipt | void> {
     const now = Date.now();
@@ -99,7 +100,19 @@ export class Feed implements ObservationSource {
     try {
       // WebSocket supplies the original JSON-RPC frame. Yellowstone exposes decoded
       // protobuf updates, so its payload is explicitly a canonical observation encoding.
-      const rawPayload = source.rawPayload ?? Buffer.from(JSON.stringify(logs));
+      const rawPayload = source.rawPayload ?? (
+        source.transport === 'yellowstone.transaction.logs'
+          ? Buffer.from(JSON.stringify({ transaction: { transaction: { meta: { logMessages: logs } } } }))
+          : Buffer.from(JSON.stringify(logs))
+      );
+      const rawPayloadEncoding: RawPayloadEncoding =
+        source.rawPayloadEncoding ?? (
+          source.transport === 'yellowstone.transaction.logs'
+            ? 'DECODED_PROTOBUF_JSON_CANONICAL'
+            : source.rawPayload
+            ? 'JSON_FRAME_BYTES'
+            : 'JSON_CANONICAL'
+        );
       observation = createUnvalidatedObservation({
         sourceId: source.sourceId,
         providerId: source.providerId,
@@ -111,6 +124,7 @@ export class Feed implements ObservationSource {
         signature,
         transactionVersion: 'unknown',
         rawPayload,
+        rawPayloadEncoding,
         schemaVersion: source.transport === 'yellowstone.transaction.logs'
           ? 'yellowstone-update-json/v1'
           : source.rawPayload ? 'solana-json-rpc-frame/v1' : 'solana-program-logs/v1',
@@ -201,7 +215,14 @@ export class Feed implements ObservationSource {
             if (m.method === 'logsNotification' && m.params?.result?.value?.err === null) {
               const r = m.params.result;
               const frameBytes = typeof raw === 'string' ? Buffer.from(raw) : Buffer.from(raw as Buffer);
-              void this.accept(r.value.signature, r.context.slot, r.value.logs, { sourceId: `solana-ws-${index}`, providerId: providerLabel(url), transport: 'websocket.logsSubscribe', commitment: 'confirmed', rawPayload: frameBytes });
+              void this.accept(r.value.signature, r.context.slot, r.value.logs, {
+                sourceId: `solana-ws-${index}`,
+                providerId: providerLabel(url),
+                transport: 'websocket.logsSubscribe',
+                commitment: 'confirmed',
+                rawPayload: frameBytes,
+                rawPayloadEncoding: 'JSON_FRAME_BYTES',
+              });
             }
           } catch { log('websocket_message_rejected', { endpointIndex: index }); }
         });
@@ -239,7 +260,14 @@ export class Feed implements ObservationSource {
           if (this.stopped) break;
           if (update.ping) stream.write({ ...request, ping: { id: 1 } });
           const tx = update.transaction?.transaction;
-          if (tx?.meta && !tx.meta.err) await this.accept(bs58.encode(tx.signature), Number(update.transaction.slot), tx.meta.logMessages, { sourceId: 'yellowstone-grpc', providerId: providerLabel(this.cfg.YELLOWSTONE_URL), transport: 'yellowstone.transaction.logs', commitment: 'confirmed', rawPayload: Buffer.from(JSON.stringify(update)) });
+          if (tx?.meta && !tx.meta.err) await this.accept(bs58.encode(tx.signature), Number(update.transaction.slot), tx.meta.logMessages, {
+            sourceId: 'yellowstone-grpc',
+            providerId: providerLabel(this.cfg.YELLOWSTONE_URL),
+            transport: 'yellowstone.transaction.logs',
+            commitment: 'confirmed',
+            rawPayload: Buffer.from(JSON.stringify(update)),
+            rawPayloadEncoding: 'DECODED_PROTOBUF_JSON_CANONICAL',
+          });
         }
       } catch { log('yellowstone_reconnecting'); }
       finally { if (watchdog) clearInterval(watchdog); this.grpcStream?.destroy(); this.grpcStream = undefined; try { client?._client?.close?.(); } catch {} }

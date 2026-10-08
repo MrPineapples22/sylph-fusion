@@ -42,6 +42,8 @@ import type {
   DurabilityBarrier,
   Hash256,
   IngressReceipt,
+  IngressVersionRegistry,
+  RawPayloadEncoding,
   TruthEvidence,
   UnvalidatedObservation,
   ValidatedFusionEnvelope,
@@ -52,6 +54,8 @@ import { RuntimeTelemetryCapture, type RuntimeTelemetryOptions, type RuntimeTele
 
 export interface FusionEnvelopeCompiler {
   compile(observation: UnvalidatedObservation): Promise<CompiledFusionEnvelope> | CompiledFusionEnvelope;
+  compileForVersion?(observation: UnvalidatedObservation, version: string): Promise<CompiledFusionEnvelope> | CompiledFusionEnvelope;
+  isVersionSupported?(version: string): boolean;
 }
 
 export type ValidationResult =
@@ -60,6 +64,35 @@ export type ValidationResult =
 
 export interface TruthValidator {
   validate(compiled: CompiledFusionEnvelope): Promise<ValidationResult> | ValidationResult;
+  validateForVersion?(compiled: CompiledFusionEnvelope, version: string): Promise<ValidationResult> | ValidationResult;
+  isVersionSupported?(version: string): boolean;
+}
+
+export class DefaultIngressVersionRegistry implements IngressVersionRegistry {
+  readonly currentCompilerVersion: string;
+  readonly supportedCompilerVersions: ReadonlySet<string>;
+  readonly currentValidatorVersion: string;
+  readonly supportedValidatorVersions: ReadonlySet<string>;
+
+  constructor(options: {
+    currentCompilerVersion?: string;
+    supportedCompilerVersions?: readonly string[];
+    currentValidatorVersion?: string;
+    supportedValidatorVersions?: readonly string[];
+  } = {}) {
+    this.currentCompilerVersion = options.currentCompilerVersion ?? '1.0.0';
+    this.supportedCompilerVersions = new Set(options.supportedCompilerVersions ?? [this.currentCompilerVersion]);
+    this.currentValidatorVersion = options.currentValidatorVersion ?? '1.0.0';
+    this.supportedValidatorVersions = new Set(options.supportedValidatorVersions ?? [this.currentValidatorVersion]);
+  }
+
+  public isCompilerVersionSupported(version: string): boolean {
+    return this.supportedCompilerVersions.has(version);
+  }
+
+  public isValidatorVersionSupported(version: string): boolean {
+    return this.supportedValidatorVersions.has(version);
+  }
 }
 
 export interface IngressJournalRecord {
@@ -87,6 +120,7 @@ export interface CanonicalIngressOptions {
   readonly journal: IngressDurableJournal;
   readonly durability?: DurabilityBarrier;
   readonly downstreamSubscriber?: (committed: CommittedEnvelope) => Promise<void> | void;
+  readonly versionRegistry?: IngressVersionRegistry;
 }
 
 const durableCanonicalIngressInstances = new WeakSet<object>();
@@ -105,6 +139,7 @@ export function isDurableCanonicalIngress(value: unknown): value is CanonicalIng
 export class CanonicalIngress implements ObservationIngressPort {
   readonly #compiler: FusionEnvelopeCompiler;
   readonly #validator: TruthValidator;
+  readonly #versionRegistry?: IngressVersionRegistry;
   readonly #authenticCommittedEnvelopes = new WeakSet<object>();
   readonly #journal: IngressDurableJournal;
   readonly #durability: DurabilityBarrier;
@@ -118,6 +153,7 @@ export class CanonicalIngress implements ObservationIngressPort {
   constructor(options: CanonicalIngressOptions) {
     this.#compiler = options.compiler;
     this.#validator = options.validator;
+    this.#versionRegistry = options.versionRegistry;
     this.#journal = options.journal;
     this.#durability = options.durability ?? 'FSYNC_COMMITTED';
     if (options.runtimeTelemetry) {
@@ -377,18 +413,41 @@ export class CanonicalIngress implements ObservationIngressPort {
       signature: payload.signature,
       transactionVersion: payload.transactionVersion,
       rawPayload,
+      rawPayloadEncoding: payload.rawPayloadEncoding,
       schemaVersion: payload.schema,
       processingIntent: payload.processingIntent,
     });
     if (observation.observationId !== payload.observationId || observation.rawPayloadHash !== payload.rawPayloadHash) {
       throw new Error('INGRESS_OUTBOX_OBSERVATION_IDENTITY_MISMATCH');
     }
-    const compiled = await this.#compiler.compile(observation);
+    if (this.#versionRegistry) {
+      if (!this.#versionRegistry.isCompilerVersionSupported(payload.compilerVersion)) {
+        throw new Error('INGRESS_OUTBOX_UNSUPPORTED_COMPILER_VERSION');
+      }
+      if (!this.#versionRegistry.isValidatorVersionSupported(payload.validatorVersion)) {
+        throw new Error('INGRESS_OUTBOX_UNSUPPORTED_VALIDATOR_VERSION');
+      }
+    }
+    let compiled: CompiledFusionEnvelope;
+    try {
+      compiled = typeof this.#compiler.compileForVersion === 'function'
+        ? await this.#compiler.compileForVersion(observation, payload.compilerVersion)
+        : await this.#compiler.compile(observation);
+    } catch (err) {
+      throw new Error(`INGRESS_OUTBOX_COMPILER_DRIFT: ${err instanceof Error ? err.message : String(err)}`);
+    }
     if (compiled.envelopeId !== payload.envelopeId || compiled.compilerVersion !== payload.compilerVersion ||
         JSON.stringify(compiled.decodedEvents.map(serializeDecodedEvent)) !== JSON.stringify(payload.decodedEvents)) {
       throw new Error('INGRESS_OUTBOX_COMPILER_DRIFT');
     }
-    const result = await this.#validator.validate(compiled);
+    let result: ValidationResult;
+    try {
+      result = typeof this.#validator.validateForVersion === 'function'
+        ? await this.#validator.validateForVersion(compiled, payload.validatorVersion)
+        : await this.#validator.validate(compiled);
+    } catch (err) {
+      throw new Error(`INGRESS_OUTBOX_VALIDATION_IDENTITY_MISMATCH: ${err instanceof Error ? err.message : String(err)}`);
+    }
     if (!result.valid) throw new Error('INGRESS_OUTBOX_VALIDATION_FAILED');
     const current = result.validatedEnvelope;
     const savedEvidence = payload.truthEvidence;
@@ -440,12 +499,21 @@ function serializeDecodedEvent(event: any): Record<string, unknown> {
  */
 export class DefaultFusionEnvelopeCompiler implements FusionEnvelopeCompiler {
   private readonly decoderVersion: string;
+  private readonly supportedVersions: ReadonlySet<string>;
 
-  constructor(decoderVersion = '1.0.0') {
+  constructor(decoderVersion = '1.0.0', supportedVersions?: readonly string[]) {
     this.decoderVersion = decoderVersion;
+    this.supportedVersions = new Set(supportedVersions ?? [decoderVersion]);
   }
 
-  public compile(observation: UnvalidatedObservation): CompiledFusionEnvelope {
+  public isVersionSupported(version: string): boolean {
+    return this.supportedVersions.has(version);
+  }
+
+  public compileForVersion(observation: UnvalidatedObservation, version: string): CompiledFusionEnvelope {
+    if (!this.supportedVersions.has(version)) {
+      throw new Error(`UNSUPPORTED_COMPILER_VERSION: ${version}`);
+    }
     let decodedEvents: readonly any[] = [];
     try {
       const text = Buffer.from(observation.rawPayload).toString('utf8');
@@ -455,7 +523,7 @@ export class DefaultFusionEnvelopeCompiler implements FusionEnvelopeCompiler {
       decodedEvents = Object.freeze([]);
     }
 
-    const envelopeIdentity = `${observation.observationId}:${this.decoderVersion}:${observation.receivedAtMs}`;
+    const envelopeIdentity = `${observation.observationId}:${version}:${observation.receivedAtMs}`;
     const envelopeId = createHash('sha256').update(envelopeIdentity).digest('hex') as Hash256;
 
     const data: CompiledFusionEnvelopeData = {
@@ -463,10 +531,14 @@ export class DefaultFusionEnvelopeCompiler implements FusionEnvelopeCompiler {
       observation,
       compiledAtMs: Date.now(),
       decodedEvents,
-      compilerVersion: this.decoderVersion,
+      compilerVersion: version,
     };
 
     return Object.freeze(data) as CompiledFusionEnvelope;
+  }
+
+  public compile(observation: UnvalidatedObservation): CompiledFusionEnvelope {
+    return this.compileForVersion(observation, this.decoderVersion);
   }
 }
 
@@ -475,12 +547,21 @@ export class DefaultFusionEnvelopeCompiler implements FusionEnvelopeCompiler {
  */
 export class DefaultTruthValidator implements TruthValidator {
   private readonly validatorVersion: string;
+  private readonly supportedVersions: ReadonlySet<string>;
 
-  constructor(validatorVersion = '1.0.0') {
+  constructor(validatorVersion = '1.0.0', supportedVersions?: readonly string[]) {
     this.validatorVersion = validatorVersion;
+    this.supportedVersions = new Set(supportedVersions ?? [validatorVersion]);
   }
 
-  public validate(compiled: CompiledFusionEnvelope): ValidationResult {
+  public isVersionSupported(version: string): boolean {
+    return this.supportedVersions.has(version);
+  }
+
+  public validateForVersion(compiled: CompiledFusionEnvelope, version: string): ValidationResult {
+    if (!this.supportedVersions.has(version)) {
+      throw new Error(`UNSUPPORTED_VALIDATOR_VERSION: ${version}`);
+    }
     const obs = compiled.observation;
 
     // Verify hash integrity of raw payload
@@ -501,9 +582,9 @@ export class DefaultTruthValidator implements TruthValidator {
 
     const truthEvidence: TruthEvidence = {
       evidenceId: createHash('sha256')
-        .update(`evidence:${compiled.envelopeId}:${this.validatorVersion}`)
+        .update(`evidence:${compiled.envelopeId}:${version}`)
         .digest('hex') as Hash256,
-      validatorVersion: this.validatorVersion,
+      validatorVersion: version,
       validatedAtMs: Date.now(),
       rawPayloadHash: obs.rawPayloadHash,
       signatureVerified: false,
@@ -523,7 +604,7 @@ export class DefaultTruthValidator implements TruthValidator {
       validationId,
       compiledEnvelope: compiled,
       validatedAtMs: Date.now(),
-      validatorVersion: this.validatorVersion,
+      validatorVersion: version,
       truthEvidence: Object.freeze(truthEvidence),
     };
 
@@ -531,6 +612,10 @@ export class DefaultTruthValidator implements TruthValidator {
       valid: true,
       validatedEnvelope: Object.freeze(data) as ValidatedFusionEnvelope,
     };
+  }
+
+  public validate(compiled: CompiledFusionEnvelope): ValidationResult {
+    return this.validateForVersion(compiled, this.validatorVersion);
   }
 }
 
@@ -540,8 +625,9 @@ export class DefaultTruthValidator implements TruthValidator {
 export class SolanaLogFusionEnvelopeCompiler implements FusionEnvelopeCompiler {
   public parser: any;
   private readonly decoderVersion: string;
+  private readonly supportedVersions: ReadonlySet<string>;
 
-  constructor(connectionOrCoder?: any, decoderVersion = 'solana-pump-v1') {
+  constructor(connectionOrCoder?: any, decoderVersion = 'solana-pump-v1', supportedVersions?: readonly string[]) {
     let coder: any;
     if (connectionOrCoder && typeof connectionOrCoder === 'object') {
       if ('coder' in connectionOrCoder) {
@@ -558,9 +644,17 @@ export class SolanaLogFusionEnvelopeCompiler implements FusionEnvelopeCompiler {
     }
     this.parser = new EventParser(PUMP_PROGRAM_ID, coder);
     this.decoderVersion = decoderVersion;
+    this.supportedVersions = new Set(supportedVersions ?? [decoderVersion]);
   }
 
-  public compile(observation: UnvalidatedObservation): CompiledFusionEnvelope {
+  public isVersionSupported(version: string): boolean {
+    return this.supportedVersions.has(version);
+  }
+
+  public compileForVersion(observation: UnvalidatedObservation, version: string): CompiledFusionEnvelope {
+    if (!this.supportedVersions.has(version)) {
+      throw new Error(`UNSUPPORTED_COMPILER_VERSION: ${version}`);
+    }
     const rawPayload = observation.rawPayload;
     const text = Buffer.from(rawPayload.buffer, rawPayload.byteOffset, rawPayload.byteLength).toString('utf8');
     let logs: any;
@@ -597,7 +691,7 @@ export class SolanaLogFusionEnvelopeCompiler implements FusionEnvelopeCompiler {
       });
     }
 
-    const envelopeIdentity = `${observation.observationId}:${this.decoderVersion}:${observation.receivedAtMs}`;
+    const envelopeIdentity = `${observation.observationId}:${version}:${observation.receivedAtMs}`;
     const envelopeId = createHash('sha256').update(envelopeIdentity).digest('hex') as Hash256;
 
     const data: CompiledFusionEnvelopeData = {
@@ -605,10 +699,14 @@ export class SolanaLogFusionEnvelopeCompiler implements FusionEnvelopeCompiler {
       observation,
       compiledAtMs: Date.now(),
       decodedEvents: Object.freeze(decodedEvents),
-      compilerVersion: this.decoderVersion,
+      compilerVersion: version,
     };
 
     return Object.freeze(data) as CompiledFusionEnvelope;
+  }
+
+  public compile(observation: UnvalidatedObservation): CompiledFusionEnvelope {
+    return this.compileForVersion(observation, this.decoderVersion);
   }
 }
 
@@ -651,6 +749,9 @@ export class StoreIngressJournal implements IngressDurableJournal {
       transactionVersion: observation.transactionVersion,
       rawPayloadBase64: Buffer.from(observation.rawPayload).toString('base64'),
       rawPayloadHash: observation.rawPayloadHash,
+      ...(observation.rawPayloadEncoding && observation.rawPayloadEncoding !== 'UNSPECIFIED'
+        ? { rawPayloadEncoding: observation.rawPayloadEncoding }
+        : {}),
       schema: observation.schemaVersion,
       processingIntent: observation.processingIntent,
       envelopeId,

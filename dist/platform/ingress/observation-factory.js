@@ -22,6 +22,13 @@ const VALID_PROCESSING_INTENTS = new Set([
     'DETERMINISTIC_REPLAY',
     'SHADOW_REPLAY',
 ]);
+const VALID_RAW_PAYLOAD_ENCODINGS = new Set([
+    'UNSPECIFIED',
+    'JSON_FRAME_BYTES',
+    'JSON_CANONICAL',
+    'DECODED_PROTOBUF_JSON_CANONICAL',
+    'PROTOBUF_WIRE_BYTES',
+]);
 const factoryObservations = new WeakSet();
 export function isObservationCreatedByFactory(value) {
     return !!value && typeof value === 'object' && factoryObservations.has(value);
@@ -90,6 +97,11 @@ export function createUnvalidatedObservation(params) {
         throw new Error('OBSERVATION_EMPTY_PAYLOAD: Raw payload cannot be empty');
     }
     const rawPayload = new Uint8Array(params.rawPayload.buffer, params.rawPayload.byteOffset, params.rawPayload.byteLength).slice(); // Deep copy ensuring isolation
+    if (params.rawPayloadEncoding !== undefined && !VALID_RAW_PAYLOAD_ENCODINGS.has(params.rawPayloadEncoding)) {
+        throw new Error(`OBSERVATION_INVALID_ENCODING: Invalid raw payload encoding '${params.rawPayloadEncoding}'`);
+    }
+    const hasEncoding = params.rawPayloadEncoding !== undefined && params.rawPayloadEncoding !== 'UNSPECIFIED';
+    const rawPayloadEncoding = hasEncoding ? params.rawPayloadEncoding : 'UNSPECIFIED';
     const rawPayloadHash = createHash('sha256')
         .update(rawPayload)
         .digest('hex');
@@ -104,6 +116,7 @@ export function createUnvalidatedObservation(params) {
         signature,
         transactionVersion: params.transactionVersion ?? 'unknown',
         rawPayloadHash,
+        ...(hasEncoding ? { rawPayloadEncoding: params.rawPayloadEncoding } : {}),
         schemaVersion: params.schemaVersion,
         processingIntent: params.processingIntent,
     });
@@ -123,6 +136,7 @@ export function createUnvalidatedObservation(params) {
         transactionVersion: params.transactionVersion ?? 'unknown',
         rawPayload,
         rawPayloadHash,
+        rawPayloadEncoding,
         schemaVersion: params.schemaVersion,
         processingIntent: params.processingIntent,
     };

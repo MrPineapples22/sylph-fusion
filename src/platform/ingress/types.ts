@@ -32,6 +32,22 @@ export type ObservationTransport =
   | 'mock'
   | string;
 
+export type RawPayloadEncoding =
+  | 'UNSPECIFIED'
+  | 'JSON_FRAME_BYTES'
+  | 'JSON_CANONICAL'
+  | 'DECODED_PROTOBUF_JSON_CANONICAL'
+  | 'PROTOBUF_WIRE_BYTES';
+
+export interface IngressVersionRegistry {
+  readonly currentCompilerVersion: string;
+  readonly supportedCompilerVersions: ReadonlySet<string>;
+  readonly currentValidatorVersion: string;
+  readonly supportedValidatorVersions: ReadonlySet<string>;
+  isCompilerVersionSupported(version: string): boolean;
+  isValidatorVersionSupported(version: string): boolean;
+}
+
 export type TransactionAuthenticityProof =
   | 'UNAVAILABLE_OBSERVATION_ONLY'
   | 'CRYPTOGRAPHIC_SIGNATURE_VERIFIED';
@@ -65,6 +81,7 @@ export interface UnvalidatedObservationData {
   readonly transactionVersion: number | 'legacy' | 'unknown';
   readonly rawPayload: Uint8Array;
   readonly rawPayloadHash: Hash256;
+  readonly rawPayloadEncoding?: RawPayloadEncoding;
   readonly schemaVersion: string;
   readonly processingIntent: ProcessingIntent;
 }
