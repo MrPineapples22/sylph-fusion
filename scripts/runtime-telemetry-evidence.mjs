@@ -30,6 +30,11 @@ function exactKeys(value, expected) {
     Object.keys(value).sort().join(',') === [...expected].sort().join(',');
 }
 
+function validWindowsImagePath(value) {
+  return typeof value === 'string' && value.length >= 4 && value.length <= 32_767 &&
+    !value.includes('\0') && win32.isAbsolute(value);
+}
+
 export function verifyRuntimeTelemetryEvidence(value, { trustedPublicKeyPem } = {}) {
   const v3 = value?.schemaVersion === 'SYLPH_RUNTIME_TELEMETRY_V3';
   const v2 = v3 || value?.schemaVersion === 'SYLPH_RUNTIME_TELEMETRY_V2';
@@ -51,9 +56,7 @@ export function verifyRuntimeTelemetryEvidence(value, { trustedPublicKeyPem } = 
     return { valid: false, reason: 'C5_RUNTIME_INTERVAL_INVALID' };
   }
   if (v3 && (!exactKeys(value.processImageIdentity, ['imagePath', 'executableSha256']) ||
-      typeof value.processImageIdentity.imagePath !== 'string' || value.processImageIdentity.imagePath.length < 4 ||
-      value.processImageIdentity.imagePath.length > 32_767 || value.processImageIdentity.imagePath.includes('\0') ||
-      !/^(?:[a-zA-Z]:\\|\\\\[^\\]+\\[^\\]+)/.test(value.processImageIdentity.imagePath) ||
+      !validWindowsImagePath(value.processImageIdentity.imagePath) ||
       typeof value.processImageIdentity.executableSha256 !== 'string' || !HASH.test(value.processImageIdentity.executableSha256))) {
     return { valid: false, reason: 'C5_PROCESS_IMAGE_SCHEMA_INVALID' };
   }
@@ -165,8 +168,12 @@ export function verifyRuntimeTelemetryProcessBinding(value, observed) {
   if (value?.schemaVersion !== 'SYLPH_RUNTIME_TELEMETRY_V3') {
     return { valid: false, reason: 'C5_PROCESS_IDENTITY_REQUIRED' };
   }
+  if (!exactKeys(value.processImageIdentity, ['imagePath', 'executableSha256']) ||
+      !validWindowsImagePath(value.processImageIdentity.imagePath) || !HASH.test(value.processImageIdentity.executableSha256 ?? '')) {
+    return { valid: false, reason: 'C5_PROCESS_IMAGE_SCHEMA_INVALID' };
+  }
   if (!observed?.valid || !Number.isSafeInteger(observed.processId) ||
-      !Number.isSafeInteger(observed.processStartedAtMs) || typeof observed.imagePath !== 'string' ||
+      !Number.isSafeInteger(observed.processStartedAtMs) || !validWindowsImagePath(observed.imagePath) ||
       typeof observed.executableSha256 !== 'string' || !HASH.test(observed.executableSha256)) {
     return { valid: false, reason: 'C5_LIVE_PROCESS_IDENTITY_UNAVAILABLE' };
   }
@@ -199,9 +206,7 @@ export function resolveLiveProcessImageIdentity(processId, { platform = process.
     const observed = JSON.parse(output);
     if (!exactKeys(observed, ['processId', 'processStartedAtMs', 'imagePath']) ||
         observed.processId !== processId || !Number.isSafeInteger(observed.processStartedAtMs) ||
-        observed.processStartedAtMs < 1 || typeof observed.imagePath !== 'string' ||
-        observed.imagePath.length < 4 || observed.imagePath.length > 32_767 ||
-        !win32.isAbsolute(observed.imagePath) || observed.imagePath.includes('\0')) {
+        observed.processStartedAtMs < 1 || !validWindowsImagePath(observed.imagePath)) {
       return { valid: false, reason: 'C5_LIVE_PROCESS_IDENTITY_UNAVAILABLE' };
     }
     const executableSha256 = hashObservedExecutable(observed.imagePath);
@@ -258,6 +263,7 @@ function sameFileVersion(a, b) {
 /** Orchestrate source freshness and durable-store checks; dependencies permit
  * deterministic testing of expensive audit/store work without runtime secrets. */
 export function appraiseRuntimeTelemetryBindings(value, {
+  verifyCheckout = verifyCurrentCertificationCheckoutIdentity,
   resolveSource = loadCurrentCertificationSourceIdentity,
   verifyStore = verifyRuntimeTelemetryStoreBinding,
   resolveProcessIdentity = resolveLiveProcessImageIdentity,
@@ -266,11 +272,16 @@ export function appraiseRuntimeTelemetryBindings(value, {
   if (value?.schemaVersion !== 'SYLPH_RUNTIME_TELEMETRY_V3') {
     return { valid: false, reason: 'C5_PROCESS_IDENTITY_REQUIRED' };
   }
+  const preflight = verifyCheckout();
+  if (!preflight?.valid) return preflight ?? { valid: false, reason: 'C5_CURRENT_SOURCE_IDENTITY_UNAVAILABLE' };
   const checkProcess = () => verifyRuntimeTelemetryProcessBinding(value, resolveProcessIdentity(value.processId));
   const initialProcessBinding = checkProcess();
   if (!initialProcessBinding.valid) return initialProcessBinding;
   const source = resolveSource();
   if (!source?.valid) return source ?? { valid: false, reason: 'C5_CURRENT_SOURCE_IDENTITY_UNAVAILABLE' };
+  if (source.commitSha !== preflight.commitSha || source.treeSha !== preflight.treeSha) {
+    return { valid: false, reason: 'C5_CURRENT_SOURCE_CHANGED_DURING_AUDIT' };
+  }
   const sourceProcessBinding = checkProcess();
   if (!sourceProcessBinding.valid) return sourceProcessBinding;
   const initialBinding = verifyRuntimeTelemetryAfterSourceResolution(value, source, clock);

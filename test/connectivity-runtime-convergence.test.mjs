@@ -220,6 +220,17 @@ test('C5 V3 binds signed evidence to live Windows process instance, image path, 
   evidence.evidenceHash = hashCanonicalV10(evidence);
   const trustedPublicKeyPem = publicKey.export({ type: 'spki', format: 'pem' });
   assert.equal(verifyRuntimeTelemetryEvidence(evidence, { trustedPublicKeyPem }).valid, true);
+  const legacyV2 = { ...evidence, schemaVersion: 'SYLPH_RUNTIME_TELEMETRY_V2' };
+  delete legacyV2.processImageIdentity;
+  delete legacyV2.attestation;
+  delete legacyV2.evidenceHash;
+  const legacyRoot = hashCanonicalV10(legacyV2);
+  legacyV2.attestation = { algorithm: 'Ed25519', signatureBase64: sign(null, Buffer.from(legacyRoot, 'hex'), privateKey).toString('base64') };
+  legacyV2.evidenceHash = hashCanonicalV10(legacyV2);
+  assert.equal(verifyRuntimeTelemetryEvidence(legacyV2, { trustedPublicKeyPem }).valid, true,
+    'V2 remains structurally verifiable for compatibility');
+  assert.equal(appraiseRuntimeTelemetryBindings(legacyV2).reason, 'C5_PROCESS_IDENTITY_REQUIRED',
+    'legacy evidence cannot satisfy certify-mode C5');
   const live = { valid: true, processId: evidence.processId, processStartedAtMs: evidence.processStartedAtMs,
     imagePath: evidence.processImageIdentity.imagePath, executableSha256: evidence.processImageIdentity.executableSha256 };
   assert.equal(verifyRuntimeTelemetryProcessBinding(evidence, live).valid, true);
@@ -246,12 +257,24 @@ test('C5 V3 binds signed evidence to live Windows process instance, image path, 
 
   let observations = 0;
   const appraisal = appraiseRuntimeTelemetryBindings(evidence, {
+    verifyCheckout: () => ({ valid: true, commitSha: evidence.sourceCommitSha, treeSha: evidence.sourceTreeSha }),
     resolveProcessIdentity: () => ++observations < 3 ? live : { ...live, processStartedAtMs: live.processStartedAtMs + 1 },
     resolveSource: () => ({ valid: true, commitSha: evidence.sourceCommitSha, treeSha: evidence.sourceTreeSha }),
     verifyStore: () => ({ valid: true }), clock: () => evidence.captureEndedAtMs,
   });
   assert.equal(appraisal.reason, 'C5_LIVE_PROCESS_INSTANCE_MISMATCH', 'process identity must be rechecked after store work');
   assert.equal(observations, 3);
+});
+
+test('C5 Windows resolver observes this test process through Win32 and independently hashes its executable', {
+  skip: process.platform !== 'win32',
+}, () => {
+  const observed = resolveLiveProcessImageIdentity(process.pid);
+  assert.equal(observed.valid, true, observed.reason);
+  assert.equal(observed.processId, process.pid);
+  assert.ok(Number.isSafeInteger(observed.processStartedAtMs) && observed.processStartedAtMs > 0);
+  assert.match(observed.imagePath, /^[a-zA-Z]:\\/);
+  assert.match(observed.executableSha256, /^[a-f0-9]{64}$/);
 });
 
 test('C5 certification binding rejects replay, future timestamps, dirty checkout, and source commit/tree splices', () => {
@@ -297,6 +320,7 @@ test('C5 loader orchestration samples freshness after source audit and durable-s
   const events = [];
   let verifierTime = 1_000;
   const appraisal = appraiseRuntimeTelemetryBindings(evidence, {
+    verifyCheckout: () => { events.push('checkout-preflight'); return { valid: true, commitSha: source.commitSha, treeSha: source.treeSha }; },
     resolveProcessIdentity: () => { events.push('process-check'); return liveProcess; },
     resolveSource: () => {
       events.push('audit-start');
@@ -313,7 +337,7 @@ test('C5 loader orchestration samples freshness after source audit and durable-s
     },
   });
   assert.equal(appraisal.reason, 'C5_EVIDENCE_STALE', 'store-read duration crossing expiry must reject');
-  assert.deepEqual(events, ['process-check', 'audit-start', 'audit-complete', 'process-check', 'clock',
+  assert.deepEqual(events, ['checkout-preflight', 'process-check', 'audit-start', 'audit-complete', 'process-check', 'clock',
     'store-start', 'store-complete', 'process-check', 'clock']);
 });
 
