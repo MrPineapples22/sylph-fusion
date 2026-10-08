@@ -396,6 +396,14 @@ export class Engine {
     } else {
       throw new Error('INGRESS_DURABLE_JOURNAL_REQUIRED');
     }
+    if (feed) {
+      if (!ingress) {
+        throw new Error('FEED_REQUIRES_COMPOSITION_INGRESS: Cannot inject Feed without also injecting its CanonicalIngress');
+      }
+      if (typeof (feed as any).isIngressBound !== 'function' || !feed.isIngressBound(this.#ingress)) {
+        throw new Error('FEED_INGRESS_MISMATCH: Injected Feed must be bound to the exact same CanonicalIngress instance');
+      }
+    }
     this.#ingress.subscribe(async (committed: CommittedEnvelope) => {
       await this.#onCommitted(committed);
     });

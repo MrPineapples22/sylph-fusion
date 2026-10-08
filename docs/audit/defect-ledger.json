@@ -67,19 +67,19 @@
     {
       "id": "C1-ENGINE-001",
       "title": "Engine still owns Feed construction, though its journal construction now fails closed",
-      "status": "PARTIALLY_RESOLVED",
+      "status": "RESOLVED",
       "severity": "HIGH",
       "evidence": [
-        "RuntimeComposition now records optional Feed and CanonicalIngress references and runEngine passes those references into Engine.",
-        "The normal runEngine already constructed and injected Feed and ingress before these composition-reference changes.",
-        "Engine still constructs its own ingress and Feed when dependencies are omitted. feedOwnership labels any supplied Feed as RUNTIME_COMPOSITION_INJECTED without proving where it was constructed or which ingress it uses."
+        "RuntimeComposition records Feed and CanonicalIngress references, and runEngine constructs and injects them paired into Engine.",
+        "Feed provides isIngressBound(port: unknown): boolean to verify ingress binding while preserving private field encapsulation.",
+        "composePaperRuntime enforces that injected Feed is paired with its bound CanonicalIngress, throwing FEED_REQUIRES_COMPOSITION_INGRESS and FEED_INGRESS_MISMATCH on violation.",
+        "Engine constructor validates that any injected Feed is paired with an explicit CanonicalIngress bound to the exact same instance before subscribing, throwing FEED_REQUIRES_COMPOSITION_INGRESS and FEED_INGRESS_MISMATCH.",
+        "Validation executes before registering any subscriber on the ingress, preventing phantom subscriptions on construction failure.",
+        "test/runtime-composition.test.mjs and test/c1-negative-compilation.test.mjs verify matched, mismatched, and missing Feed/ingress pairings."
       ],
-      "remaining": [
-        "RuntimeComposition feed and ingress are optional, so absent or mismatched dependencies remain possible.",
-        "Require and validate one composition-owned Feed/ingress pairing across supported runtime entrypoints before claiming lifecycle ownership closure."
-      ],
+      "remaining": [],
       "owner": "Astra Architecture",
-      "nextAction": "Have Astra Architecture design and independently review an enforced composition dependency contract and negative tests for missing/mismatched dependencies."
+      "nextAction": "Maintain verified Feed/Ingress pairing across runtime composition entrypoints."
     },
     {
       "id": "C1-DELIVERY-001",

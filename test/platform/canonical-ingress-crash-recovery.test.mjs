@@ -165,13 +165,16 @@ test('Engine restores canonical state and active candidate projection before ing
     MIN_BUYERS: 2, MIN_BUY_SELL_RATIO_BPS: 1_000, POLL_MS: 10, CHECKPOINT_INTERVAL_MS: 60_000 };
   const stateFor = () => ({ version: 1, wallet: 'projection-wallet', mode: 'paper_standard', positions: {}, closed: {},
     pending: null, cash: '1000000000', day: new Date().toISOString().slice(0, 10), dayPnl: '0', halted: false });
-  const fakeFeed = engine => ({ gapReconciler: { setRecoveryCertificateJournal() {} },
-    run: async () => { engine.stop(); }, stop() {}, healthy: () => false, last: 0, slot: 0 });
+  const fakeFeed = (engine, ingress) => ({
+    isIngressBound: port => port === ingress,
+    gapReconciler: { setRecoveryCertificateJournal() {} },
+    run: async () => { engine.stop(); }, stop() {}, healthy: () => false, last: 0, slot: 0
+  });
   const makeIngress = store => new CanonicalIngress({ compiler, validator: new DefaultTruthValidator(), journal: new StoreIngressJournal(store) });
   const makeEngine = (store, state, ingress) => {
     let engine;
     engine = new Engine(cfg, { connection: {} }, {}, {}, store, state, undefined, undefined,
-      'deterministic_only', undefined, undefined, undefined, ingress, fakeFeed({ stop: () => engine.stop() }));
+      'deterministic_only', undefined, undefined, undefined, ingress, fakeFeed({ stop: () => engine.stop() }, ingress));
     return engine;
   };
 

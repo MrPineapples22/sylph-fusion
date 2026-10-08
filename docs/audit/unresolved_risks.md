@@ -1369,3 +1369,21 @@ This follows the outbox pattern's stable event identity and consumer deduplicati
 **Composition bounds.** The optional Feed/ingress references and existing feedOwnership field remain, but they do not enforce ownership. runEngine already injected both dependencies before the composition-reference change. Engine can still create fallback components, and any supplied Feed gets the composition label without a pairing check. C1-ENGINE-001 is PARTIALLY_RESOLVED; C1-INGRESS-002 is PARTIALLY_CONTAINED. Required architecture work and live Feed evidence gaps remain in the defect ledger. Candidate-provenance and Git executable resolution changes from the parallel cycle are preserved.
 
 **Verification and approval.** Repair verification is pending. The author cannot approve this critical change; a separate Astra reviewer must assess the final source and regenerated evidence. No live capital, signer, credential, deployment, commit, push, or release authority is granted. C5–C10 remain blocked.
+
+## Research cycle 146 — enforce composition Feed/Ingress pairing and subscription ordering — 2026-10-07
+
+**Findings and architecture context.**
+1. `C1-ENGINE-001` left open that `RuntimeComposition` allowed optional `feed` and `ingress` without verifying that an injected `Feed` was actually bound to the paired `CanonicalIngress`. An engine could receive mismatched or disconnected components.
+2. In `Engine` constructor, `this.#ingress.subscribe(...)` was invoked before verifying dependency constraints on `feed`. If constructor validation subsequently threw an exception, the subscriber remained permanently registered on `this.#ingress`, leading to phantom subscription conflicts and double-acknowledgement errors on subsequent events.
+
+**Implementation.**
+- `src/feed.ts`: Added `public isIngressBound(port: unknown): boolean` performing reference comparison against `#ingress` without exposing `#ingress` to property lookups or mutators.
+- `src/runtime-composition.ts`: `composePaperRuntime` enforces that if `feed` is supplied, `ingress` must also be supplied and `feed.isIngressBound(ingress)` must return `true`. Violations throw `FEED_REQUIRES_COMPOSITION_INGRESS` or `FEED_INGRESS_MISMATCH`.
+- `src/fusion.ts`: `Engine` constructor validates that if `feed` is injected, `ingress` must also be explicitly provided and bound to `this.#ingress`. Crucially, this check executes BEFORE `this.#ingress.subscribe(...)`, ensuring zero side effects or dangling subscriptions if construction fails.
+- `docs/audit/defect-ledger.json`: Updated `C1-ENGINE-001` to `RESOLVED`.
+- `test/runtime-composition.test.mjs`: Added test verifying matching, mismatched, and missing feed/ingress pairings.
+- `test/c1-negative-compilation.test.mjs`: Added tests verifying `FEED_INGRESS_MISMATCH`, `FEED_REQUIRES_COMPOSITION_INGRESS`, isolated subscriber stores, and verified `feedOwnership` flags.
+
+**Verification.**
+- Focused suites: `test/runtime-composition.test.mjs` passed 3/3; `test/c1-negative-compilation.test.mjs` passed 10/10.
+- Source build: `npm run build:engine` compiled cleanly with 0 diagnostics.

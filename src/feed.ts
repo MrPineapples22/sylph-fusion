@@ -47,6 +47,10 @@ export class Feed implements ObservationSource {
     this.#ingress = ingress;
   }
 
+  public isIngressBound(port: unknown): boolean {
+    return this.#ingress === port;
+  }
+
   healthy() { const age = Date.now() - this.last; return !this.stopped && this.last > 0 && age >= 0 && age < this.cfg.FEED_STALE_MS && Date.now() - this.readySince >= this.cfg.MIN_AGE_MS; }
 
   async accept(

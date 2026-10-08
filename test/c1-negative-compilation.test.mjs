@@ -223,6 +223,37 @@ test('C1 Runtime Guard: Engine rejects forged and replayed committed envelopes',
     /INGRESS_DURABLE_JOURNAL_REQUIRED/,
     'an explicitly supplied in-memory journal must not be accepted as FSYNC authority'
   );
+
+  const { Feed } = await import('../dist/feed.js');
+  const feedWithIngress = new Feed({ MODE: 'paper_standard', FEED_STALE_MS: 1000, MIN_AGE_MS: 0 }, { connection: {} }, ingress);
+  const otherDir = await mkdtemp(join(tmpdir(), 'c1-other-'));
+  const otherStore = new Store(join(otherDir, 'other.sqlite'));
+  t.after(async () => { await otherStore.close(); await rm(otherDir, { recursive: true, force: true }); });
+  const otherIngress = new CanonicalIngress({ compiler: new DefaultFusionEnvelopeCompiler(), validator: new DefaultTruthValidator(), journal: new StoreIngressJournal(otherStore) });
+  const feedOther = new Feed({ MODE: 'paper_standard', FEED_STALE_MS: 1000, MIN_AGE_MS: 0 }, { connection: {} }, otherIngress);
+
+  assert.throws(
+    () => new Engine({ MODE: 'paper_standard' }, { connection: {} }, {}, {}, store, { mode: 'paper_standard' }, undefined, undefined, 'deterministic_only', undefined, undefined, undefined, ingress, feedOther),
+    /FEED_INGRESS_MISMATCH/,
+    'Engine must reject Feed bound to a different ingress'
+  );
+  assert.throws(
+    () => new Engine({ MODE: 'paper_standard' }, { connection: {} }, {}, {}, store, { mode: 'paper_standard' }, undefined, undefined, 'deterministic_only', undefined, undefined, undefined, undefined, feedWithIngress),
+    /FEED_REQUIRES_COMPOSITION_INGRESS/,
+    'Engine must reject Feed injected without its corresponding CanonicalIngress'
+  );
+  const injDir = await mkdtemp(join(tmpdir(), 'c1-inj-'));
+  const injStore = new Store(join(injDir, 'inj.sqlite'));
+  t.after(async () => { await injStore.close(); await rm(injDir, { recursive: true, force: true }); });
+  const injIngress = new CanonicalIngress({ compiler: new DefaultFusionEnvelopeCompiler(), validator: new DefaultTruthValidator(), journal: new StoreIngressJournal(injStore) });
+  const injFeed = new Feed({ MODE: 'paper_standard', FEED_STALE_MS: 1000, MIN_AGE_MS: 0 }, { connection: {} }, injIngress);
+
+  const injectedEngine = new Engine({ MODE: 'paper_standard' }, { connection: {} }, {}, {}, injStore, { mode: 'paper_standard' }, undefined, undefined, 'deterministic_only', undefined, undefined, undefined, injIngress, injFeed);
+  assert.equal(injectedEngine.feedOwnership, 'RUNTIME_COMPOSITION_INJECTED');
+  assert.equal(engine.feedOwnership, 'ENGINE_LOCAL_FALLBACK');
+  assert.equal(injectedEngine.feed.isIngressBound(injIngress), true);
+  assert.equal(injectedEngine.feed.isIngressBound(otherIngress), false);
+
   const forged = {
     journalSeq: 1n, envelopeHash: 'a'.repeat(64), durability: 'FSYNC_COMMITTED', committedAtMs: Date.now(),
     validatedEnvelope: { compiledEnvelope: { decodedEvents: [] } },

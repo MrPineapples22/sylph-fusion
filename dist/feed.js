@@ -43,6 +43,9 @@ export class Feed {
         }
         this.#ingress = ingress;
     }
+    isIngressBound(port) {
+        return this.#ingress === port;
+    }
     healthy() { const age = Date.now() - this.last; return !this.stopped && this.last > 0 && age >= 0 && age < this.cfg.FEED_STALE_MS && Date.now() - this.readySince >= this.cfg.MIN_AGE_MS; }
     async accept(signature, slot, logs, source = { sourceId: 'unknown', providerId: 'unknown', transport: 'unknown', commitment: 'unknown' }) {
         const now = Date.now();
