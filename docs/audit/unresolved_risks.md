@@ -1387,3 +1387,21 @@ This follows the outbox pattern's stable event identity and consumer deduplicati
 **Verification.**
 - Focused suites: `test/runtime-composition.test.mjs` passed 3/3; `test/c1-negative-compilation.test.mjs` passed 10/10.
 - Source build: `npm run build:engine` compiled cleanly with 0 diagnostics.
+
+## Research cycle 147 — explicit transaction authenticity labeling and crash-before-projection verification — 2026-10-07
+
+**Findings and architecture context.**
+1. `C1-INGRESS-003` required truth validator evidence semantics to explicitly represent transaction authenticity and inclusion proof status, preventing unauthenticated RPC observations from masquerading as verified cryptographic signatures or finalized on-chain block inclusion.
+2. `C1-DELIVERY-001` left open verification of crash-after-in-memory-effect-before-projection-commit: proving that if a process crashes after downstream memory mutation but before `commitEngineProjection` acknowledges the SQLite outbox row, reopen preserves the unacknowledged delivery and cleanly re-executes idempotent downstream reduction without phantom state drift or double-execution effects.
+
+**Implementation.**
+- `src/platform/ingress/types.ts`: Defined `TransactionAuthenticityProof` (`UNAVAILABLE_OBSERVATION_ONLY` | `CRYPTOGRAPHIC_SIGNATURE_VERIFIED`) and `BlockInclusionProof` (`UNVERIFIED_LOG_DIGEST` | `FINALIZED_BLOCK_ROOT_PROVEN`), attaching them as explicit fields on `TruthEvidence`.
+- `src/platform/ingress/canonical-ingress.ts`: Updated `DefaultTruthValidator.validate` to explicitly set `authenticityProof: 'UNAVAILABLE_OBSERVATION_ONLY'` and `inclusionProof: 'UNVERIFIED_LOG_DIGEST'`, maintaining strict `signatureVerified: false`. Updated `restoreCommittedEnvelope` to enforce that replayed/restored truth evidence strictly matches claimed authenticity and inclusion proof.
+- `test/platform/canonical-ingress-durability.test.mjs`: Added assertions and dedicated test verifying that observation hash validation never claims transaction signature verification or block inclusion proof.
+- `test/platform/canonical-ingress-crash-recovery.test.mjs`: Added negative crash test proving crash-after-in-memory-effect-before-projection-commit rolls back uncommitted state, preserves pending outbox row, and safely redispatches upon restart, resulting in strictly exactly-once durable effects.
+- `docs/audit/defect-ledger.json`: Updated `C1-INGRESS-003` to `PARTIALLY_CONTAINED` and `C1-DELIVERY-001` to `RESOLVED`.
+
+**Verification.**
+- Focused suites: `test/platform/canonical-ingress-durability.test.mjs` and `test/platform/canonical-ingress-crash-recovery.test.mjs` passed 11/11 with 100% assertions green.
+- Engine build: `npm run build:engine` compiled cleanly with 0 diagnostics.
+

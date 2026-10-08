@@ -32,6 +32,14 @@ export type ObservationTransport =
   | 'mock'
   | string;
 
+export type TransactionAuthenticityProof =
+  | 'UNAVAILABLE_OBSERVATION_ONLY'
+  | 'CRYPTOGRAPHIC_SIGNATURE_VERIFIED';
+
+export type BlockInclusionProof =
+  | 'UNVERIFIED_LOG_DIGEST'
+  | 'FINALIZED_BLOCK_ROOT_PROVEN';
+
 export interface TruthEvidence {
   readonly evidenceId: Hash256;
   readonly validatorVersion: string;
@@ -40,6 +48,8 @@ export interface TruthEvidence {
   readonly signatureVerified: boolean;
   readonly schemaCompliant: boolean;
   readonly verificationMethod: string;
+  readonly authenticityProof?: TransactionAuthenticityProof;
+  readonly inclusionProof?: BlockInclusionProof;
 }
 
 export interface UnvalidatedObservationData {

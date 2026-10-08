@@ -342,6 +342,8 @@ export class CanonicalIngress {
             savedEvidence.signatureVerified !== current.truthEvidence.signatureVerified ||
             savedEvidence.schemaCompliant !== current.truthEvidence.schemaCompliant ||
             savedEvidence.verificationMethod !== current.truthEvidence.verificationMethod ||
+            (savedEvidence.authenticityProof !== undefined && savedEvidence.authenticityProof !== current.truthEvidence.authenticityProof) ||
+            (savedEvidence.inclusionProof !== undefined && savedEvidence.inclusionProof !== current.truthEvidence.inclusionProof) ||
             !Number.isSafeInteger(savedEvidence.validatedAtMs) || savedEvidence.validatedAtMs < 0 ||
             !Number.isSafeInteger(payload.validatedAtMs) || payload.validatedAtMs < 0) {
             throw new Error('INGRESS_OUTBOX_VALIDATION_IDENTITY_MISMATCH');
@@ -438,6 +440,8 @@ export class DefaultTruthValidator {
             // event schema. Generic/test decoders must not claim schema validation.
             schemaCompliant: compiled.compilerVersion.startsWith('solana-pump-') && compiled.decodedEvents.length > 0,
             verificationMethod: 'OBSERVATION_HASH_AND_LOG_DECODING_ONLY',
+            authenticityProof: 'UNAVAILABLE_OBSERVATION_ONLY',
+            inclusionProof: 'UNVERIFIED_LOG_DIGEST',
         };
         const validationId = createHash('sha256')
             .update(`val:${compiled.envelopeId}:${truthEvidence.evidenceId}`)

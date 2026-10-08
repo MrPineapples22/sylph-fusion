@@ -51,18 +51,21 @@
     {
       "id": "C1-INGRESS-003",
       "title": "Current truth validator does not independently prove Solana transaction authenticity",
-      "status": "OPEN",
+      "status": "PARTIALLY_CONTAINED",
       "severity": "CRITICAL",
       "evidence": [
         "DefaultTruthValidator verifies payload digest and metadata shape.",
-        "signatureVerified is now always false; the validator still cannot establish cryptographic signature or finalized transaction evidence.",
-        "schemaCompliant is now false for generic/test compilers and true only for the versioned Solana compiler with decoded events; that compiler path still does not establish chain inclusion or signature authenticity."
+        "signatureVerified is strictly false; authenticityProof is explicitly set to UNAVAILABLE_OBSERVATION_ONLY; inclusionProof is explicitly set to UNVERIFIED_LOG_DIGEST.",
+        "schemaCompliant is strictly false for generic/test compilers and true only for the versioned Solana compiler with decoded events.",
+        "restoreCommittedEnvelope verifies that replayed or recovered truth evidence strictly matches authenticityProof and inclusionProof.",
+        "Dependent authority remains gated at C4 static ceiling; unauthenticated observations cannot transition to live execution or capital authority.",
+        "test/platform/canonical-ingress-durability.test.mjs verifies fail-closed truth evidence and authenticity unavailability."
       ],
       "remaining": [
-        "Replace this claim with independently verified transaction inclusion/execution evidence or mark authenticity unavailable and keep dependent authority gated."
+        "Cryptographic signature and finalized on-chain block inclusion verification require external anchor or multi-source RPC witness before claiming live chain truth."
       ],
       "owner": "Astra Protocol",
-      "nextAction": "Define and implement evidence semantics consistent with saved Solana Simulation Evidence and CPI trace research."
+      "nextAction": "Maintain explicit authenticity unavailability and keep dependent live authority gated."
     },
     {
       "id": "C1-ENGINE-001",
@@ -84,19 +87,18 @@
     {
       "id": "C1-DELIVERY-001",
       "title": "Committed ingress delivery is memory-only and can be lost or partially replayed",
-      "status": "PARTIALLY_RESOLVED",
+      "status": "RESOLVED",
       "severity": "CRITICAL",
       "evidence": [
         "SQLite canonical_ingress_delivery_v1 persists the committed payload and acknowledgement state in the same database as the ingress audit journal.",
         "Recovery on startup and duplicate submit revalidates and redispatches unacknowledged rows; pruning retains unacknowledged rows and stable dedupe records.",
-        "test/platform/canonical-ingress-crash-recovery.test.mjs passes crash/reopen, prune-before-replay, replay, acknowledgement, and prune-after-ack cases."
+        "Engine projection checkpoint and delivery acknowledgement commit atomically in canonical_ingress_engine_projection_v1 under BEGIN IMMEDIATE.",
+        "Downstream Engine event handling is idempotent via stable event IDs in audit_event_dedupe.",
+        "test/platform/canonical-ingress-crash-recovery.test.mjs passes crash/reopen, prune-before-replay, replay, acknowledgement, prune-after-ack, crash after projection commit, and crash after in-memory effect before projection commit."
       ],
-      "remaining": [
-        "The outbox is at-least-once. If a downstream handler applies an effect and the process dies before acknowledgement, the effect may be applied again.",
-        "Make authoritative downstream handlers idempotent or persist an atomic checkpoint with delivery acknowledgement; add crash-after-effect-before-ack verification."
-      ],
+      "remaining": [],
       "owner": "Astra Architecture",
-      "nextAction": "Audit downstream handlers and add durable idempotency keys/checkpoints before claiming exactly-once effects."
+      "nextAction": "Preserve atomic projection checkpointing across future downstream handlers."
     },
     {
       "id": "C1-AUDIT-001",

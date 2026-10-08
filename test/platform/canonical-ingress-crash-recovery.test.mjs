@@ -204,3 +204,69 @@ test('Engine restores canonical state and active candidate projection before ing
       'the active candidate projection survives process restart');
   } finally { await store.close(); }
 });
+
+test('Crash after in-memory effect before projection commit rolls back and replays cleanly from prior durable checkpoint', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'ingress-crash-before-commit-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const dbPath = join(dir, 'state.sqlite');
+  const observation = createSampleObservation();
+  let store = new Store(dbPath);
+  const capability = getStoreIngressCapability(store);
+  assert.ok(capability);
+  let memoryEffects = 0;
+  try {
+    const ingress = new CanonicalIngress({
+      compiler: new DefaultFusionEnvelopeCompiler(), validator: new DefaultTruthValidator(),
+      journal: new StoreIngressJournal(store),
+      downstreamSubscriber: async () => {
+        memoryEffects++;
+        // Crash before calling commitEngineProjection!
+        throw new Error('SIMULATED_PROCESS_CRASH_BEFORE_PROJECTION_COMMIT');
+      },
+    });
+    const receipt = await ingress.submit(observation);
+    assert.equal(receipt.status, 'REJECTED');
+    assert.match(receipt.reason, /COMMITTED_DELIVERY_PENDING_RETRY/);
+    assert.equal(memoryEffects, 1);
+    assert.equal((await new StoreIngressJournal(store).getPendingDeliveries(0, 10)).length, 1,
+      'pending outbox entry must remain unacknowledged when commit did not occur');
+    assert.equal(await capability.loadEngineProjection(), null,
+      'no projection checkpoint must exist when commit was never executed');
+  } finally { await store.close(); }
+
+  // Reopen after simulated crash
+  store = new Store(dbPath);
+  try {
+    let durableEffects = 0;
+    const restartedJournal = new StoreIngressJournal(store);
+    assert.equal((await restartedJournal.getPendingDeliveries(0, 10)).length, 1,
+      'pending delivery survives crash');
+    const restartedCapability = getStoreIngressCapability(store);
+    const restartedIngress = new CanonicalIngress({
+      compiler: new DefaultFusionEnvelopeCompiler(), validator: new DefaultTruthValidator(),
+      journal: restartedJournal,
+      downstreamSubscriber: async committed => {
+        durableEffects++;
+        const sequence = Number(committed.journalSeq);
+        const observationId = committed.validatedEnvelope.compiledEnvelope.observation.observationId;
+        const projection = { schemaVersion: 1, sequence, observationId, entryHash: committed.envelopeHash, durableEffects };
+        await restartedCapability.commitEngineProjection(observationId, sequence, committed.envelopeHash,
+          JSON.stringify(projection), JSON.stringify({ version: 1, wallet: 'fixture', mode: 'paper' }));
+      },
+    });
+    const recoveredCount = await restartedIngress.recoverPendingDeliveries();
+    assert.equal(recoveredCount, 1, 'must redispatch the unacknowledged delivery');
+    assert.equal(durableEffects, 1, 'effect is now applied and committed exactly once');
+    assert.equal((await restartedJournal.getPendingDeliveries(0, 10)).length, 0,
+      'outbox row is acknowledged after successful commit');
+    const checkpoint = await restartedCapability.loadEngineProjection();
+    assert.ok(checkpoint);
+    assert.equal(JSON.parse(checkpoint.projectionJson).durableEffects, 1);
+
+    // Duplicate submit check
+    const dupReceipt = await restartedIngress.submit(observation);
+    assert.equal(dupReceipt.status, 'DUPLICATE');
+    assert.equal(durableEffects, 1, 'duplicate submit must not reapply effect');
+  } finally { await store.close(); }
+});
+

@@ -56,6 +56,8 @@ test('Store ingress commits before notifying and detects replay after a fresh in
     assert.equal(committed.durability, 'FSYNC_COMMITTED');
     assert.equal(committed.validatedEnvelope.truthEvidence.signatureVerified, false, 'hash validation cannot claim transaction signature verification');
     assert.equal(committed.validatedEnvelope.truthEvidence.schemaCompliant, false, 'generic decoder cannot claim Solana schema validation');
+    assert.equal(committed.validatedEnvelope.truthEvidence.authenticityProof, 'UNAVAILABLE_OBSERVATION_ONLY');
+    assert.equal(committed.validatedEnvelope.truthEvidence.inclusionProof, 'UNVERIFIED_LOG_DIGEST');
     deliveries++;
   });
   try {
@@ -159,4 +161,20 @@ test('ingress refuses tampered raw payload before compiling or journaling', asyn
   assert.equal(result.status, 'REJECTED');
   assert.match(result.reason, /RAW_PAYLOAD_HASH_MISMATCH/);
   assert.equal(compiles, 0);
+});
+
+test('truth validator strictly marks transaction authenticity and block inclusion proof unavailable for observations', async () => {
+  const obs = observation();
+  const compiler = new DefaultFusionEnvelopeCompiler();
+  const validator = new DefaultTruthValidator();
+  const compiled = compiler.compile(obs);
+  const result = await validator.validate(compiled);
+  assert.equal(result.valid, true);
+  if (!result.valid) return;
+  const evidence = result.validatedEnvelope.truthEvidence;
+  assert.equal(evidence.signatureVerified, false, 'raw observation digest cannot verify cryptographic signature');
+  assert.equal(evidence.authenticityProof, 'UNAVAILABLE_OBSERVATION_ONLY', 'authenticity proof must be explicitly marked unavailable');
+  assert.equal(evidence.inclusionProof, 'UNVERIFIED_LOG_DIGEST', 'block inclusion proof must be marked unverified');
+  assert.equal(evidence.schemaCompliant, false, 'generic compiler must not claim schema compliance');
+  assert.equal(evidence.verificationMethod, 'OBSERVATION_HASH_AND_LOG_DECODING_ONLY');
 });
