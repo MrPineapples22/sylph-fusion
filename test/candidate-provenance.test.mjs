@@ -126,6 +126,7 @@ test('candidate CI packager binds a real archive to source identity and rejects 
   const files = {
     'package.json': '{"name":"fixture","version":"1.0.0"}', 'pnpm-lock.yaml': 'lockfileVersion: 9',
     'pnpm-workspace.yaml': 'packages: []', '.env.example': 'EXAMPLE=true',
+    'scripts/windows-process-identity.ps1': 'param([int] $ProcessId)\n# Test fixture helper; candidate packaging requires the runtime dependency.\n',
     'terminal/server.mjs': 'export {};', 'terminal/astra-feed.mjs': 'export {};',
     'terminal/soak-reader.mjs': 'export {};', 'terminal/evidence-view.mjs': 'export {};',
     'terminal/local-request.mjs': 'export {};', 'dist/fusion.js': 'export {};',
