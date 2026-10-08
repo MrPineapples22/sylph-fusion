@@ -25,18 +25,31 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import {
   canonicalJsonV10,
   hashCanonicalV10,
   EMPTY_SHA256_HEX,
 } from './canonicalization-v10.mjs';
 import { verifySystemIntegrationCertificate } from './verify-system-integration-certificate.mjs';
+import { verifyCertificationManifest } from './generate-certification-manifest.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const ROOT_DIR = resolve(__dirname, '..');
 const ARTIFACTS_DIR = resolve(ROOT_DIR, 'artifacts', 'connectivity');
 const DEFAULT_OUTPUT_PATH = resolve(ARTIFACTS_DIR, 'SYSTEM_INTEGRATION_CERTIFICATE.json');
+
+function resolveGitBinary() {
+  for (const c of ['git', 'C:\\Program Files\\Git\\cmd\\git.exe', 'C:\\Program Files\\Git\\bin\\git.exe', 'C:\\Program Files (x86)\\Git\\cmd\\git.exe']) {
+    try {
+      execFileSync(c, ['--version'], { stdio: 'ignore' });
+      return c;
+    } catch {}
+  }
+  return 'git';
+}
 
 /**
  * Loads JSON artifact safely or throws if missing.
@@ -63,6 +76,64 @@ function loadArtifact(filename) {
   return JSON.parse(readFileSync(p, 'utf8'));
 }
 
+function loadAndVerifyPhysicalAuthorityAudit(expectedCommitSha, { verifyWorktree = true } = {}) {
+  const evidenceFiles = [
+    'c1-single-authority-door.json',
+    'c2-mutation-exclusivity.json',
+    'c3-decision-provenance.json',
+    'c4-authority-ancestry.json',
+  ];
+  const reports = evidenceFiles.map((filename) => {
+    const path = resolve(ROOT_DIR, 'docs', 'audit', 'evidence', filename);
+    if (!existsSync(path)) throw new Error(`PHYSICAL_AUDIT_MISSING: ${filename}`);
+    return { filename, report: JSON.parse(readFileSync(path, 'utf8')) };
+  });
+  const first = reports[0].report;
+  const { manifestHash, ...payload } = first;
+  const computedHash = createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+  if (manifestHash !== computedHash) throw new Error('PHYSICAL_AUDIT_ROOT_MISMATCH: C1 manifest hash is invalid');
+  for (const { filename, report } of reports) {
+    if (report.manifestHash !== manifestHash || JSON.stringify(report) !== JSON.stringify(first)) {
+      throw new Error(`PHYSICAL_AUDIT_DIVERGENCE: ${filename} does not match the C1-C4 audit bundle`);
+    }
+  }
+  if (first.auditorVersion !== '4.0.0-c1-c4' || first.commitSha !== expectedCommitSha) {
+    throw new Error('PHYSICAL_AUDIT_COMMIT_MISMATCH: Audit evidence is not bound to the certification commit');
+  }
+  let expectedTreeSha;
+  try {
+    expectedTreeSha = execFileSync(resolveGitBinary(), ['rev-parse', `${expectedCommitSha}^{tree}`], {
+      cwd: ROOT_DIR, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim().toLowerCase();
+  } catch {
+    throw new Error('PHYSICAL_AUDIT_GIT_UNAVAILABLE: Cannot verify audit tree identity');
+  }
+  if (first.treeSha !== expectedTreeSha) throw new Error('PHYSICAL_AUDIT_TREE_MISMATCH: Audit tree differs from certification commit');
+  if (first.gateStatuses?.C1 !== 'PASS' || first.gateStatuses?.C2 !== 'PASS' ||
+      first.gateStatuses?.C3 !== 'PASS' || first.gateStatuses?.C4 !== 'PASS' ||
+      first.gateStatuses?.LIVE_CAPITAL_AUTHORITY !== 'BLOCKED' ||
+      first.gateStatuses?.UNIFIED_PIPELINE_CERTIFIED !== 'FALSE' ||
+      !Array.isArray(first.blockers) || first.blockers.length !== 0 ||
+      !Array.isArray(first.runtimeTestResults) || first.runtimeTestResults.length === 0 ||
+      first.runtimeTestResults.some((result) => result.passed !== true) ||
+      !first.metrics || Object.values(first.metrics).some((value) => value !== 0)) {
+    throw new Error('PHYSICAL_AUDIT_GATE_FAILURE: C1-C4 physical audit did not pass fail-closed invariants');
+  }
+
+  if (verifyWorktree) {
+    for (const [relativePath, expectedHash] of Object.entries(first.workingTreeFileHashes ?? {})) {
+      const resolvedPath = resolve(ROOT_DIR, relativePath);
+      if (!resolvedPath.startsWith(`${ROOT_DIR}/`) && !resolvedPath.startsWith(`${ROOT_DIR}\\`)) {
+        throw new Error(`PHYSICAL_AUDIT_PATH_INVALID: ${relativePath}`);
+      }
+      if (!existsSync(resolvedPath) || createHash('sha256').update(readFileSync(resolvedPath)).digest('hex') !== expectedHash) {
+        throw new Error(`PHYSICAL_AUDIT_WORKTREE_DRIFT: ${relativePath}`);
+      }
+    }
+  }
+  return { root: manifestHash, report: first };
+}
+
 /**
  * Generates the System Integration Certificate.
  * @param {object} [options={}]
@@ -78,6 +149,22 @@ export function generateSystemIntegrationCertificate(options = {}) {
 
   // 1. Load Precedent Artifacts
   const manifest = options.manifest ?? loadArtifact('CERTIFICATION_MANIFEST.json');
+  // Test-only injected fixtures may use synthetic manifests. Every normal certificate
+  // generation must reject stale commits, stale inputs, and invalid manifest roots.
+  if (!(options.dryRun === true && options.manifest !== undefined)) {
+    verifyCertificationManifest(manifest);
+  }
+  let physicalAudit;
+  if (options.dryRun === true && options.manifest !== undefined) {
+    if (!/^[0-9a-f]{64}$/.test(options.physicalAudit?.root ?? '')) {
+      throw new Error('PHYSICAL_AUDIT_FIXTURE_REQUIRED: Dry-run manifest fixtures require an explicit 64-hex audit root');
+    }
+    physicalAudit = { root: options.physicalAudit.root };
+  } else {
+    physicalAudit = loadAndVerifyPhysicalAuthorityAudit(manifest.certifiedPayload?.repositoryCommitSha, {
+      verifyWorktree: options.dryRun !== true,
+    });
+  }
   const scorecard = options.scorecard ?? loadArtifact('c0-c10-scorecard.json');
   const authorityGraph = options.authorityGraph ?? loadArtifact('authority-graph.json');
   const staticGraph = options.staticGraph ?? loadArtifact('static-graph.json');
@@ -122,6 +209,7 @@ export function generateSystemIntegrationCertificate(options = {}) {
     roots: {
       certificationManifestRoot,
       staticManifestRoot,
+      physicalAuthorityAuditRoot: physicalAudit.root,
       authorityGraphRoot,
       staticGraphRoot,
       convergenceRoot,

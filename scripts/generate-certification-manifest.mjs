@@ -44,9 +44,15 @@ function computeFileHash(filePath) {
 }
 
 function resolveGitCommitSha() {
-  if (process.env.GITHUB_SHA && /^[0-9a-f]{40}$/i.test(process.env.GITHUB_SHA)) {
-    return process.env.GITHUB_SHA.trim().toLowerCase();
+  const checkoutSha = resolveCheckoutCommitSha();
+  if (process.env.GITHUB_SHA && /^[0-9a-f]{40}$/i.test(process.env.GITHUB_SHA)
+    && process.env.GITHUB_SHA.trim().toLowerCase() !== checkoutSha) {
+    throw new Error(`GITHUB_SHA_MISMATCH: Environment SHA ${process.env.GITHUB_SHA.trim()} differs from checkout ${checkoutSha}`);
   }
+  return checkoutSha;
+}
+
+function resolveCheckoutCommitSha() {
   try {
     const gitCmd = process.platform === 'win32'
       ? (existsSync('C:\\Program Files\\Git\\cmd\\git.exe') ? '"C:\\Program Files\\Git\\cmd\\git.exe"' : 'git')
@@ -56,13 +62,51 @@ function resolveGitCommitSha() {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim().toLowerCase();
-    if (/^[0-9a-f]{40}$/.test(sha)) {
-      return sha;
-    }
+    if (/^[0-9a-f]{40}$/.test(sha)) return sha;
   } catch {
-    // Fall back to checked-in baseline if outside git
+    // Verification cannot claim freshness without the checkout identity.
   }
-  return '373143a10d05327149cc5d3cbd0cfb44bff9cc18';
+  throw new Error('MANIFEST_GIT_UNAVAILABLE: Cannot verify manifest freshness without the current checkout SHA');
+}
+
+/**
+ * Verify that a persisted certification manifest still describes this checkout.
+ * Integrity alone is insufficient: a correctly hashed manifest may still be stale.
+ * @param {object} manifest
+ * @param {{ expectedCommitSha?: string }} [options]
+ * @returns {{ valid: true, repositoryCommitSha: string }}
+ */
+export function verifyCertificationManifest(manifest, options = {}) {
+  const payload = manifest?.certifiedPayload;
+  if (!payload || manifest.schemaVersion !== '1.0.0') {
+    throw new Error('MANIFEST_INVALID: Missing certified payload or unsupported schema');
+  }
+  if (manifest.manifestRoot !== hashCanonicalV10(payload)) {
+    throw new Error('MANIFEST_ROOT_MISMATCH: Certified payload does not match manifest root');
+  }
+
+  const currentCommitSha = options.expectedCommitSha ?? resolveCheckoutCommitSha();
+  if (!/^[0-9a-f]{40}$/i.test(currentCommitSha) || payload.repositoryCommitSha !== currentCommitSha.toLowerCase()) {
+    throw new Error(`MANIFEST_COMMIT_STALE: Manifest commit ${payload.repositoryCommitSha} does not match checkout ${currentCommitSha}`);
+  }
+
+  const configRaw = JSON.parse(readFileSync(CONFIG_FILE, 'utf8'));
+  const expected = {
+    lockfileHash: computeFileHash(resolve(ROOT_DIR, 'package-lock.json')),
+    tsConfigHash: computeFileHash(resolve(ROOT_DIR, 'tsconfig.json')),
+    certificationConfigHash: hashCanonicalV10(configRaw),
+    mandatoryEdgeSetHash: hashCanonicalV10(configRaw.mandatoryEdges ?? []),
+    mandatoryEdgesCount: configRaw.mandatoryEdges?.length ?? 0,
+  };
+  for (const [field, value] of Object.entries(expected)) {
+    if (payload[field] !== value) {
+      throw new Error(`MANIFEST_INPUT_MISMATCH: ${field} does not match current repository inputs`);
+    }
+  }
+  if (configRaw.mandatoryEdgesCount !== expected.mandatoryEdgesCount) {
+    throw new Error('MANIFEST_CONFIG_INVALID: mandatoryEdgesCount does not match mandatoryEdges');
+  }
+  return { valid: true, repositoryCommitSha: currentCommitSha.toLowerCase() };
 }
 
 function resolveNpmVersion() {
@@ -81,6 +125,7 @@ function resolveNpmVersion() {
 /**
  * Generates the immutable Certification Manifest.
  * @param {object} [options]
+ * @param {boolean} [options.dryRun=false] If true, compute but do not persist the manifest.
  * @returns {object} Manifest object containing certifiedPayload and manifestRoot
  */
 export function generateCertificationManifest(options = {}) {
@@ -140,10 +185,10 @@ export function generateCertificationManifest(options = {}) {
   }
 
   const outputPath = resolve(ARTIFACTS_DIR, 'CERTIFICATION_MANIFEST.json');
-  writeFileSync(outputPath, canonicalJsonV10(manifest), 'utf8');
+  if (options.dryRun !== true) writeFileSync(outputPath, canonicalJsonV10(manifest), 'utf8');
 
   console.log('[CERTIFICATION_MANIFEST] Successfully generated Certification Manifest:');
-  console.log(` - File: ${outputPath}`);
+  console.log(` - File: ${options.dryRun === true ? '(dry run; not written)' : outputPath}`);
   console.log(` - Manifest Root: ${manifestRoot}`);
   console.log(` - Commit SHA: ${repositoryCommitSha}`);
   console.log(` - Mandatory Edges: ${mandatoryEdges.length} (Hash: ${mandatoryEdgeSetHash.slice(0, 16)}...)`);

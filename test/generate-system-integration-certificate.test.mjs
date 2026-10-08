@@ -3,12 +3,19 @@ import assert from 'node:assert/strict';
 import { generateSystemIntegrationCertificate } from '../scripts/generate-system-integration-certificate.mjs';
 import { verifySystemIntegrationCertificate } from '../scripts/verify-system-integration-certificate.mjs';
 import { hashCanonicalV10 } from '../scripts/canonicalization-v10.mjs';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT_DIR = resolve(fileURLToPath(new URL('..', import.meta.url)));
 
 test('Step 7 Certificate Generator: Generation and independent verification', () => {
   const { certificate, verificationReport } = generateSystemIntegrationCertificate({ dryRun: true });
   assert.equal(certificate.schemaVersion, '1.0.0');
   assert.match(certificate.certificateRoot, /^[0-9a-f]{64}$/);
   assert.equal(certificate.certifiedPayload.systemId, 'SYLPH_FUSION');
+  const physicalAudit = JSON.parse(readFileSync(resolve(ROOT_DIR, 'docs/audit/evidence/c1-single-authority-door.json'), 'utf8'));
+  assert.equal(certificate.certifiedPayload.roots.physicalAuthorityAuditRoot, physicalAudit.manifestHash);
   assert.equal(verificationReport.valid, true);
   assert.equal(verificationReport.tamperSensitivityProven, true);
 });
@@ -94,6 +101,7 @@ test('Step 7 Certificate Generator: Deterministic reproducibility', () => {
 test('Step 7 Certificate Generator: Root mutation causes certificate divergence', () => {
   const base = generateSystemIntegrationCertificate({
     dryRun: true,
+    physicalAudit: { root: '1'.repeat(64) },
     manifest: {
       manifestRoot: 'a'.repeat(64),
       certifiedPayload: { repositoryCommitSha: 'sha1' },
@@ -102,6 +110,7 @@ test('Step 7 Certificate Generator: Root mutation causes certificate divergence'
 
   const mutated = generateSystemIntegrationCertificate({
     dryRun: true,
+    physicalAudit: { root: '2'.repeat(64) },
     manifest: {
       manifestRoot: 'b'.repeat(64),
       certifiedPayload: { repositoryCommitSha: 'sha2' },
@@ -109,4 +118,14 @@ test('Step 7 Certificate Generator: Root mutation causes certificate divergence'
   }).certificate;
 
   assert.notEqual(base.certificateRoot, mutated.certificateRoot);
+});
+
+test('Step 7 Certificate Generator: Persisted certificates reject invalid manifests', () => {
+  assert.throws(() => generateSystemIntegrationCertificate({
+    manifest: {
+      schemaVersion: '1.0.0',
+      manifestRoot: 'a'.repeat(64),
+      certifiedPayload: { repositoryCommitSha: '0'.repeat(40) },
+    },
+  }), /MANIFEST_ROOT_MISMATCH/);
 });

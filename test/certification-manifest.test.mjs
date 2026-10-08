@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { generateCertificationManifest } from '../scripts/generate-certification-manifest.mjs';
+import { generateCertificationManifest, verifyCertificationManifest } from '../scripts/generate-certification-manifest.mjs';
 import { hashCanonicalV10, assertDigestMatch, EMPTY_SHA256_HEX } from '../scripts/canonicalization-v10.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -25,8 +25,8 @@ test('Step 2 Manifest: Generation and artifact persistence', () => {
 
 test('Step 2 Manifest: Deterministic reproducibility', () => {
   const fixedTimestamp = '2026-10-07T00:00:00.000Z';
-  const run1 = generateCertificationManifest({ timestamp: fixedTimestamp });
-  const run2 = generateCertificationManifest({ timestamp: fixedTimestamp });
+  const run1 = generateCertificationManifest({ timestamp: fixedTimestamp, dryRun: true });
+  const run2 = generateCertificationManifest({ timestamp: fixedTimestamp, dryRun: true });
 
   assert.equal(run1.manifestRoot, run2.manifestRoot);
   assert.equal(run1.certifiedPayload.repositoryCommitSha, run2.certifiedPayload.repositoryCommitSha);
@@ -34,7 +34,7 @@ test('Step 2 Manifest: Deterministic reproducibility', () => {
 });
 
 test('Step 2 Manifest: Independent hash verification over certifiedPayload', () => {
-  const manifest = generateCertificationManifest();
+  const manifest = generateCertificationManifest({ dryRun: true });
   const independentRoot = hashCanonicalV10(manifest.certifiedPayload);
 
   assert.equal(manifest.manifestRoot, independentRoot);
@@ -44,10 +44,11 @@ test('Step 2 Manifest: Independent hash verification over certifiedPayload', () 
 
 test('Step 2 Manifest: Revision drift causes root divergence', () => {
   const fixedTimestamp = '2026-10-07T00:00:00.000Z';
-  const base = generateCertificationManifest({ timestamp: fixedTimestamp });
+  const base = generateCertificationManifest({ timestamp: fixedTimestamp, dryRun: true });
   const drifted = generateCertificationManifest({
     timestamp: fixedTimestamp,
     repositoryCommitSha: '0000000000000000000000000000000000000000',
+    dryRun: true,
   });
 
   assert.notEqual(base.manifestRoot, drifted.manifestRoot);
@@ -55,10 +56,11 @@ test('Step 2 Manifest: Revision drift causes root divergence', () => {
 
 test('Step 2 Manifest: Config drift causes root divergence', () => {
   const fixedTimestamp = '2026-10-07T00:00:00.000Z';
-  const base = generateCertificationManifest({ timestamp: fixedTimestamp });
+  const base = generateCertificationManifest({ timestamp: fixedTimestamp, dryRun: true });
   const drifted = generateCertificationManifest({
     timestamp: fixedTimestamp,
     certificationConfigHash: 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+    dryRun: true,
   });
 
   assert.notEqual(base.manifestRoot, drifted.manifestRoot);
@@ -66,11 +68,27 @@ test('Step 2 Manifest: Config drift causes root divergence', () => {
 
 test('Step 2 Manifest: Edge set drift causes root divergence', () => {
   const fixedTimestamp = '2026-10-07T00:00:00.000Z';
-  const base = generateCertificationManifest({ timestamp: fixedTimestamp });
+  const base = generateCertificationManifest({ timestamp: fixedTimestamp, dryRun: true });
   const drifted = generateCertificationManifest({
     timestamp: fixedTimestamp,
     mandatoryEdgeSetHash: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+    dryRun: true,
   });
 
   assert.notEqual(base.manifestRoot, drifted.manifestRoot);
+});
+
+test('Step 2 Manifest: Verification rejects stale commit and altered inputs', () => {
+  const manifest = generateCertificationManifest({ dryRun: true });
+  assert.equal(verifyCertificationManifest(manifest).valid, true);
+
+  const stale = structuredClone(manifest);
+  stale.certifiedPayload.repositoryCommitSha = '0'.repeat(40);
+  stale.manifestRoot = hashCanonicalV10(stale.certifiedPayload);
+  assert.throws(() => verifyCertificationManifest(stale), /MANIFEST_COMMIT_STALE/);
+
+  const altered = structuredClone(manifest);
+  altered.certifiedPayload.mandatoryEdgeSetHash = 'e'.repeat(64);
+  altered.manifestRoot = hashCanonicalV10(altered.certifiedPayload);
+  assert.throws(() => verifyCertificationManifest(altered), /MANIFEST_INPUT_MISMATCH: mandatoryEdgeSetHash/);
 });

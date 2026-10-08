@@ -149,6 +149,11 @@ export function verifySystemIntegrationCertificate(certPathOrObject = DEFAULT_CE
   if (!certRaw.certifiedPayload) {
     throw new Error('VERIFICATION_FAILURE: Missing certifiedPayload in certificate');
   }
+  if (certRaw.certifiedPayload.systemId === 'SYLPH_FUSION' &&
+      certRaw.certifiedPayload.ladder?.C4?.awarded === true &&
+      !/^[0-9a-f]{64}$/.test(certRaw.certifiedPayload.roots?.physicalAuthorityAuditRoot ?? '')) {
+    throw new Error('VERIFICATION_FAILURE: C4 certificate is missing a valid physical authority audit root');
+  }
 
   const claimedRoot = certRaw.certificateRoot.toLowerCase().trim();
   if (claimedRoot.length !== 64 || !/^[0-9a-f]{64}$/.test(claimedRoot)) {

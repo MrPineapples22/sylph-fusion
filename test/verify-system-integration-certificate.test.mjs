@@ -79,6 +79,19 @@ test('Step 4 Independent Verifier: Malformed certificate schema fails closed', (
   );
 });
 
+test('Step 4 Independent Verifier: C4 integration certificate requires physical audit binding', () => {
+  const payload = {
+    systemId: 'SYLPH_FUSION',
+    ladder: { C4: { awarded: true } },
+    roots: {},
+  };
+  assert.throws(() => verifySystemIntegrationCertificate({
+    schemaVersion: '1.0.0',
+    certificateRoot: hashCanonicalV10(payload),
+    certifiedPayload: payload,
+  }), /missing a valid physical authority audit root/);
+});
+
 test('Step 4 Independent Verifier: Non-existent file path fails closed', () => {
   assert.throws(
     () => verifySystemIntegrationCertificate('non/existent/path/to/cert.json'),
