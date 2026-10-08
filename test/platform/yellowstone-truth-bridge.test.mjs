@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { YellowstoneTruthBridge } from '../../dist/platform/ingestion/yellowstone-truth-bridge.js';
 import { ChainTruthEngine } from '../../dist/intelligence/truth/chain-truth.js';
 
@@ -101,3 +102,41 @@ test('YellowstoneTruthBridge: Deduplication blocks repeated events from counting
   const stats = bridge.getIngestionStats();
   assert.equal(stats.total_ingested, 1);
 });
+
+test('YellowstoneTruthBridge: decoded evidence hashes the fields used for event parsing', () => {
+  const bridge = new YellowstoneTruthBridge({ chainTruth: new ChainTruthEngine() });
+  const emitted = [];
+  bridge.on('canonical_event', (event) => emitted.push(event));
+  const update = {
+    signature: 'decoded-signature',
+    slot: 300001,
+    logs: ['Program log: Instruction: Buy'],
+  };
+  assert.equal(bridge.ingestUpdate(update), true);
+  const expectedHash = createHash('sha256').update(JSON.stringify(update)).digest('hex');
+  assert.equal(emitted[0].eventType, 'SWAP_BUY');
+  assert.equal(emitted[0].provenance.wireEncoding, 'DECODED_PROTOBUF_JSON_CANONICAL');
+  assert.equal(emitted[0].payload.wireEncoding, 'DECODED_PROTOBUF_JSON_CANONICAL');
+  assert.equal(emitted[0].provenance.rawPayloadHash, expectedHash);
+  assert.equal(emitted[0].payload.rawPayloadHash, expectedHash);
+});
+
+for (const [name, rawWireBytes] of [
+  ['empty buffer', Buffer.alloc(0)],
+  ['untrusted protobuf-looking bytes', new Uint8Array([0x08, 0x96, 0x01])],
+  ['mismatched transaction bytes', Buffer.from(JSON.stringify({ signature: 'other', slot: 7, logs: ['Program log: Sell'] }))],
+]) {
+  test('YellowstoneTruthBridge: ignores raw-wire claim from ' + name, () => {
+    const bridge = new YellowstoneTruthBridge({ chainTruth: new ChainTruthEngine() });
+    const emitted = [];
+    bridge.on('canonical_event', (event) => emitted.push(event));
+    const decoded = { signature: 'untrusted-bytes-buy', slot: 300002, logs: ['Program log: Buy'] };
+    // JavaScript callers can still supply removed TypeScript properties.
+    assert.equal(bridge.ingestUpdate({ ...decoded, rawWireBytes }), true);
+    assert.equal(emitted[0].eventType, 'SWAP_BUY');
+    assert.equal(emitted[0].provenance.wireEncoding, 'DECODED_PROTOBUF_JSON_CANONICAL');
+    assert.equal(emitted[0].payload.wireEncoding, 'DECODED_PROTOBUF_JSON_CANONICAL');
+    assert.equal(emitted[0].provenance.rawPayloadHash, createHash('sha256').update(JSON.stringify(decoded)).digest('hex'));
+    assert.notEqual(emitted[0].provenance.rawPayloadHash, createHash('sha256').update(rawWireBytes).digest('hex'));
+  });
+}

@@ -8,7 +8,7 @@
  * 2. Strict runtime schema validation (replacing `response.json() as T`).
  * 3. Capability-level quarantine: Isolates drifting providers without crashing the engine.
  * 4. Epistemic state preservation: Absence of evidence is never evidence of safety.
- * 5. Pre-decoding RawWireWitness cryptographic provenance tracking.
+ * 5. Payload digest tracking with explicitly declared representation.
  * 6. Durable SQLite WAL persistence & cold-boot rehydration.
  */
 
@@ -25,6 +25,14 @@ export interface EpistemicField<T> {
   readonly rawField?: string;
 }
 
+/** Representation declared by the caller; neither capture nor authenticity is verified. */
+export type WirePayloadEncoding =
+  | 'UNSPECIFIED'
+  | 'JSON_FRAME_BYTES'
+  | 'JSON_CANONICAL'
+  | 'DECODED_PROTOBUF_JSON_CANONICAL'
+  | 'PROTOBUF_WIRE_BYTES';
+
 export interface RawWireWitness {
   readonly witnessId: string;
   readonly providerId: string;
@@ -35,20 +43,28 @@ export interface RawWireWitness {
   readonly byteLength: number;
   readonly httpStatus?: number;
   readonly contractStatus: 'VALID' | 'MALFORMED' | 'QUARANTINED' | 'UNKNOWN';
+  readonly wireEncoding?: WirePayloadEncoding;
 }
 
 /**
- * Creates a cryptographic pre-decoding wire witness for external network traffic.
+ * Digests the supplied payload, which may already be decoded or locally serialized.
+ * The hash establishes byte equality only, not transport capture, source authenticity,
+ * chain inclusion, or a binding between separately supplied bytes and decoded events.
  */
 export function createWireWitness(
   providerId: string,
   capabilityId: string,
   transport: 'HTTP_REST' | 'WSS' | 'GRPC' | 'WEBSOCKET' | string,
-  payload: string | Buffer,
+  payload: string | Buffer | Uint8Array,
   httpStatus?: number,
-  contractStatus: 'VALID' | 'MALFORMED' | 'QUARANTINED' | 'UNKNOWN' = 'VALID'
+  contractStatus: 'VALID' | 'MALFORMED' | 'QUARANTINED' | 'UNKNOWN' = 'VALID',
+  wireEncoding: WirePayloadEncoding = 'UNSPECIFIED'
 ): RawWireWitness {
-  const buf = typeof payload === 'string' ? Buffer.from(payload, 'utf8') : payload;
+  const buf = typeof payload === 'string'
+    ? Buffer.from(payload, 'utf8')
+    : Buffer.isBuffer(payload)
+    ? payload
+    : Buffer.from(payload);
   const hash = createHash('sha256').update(buf).digest('hex');
   const now = Date.now();
   const witnessId = `wit_${providerId}_${now}_${hash.slice(0, 8)}`;
@@ -63,6 +79,7 @@ export function createWireWitness(
     byteLength: buf.length,
     httpStatus,
     contractStatus,
+    wireEncoding,
   };
 }
 
@@ -123,17 +140,19 @@ export class ContractCanaryAuthority {
   }
 
   /**
-   * Creates a cryptographic RawWireWitness hashing external payloads prior to authoritative decoding.
+   * Digests caller-supplied data without inferring its representation or authenticity.
    */
   public createWireWitness(
     providerId: string,
     capabilityId: string,
     transport: 'HTTP_REST' | 'WSS' | 'GRPC' | 'WEBSOCKET' | string,
-    payload: string | Buffer | object,
+    payload: string | Buffer | Uint8Array | object,
     httpStatus = 200,
-    contractStatus?: 'VALID' | 'MALFORMED' | 'QUARANTINED' | 'UNKNOWN'
+    contractStatus?: 'VALID' | 'MALFORMED' | 'QUARANTINED' | 'UNKNOWN',
+    wireEncoding: WirePayloadEncoding = 'UNSPECIFIED'
   ): RawWireWitness {
-    const rawPayload = Buffer.isBuffer(payload) || typeof payload === 'string'
+    const isWireBytes = Buffer.isBuffer(payload) || payload instanceof Uint8Array;
+    const rawPayload = isWireBytes || typeof payload === 'string'
       ? payload
       : JSON.stringify(payload);
     return createWireWitness(
@@ -142,7 +161,8 @@ export class ContractCanaryAuthority {
       transport,
       rawPayload,
       httpStatus,
-      contractStatus ?? (httpStatus >= 400 ? 'MALFORMED' : 'VALID')
+      contractStatus ?? (httpStatus >= 400 ? 'MALFORMED' : 'VALID'),
+      wireEncoding
     );
   }
 

@@ -316,6 +316,7 @@ export class Engine {
   private lastTransitionProof: StateTransitionProof | null = null;
   private projectionSequence = 0;
   readonly feed: Feed;
+  readonly feedOwnership: 'RUNTIME_COMPOSITION_INJECTED' | 'ENGINE_LOCAL_FALLBACK';
   readonly runtimeUnit: UnifiedPipelineUnit;
   divergenceAuditor?: RuntimeDivergenceAuditor;
 
@@ -399,6 +400,7 @@ export class Engine {
       await this.#onCommitted(committed);
     });
     this.feed = feed ?? new Feed(cfg, rpc.connection, this.#ingress);
+    this.feedOwnership = feed ? 'RUNTIME_COMPOSITION_INJECTED' : 'ENGINE_LOCAL_FALLBACK';
     this.feed.gapReconciler.setRecoveryCertificateJournal({
       saveVerifiedRecoveryCertificate: certificate => {
         const journal = this.store as Store & { saveVerifiedRecoveryCertificate?: Store['saveVerifiedRecoveryCertificate'] };
@@ -2228,13 +2230,6 @@ export async function runEngine(options: {
     const paperMode: PaperAuthorityMode = ((state.mode as string) === 'paper_max_risk' || (state.mode as string) === 'paper_chaos' || (cfg.MODE as string) === 'paper_max_risk' || (cfg.MODE as string) === 'paper_chaos')
       ? 'PAPER_MAX_RISK'
       : 'PAPER_STANDARD';
-    const paperRuntime = composePaperRuntime({
-      context: { mode: 'PAPER' } as any,
-      market,
-      execution: executor,
-      reconciliation: {},
-      unit: new UnifiedPipelineUnit(paperMode),
-    });
     const ingress = createCanonicalSolanaIngress({
       connectionOrCoder: rpc.connection,
       journal: new StoreIngressJournal(store),
@@ -2244,6 +2239,15 @@ export async function runEngine(options: {
     if (options.runtimeTelemetry) runtimeTelemetry = new RuntimeTelemetryExporter(ingress, options.runtimeTelemetry,
       code => log('runtime_telemetry_export_failed', { code }));
     const feed = new Feed(cfg, rpc.connection, ingress);
+    const paperRuntime = composePaperRuntime({
+      context: { mode: 'PAPER' } as any,
+      market,
+      execution: executor,
+      reconciliation: {},
+      unit: new UnifiedPipelineUnit(paperMode),
+      feed,
+      ingress,
+    });
     const engine = new Engine(
       cfg,
       rpc,
@@ -2257,8 +2261,8 @@ export async function runEngine(options: {
       paperRuntime.unit,
       paperRuntime.divergenceAuditor,
       researchSpool,
-      ingress,
-      feed
+      paperRuntime.ingress,
+      paperRuntime.feed
     );
     const spoolRecovery = await engine.drainResearchSpool();
     if (spoolRecovery.error || spoolRecovery.replayedCount > 0) {

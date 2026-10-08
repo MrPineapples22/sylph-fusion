@@ -1,15 +1,14 @@
 /**
  * SYLPH FUSION â€” YELLOWSTONE gRPC CHAIN TRUTH BRIDGE
- * Connects raw Yellowstone gRPC streams directly into ChainTruthEngine.
+ * Connects decoded Yellowstone transaction updates into ChainTruthEngine.
  * Enforces sub-50ms tick latency, zero-lookahead point-in-time slots,
  * and immutable event provenance.
  */
 
-import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import type { ChainTruthEngine } from '../../intelligence/truth/chain-truth.js';
 import type { CanonicalEvent, CanonicalEventType, ChainCommitment } from '../../intelligence/truth/types.js';
-import { createWireWitness, type RawWireWitness } from './contract-canary.js';
+import { createWireWitness } from './contract-canary.js';
 
 export type GeyserConnectionTopology =
   | 'DIRECT_VALIDATOR_GEYSER'
@@ -104,7 +103,7 @@ export class YellowstoneTruthBridge extends EventEmitter {
   }
 
   /**
-   * Ingests a raw transaction update from Yellowstone gRPC into ChainTruthEngine.
+   * Ingests a decoded transaction update. This API has no trusted wire-capture boundary.
    */
   public ingestTransactionUpdate(update: YellowstoneRawTransactionUpdate): {
     readonly success: boolean;
@@ -144,13 +143,18 @@ export class YellowstoneTruthBridge extends EventEmitter {
       }
     }
 
+    // Hash the decoded fields used below. Extra caller-supplied bytes cannot prove
+    // that a transport captured or decoded this event, so they are never used.
     const rawPayload = JSON.stringify({ signature: update.signature, slot, logs: update.logs });
+    const wireEncoding = 'DECODED_PROTOBUF_JSON_CANONICAL';
     const wireWitness = createWireWitness(
       'SOLANA_GEYSER',
       'TRANSACTION_STREAM',
       'GRPC',
       rawPayload,
-      200
+      200,
+      'VALID',
+      wireEncoding
     );
 
     const eventId = `geyser_${slot}_${update.signature.slice(0, 16)}`;
@@ -182,6 +186,7 @@ export class YellowstoneTruthBridge extends EventEmitter {
         transport: 'geyser_grpc',
         rawPayloadHash: wireWitness.payloadHash,
         ingestedByWorkerId: this.workerId,
+        wireEncoding,
       },
       payload: {
         rawPayloadHash: wireWitness.payloadHash,
@@ -191,6 +196,7 @@ export class YellowstoneTruthBridge extends EventEmitter {
         workerId: this.workerId,
         topology: this.topology,
         wireWitnessId: wireWitness.witnessId,
+        wireEncoding,
       },
     };
 

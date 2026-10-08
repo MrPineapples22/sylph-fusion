@@ -34,13 +34,19 @@
       "severity": "HIGH",
       "evidence": [
         "WebSocket path stores the received JSON-RPC frame bytes.",
-        "Yellowstone SDK exposes a decoded protobuf update; implementation stores a JSON serialization of that decoded update, not original protobuf wire bytes."
+        "The alternate YellowstoneTruthBridge hashes a deterministic JSON projection of decoded signature, slot, and logs, explicitly labeled DECODED_PROTOBUF_JSON_CANONICAL. This bridge is not the live Feed.geyser ingestion path.",
+        "The unsafe rawWireBytes injection property was removed. Extra JavaScript properties, including empty, mismatched, or untrusted byte buffers, are ignored and cannot promote decoded evidence to wire capture.",
+        "Generic ContractCanary witnesses default to UNSPECIFIED for strings, objects, Buffer, and Uint8Array. Explicit representation labels distinguish JSON frames, canonical JSON, decoded protobuf JSON, and protobuf wire bytes; these are caller declarations, and a payload digest proves neither capture nor authenticity.",
+        "test/platform/yellowstone-truth-bridge.test.mjs and test/platform/contract-canary.test.mjs cover decoded digests, ignored untrusted bytes, and encoding defaults.",
+        "The real Feed.geyser in src/feed.ts receives decoded SDK updates and stores Buffer.from(JSON.stringify(update)); it does not retain pre-deserialization protobuf frames or use this alternate bridge."
       ],
       "remaining": [
-        "Document protobuf SDK boundary and add a versioned canonical binary encoding or capture wire bytes before SDK decoding."
+        "Implement and independently review a trusted transport capture/decoder boundary that binds actual protobuf bytes to the event derived from those bytes.",
+        "Carry explicit representation metadata through the live Feed and canonical ingress archive; raw preservation is not uniform across providers.",
+        "No payload hash or encoding declaration establishes transaction authenticity, chain inclusion, or source identity."
       ],
       "owner": "Sol Provider Integration",
-      "nextAction": "Determine whether Yellowstone transport API exposes original frame bytes; otherwise retain explicit decoded-evidence classification."
+      "nextAction": "Design live Feed transport capture and event binding before claiming wire preservation; retain decoded provenance bounds until then."
     },
     {
       "id": "C1-INGRESS-003",
@@ -64,17 +70,16 @@
       "status": "PARTIALLY_RESOLVED",
       "severity": "HIGH",
       "evidence": [
-        "runEngine explicitly constructs and injects Store-backed ingress and Feed.",
-        "Engine no longer falls back to InMemoryIngressJournal and requires explicit Store-backed ingress or an injected test ingress.",
-        "Engine's ingress and committed handler are JavaScript private, and Engine no longer exposes an ingress getter.",
-        "Feed ingress is JavaScript private.",
-        "Engine continues to construct Feed when no Feed is injected; full RuntimeComposition ownership remains incomplete."
+        "RuntimeComposition now records optional Feed and CanonicalIngress references and runEngine passes those references into Engine.",
+        "The normal runEngine already constructed and injected Feed and ingress before these composition-reference changes.",
+        "Engine still constructs its own ingress and Feed when dependencies are omitted. feedOwnership labels any supplied Feed as RUNTIME_COMPOSITION_INJECTED without proving where it was constructed or which ingress it uses."
       ],
       "remaining": [
-        "Move Feed construction out of Engine into RuntimeComposition."
+        "RuntimeComposition feed and ingress are optional, so absent or mismatched dependencies remain possible.",
+        "Require and validate one composition-owned Feed/ingress pairing across supported runtime entrypoints before claiming lifecycle ownership closure."
       ],
       "owner": "Astra Architecture",
-      "nextAction": "Inventory and migrate Engine constructors without introducing a test-only production fallback."
+      "nextAction": "Have Astra Architecture design and independently review an enforced composition dependency contract and negative tests for missing/mismatched dependencies."
     },
     {
       "id": "C1-DELIVERY-001",
@@ -170,7 +175,7 @@
     },
     "runtimeConvergence": {
       "highestProvenLevel": "C4",
-      "C5": "HALTED at C5_HALT \u2014 physical runtime telemetry spans required"
+      "C5": "HALTED at C5_HALT — physical runtime telemetry spans required"
     },
     "UNIFIED_PIPELINE_CERTIFIED": false,
     "LIVE_CAPITAL_AUTHORITY": "BLOCKED"

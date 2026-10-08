@@ -6,6 +6,8 @@
 import type { RuntimeConfigSnapshot } from './runtime-context.js';
 import { UnifiedPipelineUnit } from './platform/pipeline/unified-unit.js';
 import { RuntimeDivergenceAuditor } from './platform/pipeline/runtime-divergence.js';
+import type { Feed } from './feed.js';
+import type { CanonicalIngress } from './platform/ingress/canonical-ingress.js';
 
 export interface RuntimeComposition<TMarket, TExecution, TReconciliation> {
   readonly context: RuntimeConfigSnapshot;
@@ -14,6 +16,8 @@ export interface RuntimeComposition<TMarket, TExecution, TReconciliation> {
   readonly reconciliation: TReconciliation;
   readonly unit: UnifiedPipelineUnit;
   readonly divergenceAuditor: RuntimeDivergenceAuditor;
+  readonly feed?: Feed;
+  readonly ingress?: CanonicalIngress;
 }
 
 export function composePaperRuntime<TMarket, TExecution, TReconciliation>(

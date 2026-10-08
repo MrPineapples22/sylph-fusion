@@ -67,39 +67,42 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const projectRoot = resolve(__dirname, '..');
 
-function getGitCommitSha() {
-  try {
-    return execSync('"C:\\Program Files\\Git\\cmd\\git.exe" rev-parse HEAD', { cwd: projectRoot, encoding: 'utf8' }).trim();
-  } catch {
-    try {
-      return execSync('git rev-parse HEAD', { cwd: projectRoot, encoding: 'utf8' }).trim();
-    } catch {
-      return 'UNKNOWN_COMMIT_SHA';
+function getGitExecutable() {
+  if (process.env.GIT_PATH && existsSync(process.env.GIT_PATH)) return process.env.GIT_PATH;
+  for (const c of ['git', 'C:\\Program Files\\Git\\cmd\\git.exe', 'C:\\Program Files\\Git\\bin\\git.exe', 'C:\\Program Files (x86)\\Git\\cmd\\git.exe']) {
+    if (c === 'git') {
+      try { execSync('git --version', { stdio: 'ignore' }); return 'git'; } catch {}
+    } else if (existsSync(c)) {
+      return c;
     }
+  }
+  return 'git';
+}
+
+function getGitCommitSha() {
+  const gitCmd = getGitExecutable();
+  try {
+    return execSync(`"${gitCmd}" rev-parse HEAD`, { cwd: projectRoot, encoding: 'utf8' }).trim();
+  } catch {
+    return 'UNKNOWN_COMMIT_SHA';
   }
 }
 
 function getGitTreeSha() {
+  const gitCmd = getGitExecutable();
   try {
-    return execSync('"C:\\Program Files\\Git\\cmd\\git.exe" rev-parse "HEAD^{tree}"', { cwd: projectRoot, encoding: 'utf8' }).trim();
+    return execSync(`"${gitCmd}" rev-parse "HEAD^{tree}"`, { cwd: projectRoot, encoding: 'utf8' }).trim();
   } catch {
-    try {
-      return execSync('git rev-parse "HEAD^{tree}"', { cwd: projectRoot, encoding: 'utf8' }).trim();
-    } catch {
-      return 'UNKNOWN_TREE_SHA';
-    }
+    return 'UNKNOWN_TREE_SHA';
   }
 }
 
 function getWorkingTreeState() {
+  const gitCmd = getGitExecutable();
   try {
-    return execSync('"C:\\Program Files\\Git\\cmd\\git.exe" status --porcelain=v1', { cwd: projectRoot, encoding: 'utf8' }).trim();
+    return execSync(`"${gitCmd}" status --porcelain=v1`, { cwd: projectRoot, encoding: 'utf8' }).trim();
   } catch {
-    try {
-      return execSync('git status --porcelain=v1', { cwd: projectRoot, encoding: 'utf8' }).trim();
-    } catch {
-      return 'UNKNOWN_WORKING_TREE';
-    }
+    return 'UNKNOWN_WORKING_TREE';
   }
 }
 
@@ -110,7 +113,8 @@ function hashFile(filePath) {
 
 function getWorkingTreeFileHashes(excludedPaths = new Set()) {
   try {
-    const output = execSync('git status --porcelain=v1 -z --untracked-files=all', {
+    const gitCmd = getGitExecutable();
+    const output = execSync(`"${gitCmd}" status --porcelain=v1 -z --untracked-files=all`, {
       cwd: projectRoot,
       encoding: 'buffer',
     });

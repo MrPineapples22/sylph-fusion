@@ -1,6 +1,35 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { ContractCanaryAuthority } from '../../dist/platform/ingestion/contract-canary.js';
+import { ContractCanaryAuthority, createWireWitness } from '../../dist/platform/ingestion/contract-canary.js';
+
+test('CONTRACTCANARY: payload container and transport do not imply an encoding', () => {
+  const canary = new ContractCanaryAuthority();
+  for (const transport of ['HTTP_REST', 'WSS', 'GRPC']) {
+    for (const payload of ['{"slot":1}', Buffer.from('{"slot":1}'), new Uint8Array([8, 1])]) {
+      assert.equal(createWireWitness('provider', 'capability', transport, payload).wireEncoding, 'UNSPECIFIED');
+      assert.equal(canary.createWireWitness('provider', 'capability', transport, payload).wireEncoding, 'UNSPECIFIED');
+    }
+    assert.equal(canary.createWireWitness('provider', 'capability', transport, { slot: 1 }).wireEncoding, 'UNSPECIFIED');
+  }
+});
+
+test('CONTRACTCANARY: explicit representations stay distinct and hashes do not authenticate them', () => {
+  const payload = '{"slot":1}';
+  const witnesses = [
+    ['HTTP_REST', payload, 'JSON_FRAME_BYTES'],
+    ['WSS', Buffer.from(payload), 'JSON_FRAME_BYTES'],
+    ['HTTP_REST', payload, 'JSON_CANONICAL'],
+    ['GRPC', payload, 'DECODED_PROTOBUF_JSON_CANONICAL'],
+    ['GRPC', Buffer.from(payload), 'PROTOBUF_WIRE_BYTES'],
+  ].map(([transport, bytes, encoding]) => {
+    const witness = createWireWitness('provider', 'capability', transport, bytes, 200, 'UNKNOWN', encoding);
+    assert.equal(witness.wireEncoding, encoding);
+    assert.equal(witness.contractStatus, 'UNKNOWN');
+    return witness;
+  });
+  // Equal byte digests cannot establish whether any caller's encoding claim is true.
+  assert.equal(new Set(witnesses.map((witness) => witness.payloadHash)).size, 1);
+});
 
 test('CONTRACTCANARY: validates RugCheck API schema and rejects malformed responses', () => {
   const canary = new ContractCanaryAuthority();

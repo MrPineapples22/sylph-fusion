@@ -8,15 +8,21 @@
  * 2. Strict runtime schema validation (replacing `response.json() as T`).
  * 3. Capability-level quarantine: Isolates drifting providers without crashing the engine.
  * 4. Epistemic state preservation: Absence of evidence is never evidence of safety.
- * 5. Pre-decoding RawWireWitness cryptographic provenance tracking.
+ * 5. Payload digest tracking with explicitly declared representation.
  * 6. Durable SQLite WAL persistence & cold-boot rehydration.
  */
 import { createHash } from 'node:crypto';
 /**
- * Creates a cryptographic pre-decoding wire witness for external network traffic.
+ * Digests the supplied payload, which may already be decoded or locally serialized.
+ * The hash establishes byte equality only, not transport capture, source authenticity,
+ * chain inclusion, or a binding between separately supplied bytes and decoded events.
  */
-export function createWireWitness(providerId, capabilityId, transport, payload, httpStatus, contractStatus = 'VALID') {
-    const buf = typeof payload === 'string' ? Buffer.from(payload, 'utf8') : payload;
+export function createWireWitness(providerId, capabilityId, transport, payload, httpStatus, contractStatus = 'VALID', wireEncoding = 'UNSPECIFIED') {
+    const buf = typeof payload === 'string'
+        ? Buffer.from(payload, 'utf8')
+        : Buffer.isBuffer(payload)
+            ? payload
+            : Buffer.from(payload);
     const hash = createHash('sha256').update(buf).digest('hex');
     const now = Date.now();
     const witnessId = `wit_${providerId}_${now}_${hash.slice(0, 8)}`;
@@ -30,6 +36,7 @@ export function createWireWitness(providerId, capabilityId, transport, payload, 
         byteLength: buf.length,
         httpStatus,
         contractStatus,
+        wireEncoding,
     };
 }
 export class ContractCanaryAuthority {
@@ -50,13 +57,14 @@ export class ContractCanaryAuthority {
         return !h.isQuarantined;
     }
     /**
-     * Creates a cryptographic RawWireWitness hashing external payloads prior to authoritative decoding.
+     * Digests caller-supplied data without inferring its representation or authenticity.
      */
-    createWireWitness(providerId, capabilityId, transport, payload, httpStatus = 200, contractStatus) {
-        const rawPayload = Buffer.isBuffer(payload) || typeof payload === 'string'
+    createWireWitness(providerId, capabilityId, transport, payload, httpStatus = 200, contractStatus, wireEncoding = 'UNSPECIFIED') {
+        const isWireBytes = Buffer.isBuffer(payload) || payload instanceof Uint8Array;
+        const rawPayload = isWireBytes || typeof payload === 'string'
             ? payload
             : JSON.stringify(payload);
-        return createWireWitness(providerId, capabilityId, transport, rawPayload, httpStatus, contractStatus ?? (httpStatus >= 400 ? 'MALFORMED' : 'VALID'));
+        return createWireWitness(providerId, capabilityId, transport, rawPayload, httpStatus, contractStatus ?? (httpStatus >= 400 ? 'MALFORMED' : 'VALID'), wireEncoding);
     }
     /**
      * Runtime validator for RugCheck reports enforcing explicit epistemic completeness.
