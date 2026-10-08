@@ -108,6 +108,33 @@ function hashFile(filePath) {
   return createHash('sha256').update(content).digest('hex');
 }
 
+function getWorkingTreeFileHashes(excludedPaths = new Set()) {
+  try {
+    const output = execSync('git status --porcelain=v1 -z --untracked-files=all', {
+      cwd: projectRoot,
+      encoding: 'buffer',
+    });
+    const entries = output.toString('utf8').split('\0').filter(Boolean);
+    const paths = new Set();
+    for (let index = 0; index < entries.length; index++) {
+      const entry = entries[index];
+      const path = entry.slice(3);
+      if (entry.startsWith('R') || entry.startsWith('C') || entry.slice(1, 2) === 'R' || entry.slice(1, 2) === 'C') {
+        index++;
+        paths.add(entries[index]);
+      } else {
+      paths.add(path);
+      }
+    }
+    return Object.fromEntries([...paths].filter((path) => !excludedPaths.has(path)).sort().map((path) => {
+      const fullPath = resolve(projectRoot, path);
+      return [path, existsSync(fullPath) ? hashFile(fullPath) : 'DELETED'];
+    }));
+  } catch {
+    return { auditError: 'WORKING_TREE_HASH_UNAVAILABLE' };
+  }
+}
+
 /**
  * 1. Static AST Analysis over src/
  */
@@ -675,6 +702,12 @@ async function main() {
     commitSha,
     treeSha,
     workingTreeState: getWorkingTreeState(),
+    workingTreeFileHashes: getWorkingTreeFileHashes(new Set([
+      'docs/audit/evidence/c1-single-authority-door.json',
+      'docs/audit/evidence/c2-mutation-exclusivity.json',
+      'docs/audit/evidence/c3-decision-provenance.json',
+      'docs/audit/evidence/c4-authority-ancestry.json',
+    ])),
     metrics,
     engineBuild: buildResult,
     violations: astResults.violations,

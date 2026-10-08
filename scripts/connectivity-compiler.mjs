@@ -31,6 +31,7 @@ import {
   hashCanonicalV10,
 } from './canonicalization-v10.mjs';
 import { evaluateStaticConnectivity } from './connectivity-static-core.mjs';
+import { readAndVerifyTestRunReceipt } from './test-run-receipt.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -198,8 +199,6 @@ function classifyComponent(relPath, analysis) {
  * Main compilation and analysis engine.
  */
 export function runConnectivityCompiler(options = {}) {
-  const cliTestRun = process.argv.includes('--test-run-passed');
-  const testRunPassed = Boolean(options.testRunPassed ?? cliTestRun);
   console.log('[CONNECTIVITY_COMPILER] Initializing TypeScript Compiler & AST Program...');
 
   const configPath = ts.findConfigFile(ROOT_DIR, ts.sys.fileExists, 'tsconfig.json');
@@ -421,6 +420,7 @@ export function runConnectivityCompiler(options = {}) {
     .map(({ relPath, sourceHash, sizeBytes }) => ({ relPath, sourceHash, sizeBytes }))
     .sort((left, right) => left.relPath.localeCompare(right.relPath));
   const sourceInventoryRoot = hashCanonicalV10(sourceManifest);
+  const testRunReceipt = readAndVerifyTestRunReceipt(sourceInventoryRoot, options.receiptPath);
 
   // 3. Build reverse `importedBy` and consumerOf links
   for (const [relPath, meta] of inventory.entries()) {
@@ -523,7 +523,7 @@ export function runConnectivityCompiler(options = {}) {
   const staticConnectivity = evaluateStaticConnectivity({
     sourceCount: inventory.size,
     compileDiagnostics: compileDiagnostics.length,
-    testRunPassed,
+    testRunPassed: testRunReceipt,
     declaredEdges: staticGraphEdges,
     entryPoint: 'src/fusion.ts',
     requiredAuthorityModules,
@@ -540,9 +540,10 @@ export function runConnectivityCompiler(options = {}) {
       sourceInventoryRoot,
       inventoryScope: 'TypeScript files included by tsconfig under src/; terminal JS/MJS, scripts, Rust, generated dist, and external services are excluded.',
       diagnosticCount: compileDiagnostics.length,
-      testRunEvidence: testRunPassed
-        ? 'PASS: Verified current-source test-run record supplied.'
-        : 'UNPROVEN: source test references are indexed only for context; no source-bound passing test-run receipt was supplied.',
+      testRunEvidence: testRunReceipt.verified
+        ? `PASS: Source-bound test receipt verified (${testRunReceipt.receiptHash}); integrity evidence only, not a signature or independent trusted execution attestation.`
+        : `UNPROVEN: ${testRunReceipt.reason}; no valid current-source test receipt was verified.`,
+      testRunReceipt: testRunReceipt.verified ? testRunReceipt : null,
       connectivityEvidence: 'Static imports/re-exports resolved from TypeScript compiler module resolution; edges are observed references, not runtime proof.',
     },
     systemScore: { ...staticConnectivity },
@@ -754,7 +755,7 @@ ${orphanModules.length > 20 ? `\n*(...and ${orphanModules.length - 20} more. See
 
 - **C0 (Exists)**: ${staticConnectivity.C0_exists ? 'PASS' : 'FAIL'} (${inventory.size} audited TS modules)
 - **C1 (Compiles)**: ${staticConnectivity.C1_compiles ? 'PASS' : 'FAIL'} (${compileDiagnostics.length} compiler/config diagnostics)
-- **C2 (Unit Tested)**: ${staticConnectivity.C2_unit_tested ? 'PASS' : 'UNPROVEN'} (test references are not execution evidence)
+- **C2 (Unit Tested)**: ${staticConnectivity.C2_unit_tested ? 'PASS' : 'UNPROVEN'} (requires a verified source-bound test receipt)
 - **C3 (Declared Connection)**: ${staticConnectivity.C3_declared_connection ? 'PASS' : 'UNPROVEN'} (${staticGraphEdges.length} static import/re-export edges observed)
 - **C4 (Static Integration)**: ${staticConnectivity.C4_static_integration ? 'PASS' : 'UNPROVEN'} (${Object.values(staticConnectivity.authorityReachability).filter((item) => item.reachable).length}/${Object.keys(staticConnectivity.authorityReachability).length} configured authority paths reachable; sequential evidence gates apply)
 - **C5–C10**: UNPROVEN (Gated by runtime execution)

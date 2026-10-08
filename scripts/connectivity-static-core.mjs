@@ -38,9 +38,9 @@ export function evaluateStaticConnectivity({
 }) {
   const c0 = Number.isSafeInteger(sourceCount) && sourceCount > 0;
   const c1 = c0 && Number.isSafeInteger(compileDiagnostics) && compileDiagnostics === 0;
-  // A test reference is not a test result. The compiler awards C2 only when
-  // the caller supplies a passing test-run record for the current source.
-  const c2 = c1 && testRunPassed === true;
+  // The caller must provide the result of receipt verification, never a CLI
+  // assertion. A test reference is not a test result.
+  const c2 = c1 && testRunPassed?.verified === true && testRunPassed?.status === 'PASS';
   const c3Observed = Array.isArray(declaredEdges) && declaredEdges.length > 0;
   const c3 = c2 && c3Observed;
   const authorityReachability = Object.fromEntries(
@@ -77,7 +77,7 @@ export function evaluateStaticConnectivity({
     highestProvenLevel,
     ceilingEnforced: 'C4',
     reasons: {
-      C2: c2 ? 'PASSING_TEST_RUN_EVIDENCE_SUPPLIED' : 'UNPROVEN: no passing current-source test-run evidence supplied to the static compiler',
+      C2: c2 ? 'PASSING_SOURCE_BOUND_TEST_RECEIPT_VERIFIED' : 'UNPROVEN: no valid source-bound test receipt verified',
       C3: c3 ? 'PASS: C2 passed and static source connections exist' : c3Observed ? 'UNPROVEN: source connections exist, but sequential C2 gate is unproven' : 'UNPROVEN: no static source connections found',
       C4: c4 ? 'PASS: required authority modules are reachable from the configured entry point' : 'UNPROVEN: C4 requires C3 plus directed static reachability to every required authority module',
       C5_C10: 'UNPROVEN: static evidence cannot award runtime, continuity, effect, replay, fault, or canary levels',

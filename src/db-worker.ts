@@ -1,5 +1,5 @@
 import { parentPort, workerData } from 'node:worker_threads';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { openGenerationDatabase, registerInitialGenerationSync, readGenerationIdentitySync, sqliteDiagnostic } from './platform/storage/generation-sqlite.js';
 import { GenerationStorageError } from './platform/storage/generation-identity.js';
 import { serializeRecoveryCertificate } from './platform/ingestion/recovery-certificate.js';
@@ -37,6 +37,33 @@ const initialized = (() => {
   }
 })();
 const { db, registrationCapable } = initialized;
+
+const runtimeIdentitySchema = `CREATE TABLE runtime_store_identity_v1(
+  singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+  instance_id TEXT NOT NULL CHECK(length(instance_id)=32 AND instance_id NOT GLOB '*[^a-f0-9]*')
+) STRICT;`;
+function assertRuntimeDurability(): void {
+  const file = db.prepare('PRAGMA database_list').all().find(row => row.name === 'main')?.file;
+  if (!registrationCapable || typeof file !== 'string' || file.length === 0 ||
+      db.prepare('PRAGMA journal_mode').get()!.journal_mode !== 'wal' ||
+      db.prepare('PRAGMA synchronous').get()!.synchronous !== 2) throw new Error('INGRESS_DURABLE_JOURNAL_REQUIRED');
+}
+function runtimeStoreInstanceId(): string {
+  assertRuntimeDurability();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const table = db.prepare("SELECT sql FROM sqlite_schema WHERE type='table' AND name='runtime_store_identity_v1'").get();
+    if (!table) {
+      db.exec(runtimeIdentitySchema);
+      db.prepare('INSERT INTO runtime_store_identity_v1 VALUES(1,?)').run(randomBytes(16).toString('hex'));
+    } else if (normalizedSql(String(table.sql)) !== normalizedSql(runtimeIdentitySchema)) throw new Error('RUNTIME_STORE_IDENTITY_SCHEMA_INVALID');
+    const rows = db.prepare('SELECT singleton,instance_id FROM runtime_store_identity_v1').all();
+    if (rows.length !== 1 || rows[0].singleton !== 1 || typeof rows[0].instance_id !== 'string' ||
+        !/^[a-f0-9]{32}$/.test(rows[0].instance_id)) throw new Error('RUNTIME_STORE_IDENTITY_INVALID');
+    db.exec('COMMIT');
+    return rows[0].instance_id;
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+}
 
 function ensureIngressDeliverySchemaInternal(): void {
   const priorDeliverySchema = db.prepare("SELECT 1 AS present FROM sqlite_schema WHERE type='table' AND name='canonical_ingress_delivery_v1'").get();
@@ -113,7 +140,9 @@ function ensureIngressDeliverySchema(): void {
 
 parentPort!.on('message', (m: { id: number; op: string; body?: string; event?: string; eventId?: string }) => {
   try {
-    if (m.op === 'assert-ingress-durability') {
+    if (m.op === 'runtime-store-instance-id') {
+      parentPort!.postMessage({ id: m.id, value: runtimeStoreInstanceId() });
+    } else if (m.op === 'assert-ingress-durability') {
       const file = db.prepare('PRAGMA database_list').all().find(row => row.name === 'main')?.file;
       const journalMode = db.prepare('PRAGMA journal_mode').get()!.journal_mode;
       const synchronous = db.prepare('PRAGMA synchronous').get()!.synchronous;
@@ -153,6 +182,11 @@ parentPort!.on('message', (m: { id: number; op: string; body?: string; event?: s
         const eventHash = createHash('sha256').update(`${m.event}:${m.body}`).digest('hex');
         db.exec('BEGIN IMMEDIATE');
         try {
+          if (m.event === 'runtime_telemetry_observed_v2') {
+            assertRuntimeDurability();
+            const identity = db.prepare('SELECT instance_id FROM runtime_store_identity_v1 WHERE singleton=1').get();
+            if (!identity || identity.instance_id !== payload.storeInstanceId) throw new Error('RUNTIME_STORE_IDENTITY_MISMATCH');
+          }
           db.exec('CREATE TABLE IF NOT EXISTS audit_event_dedupe(event_id TEXT PRIMARY KEY, event_hash TEXT NOT NULL, audit_id INTEGER, created_at_ms INTEGER NOT NULL) STRICT;');
           const existing = db.prepare('SELECT event_hash, audit_id FROM audit_event_dedupe WHERE event_id=?').get(stableEventId) as { event_hash: string; audit_id: number } | undefined;
           if (existing) {

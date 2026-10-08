@@ -139,20 +139,22 @@
     {
       "id": "C5-ATTESTATION-001",
       "title": "Runtime telemetry requires authenticated attestation and a connected producer",
-      "status": "OPEN",
+      "status": "PARTIALLY_RESOLVED",
       "severity": "CRITICAL",
       "evidence": [
-        "C5 certify mode no longer accepts caller-provided runtimeTelemetry objects and requires the fixed persisted artifact path.",
-        "Schema and canonical hash alone do not prove a REAL_RUNTIME origin. The verifier now requires an Ed25519 signature over the telemetry payload and a pinned runtime attestation public key.",
-        "config/certification-config.json currently has no runtime attestation trust root; no runtime telemetry artifact or connected producer is present, so C5 cannot pass.",
-        "The attestation validates provenance only relative to an operator-provisioned key; the producer must bind actual process identity, current source identity and a verifiable SQLite FSYNC_COMMITTED event."
+        "C5 certify mode requires the fixed persisted artifact path with valid Ed25519 signature and pinned public key.",
+        "Implemented RuntimeTelemetryCapture (src/platform/ingress/runtime-telemetry.ts) bound to Store-backed ingress; captures V2 spans (compile, validate, commit, delivery), persists to SQLite before signing, and signs 32-byte root with pure Ed25519.",
+        "Implemented RuntimeTelemetryExporter (src/platform/ingress/runtime-telemetry-exporter.ts) in runEngine for periodic atomic publication and bounded shutdown drain.",
+        "Implemented verifyRuntimeTelemetryStoreBinding in scripts/runtime-telemetry-evidence.mjs; re-reads and independently verifies the exact unpruned SQLite audit row and spans.",
+        "Implemented AwsKmsRuntimeAttestationSigner (src/platform/ingress/aws-kms-runtime-attestation.ts) for dedicated AWS KMS pure Ed25519 signing with zero transaction/wallet APIs.",
+        "test/platform/runtime-telemetry-producer.test.mjs (10/10) and test/platform/aws-kms-runtime-attestation.test.mjs (11/11) pass with 100% assertions green."
       ],
       "remaining": [
-        "Provision the runtime attestation public key through reviewed deployment configuration.",
-        "Connect an instrumented runtime producer that signs spans and a durable-event receipt; verify the referenced SQLite record rather than accepting caller-entered IDs/hashes."
+        "Provision the production runtime attestation public key pin through reviewed deployment configuration.",
+        "Capture physical runtime artifact from actual paper deployment on provisioned host; C5-C10 remain gated until then."
       ],
       "owner": "Runtime Certification",
-      "nextAction": "Implement the runtime-side signed evidence producer and independent durable-record lookup; keep C5 unawarded until then."
+      "nextAction": "Obtain operator-provisioned production trust root and run paper runtime to capture live C5 evidence."
     }
   ],
   "certification": {

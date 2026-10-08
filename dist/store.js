@@ -32,6 +32,12 @@ export class Store {
         this.#worker.on('error', e => this.#fail(e));
         this.#worker.on('exit', () => this.#fail(new Error('database worker exited')));
         storeIngressCapabilities.set(this, Object.freeze({
+            getRuntimeStoreInstanceId: async () => {
+                const id = await this.#call('runtime-store-instance-id');
+                if (typeof id !== 'string' || !/^[a-f0-9]{32}$/.test(id))
+                    throw new Error('RUNTIME_STORE_IDENTITY_INVALID');
+                return id;
+            },
             assertDurable: async () => {
                 const text = await this.#call('assert-ingress-durability');
                 if (text !== 'FSYNC_COMMITTED')

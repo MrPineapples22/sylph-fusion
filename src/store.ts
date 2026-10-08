@@ -8,6 +8,7 @@ import { GenerationStorageError, snapshotRegistration, validateGenerationId, sto
   type LocalGenerationIdentityStore, type StorageErrorCode } from './platform/storage/generation-identity.js';
 export interface StoreIngressCapability {
   assertDurable(): Promise<void>;
+  getRuntimeStoreInstanceId(): Promise<string>;
   appendAuditEvent(event: string, payload: Readonly<Record<string, unknown>>, stableEventId?: string): Promise<{ inserted: boolean; auditId?: number }>;
   getAuditEventByStableId(stableEventId: string): Promise<{ id: number; at: number; event: string | null; body: string | null; pruned?: boolean; eventHash?: string } | null>;
   getPendingIngress(afterSequence: number, limit: number): Promise<readonly { id: number; at: number; body: string; eventHash: string }[]>;
@@ -50,6 +51,11 @@ export class Store implements
     this.#worker.on('error', e => this.#fail(e));
     this.#worker.on('exit', () => this.#fail(new Error('database worker exited')));
     storeIngressCapabilities.set(this, Object.freeze({
+      getRuntimeStoreInstanceId: async () => {
+        const id = await this.#call('runtime-store-instance-id');
+        if (typeof id !== 'string' || !/^[a-f0-9]{32}$/.test(id)) throw new Error('RUNTIME_STORE_IDENTITY_INVALID');
+        return id;
+      },
       assertDurable: async () => {
         const text = await this.#call('assert-ingress-durability');
         if (text !== 'FSYNC_COMMITTED') throw new Error('INGRESS_DURABLE_JOURNAL_REQUIRED');

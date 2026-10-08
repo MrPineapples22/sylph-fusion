@@ -14,6 +14,7 @@ import { startDashboard } from './dashboard.js';
 import { RpcPool } from './rpc.js';
 import { Feed, type MarketEvent } from './feed.js';
 import { CanonicalIngress, createCanonicalSolanaIngress, StoreIngressJournal, isDurableCanonicalIngress } from './platform/ingress/canonical-ingress.js';
+import { RuntimeTelemetryExporter, type RuntimeTelemetryExportOptions } from './platform/ingress/runtime-telemetry-exporter.js';
 import type { CommittedEnvelope, UnvalidatedObservation } from './platform/ingress/types.js';
 import { CanonicalReducer, type FusionStateRootV2, type StateTransitionProof } from './platform/reducer/index.js';
 import {
@@ -2095,6 +2096,7 @@ export async function acquireResearchSpoolLock(spoolPath: string): Promise<Serve
 type AsyncClosable = { close(): Promise<void> | void };
 export async function closeEngineResources(resources: {
   dashboard?: AsyncClosable;
+  runtimeTelemetry?: AsyncClosable;
   store?: AsyncClosable;
   sessionLogger?: AsyncClosable;
   researchSpoolLock?: Server;
@@ -2110,6 +2112,7 @@ export async function closeEngineResources(resources: {
     return new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   };
   await attempt(async () => { await resources.dashboard?.close(); });
+  await attempt(async () => { await resources.runtimeTelemetry?.close(); });
   await attempt(async () => { await resources.store?.close(); });
   await attempt(async () => { await resources.sessionLogger?.close(); });
   await attempt(() => releaseServer(resources.researchSpoolLock));
@@ -2129,6 +2132,9 @@ export async function runEngine(options: {
   uiPort?: number;
   /** Explicit paper-only deterministic seed. Never sourced from the environment. */
   paperWalletSeed?: Uint8Array;
+  /** Host-provided evidence service and pin, independent of transaction signing.
+   * CLI startup intentionally has no default signer or private-key loader. */
+  runtimeTelemetry?: RuntimeTelemetryExportOptions;
 } = {}) {
   if (options.sessionDir) process.env.SESSION_DIR = options.sessionDir;
   if (options.dbPath) process.env.DB_PATH = options.dbPath;
@@ -2144,6 +2150,7 @@ export async function runEngine(options: {
   let sessionLogger: SessionLogger | undefined;
   let researchSpoolLock: Server | undefined;
   let stopSignalHandler: (() => void) | undefined;
+  let runtimeTelemetry: RuntimeTelemetryExporter | undefined;
   try {
     if (process.argv.includes('--check')) {
       const healthReport = await StartupHealthAuditor.performHealthAudit();
@@ -2232,7 +2239,10 @@ export async function runEngine(options: {
       connectionOrCoder: rpc.connection,
       journal: new StoreIngressJournal(store),
       durability: 'FSYNC_COMMITTED',
+      runtimeTelemetry: options.runtimeTelemetry,
     });
+    if (options.runtimeTelemetry) runtimeTelemetry = new RuntimeTelemetryExporter(ingress, options.runtimeTelemetry,
+      code => log('runtime_telemetry_export_failed', { code }));
     const feed = new Feed(cfg, rpc.connection, ingress);
     const engine = new Engine(
       cfg,
@@ -2279,7 +2289,7 @@ export async function runEngine(options: {
     if (durationTimer) clearTimeout(durationTimer);
     return { engine, state, sessionDir: cfg.SESSION_DIR };
   } finally {
-    await closeEngineResources({ dashboard, store, sessionLogger, researchSpoolLock, walletLock: lock, stopSignalHandler });
+    await closeEngineResources({ dashboard, runtimeTelemetry, store, sessionLogger, researchSpoolLock, walletLock: lock, stopSignalHandler });
   }
 }
 

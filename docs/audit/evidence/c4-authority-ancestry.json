@@ -1,10 +1,13 @@
 {
   "auditor": "scripts/audit-single-authority-door.mjs",
   "auditorVersion": "4.0.0-c1-c4",
-  "timestamp": "2026-10-07T14:37:04.597Z",
-  "commitSha": "6401c16ebc849ad1450d08f8dda15a69aa09396a",
-  "treeSha": "ccd6b7d0746e11f2264045f3958021cd12a74a2f",
-  "workingTreeState": "M dist/db-worker.js\n M dist/db-worker.js.map\n M dist/fusion.js\n M dist/fusion.js.map\n M dist/platform/pipeline/unified-unit.js\n M dist/platform/pipeline/unified-unit.js.map\n M dist/platform/reducer/canonical-reducer.js\n M dist/platform/reducer/canonical-reducer.js.map\n M dist/store.js\n M dist/store.js.map\n M docs/audit/evidence/c1-single-authority-door.json\n M docs/audit/evidence/c2-mutation-exclusivity.json\n M docs/audit/evidence/c3-decision-provenance.json\n M docs/audit/evidence/c4-authority-ancestry.json\n M docs/audit/unresolved_risks.md\n M scripts/audit-single-authority-door.mjs\n M src/db-worker.ts\n M src/fusion.ts\n M src/platform/pipeline/unified-unit.ts\n M src/platform/reducer/canonical-reducer.ts\n M src/store.ts\n M test/c1-negative-compilation.test.mjs\n M test/c2-mutation-exclusivity.test.mjs\n M test/connectivity-compiler.test.mjs\n M test/platform/canonical-ingress-crash-recovery.test.mjs\n M test/platform/canonical-ingress-durability.test.mjs\n M test/platform/unified-unit.test.mjs",
+  "timestamp": "2026-10-08T01:20:37.274Z",
+  "commitSha": "f23da828a5beec53579f142ff33d09e699339165",
+  "treeSha": "ee618755dff909c2541dfbb7f95fe3fabb472eeb",
+  "workingTreeState": "M dist/db-worker.js\n M dist/db-worker.js.map\n M dist/fusion.js\n M dist/fusion.js.map\n M dist/platform/ingress/canonical-ingress.js\n M dist/platform/ingress/canonical-ingress.js.map\n M dist/store.js\n M dist/store.js.map\n M docs/audit/defect-ledger.json\n M docs/audit/evidence/c1-single-authority-door.json\n M docs/audit/evidence/c2-mutation-exclusivity.json\n M docs/audit/evidence/c3-decision-provenance.json\n M docs/audit/evidence/c4-authority-ancestry.json\n M docs/audit/unresolved_risks.md\n M package.json\n M scripts/audit-single-authority-door.mjs\n M scripts/connectivity-compiler.mjs\n M scripts/connectivity-static-core.mjs\n M scripts/runtime-telemetry-evidence.mjs\n M src/db-worker.ts\n M src/fusion.ts\n M src/platform/ingress/canonical-ingress.ts\n M src/store.ts\n M system_component_registry.json\n M test/connectivity-compiler.test.mjs\n M test/connectivity-runtime-convergence.test.mjs\n M test/connectivity-static-core.test.mjs\n?? dist/platform/ingress/aws-kms-runtime-attestation.js\n?? dist/platform/ingress/aws-kms-runtime-attestation.js.map\n?? dist/platform/ingress/runtime-telemetry-exporter.js\n?? dist/platform/ingress/runtime-telemetry-exporter.js.map\n?? dist/platform/ingress/runtime-telemetry.js\n?? dist/platform/ingress/runtime-telemetry.js.map\n?? docs/runtime-attestation-kms.md\n?? scripts/run-certified-tests.mjs\n?? scripts/test-run-receipt.mjs\n?? src/platform/ingress/aws-kms-runtime-attestation.ts\n?? src/platform/ingress/runtime-telemetry-exporter.ts\n?? src/platform/ingress/runtime-telemetry.ts\n?? test/platform/aws-kms-runtime-attestation.test.mjs\n?? test/platform/runtime-telemetry-producer.test.mjs\n?? test/test-run-receipt.test.mjs",
+  "workingTreeFileHashes": {
+    "auditError": "WORKING_TREE_HASH_UNAVAILABLE"
+  },
   "metrics": {
     "RAW_TO_ENGINE_PATHS": 0,
     "RAW_TO_RISK_PATHS": 0,
@@ -66,19 +69,19 @@
   ],
   "blockers": [],
   "auditedFiles": {
-    "scripts/audit-single-authority-door.mjs": "5396b357b3a4dcf1f463309a3e72b01a1014b40cd8eab8d2f493dca7af70323a",
-    "package.json": "52001418cd9fdd2485c6161991b55b322a3200f6d74e90c274d41eca1952082a",
+    "scripts/audit-single-authority-door.mjs": "f78a4aac824cf4bd081e7fd1d1fe02b6f660ee699b48e43ca35e447da914de4d",
+    "package.json": "fe41b85e89e26417c6b4d7fcca6051ed4a05e52655443b68e39cd09c3d803c95",
     "package-lock.json": "b3d47545d7b7279926d49711ffdf7ba179dfbc9a1840dc38a4f32962c48266f3",
     "tsconfig.json": "5ab104f8d8ae19b1ceae721102489547b19dd362ab95f852cc6f83757662a737",
-    "src/store.ts": "2b8b89c186ce93d8c42e850d7cce87c29f157af1dabb4380e265efa900c31895",
-    "src/db-worker.ts": "c6bd810135196ed7825b759b5d03c504207eb8496e697fad5b01069bd0714829",
+    "src/store.ts": "4a95d97f165d70ed195e0704663d8f3ec8c8d0ee5cd46149759f561da152e7c2",
+    "src/db-worker.ts": "7f4425a8fca031c5f1d7517e2d8b64877c30ae82562847df532d7f7e0f08c280",
     "src/platform/storage/filesystem-policy.ts": "a0d0d1c350daee22967b0148d63f913d457deab0ae23902fdadfa13a3dc6aa85",
     "src/feed.ts": "e2f924ac583eb7cdcf15987b4949beb6820d1337c509280827c2ab72fadaa8fb",
-    "src/fusion.ts": "1a51e3b6ab8ac01f68d1cdf32c4e935929bde8a165ed1462295a3686f7f05f1d",
+    "src/fusion.ts": "1aa0f241371ac42920819aca630eb9793a6ccb54e1b082a37844fba4525100bc",
     "src/platform/ingress/types.ts": "e1906778f69a4eb800b9e693a41148186a124ecf59eac15da2fd8ae5fca2eb35",
     "src/platform/ingress/observation-factory.ts": "77785e9abae162d88698770746c6d4628191ea8ab9725b59ff3df7897bea412c",
     "src/platform/ingress/port.ts": "5738d2386bc30211e131593e65da6d54e1634e7f5dea5b731250b5339bab9216",
-    "src/platform/ingress/canonical-ingress.ts": "15ae8f08a175ac200ba07d531797591b80a62f1fa7cd1538a05f0db37af729da",
+    "src/platform/ingress/canonical-ingress.ts": "c09928db6977be8d9919e266f1db24c799341db16cf4dd57d7969eecd6ef115a",
     "test/platform/canonical-ingress-durability.test.mjs": "e889bf6435c4848c3e3ba23fb58ab1cff8b2eab52b01d53abacb1f78b5ce2d07",
     "test/platform/canonical-ingress-crash-recovery.test.mjs": "100cfd791d80300225d18ab9f32d0232e50720df5802a4dc46bfebcac222c74e",
     "test/c1-negative-compilation.test.mjs": "f949a4c3c93b19b452d64c57f3c02488ea13b9cd3a994b7ffb6a3c3169a7e27c",
@@ -88,9 +91,9 @@
     "test/c3-negative-compilation.test.mjs": "e3bcee665e58a69ba330b8e76bb4de6d2a53c694846fe17af9600b930884b04c",
     "test/c4-authority-ancestry.test.mjs": "54f922f017aa3a76fb2f3c030c0415a3c670c2d301c2fdc76a06e9cbdbe80db6",
     "test/c4-negative-compilation.test.mjs": "8cbe573c54edc5575ec6ebe6ead737ad5ba6600939e2fb89c6c9ae9de4289abd",
-    "dist/store.js": "5b643f4f7aedb26c87cf7eaee3d21cc5f87538bcd1a5fc5324438cef402c61f5",
-    "dist/db-worker.js": "56a9e049f2d92457ac6369aebd8d006a5bd8258553f750f1e56ad2dfaf169bf0",
-    "dist/platform/ingress/canonical-ingress.js": "3cd948c861a81624e3820c91a52eb8eb3a7cc27709f404efdd228fa54fed2269",
+    "dist/store.js": "95c11850c0a76e48f29b0af8e794f66f5626cb3de3609ef220a1d831dd803f18",
+    "dist/db-worker.js": "901c5265c3055f83dde58ce91f9bcce54b496095c791cde74819afb7f770739b",
+    "dist/platform/ingress/canonical-ingress.js": "76f0ef4a1bcbbedd5ff9a73fc3607a2502d21583808f5f8d6ce1ca60cb12b6a1",
     "src/platform/reducer/types.ts": "d070034903640e35c438bc86cc711d59f6727f1d559bf5a73b16b2ac0b72af33",
     "src/platform/reducer/canonical-reducer.ts": "8f9b7426dda6603e1fac38e7e6362042314bf5336be433299965da85a0a76210",
     "src/platform/reducer/index.ts": "fd4c84af494fc94362364b213cca1f1eb0f099ed88dd3e3b3bed6744dfa3b80d",
@@ -122,5 +125,5 @@
     "UNIFIED_PIPELINE_CERTIFIED": "FALSE",
     "LIVE_CAPITAL_AUTHORITY": "BLOCKED"
   },
-  "manifestHash": "be47f40af9065a872704ff0ba4d332f465b5789bd2c3141eb203090a8b639ad6"
+  "manifestHash": "0607468f3cbf3bd839d396ef62b756db37a348916a88d9e17151e3481bb7ca66"
 }

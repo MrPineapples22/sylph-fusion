@@ -1,10 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, sign } from 'node:crypto';
+import { createHash } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { evaluateRuntimeConvergence } from '../scripts/connectivity-runtime-convergence.mjs';
 import { loadMandatoryEdgeConfig } from '../scripts/canary-campaign-verifier.mjs';
 import { hashCanonicalV10 } from '../scripts/canonicalization-v10.mjs';
-import { verifyRuntimeTelemetryEvidence } from '../scripts/runtime-telemetry-evidence.mjs';
+import { verifyRuntimeTelemetryEvidence, verifyRuntimeTelemetryStoreBinding } from '../scripts/runtime-telemetry-evidence.mjs';
 
 function buildValidCanary(provenanceClass = 'TEST_FIXTURE') {
   const mandatoryEdges = loadMandatoryEdgeConfig();
@@ -158,6 +163,72 @@ test('C5 runtime evidence requires a complete durable schema and detects byte-le
   const altered = { ...evidence, spans: [{ ...evidence.spans[0], status: 'ERROR' }] };
   assert.deepEqual(verifyRuntimeTelemetryEvidence(altered, { trustedPublicKeyPem: trustRoot }), { valid: false, reason: 'C5_ATTESTATION_SIGNATURE_INVALID' });
   assert.deepEqual(verifyRuntimeTelemetryEvidence({ ...evidence, spans: [{ id: 'span_1' }] }, { trustedPublicKeyPem: trustRoot }), { valid: false, reason: 'C5_SPAN_INVALID' });
+});
+
+test('C5 signed runtime receipt must resolve to the exact unpruned SQLite audit row and matching content', t => {
+  const directory = mkdtempSync(join(tmpdir(), 'sylph-c5-store-'));
+  const databasePath = join(directory, 'runtime.sqlite');
+  let db = new DatabaseSync(databasePath);
+  t.after(() => { db?.close(); rmSync(directory, { recursive: true, force: true }); });
+  db.exec(`CREATE TABLE audit(id INTEGER PRIMARY KEY,at INTEGER NOT NULL,event TEXT,body TEXT);
+    CREATE TABLE audit_event_dedupe(event_id TEXT PRIMARY KEY,event_hash TEXT NOT NULL,audit_id INTEGER,created_at_ms INTEGER NOT NULL);`);
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+  const evidence = {
+    schemaVersion: 'SYLPH_RUNTIME_TELEMETRY_V1', provenanceClass: 'REAL_RUNTIME',
+    sourceCommitSha: '1'.repeat(40), sourceTreeSha: '2'.repeat(40), runtimeInstanceId: '3'.repeat(32),
+    processId: 10, nodeVersion: 'v24.1.0', processStartedAtMs: 100, captureStartedAtMs: 101, captureEndedAtMs: 110,
+    durability: { barrier: 'FSYNC_COMMITTED', storeEventId: 'runtime:trace-1', storeAuditId: 9, storeEventHash: '0'.repeat(64) },
+    spans: [{ spanId: '5'.repeat(16), traceId: '6'.repeat(32), parentSpanId: null, name: 'ingress.commit',
+      startedAtNs: '1000', endedAtNs: '1200', status: 'OK' }],
+  };
+  const storeBody = {
+    schemaVersion: 'SYLPH_RUNTIME_TELEMETRY_STORE_V1', runtimeInstanceId: evidence.runtimeInstanceId,
+    sourceCommitSha: evidence.sourceCommitSha, sourceTreeSha: evidence.sourceTreeSha, processId: evidence.processId,
+    processStartedAtMs: evidence.processStartedAtMs, captureStartedAtMs: evidence.captureStartedAtMs,
+    captureEndedAtMs: evidence.captureEndedAtMs, spans: evidence.spans,
+  };
+  const body = JSON.stringify(storeBody);
+  const event = 'runtime_telemetry_observed_v1';
+  const storeEventHash = createHash('sha256').update(`${event}:${body}`).digest('hex');
+  evidence.durability.storeEventHash = storeEventHash;
+  db.prepare('INSERT INTO audit(id,at,event,body) VALUES(9,110,?,?)').run(event, body);
+  db.prepare('INSERT INTO audit_event_dedupe(event_id,event_hash,audit_id,created_at_ms) VALUES(?,?,9,110)')
+    .run(evidence.durability.storeEventId, storeEventHash);
+  db.close();
+  db = undefined;
+  const attestedRoot = hashCanonicalV10(evidence);
+  evidence.attestation = { algorithm: 'Ed25519', signatureBase64: sign(null, Buffer.from(attestedRoot, 'hex'), privateKey).toString('base64') };
+  evidence.evidenceHash = hashCanonicalV10(evidence);
+  const trustRoot = publicKey.export({ type: 'spki', format: 'pem' });
+  assert.equal(verifyRuntimeTelemetryEvidence(evidence, { trustedPublicKeyPem: trustRoot }).valid, true);
+  assert.equal(verifyRuntimeTelemetryStoreBinding(evidence, { databasePath }).valid, true);
+  assert.equal(verifyRuntimeTelemetryStoreBinding({ ...evidence, durability: { ...evidence.durability, storeAuditId: 8 } }, { databasePath }).reason,
+    'C5_DURABLE_STORE_RECORD_MISMATCH');
+  const wrongDatabasePath = join(directory, 'wrong.sqlite');
+  new DatabaseSync(wrongDatabasePath).close();
+  assert.equal(verifyRuntimeTelemetryStoreBinding(evidence, { databasePath: wrongDatabasePath }).reason,
+    'C5_DURABLE_STORE_RECORD_MISSING');
+  const alteredHashEvidence = { ...evidence, durability: { ...evidence.durability, storeEventHash: 'f'.repeat(64) } };
+  assert.equal(verifyRuntimeTelemetryStoreBinding(alteredHashEvidence, { databasePath }).reason, 'C5_DURABLE_STORE_RECORD_MISMATCH');
+  db = new DatabaseSync(databasePath);
+  db.prepare('UPDATE audit SET body=? WHERE id=9').run('{}');
+  db.close();
+  db = undefined;
+  assert.equal(verifyRuntimeTelemetryStoreBinding(evidence, { databasePath }).reason, 'C5_DURABLE_STORE_RECORD_MISMATCH');
+  db = new DatabaseSync(databasePath);
+  const changedBody = JSON.stringify({ ...storeBody, spans: [] });
+  const changedHash = createHash('sha256').update(`${event}:${changedBody}`).digest('hex');
+  db.prepare('UPDATE audit SET body=? WHERE id=9').run(changedBody);
+  db.prepare('UPDATE audit_event_dedupe SET event_hash=? WHERE event_id=?').run(changedHash, evidence.durability.storeEventId);
+  db.close();
+  db = undefined;
+  assert.equal(verifyRuntimeTelemetryStoreBinding({ ...evidence, durability: { ...evidence.durability, storeEventHash: changedHash } }, { databasePath }).reason,
+    'C5_DURABLE_STORE_CONTENT_MISMATCH');
+  db = new DatabaseSync(databasePath);
+  db.prepare('DELETE FROM audit WHERE id=9').run();
+  db.close();
+  db = undefined;
+  assert.equal(verifyRuntimeTelemetryStoreBinding(evidence, { databasePath }).reason, 'C5_DURABLE_STORE_RECORD_PRUNED');
 });
 
 test('Step 6 Convergence: Full ladder progression in TEST mode with valid mock evidence', () => {

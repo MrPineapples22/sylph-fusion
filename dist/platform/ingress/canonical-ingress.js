@@ -33,8 +33,10 @@ import { getPumpProgram, PUMP_PROGRAM_ID } from '@pump-fun/pump-sdk';
 import { getStoreIngressCapability } from '../../store.js';
 import { createUnvalidatedObservation } from './observation-factory.js';
 import { isObservationCreatedByFactory } from './observation-factory.js';
+import { RuntimeTelemetryCapture } from './runtime-telemetry.js';
 const durableCanonicalIngressInstances = new WeakSet();
 const storeIngressJournalInstances = new WeakSet();
+const storeIngressJournalCapabilities = new WeakMap();
 /** True only for a CanonicalIngress whose journal is backed by the real Store class. */
 export function isDurableCanonicalIngress(value) {
     return !!value && typeof value === 'object' && durableCanonicalIngressInstances.has(value);
@@ -54,11 +56,18 @@ export class CanonicalIngress {
     #pendingDeliveries = new Map();
     #deliveryCursors = new Map();
     #deliveryMutex = Promise.resolve();
+    #telemetry;
     constructor(options) {
         this.#compiler = options.compiler;
         this.#validator = options.validator;
         this.#journal = options.journal;
         this.#durability = options.durability ?? 'FSYNC_COMMITTED';
+        if (options.runtimeTelemetry) {
+            const store = storeIngressJournalCapabilities.get(options.journal);
+            if (!store)
+                throw new Error('C5_DURABLE_STORE_REQUIRED');
+            this.#telemetry = new RuntimeTelemetryCapture(store, options.runtimeTelemetry);
+        }
         if (storeIngressJournalInstances.has(options.journal))
             durableCanonicalIngressInstances.add(this);
         if (options.downstreamSubscriber) {
@@ -67,6 +76,12 @@ export class CanonicalIngress {
     }
     subscribe(subscriber) {
         this.#subscribers.push(subscriber);
+    }
+    /** Explicit export only; failures neither authorize nor roll back ingress work. */
+    captureRuntimeTelemetry() {
+        if (!this.#telemetry)
+            return Promise.reject(new Error('C5_RUNTIME_TELEMETRY_NOT_CONFIGURED'));
+        return this.#telemetry.capture();
     }
     issued(committed) {
         return !!committed && typeof committed === 'object' && this.#authenticCommittedEnvelopes.has(committed);
@@ -112,18 +127,20 @@ export class CanonicalIngress {
         }
         this.inFlightObservations.add(observation.observationId);
         try {
-            return await this.processObservation(observation);
+            // A durable commit with COMMITTED_DELIVERY_PENDING_RETRY is still an
+            // unsuccessful end-to-end attempt. Its later delivery has its own trace.
+            return this.#telemetry ? await this.#telemetry.observe(trace => this.processObservation(observation, trace), receipt => receipt.status === 'ACCEPTED') : await this.processObservation(observation);
         }
         finally {
             this.inFlightObservations.delete(observation.observationId);
         }
     }
     inFlightObservations = new Set();
-    async processObservation(observation) {
+    async processObservation(observation, trace) {
         // 2. Compile: UnvalidatedObservation -> CompiledFusionEnvelope
         let compiled;
         try {
-            compiled = await this.#compiler.compile(observation);
+            compiled = this.#telemetry ? await this.#telemetry.measure('ingress.compile', trace, () => this.#compiler.compile(observation)) : await this.#compiler.compile(observation);
         }
         catch (err) {
             return {
@@ -135,7 +152,7 @@ export class CanonicalIngress {
         // 3. Validate: CompiledFusionEnvelope -> ValidatedFusionEnvelope
         let validationResult;
         try {
-            validationResult = await this.#validator.validate(compiled);
+            validationResult = this.#telemetry ? await this.#telemetry.measure('ingress.validate', trace, () => this.#validator.validate(compiled), result => result.valid) : await this.#validator.validate(compiled);
         }
         catch (err) {
             return {
@@ -164,7 +181,7 @@ export class CanonicalIngress {
         // 5. Commit to Durable Journal
         let journalRecord;
         try {
-            journalRecord = await this.#journal.append(validated);
+            journalRecord = this.#telemetry ? await this.#telemetry.measure('ingress.commit', trace, () => this.#journal.append(validated)) : await this.#journal.append(validated);
         }
         catch (err) {
             return {
@@ -188,7 +205,7 @@ export class CanonicalIngress {
         // 8. Downstream Authoritative Notification
         // Invariant: Strictly executed ONLY AFTER durable journal commit.
         this.#pendingDeliveries.set(observation.observationId, committed);
-        const delivered = await this.deliverPending(observation.observationId);
+        const delivered = await this.deliverPending(observation.observationId, trace);
         return delivered ? {
             status: 'ACCEPTED',
             observationId: observation.observationId,
@@ -233,13 +250,16 @@ export class CanonicalIngress {
         }
         return recovered;
     }
-    async deliverPending(observationId) {
+    async deliverPending(observationId, trace) {
         let resolveMutex;
         const previous = this.#deliveryMutex;
         this.#deliveryMutex = new Promise(resolve => { resolveMutex = resolve; });
         await previous;
         try {
-            return await this.deliverPendingExclusive(observationId);
+            if (!this.#telemetry)
+                return await this.deliverPendingExclusive(observationId);
+            const deliver = (context) => this.#telemetry.measure('ingress.delivery', context, () => this.deliverPendingExclusive(observationId), result => result);
+            return trace ? await deliver(trace) : await this.#telemetry.observe(deliver, delivered => delivered);
         }
         finally {
             resolveMutex();
@@ -522,6 +542,7 @@ export class StoreIngressJournal {
         if (!capability)
             throw new Error('INGRESS_DURABLE_JOURNAL_REQUIRED');
         this.#store = capability;
+        storeIngressJournalCapabilities.set(this, capability);
         storeIngressJournalInstances.add(this);
     }
     async append(validated) {
@@ -644,6 +665,7 @@ export function createCanonicalSolanaIngress(options) {
         journal,
         durability: options.durability ?? 'FSYNC_COMMITTED',
         downstreamSubscriber: options.onCommitted,
+        runtimeTelemetry: options.runtimeTelemetry,
     });
 }
 /**

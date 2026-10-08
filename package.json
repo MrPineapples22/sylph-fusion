@@ -16,6 +16,7 @@
     "test:terminal": "node --test --test-isolation=none terminal/test/*.test.mjs",
     "test:connectivity": "node --test test/connectivity-static-core.test.mjs test/connectivity-compiler.test.mjs",
     "test:certification": "node --test --test-isolation=none test/canonicalization-v10.test.mjs test/connectivity-compiler.test.mjs test/certification-manifest.test.mjs test/canary-campaign-verifier.test.mjs test/connectivity-runtime-convergence.test.mjs test/generate-system-integration-certificate.test.mjs test/verify-system-integration-certificate.test.mjs test/certification-negative-controls.test.mjs",
+    "test:certified": "node scripts/run-certified-tests.mjs",
     "audit:manifest": "node scripts/generate-certification-manifest.mjs",
     "audit:connectivity:static": "node scripts/connectivity-compiler.mjs",
     "audit:canary:verify": "node scripts/canary-campaign-verifier.mjs",

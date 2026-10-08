@@ -11,7 +11,7 @@ const ROOT_DIR = resolve(__dirname, '..');
 const ARTIFACTS_DIR = resolve(ROOT_DIR, 'artifacts', 'connectivity');
 
 test('Step 1 Static Compiler: Complete execution and artifact generation', () => {
-  const result = runConnectivityCompiler();
+  const result = runConnectivityCompiler({ receiptPath: 'artifacts/connectivity/missing-test-receipt.json' });
   assert.equal(result.success, true);
   assert.ok(result.modulesAudited > 0);
   assert.ok(result.nodesCount > 0);
@@ -45,9 +45,9 @@ test('Step 1 Static Compiler: Enforce strict C4 ceiling law', () => {
   assert.match(scorecard.metadata.ceilingReason, /STATIC_ANALYSIS_CEILING/);
   assert.equal(scorecard.systemScore.highestProvenLevel, 'C1');
   assert.equal(scorecard.systemScore.C1_compiles, true);
-  assert.equal(scorecard.systemScore.C2_unit_tested, false, 'test-file references are not evidence that tests passed');
-  assert.equal(scorecard.systemScore.C3_declared_connection, false, 'C3 is sequentially gated on demonstrated C2');
-  assert.equal(scorecard.systemScore.C4_static_integration, false);
+    assert.equal(scorecard.systemScore.C2_unit_tested, false, 'compiler test runs do not satisfy the separate full-suite receipt contract');
+    assert.equal(scorecard.systemScore.C3_declared_connection, false, 'C3 is sequentially gated on demonstrated C2');
+    assert.equal(scorecard.systemScore.C4_static_integration, false);
   assert.equal(scorecard.systemScore.C5_observed_runtime, false);
   assert.equal(scorecard.systemScore.C6_cryptographic_continuity, false);
   assert.equal(scorecard.systemScore.C7_authoritative_effect, false);
@@ -66,6 +66,15 @@ test('Step 1 Static Compiler: Enforce strict C4 ceiling law', () => {
     assert.equal(scores.C2_unit_tested, false);
     assert.equal(scores.C4_static_integration, false);
   }
+});
+
+test('compiler ignores the former caller-controlled test-run flag', () => {
+  const result = runConnectivityCompiler({ testRunPassed: true, receiptPath: 'artifacts/connectivity/missing-test-receipt.json' });
+  assert.equal(result.highestProvenLevel, 'C1');
+  const scorecard = JSON.parse(readFileSync(resolve(ARTIFACTS_DIR, 'c0-c10-scorecard.json'), 'utf8'));
+  assert.equal(scorecard.systemScore.C2_unit_tested, false);
+  assert.equal(scorecard.metadata.testRunReceipt, null);
+  assert.match(scorecard.metadata.testRunEvidence, /UNPROVEN/);
 });
 
 test('Step 1 Static Compiler: Validate Section 6 classification taxonomy', () => {
