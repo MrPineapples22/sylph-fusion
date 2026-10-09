@@ -56,14 +56,17 @@
         "The live Yellowstone Feed and alternate YellowstoneTruthBridge now identify decoded-protobuf JSON.stringify payloads as serialized bytes; WebSocket frames keep JSON_FRAME_BYTES. This narrows false canonicalization claims but does not prove capture or bind independent Feed.accept fields.",
         "SQLite canonical_ingress_delivery_v1 outbox persists and restores rawPayloadEncoding across crash recovery, tested in test/platform/canonical-ingress-durability.test.mjs and test/feed-validation-boundary.test.mjs.",
         "The real Feed.geyser in src/feed.ts receives decoded SDK updates and stores Buffer.from(JSON.stringify(update)); research cycle 159 labels these as DECODED_PROTOBUF_JSON_SERIALIZED_BYTES without fabricating wire capture."
+        ,"Research cycle 160 replaces the live Subscribe client response deserializer with a narrow @grpc/grpc-js descriptor using the pinned 4.0.2 SubscribeRequest encoder and SubscribeUpdate decoder; it copies the message payload bytes and decodes that same copy.",
+        "Feed derives signature, slot, and logs only from the decoder-produced capture object held in a module-private WeakMap. Feed.accept rejects caller-selected GRPC_PROTOBUF_MESSAGE_PAYLOAD_BYTES unless the capture object, derived fields, and exact raw payload all match.",
+        "The observation encoding GRPC_PROTOBUF_MESSAGE_PAYLOAD_BYTES and schema yellowstone-grpc-protobuf-message/v1 identify protobuf message payload bytes passed to responseDeserialize after gRPC framing/reassembly and decompression, not full network frames."
       ],
       "remaining": [
-        "Implement and independently review a trusted transport capture/decoder boundary that binds actual protobuf bytes to the event derived from those bytes in live Yellowstone gRPC stream.",
-        "Feed.accept still accepts independently supplied signature, slot, logs, rawPayload, and encoding fields; validate their cross-field and transport compatibility before treating this as a bound observation. Existing *_JSON_CANONICAL values remain accepted for historical compatibility and are still caller declarations, not proof that bytes meet RFC 8785.",
+        "Independent Astra review and full-suite verification of the cycle 160 capture implementation remain pending.",
+        "Generic Feed.accept continues supporting other transports and legacy representations. The in-process module and runtime remain within the repository trust boundary; this is not a sandbox against arbitrary malicious code importing internal modules. Existing *_JSON_CANONICAL values remain accepted for historical compatibility and remain caller declarations, not proof that bytes meet RFC 8785.",
         "No payload hash or encoding declaration establishes transaction authenticity, chain inclusion, or source identity."
       ],
       "owner": "Sol Provider Integration",
-      "nextAction": "Design live Feed transport capture and event binding before claiming wire preservation; consider RFC 8785 only for derived canonical projections, and retain decoded provenance bounds until then."
+      "nextAction": "Independently review cycle 160, verify complete test suite, then investigate provider identity, authenticated/finalized inclusion, and cross-provider reconciliation without expanding this payload claim."
     },
     {
       "id": "C1-INGRESS-003",

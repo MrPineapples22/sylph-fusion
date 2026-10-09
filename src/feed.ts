@@ -125,6 +125,8 @@ export class Feed implements ObservationSource {
         );
       const schemaVersion = rawPayloadEncoding === 'JSON_FRAME_BYTES'
         ? 'solana-json-rpc-frame/v1'
+        : rawPayloadEncoding === 'GRPC_PROTOBUF_MESSAGE_PAYLOAD_BYTES'
+          ? 'yellowstone-grpc-protobuf-message/v1'
         : rawPayloadEncoding === 'DECODED_PROTOBUF_JSON_SERIALIZED_BYTES' || rawPayloadEncoding === 'DECODED_PROTOBUF_JSON_CANONICAL'
           ? 'yellowstone-update-json/v1'
           : source.rawPayload

@@ -93,11 +93,13 @@ export class Feed {
                     : 'JSON_SERIALIZED_BYTES');
             const schemaVersion = rawPayloadEncoding === 'JSON_FRAME_BYTES'
                 ? 'solana-json-rpc-frame/v1'
-                : rawPayloadEncoding === 'DECODED_PROTOBUF_JSON_SERIALIZED_BYTES' || rawPayloadEncoding === 'DECODED_PROTOBUF_JSON_CANONICAL'
-                    ? 'yellowstone-update-json/v1'
-                    : source.rawPayload
-                        ? 'provider-payload/v1'
-                        : 'solana-program-logs/v1';
+                : rawPayloadEncoding === 'GRPC_PROTOBUF_MESSAGE_PAYLOAD_BYTES'
+                    ? 'yellowstone-grpc-protobuf-message/v1'
+                    : rawPayloadEncoding === 'DECODED_PROTOBUF_JSON_SERIALIZED_BYTES' || rawPayloadEncoding === 'DECODED_PROTOBUF_JSON_CANONICAL'
+                        ? 'yellowstone-update-json/v1'
+                        : source.rawPayload
+                            ? 'provider-payload/v1'
+                            : 'solana-program-logs/v1';
             observation = createUnvalidatedObservation({
                 sourceId: source.sourceId,
                 providerId: source.providerId,

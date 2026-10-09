@@ -57,7 +57,7 @@ test('only decoder-produced capture binds the derived transaction fields to thos
   assert.equal(observed.slot, 456);
   assert.deepEqual(Buffer.from(observed.rawPayload), bytes);
   assert.equal(observed.rawPayloadEncoding, 'GRPC_PROTOBUF_MESSAGE_PAYLOAD_BYTES');
-  assert.equal(observed.schemaVersion, 'provider-payload/v1');
+  assert.equal(observed.schemaVersion, 'yellowstone-grpc-protobuf-message/v1');
 
   const rejected = new Feed(config({ RPC_URLS: 'https://rpc.invalid', WS_URLS: 'wss://rpc.invalid' }), {}, {
     submit: async observation => { observed = observation; return { status: 'ACCEPTED' }; },
