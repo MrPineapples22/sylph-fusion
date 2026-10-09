@@ -15,6 +15,8 @@ import {
 } from '../../dist/platform/ingestion/cross-validator.js';
 import { Store } from '../../dist/store.js';
 import { scanToken } from '../../dist/risk.js';
+import { PublicKey } from '@solana/web3.js';
+import { TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from '@solana/spl-token';
 
 test('PASS-27 REQ-1: validateRugCheckResponse enforces epistemic states and rejects boolean coercion of null/missing', () => {
   // Case A: Missing or null rugged field
@@ -304,6 +306,85 @@ test('PASS-27 REQ-6: risk.ts rejects unobserved/missing rugged field from achiev
     assert.equal(res.rugged, null, 'Unreported rugged must remain null');
     assert.notEqual(res.safe, true, 'safe must NEVER be true when rugged is unobserved / null');
     assert.equal(res.safe, null, 'safe must be null (epistemically unverified)');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('risk scanner only accepts mint authority bytes from the two canonical Solana token programs', async () => {
+  const originalFetch = globalThis.fetch;
+  const mint = 'So11111111111111111111111111111111111111112';
+  const initializedMint = Buffer.alloc(82);
+  initializedMint[45] = 1;
+  const baseMintBytes = initializedMint.toString('base64');
+  let rugcheckReport = { mint, rugged: false, risks: [], mintAuthority: null, freezeAuthority: null };
+  let rpcData = [baseMintBytes, 'base64'];
+  try {
+    globalThis.fetch = async (url) => {
+      const urlStr = String(url);
+      if (urlStr.includes('rugcheck')) {
+        return { ok: true, status: 200, json: async () => rugcheckReport };
+      }
+      if (urlStr.includes('rpc')) {
+        const owner = new URL(urlStr).searchParams.get('owner') ?? PublicKey.default.toBase58();
+        return { ok: true, status: 200, json: async () => ({ jsonrpc: '2.0', result: { value: { data: rpcData, owner } } }) };
+      }
+      return { ok: false, status: 500 };
+    };
+
+    for (const owner of [TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID]) {
+      const result = await scanToken(mint, `https://mock-rpc.solana.com/?owner=${owner.toBase58()}`, 'https://api.rugcheck.xyz/v1/tokens');
+      assert.equal(result.providers.rpc, 'live');
+      assert.equal(result.authorities.status, 'revoked');
+      assert.notEqual(result.safe, true);
+    }
+
+    const unsupported = await scanToken(mint, 'https://mock-rpc.solana.com/', 'https://api.rugcheck.xyz/v1/tokens');
+    assert.equal(unsupported.providers.rpc, 'unavailable');
+    assert.equal(unsupported.authorities.status, 'unknown');
+    assert.equal(unsupported.authorities.mint, null);
+    assert.equal(unsupported.authorities.freeze, null);
+    assert.equal(unsupported.safe, null);
+    assert.ok(unsupported.risks.some(risk => risk.name === 'Unsupported mint program owner'));
+
+    rugcheckReport = { ...rugcheckReport, freezeAuthority: TOKEN_PROGRAM_ID.toBase58() };
+    const adverse = await scanToken(mint, 'https://mock-rpc.solana.com/', 'https://api.rugcheck.xyz/v1/tokens');
+    assert.equal(adverse.authorities.status, 'unknown');
+    assert.equal(adverse.authorities.freeze, TOKEN_PROGRAM_ID.toBase58());
+    assert.equal(adverse.safe, false);
+
+    const mintWithTlv = (tlv) => {
+      const accountData = Buffer.alloc(166 + tlv.length);
+      initializedMint.copy(accountData);
+      accountData[165] = 1; // Token-2022 AccountType::Mint
+      tlv.copy(accountData, 166);
+      rpcData = [accountData.toString('base64'), 'base64'];
+    };
+    const tlvEntry = (type, value) => Buffer.concat([Buffer.from([type & 0xff, type >> 8, value.length & 0xff, value.length >> 8]), value]);
+    const metadataPointer = tlvEntry(18, Buffer.alloc(64));
+    for (const padding of [Buffer.alloc(1), Buffer.alloc(2), Buffer.from([0, 0, 0, 0])]) {
+      mintWithTlv(Buffer.concat([metadataPointer, padding]));
+      const validExtended = await scanToken(mint, `https://mock-rpc.solana.com/?owner=${TOKEN_2022_PROGRAM_ID.toBase58()}`, 'https://api.rugcheck.xyz/v1/tokens');
+      assert.equal(validExtended.providers.rpc, 'live');
+      assert.deepEqual(validExtended.token2022.extensions, ['18']);
+    }
+
+    rugcheckReport = { mint, rugged: false, risks: [], mintAuthority: null, freezeAuthority: null };
+    for (const malformedTlv of [
+      Buffer.from([1, 0]), // incomplete TLV header
+      Buffer.from([1, 0, 108, 0]), // TransferFeeConfig declares 108 bytes but contains none
+      Buffer.concat([Buffer.from([1, 0, 107, 0]), Buffer.alloc(107)]), // known fixed extension has wrong width
+      Buffer.concat([metadataPointer, metadataPointer]), // duplicate extension
+      tlvEntry(2, Buffer.alloc(8)), // account-only TransferFeeAmount in a mint
+      tlvEntry(65535, Buffer.alloc(0)), // unknown extension type
+    ]) {
+      mintWithTlv(malformedTlv);
+      const rejected = await scanToken(mint, `https://mock-rpc.solana.com/?owner=${TOKEN_2022_PROGRAM_ID.toBase58()}`, 'https://api.rugcheck.xyz/v1/tokens');
+      assert.equal(rejected.providers.rpc, 'unavailable');
+      assert.equal(rejected.authorities.status, 'unknown');
+      assert.equal(rejected.safe, null);
+      assert.ok(rejected.risks.some(risk => risk.name === 'Invalid mint account data'));
+    }
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -1,5 +1,5 @@
 import { PublicKey } from '@solana/web3.js';
-import { TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, getExtensionTypes, getPermanentDelegate, getDefaultAccountState, getTransferFeeConfig, getTransferHook, unpackMint } from '@solana/spl-token';
+import { TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, ExtensionType, TRANSFER_FEE_CONFIG_SIZE, DEFAULT_ACCOUNT_STATE_SIZE, PERMANENT_DELEGATE_SIZE, TRANSFER_HOOK_SIZE, getExtensionTypes, getTypeLen, isMintExtension, getPermanentDelegate, getDefaultAccountState, getTransferFeeConfig, getTransferHook, unpackMint } from '@solana/spl-token';
 import { httpJson } from './rpc.js';
 
 export type RiskCheck = {
@@ -34,6 +34,53 @@ function base(mint: string): RiskCheck {
     bundling: { insiders: null, bundledPct: null, state: 'unknown' }, risks: [],
     providers: { rugcheck: 'unavailable', solanaTracker: 'unavailable', rpc: 'unavailable' },
     links: { rugcheck: `https://rugcheck.xyz/tokens/${encodeURIComponent(mint)}`, tracker: `https://www.solanatracker.io/rugcheck?token=${encodeURIComponent(mint)}`, solscan: `https://solscan.io/token/${encodeURIComponent(mint)}` } };
+}
+
+function validateToken2022MintTlvData(tlvData: Buffer): Buffer {
+  const seen = new Set<number>();
+  let offset = 0;
+  let usedEnd = tlvData.length;
+  while (offset < tlvData.length) {
+    if (tlvData.length - offset < 2) {
+      // Token-2022 permits one trailing byte while reallocating account data.
+      usedEnd = offset;
+      break;
+    }
+    const extensionType = tlvData.readUInt16LE(offset);
+    if (extensionType === ExtensionType.Uninitialized) {
+      // The canonical parser treats this two-byte marker as the end; the
+      // remaining allocated bytes may be unused account space.
+      usedEnd = offset;
+      break;
+    }
+    if (tlvData.length - offset < 4) throw new Error('TOKEN_2022_MINT_TLV_HEADER_TRUNCATED');
+    const extensionLength = tlvData.readUInt16LE(offset + 2);
+    if (seen.has(extensionType)) throw new Error('TOKEN_2022_MINT_TLV_DUPLICATE_EXTENSION');
+    if (!isMintExtension(extensionType as ExtensionType)) throw new Error('TOKEN_2022_ACCOUNT_EXTENSION_IN_MINT');
+    seen.add(extensionType);
+    const valueStart = offset + 4;
+    const valueEnd = valueStart + extensionLength;
+    if (valueEnd > tlvData.length) throw new Error('TOKEN_2022_MINT_TLV_VALUE_TRUNCATED');
+
+    let expectedLength: number | null;
+    try {
+      expectedLength = extensionType === ExtensionType.TokenMetadata ? null : getTypeLen(extensionType as ExtensionType);
+    } catch {
+      throw new Error('TOKEN_2022_MINT_EXTENSION_UNKNOWN');
+    }
+    // Keep explicit size constants as a guard against changes in SPL's
+    // exported type-length table for the fields decoded below.
+    const decoderLength = extensionType === ExtensionType.TransferFeeConfig ? TRANSFER_FEE_CONFIG_SIZE
+      : extensionType === ExtensionType.DefaultAccountState ? DEFAULT_ACCOUNT_STATE_SIZE
+      : extensionType === ExtensionType.PermanentDelegate ? PERMANENT_DELEGATE_SIZE
+      : extensionType === ExtensionType.TransferHook ? TRANSFER_HOOK_SIZE
+      : expectedLength;
+    if (decoderLength !== null && extensionLength !== decoderLength) {
+      throw new Error('TOKEN_2022_MINT_TLV_EXTENSION_LENGTH_INVALID');
+    }
+    offset = valueEnd;
+  }
+  return tlvData.subarray(0, usedEnd);
 }
 
 function applyReport(out: RiskCheck, report: any) {
@@ -91,18 +138,37 @@ export async function scanToken(mint: string, rpcUrl: string, rugUrl: string, tr
   }
   if (reports[2].status === 'fulfilled') {
     const raw = (reports[2].value as any)?.result?.value; if (raw?.data?.[0] && raw.owner) {
-      out.providers.rpc = 'live';
       try {
-        const owner = new PublicKey(raw.owner); const info = { executable: false, owner, lamports: 0, data: Buffer.from(raw.data[0], 'base64'), rentEpoch: 0 }; const mintState = unpackMint(new PublicKey(mint), info, owner);
-        out.authorities.mint = mintState.mintAuthority?.toBase58() ?? null; out.authorities.freeze = mintState.freezeAuthority?.toBase58() ?? null;
-        out.authorities.status = out.authorities.mint === null && out.authorities.freeze === null ? 'revoked' : 'active';
-        out.token2022.enabled = owner.equals(TOKEN_2022_PROGRAM_ID); out.token2022.extensions = getExtensionTypes(mintState.tlvData).map((x: unknown) => String(x));
-        if (out.token2022.enabled) {
-          const fee = getTransferFeeConfig(mintState); out.token2022.transferFeeBps = fee?.newerTransferFee.transferFeeBasisPoints ?? null; out.token2022.feeAuthority = fee?.transferFeeConfigAuthority?.toBase58() ?? null;
-          out.token2022.permanentDelegate = getPermanentDelegate(mintState)?.delegate.toBase58() ?? null; out.token2022.defaultFrozen = getDefaultAccountState(mintState)?.state === 2;
-          out.token2022.transferHook = getTransferHook(mintState)?.programId.toBase58() ?? null;
+        const owner = new PublicKey(raw.owner);
+        if (!owner.equals(TOKEN_PROGRAM_ID) && !owner.equals(TOKEN_2022_PROGRAM_ID)) {
+          out.authorities.status = 'unknown';
+          out.risks.push({ level: 'warning', name: 'Unsupported mint program owner', description: 'RPC returned a mint account owned by neither the Token Program nor Token-2022; token authority evidence remains unknown.' });
+        } else {
+          const info = { executable: false, owner, lamports: 0, data: Buffer.from(raw.data[0], 'base64'), rentEpoch: 0 }; const unpackedMint = unpackMint(new PublicKey(mint), info, owner);
+          const mintState = owner.equals(TOKEN_2022_PROGRAM_ID)
+            ? { ...unpackedMint, tlvData: validateToken2022MintTlvData(unpackedMint.tlvData) }
+            : unpackedMint;
+          out.providers.rpc = 'live';
+          out.authorities.mint = mintState.mintAuthority?.toBase58() ?? null; out.authorities.freeze = mintState.freezeAuthority?.toBase58() ?? null;
+          out.authorities.status = out.authorities.mint === null && out.authorities.freeze === null ? 'revoked' : 'active';
+          out.token2022.enabled = owner.equals(TOKEN_2022_PROGRAM_ID); out.token2022.extensions = getExtensionTypes(mintState.tlvData).map((x: unknown) => String(x));
+          if (out.token2022.enabled) {
+            const inspected = new Set([ExtensionType.TransferFeeConfig, ExtensionType.DefaultAccountState, ExtensionType.PermanentDelegate, ExtensionType.TransferHook, ExtensionType.MetadataPointer, ExtensionType.TokenMetadata]);
+            if (getExtensionTypes(mintState.tlvData).some((extension: ExtensionType) => !inspected.has(extension))) {
+              out.risks.push({ level: 'danger', name: 'Unreviewed Token-2022 extension', description: 'A valid mint extension is outside the risk scanner’s reviewed extension policy.' });
+            }
+          }
+          if (out.token2022.enabled) {
+            const fee = getTransferFeeConfig(mintState); out.token2022.transferFeeBps = fee?.newerTransferFee.transferFeeBasisPoints ?? null; out.token2022.feeAuthority = fee?.transferFeeConfigAuthority?.toBase58() ?? null;
+            out.token2022.permanentDelegate = getPermanentDelegate(mintState)?.delegate.toBase58() ?? null; out.token2022.defaultFrozen = getDefaultAccountState(mintState)?.state === 2;
+            out.token2022.transferHook = getTransferHook(mintState)?.programId.toBase58() ?? null;
+          }
         }
-      } catch { out.providers.rpc = 'unavailable'; }
+      } catch {
+        out.providers.rpc = 'unavailable';
+        out.authorities.status = 'unknown';
+        out.risks.push({ level: 'warning', name: 'Invalid mint account data', description: 'RPC token mint bytes failed account or Token-2022 extension validation; authority evidence remains unknown.' });
+      }
     }
   }
   if (out.token2022.enabled && (out.token2022.transferFeeBps ?? 0) > 0) out.risks.push({ level: 'danger', name: 'Token-2022 transfer fee enabled', description: 'Transfers can be charged a non-zero fee.' });
