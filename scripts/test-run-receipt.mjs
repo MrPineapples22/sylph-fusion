@@ -9,11 +9,23 @@ import { canonicalJsonV10, hashCanonicalV10 } from './canonicalization-v10.mjs';
 export const RECEIPT_PATH = 'artifacts/connectivity/test-run-receipt.json';
 export const CERTIFIED_TEST_COMMAND = 'npm run build:engine && npm run test:all';
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
+const RECEIPT_KEYS = ['schemaVersion', 'status', 'command', 'startedAt', 'completedAt', 'runtime', 'sourceInventoryRoot',
+  'executionInventoryRoot', 'sourceFileCount', 'sourceManifestHash', 'packageManager', 'packageJsonHash', 'packageLockHash',
+  'pnpmLockHash', 'pnpmWorkspaceHash', 'tsconfigHash', 'terminalPackageJsonHash', 'terminalPackageLockHash', 'outputSha256',
+  'exitCode', 'receiptHash'];
+const RUNTIME_KEYS = ['node', 'npm', 'pnpm', 'platform', 'architecture'];
 const SOURCE_ROOTS = ['src', 'scripts', 'test', 'config', 'terminal'];
 const EXCLUDED_DIRECTORIES = new Set(['node_modules', 'dist', '.git', 'coverage', '.next']);
 
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
+}
+
+function hasExactKeys(value, keys) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const expected = new Set(keys);
+  const actual = Reflect.ownKeys(value);
+  return actual.length === expected.size && actual.every((key) => typeof key === 'string' && expected.has(key));
 }
 
 export function collectSourceInventory() {
@@ -54,9 +66,16 @@ export function collectSourceInventory() {
 
 export function collectTestConfigurationIdentity() {
   const readHash = (relativePath) => sha256(readFileSync(resolve(ROOT, relativePath)));
+  const packageJson = JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8'));
+  if (typeof packageJson.packageManager !== 'string' || !/^pnpm@\d+\.\d+\.\d+$/.test(packageJson.packageManager)) {
+    throw new Error('TEST_RECEIPT_PACKAGE_MANAGER_PIN_REQUIRED');
+  }
   return {
+    packageManager: packageJson.packageManager,
     packageJsonHash: readHash('package.json'),
     packageLockHash: readHash('package-lock.json'),
+    pnpmLockHash: readHash('pnpm-lock.yaml'),
+    pnpmWorkspaceHash: readHash('pnpm-workspace.yaml'),
     tsconfigHash: readHash('tsconfig.json'),
     terminalPackageJsonHash: readHash('terminal/package.json'),
     terminalPackageLockHash: readHash('terminal/package-lock.json'),
@@ -65,6 +84,7 @@ export function collectTestConfigurationIdentity() {
 
 function runtimeIdentity() {
   let npm = 'UNAVAILABLE';
+  let pnpm = 'UNAVAILABLE';
   try {
     const executable = process.platform === 'win32' ? (process.env.ComSpec ?? 'cmd.exe') : 'npm';
     const args = process.platform === 'win32' ? ['/d', '/s', '/c', 'npm.cmd --version'] : ['--version'];
@@ -72,12 +92,28 @@ function runtimeIdentity() {
       cwd: ROOT,
       encoding: 'utf8',
       windowsHide: true,
+      timeout: 10_000,
+      maxBuffer: 64 * 1024,
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim();
   } catch {
     // Node remains useful context; verifier still checks the supported runtime identity.
   }
-  return { node: process.version, npm, platform: process.platform, architecture: process.arch };
+  try {
+    const executable = process.platform === 'win32' ? (process.env.ComSpec ?? 'cmd.exe') : 'pnpm';
+    const args = process.platform === 'win32' ? ['/d', '/s', '/c', 'pnpm.cmd --version'] : ['--version'];
+    pnpm = execFileSync(executable, args, {
+      cwd: ROOT,
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 10_000,
+      maxBuffer: 64 * 1024,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    // A missing package manager keeps the receipt unverified rather than inventing a version.
+  }
+  return { node: process.version, npm, pnpm, platform: process.platform, architecture: process.arch };
 }
 
 export function createTestRunReceipt({ command, exitCode, output, outputSha256, startedAt, completedAt,
@@ -97,7 +133,7 @@ export function createTestRunReceipt({ command, exitCode, output, outputSha256, 
   }
   const { inventory, sourceInventoryRoot } = sourceSnapshot;
   const payload = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     status: exitCode === 0 ? 'PASS' : 'FAIL',
     command,
     startedAt,
@@ -116,9 +152,9 @@ export function createTestRunReceipt({ command, exitCode, output, outputSha256, 
 
 export function verifyTestRunReceipt(receipt, expectedSourceInventoryRoot) {
   const fail = (reason) => ({ verified: false, status: 'UNPROVEN', reason });
-  if (!receipt || typeof receipt !== 'object' || Array.isArray(receipt)) return fail('RECEIPT_MISSING_OR_INVALID');
+  if (!hasExactKeys(receipt, RECEIPT_KEYS) || !hasExactKeys(receipt.runtime, RUNTIME_KEYS)) return fail('RECEIPT_SCHEMA');
   const { receiptHash, ...payload } = receipt;
-  if (receipt.schemaVersion !== 1 || receipt.status !== 'PASS' || receipt.exitCode !== 0 ||
+  if (receipt.schemaVersion !== 2 || receipt.status !== 'PASS' || receipt.exitCode !== 0 ||
       receipt.command !== CERTIFIED_TEST_COMMAND ||
       typeof receipt.outputSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(receipt.outputSha256) ||
       !Number.isInteger(receipt.sourceFileCount) || receipt.sourceFileCount < 1 ||
@@ -127,11 +163,16 @@ export function verifyTestRunReceipt(receipt, expectedSourceInventoryRoot) {
       typeof receipt.startedAt !== 'string' || typeof receipt.completedAt !== 'string' ||
       !receipt.runtime || receipt.runtime.node !== process.version ||
       typeof receipt.runtime.npm !== 'string' || !/^\d+\.\d+\.\d+(?:[-+].*)?$/.test(receipt.runtime.npm) ||
+      typeof receipt.runtime.pnpm !== 'string' || !/^\d+\.\d+\.\d+(?:[-+].*)?$/.test(receipt.runtime.pnpm) ||
+      typeof receipt.packageManager !== 'string' || !/^pnpm@\d+\.\d+\.\d+$/.test(receipt.packageManager) ||
+      receipt.runtime.pnpm !== receipt.packageManager.slice('pnpm@'.length) ||
       !['win32', 'linux', 'darwin'].includes(receipt.runtime.platform) ||
       typeof receipt.runtime.architecture !== 'string' ||
       receipt.runtime.platform !== process.platform || receipt.runtime.architecture !== process.arch ||
       typeof receipt.packageJsonHash !== 'string' || !/^[0-9a-f]{64}$/.test(receipt.packageJsonHash) ||
       typeof receipt.packageLockHash !== 'string' || !/^[0-9a-f]{64}$/.test(receipt.packageLockHash) ||
+      typeof receipt.pnpmLockHash !== 'string' || !/^[0-9a-f]{64}$/.test(receipt.pnpmLockHash) ||
+      typeof receipt.pnpmWorkspaceHash !== 'string' || !/^[0-9a-f]{64}$/.test(receipt.pnpmWorkspaceHash) ||
       typeof receipt.tsconfigHash !== 'string' || !/^[0-9a-f]{64}$/.test(receipt.tsconfigHash) ||
       typeof receipt.terminalPackageJsonHash !== 'string' || !/^[0-9a-f]{64}$/.test(receipt.terminalPackageJsonHash) ||
       typeof receipt.terminalPackageLockHash !== 'string' || !/^[0-9a-f]{64}$/.test(receipt.terminalPackageLockHash) ||
@@ -145,12 +186,17 @@ export function verifyTestRunReceipt(receipt, expectedSourceInventoryRoot) {
   const identities = collectTestConfigurationIdentity();
   if (sourceInventoryRoot !== receipt.sourceInventoryRoot || currentSource.executionInventoryRoot !== receipt.executionInventoryRoot ||
       inventory.length !== receipt.sourceFileCount || hashCanonicalV10(inventory) !== receipt.sourceManifestHash ||
+      identities.packageManager !== receipt.packageManager ||
       identities.packageJsonHash !== receipt.packageJsonHash ||
       identities.packageLockHash !== receipt.packageLockHash ||
+      identities.pnpmLockHash !== receipt.pnpmLockHash ||
+      identities.pnpmWorkspaceHash !== receipt.pnpmWorkspaceHash ||
       identities.tsconfigHash !== receipt.tsconfigHash ||
       identities.terminalPackageJsonHash !== receipt.terminalPackageJsonHash ||
       identities.terminalPackageLockHash !== receipt.terminalPackageLockHash) return fail('CURRENT_SOURCE_OR_CONFIGURATION_DRIFT');
-  return { verified: true, status: 'PASS', receiptHash, command: receipt.command, outputSha256: receipt.outputSha256 };
+  return { verified: true, status: 'PASS', receiptHash, command: receipt.command, outputSha256: receipt.outputSha256,
+    verificationScope: 'SOURCE_CONFIGURATION_AND_RUNTIME_CLAIM_INTEGRITY',
+    issuerAuthenticated: false, dependencyInstallationVerified: false };
 }
 
 export function readAndVerifyTestRunReceipt(expectedSourceInventoryRoot, receiptPath = RECEIPT_PATH) {

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "project": "MrPineapples22/sylph-fusion",
-  "updatedAt": "2026-10-08",
+  "updatedAt": "2026-10-09",
   "items": [
     {
       "id": "C1-INGRESS-001",
@@ -55,8 +55,8 @@
         "Research cycle 159 adds JSON_SERIALIZED_BYTES and DECODED_PROTOBUF_JSON_SERIALIZED_BYTES for locally JSON.stringify-serialized bytes, labels caller-supplied payloads UNSPECIFIED when no representation is given, and retains old canonical enum values for replay compatibility.",
         "The live Yellowstone Feed and alternate YellowstoneTruthBridge now identify decoded-protobuf JSON.stringify payloads as serialized bytes; WebSocket frames keep JSON_FRAME_BYTES. This narrows false canonicalization claims but does not prove capture or bind independent Feed.accept fields.",
         "SQLite canonical_ingress_delivery_v1 outbox persists and restores rawPayloadEncoding across crash recovery, tested in test/platform/canonical-ingress-durability.test.mjs and test/feed-validation-boundary.test.mjs.",
-        "The real Feed.geyser in src/feed.ts receives decoded SDK updates and stores Buffer.from(JSON.stringify(update)); research cycle 159 labels these as DECODED_PROTOBUF_JSON_SERIALIZED_BYTES without fabricating wire capture."
-        ,"Research cycle 160 replaces the live Subscribe client response deserializer with a narrow @grpc/grpc-js descriptor using the pinned 4.0.2 SubscribeRequest encoder and SubscribeUpdate decoder; it copies the message payload bytes and decodes that same copy.",
+        "The real Feed.geyser in src/feed.ts receives decoded SDK updates and stores Buffer.from(JSON.stringify(update)); research cycle 159 labels these as DECODED_PROTOBUF_JSON_SERIALIZED_BYTES without fabricating wire capture.",
+        "Research cycle 160 replaces the live Subscribe client response deserializer with a narrow @grpc/grpc-js descriptor using the pinned 4.0.2 SubscribeRequest encoder and SubscribeUpdate decoder; it copies the message payload bytes and decodes that same copy.",
         "Feed derives signature, slot, and logs only from the decoder-produced capture object held in a module-private WeakMap. Feed.accept rejects caller-selected GRPC_PROTOBUF_MESSAGE_PAYLOAD_BYTES unless the capture object, derived fields, and exact raw payload all match.",
         "The observation encoding GRPC_PROTOBUF_MESSAGE_PAYLOAD_BYTES and schema yellowstone-grpc-protobuf-message/v1 identify protobuf message payload bytes passed to responseDeserialize after gRPC framing/reassembly and decompression, not full network frames.",
         "Canonical Solana ingress now decodes this schema from the persisted payload and independently rejects signature/slot mismatch before parsing the transaction's logs.",
@@ -279,14 +279,23 @@
         "The exported verifier has no fixture bypass; unbound fixtures are checked only by a clearly labeled local hash path in non-persisting generator dry runs.",
         "Independent Astra certification review accepted the policy changes after the caller-controlled bypass and fully-certified consistency defects were repaired.",
         "Focused certification tests passed 78/78 and verifier/generator tests passed 17/17; the existing persisted certificate is rejected because it is bound to stale commit 4990cceec7986e0409b8960f98fa523e21559020, not current HEAD 5117556571ab330f5f111e8ef91b3497c5d07622.",
-        "Verifier results now explicitly report certificateIssuerAuthenticated=false and referencedArtifactsVerified=false; correctly re-hashed payloads can still contain arbitrary well-shaped roots."
+        "Verifier results now explicitly report certificateIssuerAuthenticated=false and referencedArtifactsVerified=false; correctly re-hashed payloads can still contain arbitrary well-shaped roots.",
+        "2026-10-09 staged V2 evidence-bundle verifier resolves fixed allowlisted manifest, graph, scorecard, convergence and four physical audit artifacts, checking raw byte lengths/SHA-256 plus canonical roots, current checkout/source inventory, parent-child bindings and C4-only semantics. V1 payload verifier is unchanged.",
+        "Focused V2 and legacy verifier/generator tests passed 27/27; synthetic fixtures prove consistency/rejection only. No persisted historical certificate or physical evidence was regenerated.",
+        "Independent review rejected the first V2 implementation: physical/static artifacts could be coherently fabricated without recomputation. Repair adds strict-path temporary physical auditor/static compiler reruns and full-content comparison except validated generation timestamps/derived physical roots. Missing metrics, named tests, audited hashes, working-tree fields and rehashed static claims are covered by negative fixtures; focused suite passed 30/30. Final re-review pending.",
+        "Final semantic-bind repair requires exact seven-field manifestSummary projection, all four authority role keys, and convergence level/ladder matching the independently regenerated static scorecard. Self-rehashed omission/forgery and C2-score/C4-certificate negative tests added; focused suite passed 32/32.",
+        "Independent Astra certification review accepted the final local recomputation and artifact-binding scope. The complete npm run test:all passed on branch HEAD a79a3f78180b1d6ebef8ac061769806430252f59; node syntax check, ledger JSON parse, and git diff --check also passed. This does not demonstrate a successful production bundle, so no persisted evidence was rewritten and no certificate was awarded.",
+        "2026-10-09 follow-up found the certified Windows workflow installs engine dependencies using pnpm 11.19.0 and pnpm-lock.yaml, while v1 test receipts hashed only package-lock.json and mislabeled npm's version as sufficient package-manager identity. Receipt schema v2 now pins packageManager in package.json, captures pnpm and npm separately, hashes pnpm-lock.yaml and pnpm-workspace.yaml, and rejects v1 receipts for current C4 test evidence; terminal npm lock binding remains.",
+        "Receipt-v2 tests also reject self-rehashed unknown receipt/runtime keys, missing or altered lock/config hashes, schema-v1 receipts, and a mismatched pnpm version. Focused receipt/compiler tests passed 10/10 and full test:all completed successfully after the change. Independent Astra certification review accepted schema-v2, including the final set-and-length exact-key check. An isolated static compiler recomputation rejected the saved v1 receipt with RECEIPT_SCHEMA and lowered the highest proven level to C1; a fresh source-bound receipt and evidence set are required on the committed revision."
       ],
       "remaining": [
-        "Bind each certificate root to the exact current manifest, physical audit, graph, scorecard, and convergence artifacts and independently validate their source/semantic evidence.",
-        "Define an issuer-authentication trust policy for certificates; candidate build attestations do not attest the system certificate or establish runtime evidence authenticity."
+        "No successful fresh production bundle has been produced; current legacy evidence is stale and intentionally remains untouched. The saved test receipt is schema v1 and no longer supports a current C4 score under the stronger package-manager binding.",
+        "V2 establishes local artifact binding only: strict-path local recomputation does not authenticate an external issuer, verify loaded executable inputs, or close M1/M4. C5-C10 evidence is unsupported and rejected.",
+        "A current bundle requires source-bound physical evidence and a convergence report binding the exact scorecard; legacy reports lacking staticBaselineRoot are rejected. No bundle is generated or certification awarded by this change.",
+        "Define independently provisioned issuer signature/trust policy and durable level-specific evidence before stronger consumers or release claims."
       ],
       "owner": "Astra Certification",
-      "nextAction": "Design and independently review a versioned evidence-bundle verifier that resolves all child roots and authenticates the certificate issuer before any consumer treats a certificate as evidence."
+      "nextAction": "Complete independent review of receipt v2, commit the reviewed source change, run the certified test runner on that clean revision, and regenerate source-bound C4 evidence. Then design independent issuer trust and complete executable-input binding; keep runtime certification blocked pending durable level-specific evidence."
     }
   ],
   "certification": {

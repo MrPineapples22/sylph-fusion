@@ -226,10 +226,16 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
           </div>
         </div>
       </section>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '16px' }}>
-        <DynamicReserveGauge capital={capital} solPriceUsd={150} />
-        <RealizedEdgeBreakdownPanel solPriceUsd={150} />
-      </div>
+      {(() => {
+        const solToken = (tokens || []).find(t => t.mint === 'So11111111111111111111111111111111111111112' || t.symbol === 'SOL');
+        const currentSolPrice = Number.isFinite(solToken?.price) ? solToken.price : (capital?.solPriceUsd ?? 150);
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '16px' }}>
+            <DynamicReserveGauge capital={capital} solPriceUsd={currentSolPrice} />
+            <RealizedEdgeBreakdownPanel solPriceUsd={currentSolPrice} />
+          </div>
+        );
+      })()}
       <section className="op-section">
         <h3>Reported positions ({formatNumber(records.length)})</h3>
         {enrichedRecords.length ? <div className="op-card-grid">{enrichedRecords.map((position, index) => {
