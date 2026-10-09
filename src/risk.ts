@@ -1,5 +1,5 @@
 import { PublicKey } from '@solana/web3.js';
-import { TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, ExtensionType, TRANSFER_FEE_CONFIG_SIZE, DEFAULT_ACCOUNT_STATE_SIZE, PERMANENT_DELEGATE_SIZE, TRANSFER_HOOK_SIZE, getExtensionTypes, getTypeLen, isMintExtension, getPermanentDelegate, getDefaultAccountState, getTransferFeeConfig, getTransferHook, unpackMint } from '@solana/spl-token';
+import { TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, ExtensionType, MAX_FEE_BASIS_POINTS, TRANSFER_FEE_CONFIG_SIZE, DEFAULT_ACCOUNT_STATE_SIZE, PERMANENT_DELEGATE_SIZE, TRANSFER_HOOK_SIZE, getExtensionTypes, getTypeLen, isMintExtension, getPermanentDelegate, getDefaultAccountState, getTransferFeeConfig, getTransferHook, unpackMint } from '@solana/spl-token';
 import { httpJson } from './rpc.js';
 
 export type RiskCheck = {
@@ -9,6 +9,7 @@ export type RiskCheck = {
   score: number | null;
   rugged: boolean | null;
   authorities: { mint: string | null; freeze: string | null; status: 'revoked' | 'active' | 'unknown' };
+  /** transferFeeBps is the highest on-chain older/newer schedule; it is not epoch-selected. */
   token2022: { enabled: boolean; transferFeeBps: number | null; feeAuthority: string | null; permanentDelegate: string | null; defaultFrozen: boolean | null; transferHook: string | null; extensions: string[] };
   liquidity: { state: 'burned' | 'locked' | 'removable' | 'bonding_curve' | 'unknown'; lockedPct: number | null; unlockAt: number | null; pools: number };
   holders: { top10Bps: number | null; top10Status: 'within-limit' | 'over-limit' | 'unknown' };
@@ -127,6 +128,7 @@ function applyReport(out: RiskCheck, report: any) {
 export async function scanToken(mint: string, rpcUrl: string, rugUrl: string, trackerKey = ''): Promise<RiskCheck> {
   if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(mint)) throw new Error('Invalid Solana mint');
   const out = base(mint);
+  let token2022FeeEvidenceConflict = false;
   const reports = await Promise.allSettled([
     httpJson<any>(`${rugUrl}/${encodeURIComponent(mint)}/report`, 8000),
     trackerKey ? httpJson<any>(`https://data.solanatracker.io/tokens/${encodeURIComponent(mint)}`, 8000, { headers: { 'x-api-key': trackerKey } }) : Promise.reject(new Error('Solana Tracker key not configured')),
@@ -159,7 +161,27 @@ export async function scanToken(mint: string, rpcUrl: string, rugUrl: string, tr
             }
           }
           if (out.token2022.enabled) {
-            const fee = getTransferFeeConfig(mintState); out.token2022.transferFeeBps = fee?.newerTransferFee.transferFeeBasisPoints ?? null; out.token2022.feeAuthority = fee?.transferFeeConfigAuthority?.toBase58() ?? null;
+            const fee = getTransferFeeConfig(mintState);
+            if (fee) {
+              // RPC does not currently provide a trusted epoch with this mint
+              // read. Report the worst configured schedule so an older active
+              // fee cannot be hidden by a future zero-fee schedule.
+              const oldBps = fee.olderTransferFee.transferFeeBasisPoints;
+              const newBps = fee.newerTransferFee.transferFeeBasisPoints;
+              if (oldBps > MAX_FEE_BASIS_POINTS || newBps > MAX_FEE_BASIS_POINTS) throw new Error('TOKEN_2022_TRANSFER_FEE_BPS_INVALID');
+              out.token2022.transferFeeBps = Math.max(oldBps, newBps);
+              const authority = fee.transferFeeConfigAuthority;
+              out.token2022.feeAuthority = authority && !authority.equals(PublicKey.default) ? authority.toBase58() : null;
+            } else {
+              const reportedAuthority = out.token2022.feeAuthority;
+              const reportedRate = out.token2022.transferFeeBps;
+              token2022FeeEvidenceConflict = (reportedRate ?? 0) > 0 || (!!reportedAuthority && reportedAuthority !== PublicKey.default.toBase58());
+              out.token2022.transferFeeBps = null;
+              out.token2022.feeAuthority = null;
+              if (token2022FeeEvidenceConflict) {
+                out.risks.push({ level: 'warning', name: 'Transfer fee report conflicts with mint data', description: 'RugCheck reports a transfer fee or update authority, but the confirmed mint bytes contain no TransferFeeConfig extension.' });
+              }
+            }
             out.token2022.permanentDelegate = getPermanentDelegate(mintState)?.delegate.toBase58() ?? null; out.token2022.defaultFrozen = getDefaultAccountState(mintState)?.state === 2;
             out.token2022.transferHook = getTransferHook(mintState)?.programId.toBase58() ?? null;
           }
@@ -172,12 +194,13 @@ export async function scanToken(mint: string, rpcUrl: string, rugUrl: string, tr
     }
   }
   if (out.token2022.enabled && (out.token2022.transferFeeBps ?? 0) > 0) out.risks.push({ level: 'danger', name: 'Token-2022 transfer fee enabled', description: 'Transfers can be charged a non-zero fee.' });
+  if (out.token2022.enabled && out.token2022.feeAuthority && out.token2022.feeAuthority !== PublicKey.default.toBase58()) out.risks.push({ level: 'danger', name: 'Token-2022 transfer fee authority active', description: 'The configured authority can change transfer fees after this assessment.' });
   if (out.token2022.permanentDelegate) out.risks.push({ level: 'danger', name: 'Token-2022 permanent delegate', description: 'An authority can transfer or burn holder tokens.' });
   if (out.token2022.defaultFrozen) out.risks.push({ level: 'danger', name: 'Token-2022 default frozen', description: 'New accounts may be frozen by default.' });
   if (out.token2022.transferHook) out.risks.push({ level: 'warning', name: 'Token-2022 transfer hook', description: 'Transfers invoke an external program.' });
   // Missing evidence is unknown, never a pass; final checks include RPC extensions.
   const dangerous = out.rugged === true || out.authorities.freeze !== null || out.holders.top10Status === 'over-limit' || out.risks.some(r => /danger|critical/i.test(r.level)) || !!out.token2022.transferHook;
-  out.safe = dangerous ? false : out.providers.rpc === 'live' && out.providers.rugcheck === 'live' && out.rugged === false && out.authorities.status === 'revoked' && out.holders.top10Status === 'within-limit' && (['burned','locked'].includes(out.liquidity.state) || out.liquidity.state === 'bonding_curve') ? true : null;
+  out.safe = dangerous ? false : !token2022FeeEvidenceConflict && out.providers.rpc === 'live' && out.providers.rugcheck === 'live' && out.rugged === false && out.authorities.status === 'revoked' && out.holders.top10Status === 'within-limit' && (['burned','locked'].includes(out.liquidity.state) || out.liquidity.state === 'bonding_curve') ? true : null;
   return out;
 }
 

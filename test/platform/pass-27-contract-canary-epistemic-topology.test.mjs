@@ -369,6 +369,64 @@ test('risk scanner only accepts mint authority bytes from the two canonical Sola
       assert.deepEqual(validExtended.token2022.extensions, ['18']);
     }
 
+    const feeConfig = ({ authority = false, olderBps = 0, newerBps = 0, newerEpoch = 0n } = {}) => {
+      const value = Buffer.alloc(108);
+      if (authority) TOKEN_PROGRAM_ID.toBuffer().copy(value, 0);
+      value.writeBigUInt64LE(newerEpoch, 90);
+      value.writeUInt16LE(olderBps, 88);
+      value.writeUInt16LE(newerBps, 106);
+      return value;
+    };
+    const optimisticFeeReport = { mint, rugged: false, risks: [], mintAuthority: null, freezeAuthority: null, topHolders: [{ pct: 1 }], markets: [{ protocol: 'pump' }] };
+    rugcheckReport = optimisticFeeReport;
+    mintWithTlv(tlvEntry(1, feeConfig({ authority: true })));
+    const mutableFee = await scanToken(mint, `https://mock-rpc.solana.com/?owner=${TOKEN_2022_PROGRAM_ID.toBase58()}`, 'https://api.rugcheck.xyz/v1/tokens');
+    assert.equal(mutableFee.token2022.transferFeeBps, 0);
+    assert.equal(mutableFee.token2022.feeAuthority, TOKEN_PROGRAM_ID.toBase58());
+    assert.equal(mutableFee.safe, false);
+    assert.ok(mutableFee.risks.some(risk => risk.name === 'Token-2022 transfer fee authority active'));
+
+    for (const config of [feeConfig({ olderBps: 1000, newerBps: 0, newerEpoch: 5n }), feeConfig({ olderBps: 0, newerBps: 1000 })]) {
+      mintWithTlv(tlvEntry(1, config));
+      const scheduledFee = await scanToken(mint, `https://mock-rpc.solana.com/?owner=${TOKEN_2022_PROGRAM_ID.toBase58()}`, 'https://api.rugcheck.xyz/v1/tokens');
+      assert.equal(scheduledFee.token2022.transferFeeBps, 1000);
+      assert.equal(scheduledFee.token2022.feeAuthority, null);
+      assert.ok(scheduledFee.risks.some(risk => risk.name === 'Token-2022 transfer fee enabled'));
+    }
+    mintWithTlv(tlvEntry(1, feeConfig()));
+    const immutableZeroFee = await scanToken(mint, `https://mock-rpc.solana.com/?owner=${TOKEN_2022_PROGRAM_ID.toBase58()}`, 'https://api.rugcheck.xyz/v1/tokens');
+    assert.equal(immutableZeroFee.token2022.feeAuthority, null);
+    assert.equal(immutableZeroFee.token2022.transferFeeBps, 0);
+    assert.equal(immutableZeroFee.safe, true);
+
+    const withdrawalOnly = feeConfig();
+    TOKEN_PROGRAM_ID.toBuffer().copy(withdrawalOnly, 32);
+    mintWithTlv(tlvEntry(1, withdrawalOnly));
+    const withdrawalAuthority = await scanToken(mint, `https://mock-rpc.solana.com/?owner=${TOKEN_2022_PROGRAM_ID.toBase58()}`, 'https://api.rugcheck.xyz/v1/tokens');
+    assert.equal(withdrawalAuthority.token2022.feeAuthority, null);
+    assert.equal(withdrawalAuthority.safe, true);
+
+    rugcheckReport = { ...optimisticFeeReport, transferFee: { pct: 0, authority: TOKEN_PROGRAM_ID.toBase58() } };
+    mintWithTlv(Buffer.alloc(0));
+    const feeReportConflict = await scanToken(mint, `https://mock-rpc.solana.com/?owner=${TOKEN_2022_PROGRAM_ID.toBase58()}`, 'https://api.rugcheck.xyz/v1/tokens');
+    assert.equal(feeReportConflict.token2022.transferFeeBps, null);
+    assert.equal(feeReportConflict.token2022.feeAuthority, null);
+    assert.equal(feeReportConflict.safe, null);
+    assert.ok(feeReportConflict.risks.some(risk => risk.name === 'Transfer fee report conflicts with mint data'));
+    rugcheckReport = optimisticFeeReport;
+
+    for (const bps of [10000, 10001]) {
+      mintWithTlv(tlvEntry(1, feeConfig({ olderBps: bps })));
+      const boundedFee = await scanToken(mint, `https://mock-rpc.solana.com/?owner=${TOKEN_2022_PROGRAM_ID.toBase58()}`, 'https://api.rugcheck.xyz/v1/tokens');
+      if (bps === 10000) {
+        assert.equal(boundedFee.token2022.transferFeeBps, 10000);
+        assert.equal(boundedFee.safe, false);
+      } else {
+        assert.equal(boundedFee.providers.rpc, 'unavailable');
+        assert.equal(boundedFee.safe, null);
+      }
+    }
+
     rugcheckReport = { mint, rugged: false, risks: [], mintAuthority: null, freezeAuthority: null };
     for (const malformedTlv of [
       Buffer.from([1, 0]), // incomplete TLV header

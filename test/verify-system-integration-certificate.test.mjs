@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { verifySystemIntegrationCertificate } from '../scripts/verify-system-integration-certificate.mjs';
 import { hashCanonicalV10, EMPTY_SHA256_HEX } from '../scripts/canonicalization-v10.mjs';
 
@@ -97,4 +98,56 @@ test('Step 4 Independent Verifier: Non-existent file path fails closed', () => {
     () => verifySystemIntegrationCertificate('non/existent/path/to/cert.json'),
     /CERTIFICATE_NOT_FOUND/
   );
+});
+
+test('Step 4 Independent Verifier: Sylph status cannot overstate its ladder or authority boundary', () => {
+  const payload = {
+    systemId: 'SYLPH_FUSION',
+    manifestSummary: { repositoryCommitSha: '0'.repeat(40) },
+    highestProvenLevel: 'C10',
+    certificationStatus: 'UNIFIED_PIPELINE_CERTIFIED',
+    evaluationMode: 'certify',
+    ladder: Object.fromEntries(['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9', 'C10']
+      .map((level) => [level, { awarded: true }])),
+    zeroAuthorityInvariants: {
+      financialSignerAuthority: 'NONE',
+      mainnetBroadcastAuthority: 'NONE',
+      capitalDeploymentAuthority: 'NONE',
+      deterministicInvariantDominance: true,
+    },
+    roots: {
+      physicalAuthorityAuditRoot: 'a'.repeat(64),
+      convergenceRoot: 'b'.repeat(64),
+      certificationManifestRoot: 'c'.repeat(64),
+    },
+  };
+  assert.throws(() => verifySystemIntegrationCertificate({
+    schemaVersion: '1.0.0', certificateRoot: hashCanonicalV10(payload), certifiedPayload: payload,
+  }), /stale for the current checkout/);
+});
+
+test('Step 4 Independent Verifier: Current-checkout C4 cannot claim unified certification', () => {
+  const payload = {
+    systemId: 'SYLPH_FUSION',
+    manifestSummary: { repositoryCommitSha: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim() },
+    highestProvenLevel: 'C4',
+    certificationStatus: 'UNIFIED_PIPELINE_CERTIFIED',
+    evaluationMode: 'certify',
+    ladder: Object.fromEntries(['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9', 'C10']
+      .map((level, i) => [level, { awarded: i <= 4 }])),
+    zeroAuthorityInvariants: {
+      financialSignerAuthority: 'NONE',
+      mainnetBroadcastAuthority: 'NONE',
+      capitalDeploymentAuthority: 'NONE',
+      deterministicInvariantDominance: true,
+    },
+    roots: {
+      physicalAuthorityAuditRoot: 'a'.repeat(64),
+      convergenceRoot: 'b'.repeat(64),
+      certificationManifestRoot: 'c'.repeat(64),
+    },
+  };
+  assert.throws(() => verifySystemIntegrationCertificate({
+    schemaVersion: '1.0.0', certificateRoot: hashCanonicalV10(payload), certifiedPayload: payload,
+  }), /overstates or contradicts/);
 });

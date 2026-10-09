@@ -17,12 +17,70 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const ROOT_DIR = resolve(__dirname, '..');
 const DEFAULT_CERT_PATH = resolve(ROOT_DIR, 'artifacts', 'connectivity', 'SYSTEM_INTEGRATION_CERTIFICATE.json');
 const EMPTY_SHA256_HEX = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+const LEVELS = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9', 'C10'];
+
+function currentCheckoutSha() {
+  try {
+    return execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: ROOT_DIR, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim().toLowerCase();
+  } catch {
+    throw new Error('VERIFICATION_FAILURE: Cannot establish current checkout identity');
+  }
+}
+
+function verifySylphPolicy(payload, { allowUnboundFixture = false } = {}) {
+  if (payload.systemId !== 'SYLPH_FUSION') return;
+  if (allowUnboundFixture) return;
+  const commitSha = payload.manifestSummary?.repositoryCommitSha;
+  if (!/^[0-9a-f]{40}$/.test(commitSha ?? '')) {
+    throw new Error('VERIFICATION_FAILURE: Sylph certificate is missing a valid repository commit SHA');
+  }
+  if (commitSha !== currentCheckoutSha()) {
+    throw new Error(`VERIFICATION_FAILURE: Certificate commit ${commitSha} is stale for the current checkout`);
+  }
+  if (!LEVELS.includes(payload.highestProvenLevel)) {
+    throw new Error('VERIFICATION_FAILURE: Sylph certificate has an invalid highestProvenLevel');
+  }
+  if (!['NOT_CERTIFIED', 'PROVISIONALLY_INTEGRATED', 'UNIFIED_PIPELINE_CERTIFIED'].includes(payload.certificationStatus)) {
+    throw new Error('VERIFICATION_FAILURE: Sylph certificate has an invalid certificationStatus');
+  }
+  const index = LEVELS.indexOf(payload.highestProvenLevel);
+  const ladder = payload.ladder;
+  if (!ladder || typeof ladder !== 'object' || Array.isArray(ladder)) {
+    throw new Error('VERIFICATION_FAILURE: Sylph certificate is missing its certification ladder');
+  }
+  for (let i = 0; i < LEVELS.length; i++) {
+    const awarded = ladder[LEVELS[i]]?.awarded;
+    if (typeof awarded !== 'boolean' || awarded !== (i <= index)) {
+      throw new Error(`VERIFICATION_FAILURE: Certification ladder is inconsistent at ${LEVELS[i]}`);
+    }
+  }
+  const full = payload.highestProvenLevel === 'C10' && payload.evaluationMode === 'certify';
+  if ((payload.certificationStatus === 'UNIFIED_PIPELINE_CERTIFIED') !== full ||
+      (payload.certificationStatus === 'PROVISIONALLY_INTEGRATED') !== (index >= 4 && !full) ||
+      (payload.certificationStatus === 'NOT_CERTIFIED') !== (index < 4)) {
+    throw new Error('VERIFICATION_FAILURE: Certification status overstates or contradicts the awarded level');
+  }
+  if (payload.zeroAuthorityInvariants?.financialSignerAuthority !== 'NONE' ||
+      payload.zeroAuthorityInvariants?.mainnetBroadcastAuthority !== 'NONE' ||
+      payload.zeroAuthorityInvariants?.capitalDeploymentAuthority !== 'NONE' ||
+      payload.zeroAuthorityInvariants?.deterministicInvariantDominance !== true) {
+    throw new Error('VERIFICATION_FAILURE: Sylph certificate does not preserve zero-authority invariants');
+  }
+  if (!/^[0-9a-f]{64}$/.test(payload.roots?.physicalAuthorityAuditRoot ?? '') ||
+      !/^[0-9a-f]{64}$/.test(payload.roots?.convergenceRoot ?? '') ||
+      !/^[0-9a-f]{64}$/.test(payload.roots?.certificationManifestRoot ?? '')) {
+    throw new Error('VERIFICATION_FAILURE: Sylph certificate is missing a required evidence root');
+  }
+}
 
 /**
  * Independent Canonical Normalization implementation.
@@ -119,7 +177,7 @@ function independentHash(value) {
  * @param {string | object} certPathOrObject
  * @returns {object} Verification report
  */
-export function verifySystemIntegrationCertificate(certPathOrObject = DEFAULT_CERT_PATH) {
+export function verifySystemIntegrationCertificate(certPathOrObject = DEFAULT_CERT_PATH, options = {}) {
   let certRaw;
   let certLocation = 'IN_MEMORY_OBJECT';
 
@@ -154,6 +212,7 @@ export function verifySystemIntegrationCertificate(certPathOrObject = DEFAULT_CE
       !/^[0-9a-f]{64}$/.test(certRaw.certifiedPayload.roots?.physicalAuthorityAuditRoot ?? '')) {
     throw new Error('VERIFICATION_FAILURE: C4 certificate is missing a valid physical authority audit root');
   }
+  verifySylphPolicy(certRaw.certifiedPayload, options);
 
   const claimedRoot = certRaw.certificateRoot.toLowerCase().trim();
   if (claimedRoot.length !== 64 || !/^[0-9a-f]{64}$/.test(claimedRoot)) {

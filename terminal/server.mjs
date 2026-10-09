@@ -648,7 +648,7 @@ function getDiscovery() {
   const now = Date.now();
   if (discoveryCache && now - discoveryCache.at < 250) return discoveryCache;
   globalGoalLoopMonitor.recordStage('INGESTION', now);
-  const feedStale = globalProviderHealthTracker.isMarketFeedStale(now, 5000);
+  const feedStale = globalProviderHealthTracker.isMarketFeedStale(now);
   globalGoalLoopMonitor.recordStage('FRESHNESS', now);
   const gateway = globalCommandGateway.getSnapshot();
   const tokens = hub.snapshot().tokens;

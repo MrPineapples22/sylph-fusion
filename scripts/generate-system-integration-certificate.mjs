@@ -255,7 +255,9 @@ export function generateSystemIntegrationCertificate(options = {}) {
   };
 
   // 6. Independent Self-Verification Audit
-  const verificationReport = verifySystemIntegrationCertificate(certificate);
+  const verificationReport = verifySystemIntegrationCertificate(certificate, {
+    allowUnboundFixture: options.dryRun === true && options.manifest !== undefined,
+  });
 
   // 7. Write Artifact to Disk
   if (!options.dryRun) {

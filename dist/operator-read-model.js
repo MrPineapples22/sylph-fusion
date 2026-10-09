@@ -39,7 +39,10 @@ export class OperatorReadModel {
             latencyMs: p.lastSuccess > 0 && Number.isFinite(p.avgLatencyMs) ? p.avgLatencyMs : null,
             circuit: p.circuitState, reason: p.failureReason, capabilityAvailable: p.capabilityAvailable,
         }));
-        const feed = providers.find(p => p.id === 'PUMPPORTAL_WS') || providers.find(p => p.id === 'DEXSCREENER') || providers.find(p => p.role === 'DISCOVERY_STREAM' || p.role === 'MARKET_ENRICHMENT');
+        const marketFeeds = providers.filter(p => (p.role === 'DISCOVERY_STREAM' || p.role === 'MARKET_ENRICHMENT' || p.id === 'PUMPPORTAL_WS' || p.id === 'DEXSCREENER_API') && p.ageMs != null);
+        const feed = marketFeeds.length > 0
+            ? marketFeeds.reduce((freshest, p) => (p.ageMs < freshest.ageMs ? p : freshest), marketFeeds[0])
+            : providers.find(p => p.id === 'PUMPPORTAL_WS') || providers.find(p => p.id === 'DEXSCREENER_API') || providers.find(p => p.role === 'DISCOVERY_STREAM' || p.role === 'MARKET_ENRICHMENT');
         const conflicts = discovery.rows.filter(row => row.crossValidationStatus === 'CONFLICTING').map(row => ({ mint: row.mint, reasonCode: 'MARKET_SOURCES_CONFLICT' }));
         const isPaperMode = gateway.mode === 'paper' || gateway.mode === 'shadow';
         const hasFreshDiscovery = discovery.rows.some(row => Number.isFinite(row.at) && row.at > 0 && row.at <= now && now - row.at <= DISCOVERY_FRESH_MS);

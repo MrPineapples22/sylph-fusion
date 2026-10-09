@@ -216,6 +216,58 @@
       ],
       "owner": "Dependency Security",
       "nextAction": "Prototype an isolated bigint-buffer remediation and trace package-level advisory reachability before changing production dependency versions."
+    },
+    {
+      "id": "RISK-MINT-OWNER-001",
+      "title": "Risk scanner must not interpret arbitrary program-owned accounts as token mints",
+      "status": "RESOLVED",
+      "severity": "HIGH",
+      "evidence": [
+        "src/risk.ts now accepts mint bytes only when the reported owner is TOKEN_PROGRAM_ID or TOKEN_2022_PROGRAM_ID; unsupported owners leave RPC evidence unavailable and authority status unknown.",
+        "The regression test confirms an optimistic RugCheck revocation result cannot turn an unsupported owner into safe=true, while adverse RugCheck authority evidence is preserved.",
+        "Independent Astra security review accepted the fix; build passed and the focused platform canary passed 7/7.",
+        "Code is present at branch commit 2f80f1d4a65c4f30bb6575ba9794fb312ad4024a."
+      ],
+      "remaining": [],
+      "owner": "Astra Risk",
+      "nextAction": "Keep the canonical token-program owner allowlist at every RPC-derived mint parsing boundary."
+    },
+    {
+      "id": "RISK-TOKEN2022-TLV-001",
+      "title": "Malformed or unreviewed Token-2022 mint extensions must not produce clean risk evidence",
+      "status": "PARTIALLY_RESOLVED",
+      "severity": "HIGH",
+      "evidence": [
+        "src/risk.ts structurally validates Token-2022 mint TLV bounds and fixed widths before SPL extension decoding, rejects duplicate, unknown, and account-only types, and normalizes protocol-permitted terminal padding.",
+        "Recognized mint extensions outside the scanner's reviewed policy produce a danger finding and cannot result in safe=true.",
+        "Independent Astra review accepted the current implementation; build passed, focused canary passed 7/7, and full test:all passed 2,402/2,402.",
+        "The structural parser follows the official Token-2022 interface iteration rules and does not remove bigint-buffer 1.1.5 from the dependency graph."
+      ],
+      "remaining": [
+        "The upstream bigint-buffer advisory remains open, and src/market.ts still uses SPL account/mint unpackers; evaluate all reachable decoder paths and a provenance-verified upstream-compatible remediation.",
+        "The scanner's policy is not a complete semantic verifier for every Token-2022 extension; future extension support requires explicit reviewed risk semantics."
+      ],
+      "owner": "Astra Risk / Dependency Security",
+      "nextAction": "Trace remaining affected SPL decode paths, then implement and independently review a compatible package or boundary-level mitigation without weakening token safety policy."
+    },
+    {
+      "id": "RISK-T22-FEE-SCHEDULE-001",
+      "title": "Risk scanner must account for mutable and epoch-scheduled Token-2022 transfer fees",
+      "status": "PARTIALLY_RESOLVED",
+      "severity": "HIGH",
+      "evidence": [
+        "A nonzero transferFeeConfigAuthority now produces a danger finding even when both configured basis-point schedules are zero; the all-zero optional key is normalized to absent.",
+        "The scanner uses the maximum of older and newer configured basis points because it has no trusted epoch in the mint snapshot, rejects values above the protocol 10,000-bps maximum, and does not misclassify a withdraw-withheld authority as fee authority.",
+        "When validated Token-2022 RPC data has no TransferFeeConfig, stale RugCheck fee fields are cleared; an adverse conflict remains visible as a warning and safe=null.",
+        "Independent Astra security review accepted the fee policy and conditional UI provenance. Engine and UI builds passed, focused canary passed 7/7, and full test:all passed 2,402/2,402.",
+        "Official Token-2022 source validates the update authority, caps basis points at 10,000, schedules changes at epoch + 2, and selects the older/newer schedule by epoch."
+      ],
+      "remaining": [
+        "The scanner does not select the active schedule from a trusted epoch or calculate an amount-specific fee after applying maximumFee; it intentionally uses a conservative configured-rate bound.",
+        "Keep the fee policy and terminal wording aligned if trusted epoch-bound snapshots or transfer-fee accounting are added."
+      ],
+      "owner": "Astra Risk / Solana Protocol",
+      "nextAction": "Preserve conservative denial while designing any future epoch-consistent, maximum-fee-aware token admission contract."
     }
   ],
   "certification": {

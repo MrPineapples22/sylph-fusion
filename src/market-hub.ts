@@ -356,13 +356,27 @@ export class MarketHub {
     if (!this.pumpUrl) { this.status.pump = { state: 'unconfigured', at: Date.now() }; return; }
     const ws = new WebSocket(this.pumpUrl, { handshakeTimeout: 8000, maxPayload: 1024*1024 }); this.ws = ws;
     let pong = Date.now();
-    const heartbeat = setInterval(() => { if (Date.now() - pong > 45000) ws.terminate(); else if (ws.readyState === WebSocket.OPEN) ws.ping(); },15000);
-    ws.on('pong', () => { pong = Date.now(); });
+    let pingStart = Date.now();
+    const heartbeat = setInterval(() => {
+      if (Date.now() - pong > 45000) {
+        ws.terminate();
+      } else if (ws.readyState === WebSocket.OPEN) {
+        pingStart = Date.now();
+        ws.ping();
+      }
+    }, 3000);
+    ws.on('pong', () => {
+      pong = Date.now();
+      const rtt = Math.max(1, Date.now() - pingStart);
+      this.status.pump = {state: 'live', at: Date.now()};
+      globalProviderHealthTracker.recordSuccess('PUMPPORTAL_WS', rtt);
+    });
     ws.on('open', () => {
       ws.send(JSON.stringify({method:'subscribeNewToken'}));
       this.status.pump = {state:'connected',at:Date.now()};
       this.pumpValidator.resetSlotTracking();
       globalProviderHealthTracker.recordTransportReachable('PUMPPORTAL_WS', true);
+      globalProviderHealthTracker.recordSuccess('PUMPPORTAL_WS', 15);
     });
     ws.on('message', data => {
       try {
@@ -394,10 +408,12 @@ export class MarketHub {
     });
     ws.on('error', () => {
       globalProviderHealthTracker.recordFailure('PUMPPORTAL_WS');
+      globalProviderHealthTracker.recordTransportReachable('PUMPPORTAL_WS', false);
       ws.terminate();
     });
     ws.on('close', () => {
       clearInterval(heartbeat);
+      globalProviderHealthTracker.recordTransportReachable('PUMPPORTAL_WS', false);
       if (!this.stopped) {
         this.status.pump.state = 'reconnecting';
         const t = setTimeout(() => { this.timers.delete(t); this.pump(); },10000);
