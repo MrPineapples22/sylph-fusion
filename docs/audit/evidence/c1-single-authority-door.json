@@ -1,9 +1,9 @@
 {
   "auditor": "scripts/audit-single-authority-door.mjs",
   "auditorVersion": "4.0.0-c1-c4",
-  "timestamp": "2026-10-08T18:20:47.110Z",
-  "commitSha": "4990cceec7986e0409b8960f98fa523e21559020",
-  "treeSha": "94cdd3a719fa6513675566db549581a9f5c01d44",
+  "timestamp": "2026-10-09T20:12:16.452Z",
+  "commitSha": "88db408e67f2204b02038140d54d54348a5790da",
+  "treeSha": "ffc32eb3161699ec073e7af07edc3f0c4c5897c6",
   "workingTreeState": "",
   "workingTreeFileHashes": {},
   "metrics": {
@@ -69,18 +69,18 @@
   "blockers": [],
   "auditedFiles": {
     "scripts/audit-single-authority-door.mjs": "7120949c9039417ff315802a7e6dfcb1301413d4e7856db076b9fd802e0fdaf6",
-    "package.json": "afa43724dd47f1724ecf0d3ad7042a4d0c03f0608241e9de345be5062a65fb84",
-    "package-lock.json": "b3d47545d7b7279926d49711ffdf7ba179dfbc9a1840dc38a4f32962c48266f3",
+    "package.json": "01b0e6cd0eb9a9494183c4f3690664d9f5f683e43ef6aa2a6df45d3427f76290",
+    "package-lock.json": "91d6aa7d3e3f5e7419d68c2d9e81413570a09aae9094b786f3b7fbf1b5209c23",
     "tsconfig.json": "5ab104f8d8ae19b1ceae721102489547b19dd362ab95f852cc6f83757662a737",
     "src/store.ts": "c2d1270c4922d8f7e1b36dee12e7f25ef2b57cfb76c55dffc5bf3988dfa7fb4c",
     "src/db-worker.ts": "35a95cb3296afba7647ea179d6ccb39cdd7430997dade11d074c674c4e7448f1",
     "src/platform/storage/filesystem-policy.ts": "8b319d6261ecf4b06da7f6293b80b0e7ab7f60abb1d036b90185738bb8280d20",
-    "src/feed.ts": "eeb270090c5535e2fd54f91a2e3d30584b1263b407df386e8cb9e4557cbaba2d",
+    "src/feed.ts": "8cb69edfc4fc8e9f5ec1f4c03aa2e32ddbc549f4d1d64a95bc8a187097655db9",
     "src/fusion.ts": "2998148dc770b178c47d0bd5f9f83c1ad05f44c194e8b8b0ed5758627d1bb15c",
-    "src/platform/ingress/types.ts": "564cf8e514f3c9f1f0e1e5c4dd673c43b0942c33d42ad23041b7f0dcea30ca9a",
-    "src/platform/ingress/observation-factory.ts": "2bbc8d507861737501ca3e8b191a44e9f59c80e4718f608a9e48f5d6b8ffb144",
+    "src/platform/ingress/types.ts": "3a5485a113d87f455aa0bcf1ef695b05acf7897f179c91c4e2ee8bcc6bb13310",
+    "src/platform/ingress/observation-factory.ts": "6b2c0dbc29ecd11da663203d688b473e18a5350f2f91a638634b181ff86c172d",
     "src/platform/ingress/port.ts": "66a463d06f4e7de3b8863c2f387a6e3925a7f93efc13ad1c768be17cab8c4798",
-    "src/platform/ingress/canonical-ingress.ts": "ff58279492fc45ddcbc5fd6f50db40e19cfa586ff60280df9566b4878aa09584",
+    "src/platform/ingress/canonical-ingress.ts": "3b6de0a829c6e1da5802a0095922cdbdb143c0d9e4d43b413968e076bcaf6791",
     "test/platform/canonical-ingress-durability.test.mjs": "ed77c1d1a173cce1c6298ff7fff57f1641688f381674bb178da69ff50fded826",
     "test/platform/canonical-ingress-crash-recovery.test.mjs": "ad5e5abbfc1f1957bea31e9428abab6b8f745a44714ce66d20e57bc5ddb4e488",
     "test/c1-negative-compilation.test.mjs": "63d90e06e9ee1a7dff4230c8b141e0b7d3d8934362b93efd39b17be7a3f104dc",
@@ -92,7 +92,7 @@
     "test/c4-negative-compilation.test.mjs": "d8062951d68b72bd088151ec92e7fa8c775995ea349354a73a0b425bd8cc1f56",
     "dist/store.js": "83aa896bd8d55f1a279cd499387af76cdb58d4eeaa0827802aebbe62e5526813",
     "dist/db-worker.js": "bc784f4cba914476c95a01b06f9b8d4e30dcafd03d4f73530ea92633ba443852",
-    "dist/platform/ingress/canonical-ingress.js": "d9e7c656ce5a807e7d2ca6e2e7778edca296fb914a847c57c4be4bc71dd5b289",
+    "dist/platform/ingress/canonical-ingress.js": "783c26925709dfa6b2267b7f535fa11332390f44e5379d8b1e09eb1d1b52728f",
     "src/platform/reducer/types.ts": "e8d4a8093713a4e827543c0af7eeae59fad94feddc8255d0ca2e6bb88726dcd1",
     "src/platform/reducer/canonical-reducer.ts": "2b582ecc14737c9c894d258855d220ead455cd97e49fc786e9209765b5f3fb9c",
     "src/platform/reducer/index.ts": "8a504453e6acd9f71b95df8b10642b300c2d70d8fb6b4306cf4bace0e9801320",
@@ -124,5 +124,5 @@
     "UNIFIED_PIPELINE_CERTIFIED": "FALSE",
     "LIVE_CAPITAL_AUTHORITY": "BLOCKED"
   },
-  "manifestHash": "c929853c6464f3b81ed2621a3a033e71a6e791bb3c33593274fef3928ea231fd"
+  "manifestHash": "aa1f6eb0ac4a181ef32732ab4bd914b8818abf3fb8e53317fb8ac49d2bf7245b"
 }
