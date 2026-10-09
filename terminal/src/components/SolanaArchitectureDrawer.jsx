@@ -244,7 +244,7 @@ export function SolanaArchitectureDrawer({
                           <td className="p-3 text-emerald-400">{hasObs && Number.isFinite(s.coverageRatePct) ? `${s.coverageRatePct.toFixed(1)}%` : '—'}</td>
                           <td className="p-3">{hasObs && Number.isFinite(s.meanLatencyMs) ? `${s.meanLatencyMs.toFixed(1)} ms` : '—'}</td>
                           <td className="p-3 text-amber-400">{hasObs && Number.isFinite(s.falseDecodeRatePct) ? `${s.falseDecodeRatePct.toFixed(1)}%` : '—'}</td>
-                          <td className="p-3 font-bold text-white">{hasObs && Number.isFinite(s.winsCount) ? s.winsCount : (Number.isFinite(s.winsCount) ? s.winsCount : '0')}</td>
+                          <td className="p-3 font-bold text-white">{hasObs && Number.isFinite(s.winsCount) ? s.winsCount : '—'}</td>
                           <td className="p-3">
                             <span className="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 border border-slate-700">
                               {s.economicValueState || 'UNKNOWN'}
