@@ -26,19 +26,44 @@ const DEFAULT_CERT_PATH = resolve(ROOT_DIR, 'artifacts', 'connectivity', 'SYSTEM
 const EMPTY_SHA256_HEX = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
 const LEVELS = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9', 'C10'];
 
-function currentCheckoutSha() {
+function resolveGitBinary() {
+  for (const c of ['git', 'C:\\Program Files\\Git\\cmd\\git.exe', 'C:\\Program Files\\Git\\bin\\git.exe', 'C:\\Program Files (x86)\\Git\\cmd\\git.exe']) {
+    try {
+      execFileSync(c, ['--version'], { stdio: 'ignore' });
+      return c;
+    } catch {}
+  }
+  return 'git';
+}
+
+export function currentCheckoutSha() {
   try {
-    return execFileSync('git', ['rev-parse', 'HEAD'], {
+    const gitBin = resolveGitBinary();
+    return execFileSync(gitBin, ['rev-parse', 'HEAD'], {
       cwd: ROOT_DIR, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
     }).trim().toLowerCase();
   } catch {
+    try {
+      const headContent = readFileSync(resolve(ROOT_DIR, '.git', 'HEAD'), 'utf8').trim();
+      if (/^[0-9a-f]{40}$/i.test(headContent)) return headContent.toLowerCase();
+      if (headContent.startsWith('ref: ')) {
+        const refPath = resolve(ROOT_DIR, '.git', headContent.slice(5).trim());
+        if (existsSync(refPath)) {
+          const refSha = readFileSync(refPath, 'utf8').trim();
+          if (/^[0-9a-f]{40}$/i.test(refSha)) return refSha.toLowerCase();
+        }
+      }
+    } catch {}
     throw new Error('VERIFICATION_FAILURE: Cannot establish current checkout identity');
   }
 }
 
-function verifySylphPolicy(payload, { allowUnboundFixture = false } = {}) {
+function verifySylphPolicy(payload) {
   if (payload.systemId !== 'SYLPH_FUSION') return;
-  if (allowUnboundFixture) return;
+  if (payload.ladder?.C4?.awarded === true &&
+      !/^[0-9a-f]{64}$/.test(payload.roots?.physicalAuthorityAuditRoot ?? '')) {
+    throw new Error('VERIFICATION_FAILURE: C4 certificate is missing a valid physical authority audit root');
+  }
   const commitSha = payload.manifestSummary?.repositoryCommitSha;
   if (!/^[0-9a-f]{40}$/.test(commitSha ?? '')) {
     throw new Error('VERIFICATION_FAILURE: Sylph certificate is missing a valid repository commit SHA');
@@ -52,6 +77,13 @@ function verifySylphPolicy(payload, { allowUnboundFixture = false } = {}) {
   if (!['NOT_CERTIFIED', 'PROVISIONALLY_INTEGRATED', 'UNIFIED_PIPELINE_CERTIFIED'].includes(payload.certificationStatus)) {
     throw new Error('VERIFICATION_FAILURE: Sylph certificate has an invalid certificationStatus');
   }
+  if (!['test', 'certify'].includes(payload.evaluationMode)) {
+    throw new Error('VERIFICATION_FAILURE: Sylph certificate has an invalid evaluationMode');
+  }
+  const expectedFullyCertified = payload.highestProvenLevel === 'C10' && payload.evaluationMode === 'certify';
+  if (payload.isFullyCertified !== expectedFullyCertified) {
+    throw new Error('VERIFICATION_FAILURE: isFullyCertified contradicts the awarded level and evaluation mode');
+  }
   const index = LEVELS.indexOf(payload.highestProvenLevel);
   const ladder = payload.ladder;
   if (!ladder || typeof ladder !== 'object' || Array.isArray(ladder)) {
@@ -63,7 +95,7 @@ function verifySylphPolicy(payload, { allowUnboundFixture = false } = {}) {
       throw new Error(`VERIFICATION_FAILURE: Certification ladder is inconsistent at ${LEVELS[i]}`);
     }
   }
-  const full = payload.highestProvenLevel === 'C10' && payload.evaluationMode === 'certify';
+  const full = expectedFullyCertified;
   if ((payload.certificationStatus === 'UNIFIED_PIPELINE_CERTIFIED') !== full ||
       (payload.certificationStatus === 'PROVISIONALLY_INTEGRATED') !== (index >= 4 && !full) ||
       (payload.certificationStatus === 'NOT_CERTIFIED') !== (index < 4)) {
@@ -177,7 +209,7 @@ function independentHash(value) {
  * @param {string | object} certPathOrObject
  * @returns {object} Verification report
  */
-export function verifySystemIntegrationCertificate(certPathOrObject = DEFAULT_CERT_PATH, options = {}) {
+export function verifySystemIntegrationCertificate(certPathOrObject = DEFAULT_CERT_PATH) {
   let certRaw;
   let certLocation = 'IN_MEMORY_OBJECT';
 
@@ -201,19 +233,15 @@ export function verifySystemIntegrationCertificate(certPathOrObject = DEFAULT_CE
   if (!certRaw.schemaVersion) {
     throw new Error('VERIFICATION_FAILURE: Missing schemaVersion in certificate');
   }
+  if (certRaw.schemaVersion !== '1.0.0') {
+    throw new Error(`VERIFICATION_FAILURE: Unsupported schemaVersion (${certRaw.schemaVersion})`);
+  }
   if (!certRaw.certificateRoot) {
     throw new Error('VERIFICATION_FAILURE: Missing certificateRoot in certificate');
   }
   if (!certRaw.certifiedPayload) {
     throw new Error('VERIFICATION_FAILURE: Missing certifiedPayload in certificate');
   }
-  if (certRaw.certifiedPayload.systemId === 'SYLPH_FUSION' &&
-      certRaw.certifiedPayload.ladder?.C4?.awarded === true &&
-      !/^[0-9a-f]{64}$/.test(certRaw.certifiedPayload.roots?.physicalAuthorityAuditRoot ?? '')) {
-    throw new Error('VERIFICATION_FAILURE: C4 certificate is missing a valid physical authority audit root');
-  }
-  verifySylphPolicy(certRaw.certifiedPayload, options);
-
   const claimedRoot = certRaw.certificateRoot.toLowerCase().trim();
   if (claimedRoot.length !== 64 || !/^[0-9a-f]{64}$/.test(claimedRoot)) {
     throw new Error(`VERIFICATION_FAILURE: Invalid claimed certificateRoot (${claimedRoot})`);
@@ -234,6 +262,10 @@ export function verifySystemIntegrationCertificate(certPathOrObject = DEFAULT_CE
     );
   }
 
+  // Check authority and freshness only after the root is proven. This preserves
+  // the more fundamental integrity failure for any altered or forged payload.
+  verifySylphPolicy(certRaw.certifiedPayload);
+
   // 5. Adversarial Tamper Sensitivity Audit
   const tamperedPayload = JSON.parse(JSON.stringify(certRaw.certifiedPayload));
   // Mutate an arbitrary critical property
@@ -251,6 +283,9 @@ export function verifySystemIntegrationCertificate(certPathOrObject = DEFAULT_CE
     independentRoot,
     payloadByteLength: buf.length,
     tamperSensitivityProven: true,
+    certificateIssuerAuthenticated: false,
+    referencedArtifactsVerified: false,
+    verificationScope: 'PAYLOAD_HASH_AND_LOCAL_POLICY_ONLY',
     verifiedAt: new Date().toISOString(),
   };
 }
@@ -259,11 +294,13 @@ if (process.argv[1] && process.argv[1].includes('verify-system-integration-certi
   try {
     const target = process.argv[2] ? resolve(process.cwd(), process.argv[2]) : DEFAULT_CERT_PATH;
     const report = verifySystemIntegrationCertificate(target);
-    console.log('[PASS] System Integration Certificate Verified:');
+    console.log('[PASS] Certificate payload hash and local policy verified:');
     console.log(` - File: ${report.certificateLocation}`);
     console.log(` - Certificate Root: ${report.certificateRoot}`);
     console.log(` - Payload Size: ${report.payloadByteLength} bytes`);
-    console.log(` - Tamper Sensitivity: PROVEN (bit-flip changes root)`);
+    console.log(' - Tamper Sensitivity: PROVEN (payload mutation changed root)');
+    console.log(' - Issuer Authenticity: NOT ESTABLISHED');
+    console.log(' - Referenced Artifact Verification: NOT PERFORMED');
     process.exit(0);
   } catch (err) {
     console.error('[FAIL] Certificate Verification Failed:', err.message);

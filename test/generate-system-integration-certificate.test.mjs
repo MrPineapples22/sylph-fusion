@@ -39,6 +39,7 @@ test('Step 7 Certificate Generator: Generation and independent verification', ()
   assert.equal(certificate.certifiedPayload.systemId, 'SYLPH_FUSION');
   assert.equal(certificate.certifiedPayload.roots.physicalAuthorityAuditRoot, 'a'.repeat(64));
   assert.equal(verificationReport.valid, true);
+  assert.equal(verificationReport.fixtureOnly, true);
   assert.equal(verificationReport.tamperSensitivityProven, true);
 });
 

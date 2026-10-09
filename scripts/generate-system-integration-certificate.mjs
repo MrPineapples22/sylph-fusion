@@ -51,6 +51,27 @@ function resolveGitBinary() {
   return 'git';
 }
 
+function verifyUnboundTestFixtureCertificate(certificate) {
+  // Injected dry-run fixtures are not tied to a current repository or physical
+  // audit. Verify only their hash mechanics and label the result accordingly.
+  const independentRoot = createHash('sha256')
+    .update(canonicalJsonV10(certificate.certifiedPayload), 'utf8').digest('hex');
+  if (independentRoot !== certificate.certificateRoot) {
+    throw new Error('TEST_FIXTURE_CERTIFICATE_ROOT_MISMATCH');
+  }
+  const tamperedPayload = { ...certificate.certifiedPayload, __fixture_tamper_marker__: true };
+  const tamperedRoot = createHash('sha256').update(canonicalJsonV10(tamperedPayload), 'utf8').digest('hex');
+  if (tamperedRoot === independentRoot) throw new Error('TEST_FIXTURE_TAMPER_CHECK_FAILED');
+  return {
+    valid: true,
+    fixtureOnly: true,
+    certificateRoot: independentRoot,
+    independentRoot,
+    payloadByteLength: Buffer.byteLength(canonicalJsonV10(certificate.certifiedPayload), 'utf8'),
+    tamperSensitivityProven: true,
+  };
+}
+
 /**
  * Loads JSON artifact safely or throws if missing.
  * @param {string} filename
@@ -204,6 +225,7 @@ export function generateSystemIntegrationCertificate(options = {}) {
     highestProvenLevel,
     certificationStatus,
     evaluationMode: mode,
+    isFullyCertified,
     boundaryReason: convPayload.stopReason ?? 'No boundary reason specified',
     rejectionNotice,
     roots: {
@@ -255,9 +277,9 @@ export function generateSystemIntegrationCertificate(options = {}) {
   };
 
   // 6. Independent Self-Verification Audit
-  const verificationReport = verifySystemIntegrationCertificate(certificate, {
-    allowUnboundFixture: options.dryRun === true && options.manifest !== undefined,
-  });
+  const verificationReport = options.dryRun === true && options.manifest !== undefined
+    ? verifyUnboundTestFixtureCertificate(certificate)
+    : verifySystemIntegrationCertificate(certificate);
 
   // 7. Write Artifact to Disk
   if (!options.dryRun) {

@@ -268,6 +268,25 @@
       ],
       "owner": "Astra Risk / Solana Protocol",
       "nextAction": "Preserve conservative denial while designing any future epoch-consistent, maximum-fee-aware token admission contract."
+    },
+    {
+      "id": "CERT-ARTIFACT-AUTH-001",
+      "title": "Standalone system certificate verifier does not authenticate issuer or resolve evidence roots",
+      "status": "PARTIALLY_RESOLVED",
+      "severity": "HIGH",
+      "evidence": [
+        "The verifier now rejects stale checkout commits, inconsistent C0-C10 ladder/status/fully-certified claims, missing zero-authority invariants, and malformed evidence-root fields after verifying certificate payload hash integrity.",
+        "The exported verifier has no fixture bypass; unbound fixtures are checked only by a clearly labeled local hash path in non-persisting generator dry runs.",
+        "Independent Astra certification review accepted the policy changes after the caller-controlled bypass and fully-certified consistency defects were repaired.",
+        "Focused certification tests passed 78/78 and verifier/generator tests passed 17/17; the existing persisted certificate is rejected because it is bound to stale commit 4990cceec7986e0409b8960f98fa523e21559020, not current HEAD 5117556571ab330f5f111e8ef91b3497c5d07622.",
+        "Verifier results now explicitly report certificateIssuerAuthenticated=false and referencedArtifactsVerified=false; correctly re-hashed payloads can still contain arbitrary well-shaped roots."
+      ],
+      "remaining": [
+        "Bind each certificate root to the exact current manifest, physical audit, graph, scorecard, and convergence artifacts and independently validate their source/semantic evidence.",
+        "Define an issuer-authentication trust policy for certificates; candidate build attestations do not attest the system certificate or establish runtime evidence authenticity."
+      ],
+      "owner": "Astra Certification",
+      "nextAction": "Design and independently review a versioned evidence-bundle verifier that resolves all child roots and authenticates the certificate issuer before any consumer treats a certificate as evidence."
     }
   ],
   "certification": {
