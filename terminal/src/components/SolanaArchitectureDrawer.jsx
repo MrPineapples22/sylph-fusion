@@ -233,20 +233,26 @@ export function SolanaArchitectureDrawer({
                   </thead>
                   <tbody className="divide-y divide-slate-800/60">
                     {effectiveSensors.length === 0 && <tr><td className="p-3 text-slate-500" colSpan="6">No sensor observations are connected.</td></tr>}
-                    {effectiveSensors.map((s, idx) => (
-                      <tr key={idx} className="hover:bg-slate-900/50">
-                        <td className="p-3 font-semibold text-slate-200">{s.sensorType}</td>
-                        <td className="p-3 text-emerald-400">{Number.isFinite(s.coverageRatePct) ? `${s.coverageRatePct.toFixed(1)}%` : 'UNKNOWN'}</td>
-                        <td className="p-3">{Number.isFinite(s.meanLatencyMs) ? `${s.meanLatencyMs.toFixed(1)} ms` : 'UNKNOWN'}</td>
-                        <td className="p-3 text-amber-400">{Number.isFinite(s.falseDecodeRatePct) ? `${s.falseDecodeRatePct.toFixed(1)}%` : 'UNKNOWN'}</td>
-                        <td className="p-3 font-bold text-white">{Number.isFinite(s.winsCount) ? s.winsCount : 'UNKNOWN'}</td>
-                        <td className="p-3">
-                          <span className="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 border border-slate-700">
-                            {s.economicValueState || 'UNKNOWN'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                    {effectiveSensors.map((s, idx) => {
+                      const hasObs = (s.totalEventsObserved === undefined || s.totalEventsObserved > 0) && (s.coverageRatePct > 0 || s.winsCount > 0 || s.meanLatencyMs > 0);
+                      return (
+                        <tr key={idx} className="hover:bg-slate-900/50">
+                          <td className="p-3 font-semibold text-slate-200">
+                            {s.sensorType}
+                            {!hasObs && <span className="ml-2 text-[10px] text-slate-500 font-normal">UNCONNECTED</span>}
+                          </td>
+                          <td className="p-3 text-emerald-400">{hasObs && Number.isFinite(s.coverageRatePct) ? `${s.coverageRatePct.toFixed(1)}%` : '—'}</td>
+                          <td className="p-3">{hasObs && Number.isFinite(s.meanLatencyMs) ? `${s.meanLatencyMs.toFixed(1)} ms` : '—'}</td>
+                          <td className="p-3 text-amber-400">{hasObs && Number.isFinite(s.falseDecodeRatePct) ? `${s.falseDecodeRatePct.toFixed(1)}%` : '—'}</td>
+                          <td className="p-3 font-bold text-white">{hasObs && Number.isFinite(s.winsCount) ? s.winsCount : (Number.isFinite(s.winsCount) ? s.winsCount : '0')}</td>
+                          <td className="p-3">
+                            <span className="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 border border-slate-700">
+                              {s.economicValueState || 'UNKNOWN'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
