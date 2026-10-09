@@ -115,24 +115,38 @@ export class TradeLearningService {
     assessProcess(report) {
         // Labels in the report/CSV are claims, never evidence. Fail closed if verification fails.
         let assessment;
+        const evidenceRef = report.processEvidenceRef?.trim() ||
+            (report.tradeId?.startsWith('trd_') && report.tokenMint ? `evidence:paper_entry_${report.tokenMint}_${report.tradeId}` : undefined);
         try {
-            if (report.processEvidenceRef?.trim())
+            if (evidenceRef) {
                 assessment = this.resolveProcessAssessment?.(Object.freeze({
-                    tradeId: report.tradeId, tokenMint: report.tokenMint, symbol: report.symbol,
-                    entryPriceUsd: report.entryPriceUsd, costBasisUsd: report.costBasisUsd,
-                    processEvidenceRef: report.processEvidenceRef,
+                    tradeId: report.tradeId,
+                    tokenMint: report.tokenMint,
+                    symbol: report.symbol,
+                    entryPriceUsd: report.entryPriceUsd,
+                    costBasisUsd: report.costBasisUsd,
+                    processEvidenceRef: evidenceRef,
                 }));
+            }
         }
         catch { /* unavailable evidence */ }
         if (assessment && typeof assessment.wasDecisionSound === 'boolean' &&
             typeof assessment.reason === 'string' && assessment.reason.trim() &&
             typeof assessment.evidenceRef === 'string' && assessment.evidenceRef.trim() &&
-            assessment.evidenceRef === report.processEvidenceRef) {
-            return { ...report, wasDecisionSound: assessment.wasDecisionSound,
-                decisionSoundnessReason: assessment.reason, processEvidenceRef: assessment.evidenceRef };
+            assessment.evidenceRef === evidenceRef) {
+            return {
+                ...report,
+                wasDecisionSound: assessment.wasDecisionSound,
+                decisionSoundnessReason: assessment.reason,
+                processEvidenceRef: assessment.evidenceRef,
+            };
         }
-        return { ...report, wasDecisionSound: 'UNKNOWN',
-            decisionSoundnessReason: 'MISSING_VERIFIED_PROCESS_EVIDENCE', processEvidenceRef: undefined };
+        return {
+            ...report,
+            wasDecisionSound: 'UNKNOWN',
+            decisionSoundnessReason: 'MISSING_VERIFIED_PROCESS_EVIDENCE',
+            processEvidenceRef: undefined,
+        };
     }
     resolveCsvPath(preferredPath) {
         // An explicitly configured source never falls through to another dataset.

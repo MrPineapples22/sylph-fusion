@@ -584,7 +584,9 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
                   const archetypeColor =
                     autopsy.attribution?.credit_archetype === 'GOOD_DECISION_GOOD_OUTCOME' ? '#14F195' :
                     autopsy.attribution?.credit_archetype === 'GOOD_DECISION_BAD_OUTCOME' ? '#38BDF8' :
-                    autopsy.attribution?.credit_archetype === 'BAD_DECISION_GOOD_OUTCOME' ? '#F59E0B' : '#FF3B69';
+                    autopsy.attribution?.credit_archetype === 'BAD_DECISION_GOOD_OUTCOME' ? '#F59E0B' :
+                    autopsy.attribution?.credit_archetype === 'BAD_DECISION_BAD_OUTCOME' ? '#FF3B69' :
+                    '#94A3B8';
 
                   return (
                     <div

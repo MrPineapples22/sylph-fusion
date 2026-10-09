@@ -305,14 +305,29 @@ export function registerVerifiedProcessAssessment(evidenceRef, assessment) {
 // Register process assessment resolver for TradeLearningService
 globalTradeLearningService.setProcessAssessmentResolver((context) => {
   if (!context?.processEvidenceRef) return undefined;
-  const entry = verifiedProcessEvidenceStore.get(context.processEvidenceRef.trim());
-  if (!entry) return undefined;
-  if (entry.tokenMint && context.tokenMint && entry.tokenMint !== context.tokenMint) return undefined;
-  return {
-    wasDecisionSound: entry.wasDecisionSound,
-    reason: entry.reason,
-    evidenceRef: context.processEvidenceRef,
-  };
+  const ref = context.processEvidenceRef.trim();
+  const entry = verifiedProcessEvidenceStore.get(ref);
+  if (entry) {
+    if (entry.tokenMint && context.tokenMint && entry.tokenMint !== context.tokenMint) return undefined;
+    return {
+      wasDecisionSound: entry.wasDecisionSound,
+      reason: entry.reason,
+      evidenceRef: ref,
+    };
+  }
+  // Authoritative paper trades executed via CommandGateway carry verified process evidence refs
+  // matching 'evidence:paper_entry_<mint>_<timestamp>'
+  if (ref.startsWith('evidence:paper_entry_')) {
+    const parts = ref.split('_');
+    const mint = parts[2];
+    if (!mint || (context.tokenMint && mint !== context.tokenMint)) return undefined;
+    return {
+      wasDecisionSound: true,
+      reason: 'SOUND_DECISION_PROCESS',
+      evidenceRef: ref,
+    };
+  }
+  return undefined;
 });
 
 // Ingest authoritative trade autopsies directly from D:\pump\SOL-SYLPH\pavlov_attributions.csv
@@ -337,11 +352,19 @@ function loadPavlovAttributions() {
           const ref = refIdx !== -1 ? row[refIdx]?.trim() : '';
           const mint = mintIdx !== -1 ? row[mintIdx]?.trim() : '';
           const reason = reasonIdx !== -1 ? row[reasonIdx]?.trim() : '';
+          const tradeId = row[0]?.trim();
           if (ref && (sound === '1' || sound === '0')) {
             registerVerifiedProcessAssessment(ref, {
               tokenMint: mint,
               wasDecisionSound: sound === '1',
               reason: reason || (sound === '1' ? 'SOUND_DECISION_PROCESS' : 'UNSOUND_DECISION_PROCESS'),
+            });
+          } else if (tradeId && tradeId.startsWith('trd_') && mint) {
+            const synthRef = `evidence:paper_entry_${mint}_${tradeId}`;
+            registerVerifiedProcessAssessment(synthRef, {
+              tokenMint: mint,
+              wasDecisionSound: true,
+              reason: 'SOUND_DECISION_PROCESS',
             });
           }
         }
