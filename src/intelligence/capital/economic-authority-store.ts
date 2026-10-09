@@ -177,6 +177,12 @@ export class EconomicAuthorityStore {
     return this.confirmedCashLamports;
   }
 
+  public syncLiveCash(cashLamports: bigint, reservedLamports: bigint = 0n): void {
+    if (cashLamports < 0n) return;
+    this.confirmedCashLamports = cashLamports;
+    this.reservedCashLamports = reservedLamports >= 0n ? reservedLamports : 0n;
+  }
+
   public getAvailableCash(): bigint {
     const available = this.confirmedCashLamports - this.reservedCashLamports - this.unknownCapitalLamports - this.emergencyReserveLamports;
     return available > 0n ? available : 0n;

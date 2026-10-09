@@ -128,6 +128,7 @@ export default function OperatorTerminal(){
    const body=await response.json();
    if(!response.ok||!body.ok)throw new Error(body?.error||body?.result?.error||'Paper close was rejected.');
    setNotice(skipConfirm ? `🛡️ Auto-Exit FILLED: Liquidated ${label} (${position.protectionState === 'EMERGENCY_UNWIND' ? 'Stop-Loss' : 'Take-Profit'}).` : `Paper close simulated for ${label}. No live transaction was submitted.`);
+   try { const fresh = await readJson('/api/operator'); if (fresh) setProjection(fresh); } catch {}
   }catch(error){setNotice(`Paper close unavailable: ${error instanceof Error?error.message:'local simulator request failed.'}`);}
  }
  async function openPaperPosition(token, usdAmount = null){
@@ -151,6 +152,7 @@ export default function OperatorTerminal(){
    const body=await response.json();
    if(!response.ok||!body.ok)throw new Error(body?.error||body?.result?.error||'Paper order was rejected.');
    setNotice(`Paper buy of $${finalAmount.toFixed(2)} executed for ${label}. Position opened in paper ledger.`);
+   try { const fresh = await readJson('/api/operator'); if (fresh) setProjection(fresh); } catch {}
   }catch(error){setNotice(`Paper buy failed: ${error instanceof Error?error.message:'Simulator request failed.'}`);}
  }
  async function setPaperCapital(amount, resetPositions = false) {
@@ -172,6 +174,7 @@ export default function OperatorTerminal(){
    const body = await response.json();
    if (!response.ok || !body.ok) throw new Error(body?.error || body?.result?.error || 'Failed to update capital');
    setNotice(`Paper capital set to $${usd.toFixed(2)}${resetPositions ? ' · paper positions cleared' : ''}.`);
+   try { const fresh = await readJson('/api/operator'); if (fresh) setProjection(fresh); } catch {}
   } catch (e) {
    setNotice(`Failed to set capital: ${e.message}`);
   }

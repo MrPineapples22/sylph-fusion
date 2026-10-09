@@ -1284,12 +1284,18 @@ async function handleRequest(req,res){
   if (req.method === 'GET' && reqUrl.pathname === '/api/capital/reserve') {
     const isStressed = reqUrl.searchParams.get('stressed') === 'true';
     const exitCost = isStressed ? 50_000_000n : 25_000_000n;
+    const snap = globalCommandGateway.getSnapshot();
+    const solPrice = snap.solPriceUsd > 0 ? snap.solPriceUsd : 150;
+    const liveCashLamports = BigInt(Math.max(0, Math.round((snap.cashUsd / solPrice) * 1e9)));
+    const liveReservedLamports = BigInt(Math.max(0, Math.round((snap.reservedCashUsd / solPrice) * 1e9)));
+    if (typeof economicAuthorityStore.syncLiveCash === 'function') {
+      economicAuthorityStore.syncLiveCash(liveCashLamports, liveReservedLamports);
+    }
     const dynamicReserveLamports = economicAuthorityStore.recomputeEmergencyReserve({
       stressedFullExitCostLamports: exitCost,
       fixedOperationalFloorLamports: 50_000_000n,
       equityReservePctBps: 2000,
     });
-    const solPrice = 150;
     const confirmedLamports = economicAuthorityStore.getConfirmedCash();
     const availableLamports = economicAuthorityStore.getAvailableCash();
     res.setHeader('Content-Type', 'application/json');
@@ -1298,11 +1304,11 @@ async function handleRequest(req,res){
       evidenceStatus: 'SIMULATED_POLICY',
       valueSource: 'IN_MEMORY_PAPER_ECONOMIC_AUTHORITY',
       paperCashLamports: confirmedLamports.toString(),
-      paperCashUsd: (Number(confirmedLamports) / 1e9) * solPrice,
+      paperCashUsd: snap.cashUsd,
       emergencyReserveLamports: dynamicReserveLamports.toString(),
       emergencyReserveUsd: (Number(dynamicReserveLamports) / 1e9) * solPrice,
       reservedCashLamports: economicAuthorityStore.getReservedCash().toString(),
-      reservedCashUsd: (Number(economicAuthorityStore.getReservedCash()) / 1e9) * solPrice,
+      reservedCashUsd: snap.reservedCashUsd,
       unknownCapitalLamports: economicAuthorityStore.getUnknownCapital().toString(),
       availableCashLamports: availableLamports.toString(),
       availableCashUsd: (Number(availableLamports) / 1e9) * solPrice,

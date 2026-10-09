@@ -64,11 +64,29 @@ test('extracted candidate reruns both signed-subject verifications and emits no 
   authenticated(stub => {
     const receipt = verifyExtractedCandidate({...input, verifiedReceipt:{valid:true}});
     assert.equal(stub.mock.calls.filter(call => call.arguments[0] === 'gh').length, 2);
-    assert.equal(receipt.status, 'VERIFIED_EXTRACTED_CANDIDATE');
+    const win32TreeVerified = process.platform === 'win32';
+    assert.equal(receipt.status, win32TreeVerified ? 'VERIFIED_EXTRACTED_CANDIDATE' : 'EXTRACTED_INVENTORY_MATCHED');
+    assert.equal(receipt.win32TreeVerified, win32TreeVerified);
     for (const flag of ['dependenciesVerified', 'loadedCodeVerified', 'runtimeAuthority', 'certificationGranted']) assert.equal(receipt[flag], false);
     assert.equal(receipt.candidateSubjectSha256, hashArtifact(input.archive));
     assert.match(receipt.inventoryRootSha256, /^[a-f0-9]{64}$/);
     assert.equal(verifyRuntimeTelemetryEvidence(receipt).valid, false, 'clean extraction is not eligible C5 telemetry');
+  });
+});
+
+test('oversized or multiply-linked archive is rejected before candidate provenance invokes gh', t => {
+  const oversized = fixture(t);
+  fs.truncateSync(oversized.archive, 64 * 1024 * 1024 + 1);
+  authenticated(stub => {
+    assert.throws(() => verifyExtractedCandidate(oversized), /CANDIDATE_EXTRACTION_SIZE_LIMIT/);
+    assert.equal(stub.mock.calls.filter(call => call.arguments[0] === 'gh').length, 0);
+  });
+
+  const linked = fixture(t);
+  fs.linkSync(linked.archive, path.join(path.dirname(linked.archive), 'archive-hardlink.tar.gz'));
+  authenticated(stub => {
+    assert.throws(() => verifyExtractedCandidate(linked), /CANDIDATE_EXTRACTION_NOT_PLAIN_FILE/);
+    assert.equal(stub.mock.calls.filter(call => call.arguments[0] === 'gh').length, 0);
   });
 });
 

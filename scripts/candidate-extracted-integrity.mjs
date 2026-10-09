@@ -178,12 +178,18 @@ function snapshot(root) {
 export function verifyExtractedCandidate({archive, identityFile, bundle, expected, extractedDirectory}) {
   // The entry point accepts artifacts and independent policy inputs only. Never
   // consume a saved verification receipt or trust the directory's manifest.
+  // Bound the archive and require a plain single-link file before `gh` or any
+  // provenance verification can consume it.
+  const archivePreflight = readStable(archive, MAX_ARCHIVE);
+  const preflightDigest = digest(archivePreflight.bytes), preflightVersion = archivePreflight.version;
+  archivePreflight.bytes = Buffer.alloc(0);
   const authenticated = verifyCandidateProvenance({archive, identityFile, bundle, expected});
   if (typeof extractedDirectory !== 'string' || !extractedDirectory) fail('ROOT_INVALID');
   const root = path.resolve(extractedDirectory);
   if (process.platform === 'win32' && !/^[A-Za-z]:\\/.test(root)) fail('ROOT_INVALID');
   const archived = readStable(archive, MAX_ARCHIVE);
-  if (digest(archived.bytes) !== authenticated.identity.artifactSha256) fail('ARCHIVE_CHANGED');
+  if (preflightDigest !== authenticated.identity.artifactSha256 || archived.version !== preflightVersion ||
+      digest(archived.bytes) !== authenticated.identity.artifactSha256) fail('ARCHIVE_CHANGED');
   const inventory = archiveInventory(archived.bytes), before = snapshot(root);
   const expectedNames = [...inventory.registry.values()].map(({name, kind}) => ({path: name, kind})).sort((a, b) => a.path < b.path ? -1 : 1);
   if (JSON.stringify(before.filter(e => e.path).map(({path: p, kind}) => ({path: p, kind}))) !== JSON.stringify(expectedNames)) fail('INVENTORY_MISMATCH');
@@ -193,10 +199,13 @@ export function verifyExtractedCandidate({archive, identityFile, bundle, expecte
     if (file.bytes.length !== member.sizeBytes || digest(file.bytes) !== member.sha256 ||
         file.version !== beforeByPath.get(member.path).version) fail('FILE_MISMATCH');
   }
-  if (JSON.stringify(before) !== JSON.stringify(snapshot(root)) ||
-      digest(readStable(archive, MAX_ARCHIVE).bytes) !== authenticated.identity.artifactSha256) fail('TREE_OR_ARCHIVE_CHANGED');
+  const finalArchive = readStable(archive, MAX_ARCHIVE);
+  if (JSON.stringify(before) !== JSON.stringify(snapshot(root)) || finalArchive.version !== archived.version ||
+      digest(finalArchive.bytes) !== authenticated.identity.artifactSha256) fail('TREE_OR_ARCHIVE_CHANGED');
   const files = [...inventory.files.values()].map(({path: p, sizeBytes, sha256}) => ({path: p, sizeBytes, sha256})).sort((a, b) => a.path < b.path ? -1 : 1);
-  return Object.freeze({status: 'VERIFIED_EXTRACTED_CANDIDATE', candidateSubjectSha256: authenticated.identity.artifactSha256,
+  const win32TreeVerified = process.platform === 'win32';
+  return Object.freeze({status: win32TreeVerified ? 'VERIFIED_EXTRACTED_CANDIDATE' : 'EXTRACTED_INVENTORY_MATCHED',
+    win32TreeVerified, candidateSubjectSha256: authenticated.identity.artifactSha256,
     inventoryRootSha256: digest(Buffer.from(JSON.stringify(files))), sourceCommitSha: authenticated.identity.sourceCommitSha,
     sourceTreeSha: authenticated.identity.sourceTreeSha, dependenciesVerified: false, loadedCodeVerified: false,
     runtimeAuthority: false, certificationGranted: false});

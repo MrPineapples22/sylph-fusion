@@ -167,7 +167,10 @@ test('candidate CI packager binds a real archive to source identity and rejects 
     const verified = verifyExtractedCandidate({archive:path.join(destination, identity.artifactName),
       identityFile:path.join(destination, 'candidate-identity.json'), bundle,
       expected:{sourceCommitSha:identity.sourceCommitSha, sourceTreeSha:identity.sourceTreeSha}, extractedDirectory:path.join(destination, 'candidate')});
-    assert.equal(verified.status, 'VERIFIED_EXTRACTED_CANDIDATE', 'real producer USTAR must match the strict parser subset');
+    const win32TreeVerified = process.platform === 'win32';
+    assert.equal(verified.status, win32TreeVerified ? 'VERIFIED_EXTRACTED_CANDIDATE' : 'EXTRACTED_INVENTORY_MATCHED',
+      'real producer USTAR must match the strict parser subset');
+    assert.equal(verified.win32TreeVerified, win32TreeVerified);
   });
   assert.throws(() => prepareCiCandidate(root, destination, env), /OUTPUT_EXISTS/);
   assert.throws(() => prepareCiCandidate(root, path.join(root, 'nested'), env), /OUTPUT_MUST_BE_OUTSIDE_SOURCE/);
