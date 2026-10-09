@@ -404,8 +404,12 @@ const guardianInterval = setInterval(async () => {
       if (sol && Number.isFinite(sol.price) && Number.isSafeInteger(sol.at) && sol.at <= Date.now() && Date.now() - sol.at <= 5_000) {
         globalCommandGateway.updateSolPriceUsd(sol.price, sol.at);
       }
-    } catch { /* Stale or unavailable SOL quotes cannot refresh the paper conversion rate. */ }
+    } catch { /* astraFeed fallback */ }
     const snapTokens = hub.snapshot().tokens || [];
+    const directSol = snapTokens.find(candidate => candidate.mint === 'So11111111111111111111111111111111111111112');
+    if (directSol && Number.isFinite(directSol.price) && directSol.price > 0 && Number.isSafeInteger(directSol.at) && Date.now() - directSol.at <= 8_000) {
+      globalCommandGateway.updateSolPriceUsd(directSol.price, directSol.at);
+    }
     for (const t of snapTokens) { publishObservedMarketSignal(t, Date.now()); }
     refreshRiskEvidence(snapTokens, Date.now());
       if (snapTokens.length > 0) {

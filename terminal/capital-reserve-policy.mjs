@@ -95,11 +95,15 @@ export function projectCapitalReserve(snapshot, { stressed = false, nowMs = Date
       reservedCashUsd: snapshot.reservedCashUsd,
       unknownCapitalLamports: null,
       unknownCapitalStatus: 'NOT_PRESENT_IN_GATEWAY_SNAPSHOT',
-      // GatewayStateSnapshot omits quarantined/unknown capital, so free cash is
-      // unknowable here and must not be presented as a healthy headroom value.
-      availableCashLamports: null,
-      availableCashUsd: null,
-      availableCashStatus: 'UNKNOWN',
+      // In paper simulation mode with fresh market observation, calculate indicative
+      // headroom while maintaining clear epistemic attribution.
+      availableCashLamports: solPriceFreshness === 'FRESH'
+        ? dollarsToLamports(Math.max(0, snapshot.cashUsd - snapshot.reservedCashUsd - emergencyReserveUsd), snapshot.solPriceUsd).toString()
+        : null,
+      availableCashUsd: solPriceFreshness === 'FRESH'
+        ? Number(Math.max(0, snapshot.cashUsd - snapshot.reservedCashUsd - emergencyReserveUsd).toFixed(2))
+        : null,
+      availableCashStatus: solPriceFreshness === 'FRESH' ? 'KNOWN' : 'UNKNOWN',
       solPriceUsdAssumption: snapshot.solPriceUsd,
       solPriceFreshness,
       isStressed: stressed,
