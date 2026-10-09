@@ -31,6 +31,8 @@
 import { createHash } from 'node:crypto';
 import { EventParser } from '@coral-xyz/anchor';
 import { getPumpProgram, PUMP_PROGRAM_ID } from '@pump-fun/pump-sdk';
+import { SubscribeUpdate } from '@triton-one/yellowstone-grpc';
+import bs58 from 'bs58';
 import { getStoreIngressCapability, type Store, type StoreIngressCapability } from '../../store.js';
 import { createUnvalidatedObservation } from './observation-factory.js';
 import type { ObservationIngressPort } from './port.js';
@@ -782,21 +784,40 @@ export class SolanaLogFusionEnvelopeCompiler implements FusionEnvelopeCompiler {
       throw new Error(`UNSUPPORTED_COMPILER_VERSION: ${version}`);
     }
     const rawPayload = observation.rawPayload;
-    const text = Buffer.from(rawPayload.buffer, rawPayload.byteOffset, rawPayload.byteLength).toString('utf8');
     let logs: any;
-    try {
-      logs = JSON.parse(text);
-    } catch {
-      throw new Error('SOLANA_LOGS_INVALID_JSON: Failed to parse raw logs JSON');
-    }
-    if (observation.schemaVersion === 'yellowstone-update-json/v1') {
-      logs = logs?.transaction?.transaction?.meta?.logMessages;
-    } else if (observation.schemaVersion === 'solana-json-rpc-frame/v1') {
-      logs = logs?.params?.result?.value?.logs;
-    } else if (observation.schemaVersion !== 'solana-program-logs/v1' || !Array.isArray(logs)) {
-      logs = null;
+    if (observation.schemaVersion === 'yellowstone-grpc-protobuf-message/v1') {
+      let update: ReturnType<typeof SubscribeUpdate.decode>;
+      try {
+        update = SubscribeUpdate.decode(Buffer.from(rawPayload));
+      } catch {
+        throw new Error('YELLOWSTONE_PROTOBUF_INVALID_PAYLOAD');
+      }
+      const transaction = update.transaction?.transaction;
+      const signatureBytes = transaction?.signature;
+      const slot = Number(update.transaction?.slot);
+      if (observation.rawPayloadEncoding !== 'GRPC_PROTOBUF_MESSAGE_PAYLOAD_BYTES' ||
+          !Buffer.isBuffer(signatureBytes) || signatureBytes.length !== 64 ||
+          !Number.isSafeInteger(slot) || observation.slot !== slot ||
+          observation.signature !== bs58.encode(signatureBytes)) {
+        throw new Error('YELLOWSTONE_PROTOBUF_METADATA_MISMATCH');
+      }
+      logs = transaction?.meta?.logMessages;
     } else {
-      // Canonical logs representation used by explicit replay fixtures.
+      const text = Buffer.from(rawPayload.buffer, rawPayload.byteOffset, rawPayload.byteLength).toString('utf8');
+      try {
+        logs = JSON.parse(text);
+      } catch {
+        throw new Error('SOLANA_LOGS_INVALID_JSON: Failed to parse raw logs JSON');
+      }
+      if (observation.schemaVersion === 'yellowstone-update-json/v1') {
+        logs = logs?.transaction?.transaction?.meta?.logMessages;
+      } else if (observation.schemaVersion === 'solana-json-rpc-frame/v1') {
+        logs = logs?.params?.result?.value?.logs;
+      } else if (observation.schemaVersion !== 'solana-program-logs/v1' || !Array.isArray(logs)) {
+        logs = null;
+      } else {
+        // Canonical logs representation used by explicit replay fixtures.
+      }
     }
     if (!Array.isArray(logs) || logs.length > 100_000 || logs.some(line => typeof line !== 'string')) {
       throw new Error('SOLANA_LOGS_INVALID_PAYLOAD: Expected bounded string array of logs');

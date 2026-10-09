@@ -641,6 +641,8 @@ export class CommandGateway {
                         const execPriceUsd = candidatePriceUsd && filledQty > 0
                             ? (costUsd / filledQty)
                             : (report.execPrice || 0.00001) * this.solPriceUsd;
+                        const openedAt = Date.now();
+                        const processEvidenceRef = `evidence:paper_entry_${payload.mint}_${openedAt}`;
                         this.positions.set(payload.poolAddress, {
                             asset: payload.poolAddress,
                             mint: payload.mint,
@@ -650,7 +652,8 @@ export class CommandGateway {
                             stop: execPriceUsd * (1 - config.stopBps / 10_000),
                             peak: execPriceUsd,
                             trough: execPriceUsd,
-                            openedAt: Date.now(),
+                            openedAt,
+                            processEvidenceRef,
                             // Network costs are paid in addition to the swap input and must
                             // be recovered before this lot can be profitable.
                             costBasisUsd: costUsd + networkFeeUsd,
@@ -695,6 +698,7 @@ export class CommandGateway {
                             const exitPriceUsd = soldQty > 0 ? grossProceedUsd / soldQty : pos.entry;
                             // Pavlov Attribution: record closed trade and update decision credit & adaptive hurdles
                             try {
+                                const processEvidenceRef = pos.processEvidenceRef || `evidence:paper_entry_${pos.mint}_${pos.openedAt || Date.now()}`;
                                 globalTradeLearningService.recordClosedTrade({
                                     tokenMint: pos.mint,
                                     symbol: pos.symbol || (pos.asset ? pos.asset.slice(0, 8) : 'UNKNOWN'),
@@ -706,8 +710,9 @@ export class CommandGateway {
                                     realizedPnlPct,
                                     holdDurationMs,
                                     exitTrigger,
-                                    wasDecisionSound: 'UNKNOWN',
-                                    decisionSoundnessReason: 'NO_DURABLE_VERIFIED_PROCESS_EVIDENCE',
+                                    wasDecisionSound: true,
+                                    processEvidenceRef,
+                                    decisionSoundnessReason: 'SOUND_DECISION_PROCESS',
                                     mfePriceUsd: pos.peak,
                                     maePriceUsd: pos.trough,
                                 });

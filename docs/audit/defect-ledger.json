@@ -58,15 +58,20 @@
         "The real Feed.geyser in src/feed.ts receives decoded SDK updates and stores Buffer.from(JSON.stringify(update)); research cycle 159 labels these as DECODED_PROTOBUF_JSON_SERIALIZED_BYTES without fabricating wire capture."
         ,"Research cycle 160 replaces the live Subscribe client response deserializer with a narrow @grpc/grpc-js descriptor using the pinned 4.0.2 SubscribeRequest encoder and SubscribeUpdate decoder; it copies the message payload bytes and decodes that same copy.",
         "Feed derives signature, slot, and logs only from the decoder-produced capture object held in a module-private WeakMap. Feed.accept rejects caller-selected GRPC_PROTOBUF_MESSAGE_PAYLOAD_BYTES unless the capture object, derived fields, and exact raw payload all match.",
-        "The observation encoding GRPC_PROTOBUF_MESSAGE_PAYLOAD_BYTES and schema yellowstone-grpc-protobuf-message/v1 identify protobuf message payload bytes passed to responseDeserialize after gRPC framing/reassembly and decompression, not full network frames."
+        "The observation encoding GRPC_PROTOBUF_MESSAGE_PAYLOAD_BYTES and schema yellowstone-grpc-protobuf-message/v1 identify protobuf message payload bytes passed to responseDeserialize after gRPC framing/reassembly and decompression, not full network frames.",
+        "Canonical Solana ingress now decodes this schema from the persisted payload and independently rejects signature/slot mismatch before parsing the transaction's logs.",
+        "Capture evidence bytes are held in a separate private Buffer copy from decoder-owned Buffer views; Feed signature/slot/logs are snapshotted at decode time. Adversarial regression mutates nested decoded signature bytes and logs without changing evidence or the Feed-field snapshot.",
+        "Yellowstone reconnect backoff now resets only after a session of at least 30 seconds; short-session update traffic does not reset accumulated backoff, covered by explicit threshold tests.",
+        "Independent Astra review accepted the capture binding, byte snapshot isolation, compiler binding, auth/TLS compatibility, and scoped claims; it prompted the follow-up condition that a stable session must also have received an update so an idle watchdog close cannot reset backoff.",
+        "The full npm run test:all suite passed on the implementation snapshot: core 568/568, intelligence 562/562, platform 959/959, terminal 312/312 (2,401 total)."
       ],
       "remaining": [
-        "Independent Astra review and full-suite verification of the cycle 160 capture implementation remain pending.",
+        "The independent reviewer did not run a live Yellowstone provider/TLS integration; no live provider capture has been observed.",
         "Generic Feed.accept continues supporting other transports and legacy representations. The in-process module and runtime remain within the repository trust boundary; this is not a sandbox against arbitrary malicious code importing internal modules. Existing *_JSON_CANONICAL values remain accepted for historical compatibility and remain caller declarations, not proof that bytes meet RFC 8785.",
         "No payload hash or encoding declaration establishes transaction authenticity, chain inclusion, or source identity."
       ],
       "owner": "Sol Provider Integration",
-      "nextAction": "Independently review cycle 160, verify complete test suite, then investigate provider identity, authenticated/finalized inclusion, and cross-provider reconciliation without expanding this payload claim."
+      "nextAction": "Investigate provider identity, authenticated/finalized inclusion, and cross-provider reconciliation without expanding this payload claim."
     },
     {
       "id": "C1-INGRESS-003",
@@ -190,6 +195,27 @@
       ],
       "owner": "Runtime Certification",
       "nextAction": "Obtain operator-provisioned production trust root and run paper runtime to capture live C5 evidence."
+    },
+    {
+      "id": "DEPENDENCY-SECURITY-001",
+      "title": "Production dependency graph contains unresolved npm audit advisories",
+      "status": "OPEN",
+      "severity": "HIGH",
+      "evidence": [
+        "On 2026-10-08, npm audit and npm audit --omit=dev both reported 15 affected packages: 8 high and 7 moderate, with no critical findings; all direct runtime dependencies are included in the production install.",
+        "The installed bigint-buffer 1.1.5 is reachable through @solana/spl-token 0.4.14 > @solana/buffer-layout-utils 0.2.0. That decoder calls toBigIntLE on account-data slices; project paths use SPL unpacking in src/market.ts and src/risk.ts. GHSA-3gc7-fjrx-p6mg has no patched upstream bigint-buffer release.",
+        "The installed toml 3.0.0 is reachable through @coral-xyz/anchor 0.31.1. Advisories GHSA-82x6-q7mm-w9cf and GHSA-v5mp-jgw5-2x6j affect older toml versions; project source imports Anchor EventParser but no project call to Anchor workspace/TOML parsing was found.",
+        "stream-json 1.9.1 and uuid 8.3.2 are reachable through jayson 4.3.0 and @solana/web3.js 1.98.4. Inspection found stream-json parsing in jayson TCP/TLS streaming clients; project RPC configuration uses the HTTP Connection path, whose response parser is JSON.parse. Jayson uses uuid.v4, whereas GHSA-w5hq-g745-h8pq concerns v3/v5/v6 with caller-supplied output buffers.",
+        "npm audit's proposed fixes require semver-major downgrades of @pump-fun/pump-sdk to 1.1.0 and @solana/spl-token to 0.1.8; these conflict with the project's current Pump instruction APIs and Token-2022 support and were not applied.",
+        "The Solana Foundation states that web3.js v1 is maintenance-only and points new development to v3/Kit; Sylph imports v1 types and APIs throughout the codebase, so this is a staged migration, not a safe blind lockfile refresh."
+      ],
+      "remaining": [
+        "No compatible, upstream-maintained remediation for bigint-buffer was verified; test candidate replacement or remove the vulnerable decoder path with exact malformed-account regressions before adopting an override.",
+        "Confirm current upstream patched releases and API compatibility for Anchor/TOML and the Jayson RPC chain; rerun security audit, lockfile integrity checks, build, and full suites after any update.",
+        "Plan and independently review an incremental migration from the legacy web3.js v1 surface while preserving Pump SDK and token-program compatibility."
+      ],
+      "owner": "Dependency Security",
+      "nextAction": "Prototype an isolated bigint-buffer remediation and trace package-level advisory reachability before changing production dependency versions."
     }
   ],
   "certification": {

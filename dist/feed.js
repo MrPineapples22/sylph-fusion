@@ -3,7 +3,7 @@ import WebSocket from 'ws';
 import { setTimeout as delay } from 'node:timers/promises';
 import { BoundedSet, log } from './core.js';
 import { IngestionGapReconciler } from './platform/ingestion/gap-reconciler.js';
-import { capturedTransactionObservation, createCapturedSubscribeClient } from './platform/ingestion/yellowstone-captured-client.js';
+import { capturedTransactionObservation, createCapturedSubscribeClient, yellowstoneBackoffAfterSession } from './platform/ingestion/yellowstone-captured-client.js';
 import { createUnvalidatedObservation } from './platform/ingress/observation-factory.js';
 function providerLabel(endpoint) {
     try {
@@ -25,6 +25,7 @@ function validateSource(source) {
 }
 export class Feed {
     cfg;
+    yellowstoneClientFactory;
     #ingress;
     sourceId = 'feed-solana-pump';
     seen = new BoundedSet(100_000, 300_000);
@@ -36,8 +37,9 @@ export class Feed {
     last = 0;
     slot = 0;
     readySince = 0;
-    constructor(cfg, _connection, ingress) {
+    constructor(cfg, _connection, ingress, yellowstoneClientFactory = createCapturedSubscribeClient) {
         this.cfg = cfg;
+        this.yellowstoneClientFactory = yellowstoneClientFactory;
         if (typeof ingress === 'function' || !ingress || typeof ingress.submit !== 'function') {
             throw new Error('FEED_CALLBACK_BYPASS_FORBIDDEN: Feed requires an ObservationIngressPort instance. Arbitrary callback functions are strictly prohibited.');
         }
@@ -242,8 +244,10 @@ export class Feed {
         while (!this.stopped) {
             let watchdog;
             let client;
+            let sessionStartedAt = 0;
+            let sessionReceivedUpdate = false;
             try {
-                client = createCapturedSubscribeClient({
+                client = this.yellowstoneClientFactory({
                     endpoint: this.cfg.YELLOWSTONE_URL,
                     token: this.cfg.YELLOWSTONE_TOKEN || undefined,
                     channelOptions: { 'grpc.keepalive_time_ms': 10_000, 'grpc.keepalive_timeout_ms': 5000, 'grpc.max_receive_message_length': 16 * 1024 * 1024 },
@@ -262,10 +266,11 @@ export class Feed {
                     stream.destroy(); }, 5000);
                 const request = { accounts: {}, slots: {}, transactions: { pump: { vote: false, failed: false, accountInclude: [PUMP_PROGRAM_ID.toBase58()], accountExclude: [], accountRequired: [] } }, transactionsStatus: {}, blocks: {}, blocksMeta: {}, entry: {}, accountsDataSlice: [], commitment: module.CommitmentLevel.CONFIRMED };
                 await new Promise((resolve, reject) => stream.write(request, (e) => e ? reject(e) : resolve()));
+                sessionStartedAt = Date.now();
                 log('yellowstone_subscribed');
                 for await (const captured of stream) {
+                    sessionReceivedUpdate = true;
                     last = Date.now();
-                    backoff = 500;
                     if (this.stopped)
                         break;
                     const update = captured.update;
@@ -288,6 +293,7 @@ export class Feed {
                 catch { }
             }
             if (!this.stopped) {
+                backoff = yellowstoneBackoffAfterSession(backoff, sessionStartedAt ? Date.now() - sessionStartedAt : 0, sessionReceivedUpdate);
                 await this.reconnectDelay(backoff + Math.random() * 250);
                 backoff = Math.min(backoff * 2, 10_000);
             }

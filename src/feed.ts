@@ -5,7 +5,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { BoundedSet, log } from './core.js';
 import type { Config } from './config.js';
 import { IngestionGapReconciler } from './platform/ingestion/gap-reconciler.js';
-import { capturedTransactionObservation, createCapturedSubscribeClient } from './platform/ingestion/yellowstone-captured-client.js';
+import { capturedTransactionObservation, createCapturedSubscribeClient, yellowstoneBackoffAfterSession } from './platform/ingestion/yellowstone-captured-client.js';
 import type { RawObservationEnvelope, ProcessingIntent } from './platform/ingestion/types.js';
 import type { ObservationIngressPort, ObservationSource } from './platform/ingress/port.js';
 import { createUnvalidatedObservation } from './platform/ingress/observation-factory.js';
@@ -25,6 +25,7 @@ function validateSource(source: { sourceId: string; providerId: string; transpor
 }
 
 export type MarketEvent = { name: string; data: Record<string, any>; signature: string; slot: number; received: number; observation: RawObservationEnvelope | UnvalidatedObservation };
+type YellowstoneClientFactory = typeof createCapturedSubscribeClient;
 export class Feed implements ObservationSource {
   readonly #ingress: ObservationIngressPort;
   readonly sourceId = 'feed-solana-pump';
@@ -38,7 +39,8 @@ export class Feed implements ObservationSource {
   slot = 0;
   readySince = 0;
 
-  constructor(private cfg: Config, _connection: Connection, ingress: ObservationIngressPort) {
+  constructor(private cfg: Config, _connection: Connection, ingress: ObservationIngressPort,
+    private readonly yellowstoneClientFactory: YellowstoneClientFactory = createCapturedSubscribeClient) {
     if (typeof ingress === 'function' || !ingress || typeof ingress.submit !== 'function') {
       throw new Error(
         'FEED_CALLBACK_BYPASS_FORBIDDEN: Feed requires an ObservationIngressPort instance. Arbitrary callback functions are strictly prohibited.'
@@ -259,8 +261,10 @@ export class Feed implements ObservationSource {
     while (!this.stopped) {
       let watchdog: NodeJS.Timeout | undefined;
       let client: any;
+      let sessionStartedAt = 0;
+      let sessionReceivedUpdate = false;
       try {
-        client = createCapturedSubscribeClient({
+        client = this.yellowstoneClientFactory({
           endpoint: this.cfg.YELLOWSTONE_URL,
           token: this.cfg.YELLOWSTONE_TOKEN || undefined,
           channelOptions: { 'grpc.keepalive_time_ms': 10_000, 'grpc.keepalive_timeout_ms': 5000, 'grpc.max_receive_message_length': 16 * 1024 * 1024 },
@@ -275,9 +279,11 @@ export class Feed implements ObservationSource {
         watchdog = setInterval(() => { if (Date.now() - last > 30_000) stream.destroy(); }, 5000);
         const request = { accounts: {}, slots: {}, transactions: { pump: { vote: false, failed: false, accountInclude: [PUMP_PROGRAM_ID.toBase58()], accountExclude: [], accountRequired: [] } }, transactionsStatus: {}, blocks: {}, blocksMeta: {}, entry: {}, accountsDataSlice: [], commitment: module.CommitmentLevel.CONFIRMED };
         await new Promise<void>((resolve, reject) => stream.write(request, (e: Error | null) => e ? reject(e) : resolve()));
+        sessionStartedAt = Date.now();
         log('yellowstone_subscribed');
         for await (const captured of stream) {
-          last = Date.now(); backoff = 500;
+          sessionReceivedUpdate = true;
+          last = Date.now();
           if (this.stopped) break;
           const update = captured.update;
           if (update.ping) stream.write({ ...request, ping: { id: 1 } });
@@ -285,7 +291,11 @@ export class Feed implements ObservationSource {
         }
       } catch { log('yellowstone_reconnecting'); }
       finally { if (watchdog) clearInterval(watchdog); this.grpcStream?.destroy(); this.grpcStream = undefined; try { client?.close?.(); } catch {} }
-      if (!this.stopped) { await this.reconnectDelay(backoff + Math.random() * 250); backoff = Math.min(backoff * 2, 10_000); }
+      if (!this.stopped) {
+        backoff = yellowstoneBackoffAfterSession(backoff, sessionStartedAt ? Date.now() - sessionStartedAt : 0, sessionReceivedUpdate);
+        await this.reconnectDelay(backoff + Math.random() * 250);
+        backoff = Math.min(backoff * 2, 10_000);
+      }
     }
   }
   private async acceptYellowstoneCapture(captured: Parameters<typeof capturedTransactionObservation>[0]): Promise<void> {

@@ -519,8 +519,9 @@ test('real IDL event decodes once across duplicate feeds and rejects stale slots
 });
 test('Yellowstone path writes an actual transaction subscription and consumes updates', async () => {
   const { Duplex } = await import('node:stream');
-  const { default: Client } = await import('@triton-one/yellowstone-grpc');
-  const original = Client.prototype.subscribe; let request;
+  const { SubscribeUpdate } = await import('@triton-one/yellowstone-grpc');
+  const { createCapturedResponseDeserializer } = await import('../dist/platform/ingestion/yellowstone-captured-client.js');
+  let request;
   const events = [];
   let feed;
   const ingress = createCanonicalSolanaIngress({ journal: new InMemoryIngressJournal(),
@@ -531,14 +532,21 @@ test('Yellowstone path writes an actual transaction subscription and consumes up
       feed?.stop();
     }
   });
-  feed = new Feed(cfg({ YELLOWSTONE_URL: 'https://localhost:443' }), {}, ingress);
-  Client.prototype.subscribe = async function () {
+  feed = new Feed(cfg({ YELLOWSTONE_URL: 'https://localhost:443' }), {}, ingress, ({ responseCodec }) => {
     let delivered = false;
-    return new Duplex({ objectMode: true,
+    const stream = new Duplex({ objectMode: true,
       write(chunk, _, callback) { request = chunk; callback(); },
-      read() { if (!delivered) { delivered = true; this.push({ transaction: { slot: '100', transaction: { signature: Buffer.alloc(64, 1), meta: { logMessages: createLogs() } } } }); } },
+      read() {
+        if (!delivered) {
+          delivered = true;
+          const update = SubscribeUpdate.fromPartial({ transaction: { slot: '100', transaction: { signature: Buffer.alloc(64, 1), meta: { logMessages: createLogs() } } } });
+          const bytes = Buffer.from(SubscribeUpdate.encode(update).finish());
+          this.push(createCapturedResponseDeserializer(responseCodec)(bytes));
+        }
+      },
     });
-  };
+    return { subscribe: () => stream, close: () => stream.destroy() };
+  });
   try { await feed.geyser(); assert.ok(request.transactions.pump.accountInclude.includes(PUMP_PROGRAM_ID.toBase58())); assert.equal(events.length, 1); }
-  finally { Client.prototype.subscribe = original; feed.stop(); }
+  finally { feed.stop(); }
 });

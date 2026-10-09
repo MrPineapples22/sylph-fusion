@@ -8,6 +8,7 @@ import {
   capturedPayloadBytes,
   capturedTransactionObservation,
   createCapturedResponseDeserializer,
+  yellowstoneBackoffAfterSession,
 } from '../../dist/platform/ingestion/yellowstone-captured-client.js';
 
 function encodedUpdate({ slot = '123', signature = Buffer.alloc(64, 7), logs = ['Program log: observed'] } = {}) {
@@ -33,6 +34,12 @@ test('response deserializer decodes the private copy and preserves the exact mes
   const detached = capturedPayloadBytes(captured);
   detached.fill(0);
   assert.deepEqual(capturedPayloadBytes(captured), expected, 'payload access returns a detached copy');
+  captured.update.transaction.transaction.signature.fill(0);
+  captured.update.transaction.transaction.meta.logMessages[0] = 'mutated decoded object';
+  assert.deepEqual(capturedPayloadBytes(captured), expected, 'decoder-owned Buffer views cannot mutate evidence bytes');
+  assert.equal(capturedTransactionObservation(captured).signature, bs58.encode(Buffer.alloc(64, 7)),
+    'the Feed-field snapshot remains bound to the object as decoded at capture time');
+  assert.deepEqual(capturedTransactionObservation(captured).logs, ['Program log: observed']);
 });
 
 test('only decoder-produced capture binds the derived transaction fields to those bytes and Feed ingress', async () => {
@@ -84,4 +91,11 @@ test('malformed protobuf and structurally incomplete transactions fail closed', 
   const captured = deserialize(Buffer.from(SubscribeUpdate.encode(noSignature).finish()));
   assert.equal(capturedTransactionObservation(captured), undefined);
   assert.equal(capturedPayloadBytes({ update: noSignature }), undefined);
+});
+
+test('Yellowstone reconnect backoff resets only after a stable 30-second session', () => {
+  assert.equal(yellowstoneBackoffAfterSession(8000, 29_999, true), 8000);
+  assert.equal(yellowstoneBackoffAfterSession(8000, 30_000, true), 500);
+  assert.equal(yellowstoneBackoffAfterSession(8000, 60_000, false), 8000, 'an idle stream closed by the watchdog does not reset');
+  assert.equal(yellowstoneBackoffAfterSession(8000, Number.NaN, true), 8000);
 });
