@@ -346,7 +346,7 @@ test('RealizedEdgeBreakdownPanel: renders 15-factor decomposition with explicit 
   assert.match(html, /\+0\.1128 SOL/);
 });
 
-test('DynamicReserveGauge: correctly computes dynamic reserve floor for $250 bankroll', () => {
+test('DynamicReserveGauge: keeps headroom unknown when Gateway omits freshness and quarantined capital', () => {
   const emptyHtml = renderToStaticMarkup(
     React.createElement(DynamicReserveGauge, {
       capital: { available: 250.0, reserved: 25.0 },
@@ -356,7 +356,7 @@ test('DynamicReserveGauge: correctly computes dynamic reserve floor for $250 ban
 
   assert.match(emptyHtml, /Capital Preservation &amp; Exitability Shield/);
   assert.match(emptyHtml, /PAPER POLICY SCENARIO/);
-  assert.match(emptyHtml, /MODEL DATA UNKNOWN/);
+  assert.match(emptyHtml, /PAPER POLICY: HEADROOM UNKNOWN/);
   assert.match(emptyHtml, /Free Deployable/);
   assert.match(emptyHtml, /Emergency Reserve/);
   assert.match(emptyHtml, /Paper Model Cash/);
@@ -369,14 +369,17 @@ test('DynamicReserveGauge: correctly computes dynamic reserve floor for $250 ban
         paperCashUsd: 250.0,
         reservedCashUsd: 25.0,
         emergencyReserveUsd: 50.0,
-        availableCashUsd: 175.0,
+        availableCashUsd: null,
+        availableCashStatus: 'UNKNOWN',
+        solPriceFreshness: 'UNKNOWN',
       },
     })
   );
 
   assert.match(populatedHtml, /Capital Preservation &amp; Exitability Shield/);
-  assert.match(populatedHtml, /PAPER MODEL: HEADROOM/);
-  assert.match(populatedHtml, /\$175\.00/);
+  assert.match(populatedHtml, /PAPER POLICY: HEADROOM UNKNOWN/);
+  assert.match(populatedHtml, /Available cash is unknown because the Gateway snapshot omits quarantined capital/);
+  assert.match(populatedHtml, /Unknown/);
   assert.match(populatedHtml, /\$25\.00/);
   assert.match(populatedHtml, /\$50\.00/);
   assert.match(populatedHtml, /\$250\.00/);

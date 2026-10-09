@@ -29,7 +29,7 @@ export interface CanonicalEventProvenance {
   readonly transport: 'websocket' | 'rpc_poll' | 'geyser_grpc';
   readonly rawPayloadHash: string;
   readonly ingestedByWorkerId: string;
-  readonly wireEncoding?: 'RAW_WIRE_BYTES' | 'DECODED_PROTOBUF_JSON_CANONICAL';
+  readonly wireEncoding?: 'RAW_WIRE_BYTES' | 'DECODED_PROTOBUF_JSON_CANONICAL' | 'DECODED_PROTOBUF_JSON_SERIALIZED_BYTES';
 }
 
 export interface CanonicalEvent<TPayload = Record<string, unknown>> {

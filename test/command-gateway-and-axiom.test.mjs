@@ -42,6 +42,25 @@ test('EventEnvelope: evaluates data quality states and constructs tamper-proof e
   assert.ok(envelope.payload_hash.length === 64);
 });
 
+test('CommandGateway retains only a fresh observed SOL/USD timestamp for display projections', () => {
+  const gateway = CommandGateway.resetInstance();
+  const initial = gateway.getSnapshot();
+  assert.equal(initial.solPriceUpdatedAtMs, null, 'the configured fallback price has no market observation time');
+
+  const observedAt = Date.now() - 1;
+  gateway.updateSolPriceUsd(151.25, observedAt);
+  const fresh = gateway.getSnapshot();
+  assert.equal(fresh.solPriceUsd, 151.25);
+  assert.equal(fresh.solPriceUpdatedAtMs, observedAt);
+
+  gateway.updateSolPriceUsd(152, observedAt - 5_001);
+  gateway.updateSolPriceUsd(153, Date.now() + 1);
+  gateway.updateSolPriceUsd(154, 1.5);
+  const afterInvalid = gateway.getSnapshot();
+  assert.equal(afterInvalid.solPriceUsd, 151.25);
+  assert.equal(afterInvalid.solPriceUpdatedAtMs, observedAt, 'invalid timestamps cannot refresh or replace the last valid quote');
+});
+
 test('SystemLifecycleManager: enforces valid paths and blocks illegal shortcuts', () => {
   const lifecycle = new SystemLifecycleManager();
   assert.equal(lifecycle.getState(), 'BOOT');

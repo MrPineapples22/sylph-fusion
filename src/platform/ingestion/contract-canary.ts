@@ -29,7 +29,9 @@ export interface EpistemicField<T> {
 export type WirePayloadEncoding =
   | 'UNSPECIFIED'
   | 'JSON_FRAME_BYTES'
+  | 'JSON_SERIALIZED_BYTES'
   | 'JSON_CANONICAL'
+  | 'DECODED_PROTOBUF_JSON_SERIALIZED_BYTES'
   | 'DECODED_PROTOBUF_JSON_CANONICAL'
   | 'PROTOBUF_WIRE_BYTES';
 

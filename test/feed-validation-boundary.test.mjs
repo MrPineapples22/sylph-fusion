@@ -56,7 +56,7 @@ test('accepted provider observations carry immutable provenance and a payload ha
   assert.equal(Object.isFrozen(observation),true);
   assert.equal(observation.transactionVersion,'unknown');
   assert.equal(observation.schemaVersion,'solana-program-logs/v1');
-  assert.equal(observation.rawPayloadEncoding,'JSON_CANONICAL');
+  assert.equal(observation.rawPayloadEncoding,'JSON_SERIALIZED_BYTES');
 });
 
 test('feed carries explicit wire representation metadata across transports', async () => {
@@ -75,15 +75,29 @@ test('feed carries explicit wire representation metadata across transports', asy
     sourceId: 'yellowstone-1', providerId: 'https://grpc.invalid', transport: 'yellowstone.transaction.logs',
     commitment: 'confirmed',
     rawPayload: Buffer.from(JSON.stringify({ transaction: { transaction: { meta: { logMessages: ['Program log: valid'] } } } })),
-    rawPayloadEncoding: 'DECODED_PROTOBUF_JSON_CANONICAL',
+    rawPayloadEncoding: 'DECODED_PROTOBUF_JSON_SERIALIZED_BYTES',
   });
-  assert.equal(events[1].observation.rawPayloadEncoding, 'DECODED_PROTOBUF_JSON_CANONICAL');
+  assert.equal(events[1].observation.rawPayloadEncoding, 'DECODED_PROTOBUF_JSON_SERIALIZED_BYTES');
+  assert.equal(events[1].observation.schemaVersion, 'yellowstone-update-json/v1');
 
   await f.accept('sig-yellowstone-inferred', 103, ['Program log: valid'], {
     sourceId: 'yellowstone-2', providerId: 'https://grpc.invalid', transport: 'yellowstone.transaction.logs',
     commitment: 'confirmed',
   });
-  assert.equal(events[2].observation.rawPayloadEncoding, 'DECODED_PROTOBUF_JSON_CANONICAL');
+  assert.equal(events[2].observation.rawPayloadEncoding, 'DECODED_PROTOBUF_JSON_SERIALIZED_BYTES');
+  assert.equal(events[2].observation.schemaVersion, 'yellowstone-update-json/v1');
+
+  let captured;
+  const unclassified = new Feed(cfg(), {}, {submit: async observation => {
+    captured = observation;
+    return {status: 'ACCEPTED'};
+  }});
+  await unclassified.accept('sig-unclassified-payload', 104, ['Program log: valid'], {
+    sourceId: 'provider-1', providerId: 'https://provider.invalid', transport: 'rpc.poll',
+    commitment: 'confirmed', rawPayload: Buffer.from('{"logs":[]}'),
+  });
+  assert.equal(captured.rawPayloadEncoding, 'UNSPECIFIED', 'caller bytes are not guessed to be a captured JSON frame');
+  assert.equal(captured.schemaVersion, 'provider-payload/v1');
 });
 
 test('observation identity binds provider and transport, and unsafe source metadata is rejected', async () => {

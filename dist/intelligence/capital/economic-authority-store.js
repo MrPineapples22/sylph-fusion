@@ -83,12 +83,6 @@ export class EconomicAuthorityStore {
     getConfirmedCash() {
         return this.confirmedCashLamports;
     }
-    syncLiveCash(cashLamports, reservedLamports = 0n) {
-        if (cashLamports < 0n)
-            return;
-        this.confirmedCashLamports = cashLamports;
-        this.reservedCashLamports = reservedLamports >= 0n ? reservedLamports : 0n;
-    }
     getAvailableCash() {
         const available = this.confirmedCashLamports - this.reservedCashLamports - this.unknownCapitalLamports - this.emergencyReserveLamports;
         return available > 0n ? available : 0n;

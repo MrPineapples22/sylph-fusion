@@ -18,7 +18,9 @@ test('CONTRACTCANARY: explicit representations stay distinct and hashes do not a
   const witnesses = [
     ['HTTP_REST', payload, 'JSON_FRAME_BYTES'],
     ['WSS', Buffer.from(payload), 'JSON_FRAME_BYTES'],
+    ['HTTP_REST', payload, 'JSON_SERIALIZED_BYTES'],
     ['HTTP_REST', payload, 'JSON_CANONICAL'],
+    ['GRPC', payload, 'DECODED_PROTOBUF_JSON_SERIALIZED_BYTES'],
     ['GRPC', payload, 'DECODED_PROTOBUF_JSON_CANONICAL'],
     ['GRPC', Buffer.from(payload), 'PROTOBUF_WIRE_BYTES'],
   ].map(([transport, bytes, encoding]) => {

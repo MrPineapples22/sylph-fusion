@@ -69,6 +69,7 @@ export class CommandGateway {
     cashUsd = Number(process.env.SIMULATED_CAPITAL_USD) > 0 ? Number(process.env.SIMULATED_CAPITAL_USD) : 10_000.0;
     initialPaperCapitalUsd = this.cashUsd;
     solPriceUsd = 150.0;
+    solPriceUpdatedAtMs = null;
     stateVersion = 1;
     paperRealizedPnlUsd = 0;
     paperClosedFillCount = 0;
@@ -99,9 +100,12 @@ export class CommandGateway {
         this.inFlight.clear();
         this.stateVersion++;
     }
-    updateSolPriceUsd(price) {
-        if (Number.isFinite(price) && price > 0) {
+    updateSolPriceUsd(price, observedAtMs) {
+        const now = Date.now();
+        if (Number.isFinite(price) && price > 0 && Number.isSafeInteger(observedAtMs) &&
+            observedAtMs <= now && now - observedAtMs <= 5_000) {
             this.solPriceUsd = price;
+            this.solPriceUpdatedAtMs = observedAtMs;
         }
     }
     setPaperEntryEvidenceProvider(provider) {
@@ -127,7 +131,7 @@ export class CommandGateway {
             throw new Error(`${requireEntryAuthorization ? 'ENTRY_BLOCKED' : 'EXIT_BLOCKED'}: Fresh, identity-matched market price, liquidity, and SOL/USD observations are required${requireEntryAuthorization ? ' with basket authorization' : ''}.`);
         }
         if (updateSolPrice)
-            this.updateSolPriceUsd(evidence.solPriceUsd);
+            this.updateSolPriceUsd(evidence.solPriceUsd, evidence.solObservedAt);
         return evidence;
     }
     positions = new Map();
@@ -170,6 +174,7 @@ export class CommandGateway {
             initialPaperCapitalUsd: this.initialPaperCapitalUsd,
             reservedCashUsd: [...this.pendingBuys.values()].reduce((sum, value) => sum + value, 0),
             solPriceUsd: this.solPriceUsd,
+            solPriceUpdatedAtMs: this.solPriceUpdatedAtMs,
             positions: Array.from(this.positions.values(), position => ({ ...position })),
             inFlightOrdersCount: this.inFlight.size,
             stateVersion: this.stateVersion,
@@ -505,7 +510,7 @@ export class CommandGateway {
             }
             if (refreshedDecision.emergency)
                 effectiveEmergency = true;
-            this.updateSolPriceUsd(exitEvidence.solPriceUsd);
+            this.updateSolPriceUsd(exitEvidence.solPriceUsd, exitEvidence.solObservedAt);
         }
         let effectiveUsdAmount = payload.usdAmount;
         if (isBuy) {

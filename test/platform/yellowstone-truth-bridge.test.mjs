@@ -115,8 +115,8 @@ test('YellowstoneTruthBridge: decoded evidence hashes the fields used for event 
   assert.equal(bridge.ingestUpdate(update), true);
   const expectedHash = createHash('sha256').update(JSON.stringify(update)).digest('hex');
   assert.equal(emitted[0].eventType, 'SWAP_BUY');
-  assert.equal(emitted[0].provenance.wireEncoding, 'DECODED_PROTOBUF_JSON_CANONICAL');
-  assert.equal(emitted[0].payload.wireEncoding, 'DECODED_PROTOBUF_JSON_CANONICAL');
+  assert.equal(emitted[0].provenance.wireEncoding, 'DECODED_PROTOBUF_JSON_SERIALIZED_BYTES');
+  assert.equal(emitted[0].payload.wireEncoding, 'DECODED_PROTOBUF_JSON_SERIALIZED_BYTES');
   assert.equal(emitted[0].provenance.rawPayloadHash, expectedHash);
   assert.equal(emitted[0].payload.rawPayloadHash, expectedHash);
 });
@@ -134,8 +134,8 @@ for (const [name, rawWireBytes] of [
     // JavaScript callers can still supply removed TypeScript properties.
     assert.equal(bridge.ingestUpdate({ ...decoded, rawWireBytes }), true);
     assert.equal(emitted[0].eventType, 'SWAP_BUY');
-    assert.equal(emitted[0].provenance.wireEncoding, 'DECODED_PROTOBUF_JSON_CANONICAL');
-    assert.equal(emitted[0].payload.wireEncoding, 'DECODED_PROTOBUF_JSON_CANONICAL');
+    assert.equal(emitted[0].provenance.wireEncoding, 'DECODED_PROTOBUF_JSON_SERIALIZED_BYTES');
+    assert.equal(emitted[0].payload.wireEncoding, 'DECODED_PROTOBUF_JSON_SERIALIZED_BYTES');
     assert.equal(emitted[0].provenance.rawPayloadHash, createHash('sha256').update(JSON.stringify(decoded)).digest('hex'));
     assert.notEqual(emitted[0].provenance.rawPayloadHash, createHash('sha256').update(rawWireBytes).digest('hex'));
   });

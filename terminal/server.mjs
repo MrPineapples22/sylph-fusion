@@ -64,9 +64,7 @@ import {
 import {
   RealizedEdgeLedger,
 } from '../dist/platform/pipeline/realized-edge-ledger.js';
-import {
-  EconomicAuthorityStore,
-} from '../dist/intelligence/capital/economic-authority-store.js';
+import {handleCapitalReserveRequest} from './capital-reserve-policy.mjs';
 import {
   LocalMarketUniverse,
   ProtocolCompatibilityRegistry,
@@ -152,15 +150,6 @@ const flightRecorder = new EconomicFlightRecorder(flightRecorderStore);
 const runtimeDivergenceAuditor = new RuntimeDivergenceAuditor();
 const hotPathCapsuleRegistry = new HotPathCapsuleRegistry();
 const realizedEdgeLedger = new RealizedEdgeLedger();
-const economicAuthorityStore = new EconomicAuthorityStore(
-  1_666_666_666n, // ~$250 at $150/SOL in lamports
-  {
-    stressedFullExitCostLamports: 25_000_000n,
-    fixedOperationalFloorLamports: 50_000_000n,
-    equityReservePctBps: 2000, // 20%
-  }
-);
-
 // Solana-Only Blueprint Singletons
 const localMarketUniverse = new LocalMarketUniverse();
 const protocolCompatibilityRegistry = new ProtocolCompatibilityRegistry();
@@ -353,7 +342,7 @@ const guardianInterval = setInterval(async () => {
       basket = await astraFeed();
       const sol = basket?.pairs?.find(candidate => candidate.mint === 'So11111111111111111111111111111111111111112');
       if (sol && Number.isFinite(sol.price) && Number.isSafeInteger(sol.at) && sol.at <= Date.now() && Date.now() - sol.at <= 5_000) {
-        globalCommandGateway.updateSolPriceUsd(sol.price);
+        globalCommandGateway.updateSolPriceUsd(sol.price, sol.at);
       }
     } catch { /* Stale or unavailable SOL quotes cannot refresh the paper conversion rate. */ }
     const snapTokens = hub.snapshot().tokens || [];
@@ -1281,40 +1270,7 @@ async function handleRequest(req,res){
     return;
   }
 
-  if (req.method === 'GET' && reqUrl.pathname === '/api/capital/reserve') {
-    const isStressed = reqUrl.searchParams.get('stressed') === 'true';
-    const exitCost = isStressed ? 50_000_000n : 25_000_000n;
-    const snap = globalCommandGateway.getSnapshot();
-    const solPrice = snap.solPriceUsd > 0 ? snap.solPriceUsd : 150;
-    const liveCashLamports = BigInt(Math.max(0, Math.round((snap.cashUsd / solPrice) * 1e9)));
-    const liveReservedLamports = BigInt(Math.max(0, Math.round((snap.reservedCashUsd / solPrice) * 1e9)));
-    if (typeof economicAuthorityStore.syncLiveCash === 'function') {
-      economicAuthorityStore.syncLiveCash(liveCashLamports, liveReservedLamports);
-    }
-    const dynamicReserveLamports = economicAuthorityStore.recomputeEmergencyReserve({
-      stressedFullExitCostLamports: exitCost,
-      fixedOperationalFloorLamports: 50_000_000n,
-      equityReservePctBps: 2000,
-    });
-    const confirmedLamports = economicAuthorityStore.getConfirmedCash();
-    const availableLamports = economicAuthorityStore.getAvailableCash();
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({
-      ok: true,
-      evidenceStatus: 'SIMULATED_POLICY',
-      valueSource: 'IN_MEMORY_PAPER_ECONOMIC_AUTHORITY',
-      paperCashLamports: confirmedLamports.toString(),
-      paperCashUsd: snap.cashUsd,
-      emergencyReserveLamports: dynamicReserveLamports.toString(),
-      emergencyReserveUsd: (Number(dynamicReserveLamports) / 1e9) * solPrice,
-      reservedCashLamports: economicAuthorityStore.getReservedCash().toString(),
-      reservedCashUsd: snap.reservedCashUsd,
-      unknownCapitalLamports: economicAuthorityStore.getUnknownCapital().toString(),
-      availableCashLamports: availableLamports.toString(),
-      availableCashUsd: (Number(availableLamports) / 1e9) * solPrice,
-      solPriceUsdAssumption: solPrice,
-      isStressed,
-    }));
+  if (handleCapitalReserveRequest(req, res, {getSnapshot: () => globalCommandGateway.getSnapshot()})) {
     return;
   }
 

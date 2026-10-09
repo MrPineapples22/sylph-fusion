@@ -44,13 +44,16 @@ export function DynamicReserveGauge({ capital = null, solPriceUsd = 150, initial
   const reservedUsd = Number.isFinite(reserveData?.reservedCashUsd) ? reserveData.reservedCashUsd : null;
   const emergencyReserveUsd = Number.isFinite(reserveData?.emergencyReserveUsd) ? reserveData.emergencyReserveUsd : null;
   const freeDeployableCashUsd = Number.isFinite(reserveData?.availableCashUsd) ? reserveData.availableCashUsd : null;
-  const hasModelData = [totalCashUsd, reservedUsd, emergencyReserveUsd, freeDeployableCashUsd].every(Number.isFinite);
+  const hasBreakdownData = [totalCashUsd, reservedUsd, emergencyReserveUsd].every(Number.isFinite);
+  const hasAvailableCash = Number.isFinite(freeDeployableCashUsd) && reserveData?.availableCashStatus === 'KNOWN';
+  const priceFreshnessKnown = reserveData?.solPriceFreshness === 'FRESH';
+  const hasModelData = hasBreakdownData && hasAvailableCash && priceFreshnessKnown;
 
   // Percentages for stacked bar
   const total = Math.max(totalCashUsd ?? 0, 1);
   const freePct = hasModelData ? (freeDeployableCashUsd / total) * 100 : 0;
-  const reservedPct = hasModelData ? (reservedUsd / total) * 100 : 0;
-  const reservePct = hasModelData ? (emergencyReserveUsd / total) * 100 : 0;
+  const reservedPct = hasBreakdownData ? (reservedUsd / total) * 100 : 0;
+  const reservePct = hasBreakdownData ? (emergencyReserveUsd / total) * 100 : 0;
 
   const isWarning = hasModelData && freeDeployableCashUsd > 0;
   const isFloorLatched = hasModelData && freeDeployableCashUsd <= 0;
@@ -69,6 +72,9 @@ export function DynamicReserveGauge({ capital = null, solPriceUsd = 150, initial
           <p style={{ margin: 0, fontSize: '0.75rem', color: '#98aabd' }}>
             Displays the isolated paper reserve calculation. It does not prove wallet balances, executable liquidity, or guaranteed exit capacity.
           </p>
+          {reserveData?.availableCashStatus === 'UNKNOWN' && <p style={{ margin: '4px 0 0', fontSize: '0.72rem', color: '#becad6' }}>
+            Available cash is unknown because the Gateway snapshot omits quarantined capital; SOL price freshness is {reserveData.solPriceFreshness ?? 'UNKNOWN'}.
+          </p>}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -103,7 +109,7 @@ export function DynamicReserveGauge({ capital = null, solPriceUsd = 150, initial
             }}
           >
             {!hasModelData ? <Info size={12} /> : isFloorLatched ? <Lock size={12} /> : isWarning ? <AlertTriangle size={12} /> : <Lock size={12} />}
-            {!hasModelData ? 'MODEL DATA UNKNOWN' : isFloorLatched ? 'PAPER MODEL: NO HEADROOM' : isWarning ? 'PAPER MODEL: HEADROOM' : 'PAPER MODEL: NO HEADROOM'}
+            {!hasModelData ? 'PAPER POLICY: HEADROOM UNKNOWN' : isFloorLatched ? 'PAPER MODEL: NO HEADROOM' : isWarning ? 'PAPER MODEL: HEADROOM' : 'PAPER MODEL: NO HEADROOM'}
           </span>
         </div>
       </header>

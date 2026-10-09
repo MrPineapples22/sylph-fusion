@@ -52,16 +52,18 @@
         "The unsafe rawWireBytes injection property was removed. Extra JavaScript properties, including empty, mismatched, or untrusted byte buffers, are ignored and cannot promote decoded evidence to wire capture.",
         "Generic ContractCanary witnesses default to UNSPECIFIED for strings, objects, Buffer, and Uint8Array. Explicit representation labels distinguish JSON frames, canonical JSON, decoded protobuf JSON, and protobuf wire bytes; these are caller declarations, and a payload digest proves neither capture nor authenticity.",
         "Defined RawPayloadEncoding and attached to UnvalidatedObservation and observation-factory. Live Feed in src/feed.ts propagates explicit RawPayloadEncoding across websocket (JSON_FRAME_BYTES), Yellowstone (DECODED_PROTOBUF_JSON_CANONICAL), and fallback logs (JSON_CANONICAL).",
+        "Research cycle 159 adds JSON_SERIALIZED_BYTES and DECODED_PROTOBUF_JSON_SERIALIZED_BYTES for locally JSON.stringify-serialized bytes, labels caller-supplied payloads UNSPECIFIED when no representation is given, and retains old canonical enum values for replay compatibility.",
+        "The live Yellowstone Feed and alternate YellowstoneTruthBridge now identify decoded-protobuf JSON.stringify payloads as serialized bytes; WebSocket frames keep JSON_FRAME_BYTES. This narrows false canonicalization claims but does not prove capture or bind independent Feed.accept fields.",
         "SQLite canonical_ingress_delivery_v1 outbox persists and restores rawPayloadEncoding across crash recovery, tested in test/platform/canonical-ingress-durability.test.mjs and test/feed-validation-boundary.test.mjs.",
-        "The real Feed.geyser in src/feed.ts receives decoded SDK updates and stores Buffer.from(JSON.stringify(update)); it explicitly labels them DECODED_PROTOBUF_JSON_CANONICAL without fabricating wire capture."
+        "The real Feed.geyser in src/feed.ts receives decoded SDK updates and stores Buffer.from(JSON.stringify(update)); research cycle 159 labels these as DECODED_PROTOBUF_JSON_SERIALIZED_BYTES without fabricating wire capture."
       ],
       "remaining": [
         "Implement and independently review a trusted transport capture/decoder boundary that binds actual protobuf bytes to the event derived from those bytes in live Yellowstone gRPC stream.",
-        "Feed.accept still accepts independently supplied signature, slot, logs, rawPayload, and encoding fields; validate their cross-field and transport compatibility before treating this as a bound observation. Ordinary JSON.stringify output is not RFC 8785 canonical JSON, so existing *_JSON_CANONICAL labels need correction or a canonical serializer.",
+        "Feed.accept still accepts independently supplied signature, slot, logs, rawPayload, and encoding fields; validate their cross-field and transport compatibility before treating this as a bound observation. Existing *_JSON_CANONICAL values remain accepted for historical compatibility and are still caller declarations, not proof that bytes meet RFC 8785.",
         "No payload hash or encoding declaration establishes transaction authenticity, chain inclusion, or source identity."
       ],
       "owner": "Sol Provider Integration",
-      "nextAction": "Design live Feed transport capture and event binding before claiming wire preservation; retain decoded provenance bounds until then."
+      "nextAction": "Design live Feed transport capture and event binding before claiming wire preservation; consider RFC 8785 only for derived canonical projections, and retain decoded provenance bounds until then."
     },
     {
       "id": "C1-INGRESS-003",

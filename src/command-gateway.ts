@@ -168,6 +168,7 @@ export interface GatewayStateSnapshot {
   readonly initialPaperCapitalUsd: number;
   readonly reservedCashUsd: number;
   readonly solPriceUsd: number;
+  readonly solPriceUpdatedAtMs: number | null;
   readonly positions: readonly BackendPosition[];
   readonly inFlightOrdersCount: number;
   readonly stateVersion: number;
@@ -270,6 +271,7 @@ export class CommandGateway {
   private cashUsd: number = Number(process.env.SIMULATED_CAPITAL_USD) > 0 ? Number(process.env.SIMULATED_CAPITAL_USD) : 10_000.0;
   private initialPaperCapitalUsd: number = this.cashUsd;
   private solPriceUsd: number = 150.0;
+  private solPriceUpdatedAtMs: number | null = null;
   private stateVersion: number = 1;
   private paperRealizedPnlUsd = 0;
   private paperClosedFillCount = 0;
@@ -305,9 +307,12 @@ export class CommandGateway {
     this.stateVersion++;
   }
 
-  public updateSolPriceUsd(price: number): void {
-    if (Number.isFinite(price) && price > 0) {
+  public updateSolPriceUsd(price: number, observedAtMs: number): void {
+    const now = Date.now();
+    if (Number.isFinite(price) && price > 0 && Number.isSafeInteger(observedAtMs) &&
+        observedAtMs <= now && now - observedAtMs <= 5_000) {
       this.solPriceUsd = price;
+      this.solPriceUpdatedAtMs = observedAtMs;
     }
   }
 
@@ -335,7 +340,7 @@ export class CommandGateway {
         !Number.isSafeInteger(evidence.solObservedAt) || evidence.solObservedAt > now || now - evidence.solObservedAt > 5_000) {
       throw new Error(`${requireEntryAuthorization ? 'ENTRY_BLOCKED' : 'EXIT_BLOCKED'}: Fresh, identity-matched market price, liquidity, and SOL/USD observations are required${requireEntryAuthorization ? ' with basket authorization' : ''}.`);
     }
-    if (updateSolPrice) this.updateSolPriceUsd(evidence.solPriceUsd);
+    if (updateSolPrice) this.updateSolPriceUsd(evidence.solPriceUsd, evidence.solObservedAt);
     return evidence;
   }
 
@@ -385,6 +390,7 @@ export class CommandGateway {
       initialPaperCapitalUsd: this.initialPaperCapitalUsd,
       reservedCashUsd: [...this.pendingBuys.values()].reduce((sum, value) => sum + value, 0),
       solPriceUsd: this.solPriceUsd,
+      solPriceUpdatedAtMs: this.solPriceUpdatedAtMs,
       positions: Array.from(this.positions.values(), position => ({...position})),
       inFlightOrdersCount: this.inFlight.size,
       stateVersion: this.stateVersion,
@@ -721,7 +727,7 @@ export class CommandGateway {
         throw new Error('EXIT_BLOCKED: Fresh verified evidence changed the autonomous exit decision.');
       }
       if (refreshedDecision.emergency) effectiveEmergency = true;
-      this.updateSolPriceUsd(exitEvidence!.solPriceUsd);
+      this.updateSolPriceUsd(exitEvidence!.solPriceUsd, exitEvidence!.solObservedAt);
     }
     let effectiveUsdAmount = payload.usdAmount;
     if (isBuy) {

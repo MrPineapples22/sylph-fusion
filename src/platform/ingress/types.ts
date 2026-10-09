@@ -35,8 +35,11 @@ export type ObservationTransport =
 export type RawPayloadEncoding =
   | 'UNSPECIFIED'
   | 'JSON_FRAME_BYTES'
+  | 'JSON_SERIALIZED_BYTES'
   | 'JSON_CANONICAL'
+  | 'DECODED_PROTOBUF_JSON_SERIALIZED_BYTES'
   | 'DECODED_PROTOBUF_JSON_CANONICAL'
+  | 'GRPC_PROTOBUF_MESSAGE_PAYLOAD_BYTES'
   | 'PROTOBUF_WIRE_BYTES';
 
 export interface IngressVersionRegistry {

@@ -146,7 +146,7 @@ export class YellowstoneTruthBridge extends EventEmitter {
     // Hash the decoded fields used below. Extra caller-supplied bytes cannot prove
     // that a transport captured or decoded this event, so they are never used.
     const rawPayload = JSON.stringify({ signature: update.signature, slot, logs: update.logs });
-    const wireEncoding = 'DECODED_PROTOBUF_JSON_CANONICAL';
+    const wireEncoding = 'DECODED_PROTOBUF_JSON_SERIALIZED_BYTES';
     const wireWitness = createWireWitness(
       'SOLANA_GEYSER',
       'TRANSACTION_STREAM',
