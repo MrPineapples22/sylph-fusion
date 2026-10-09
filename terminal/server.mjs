@@ -664,6 +664,12 @@ function getDiscovery() {
   return discoveryCache;
 }
 async function inspectTokenVetoProof(mint) {
+  if (marketConfigured && typeof hub.ensureToken === 'function') {
+    try {
+      await hub.ensureToken(mint);
+      discoveryCache = undefined;
+    } catch {}
+  }
   let risk = discoveryRisks.get(mint);
   if (!risk && marketConfigured) {
     try {
@@ -1075,6 +1081,13 @@ async function handleRequest(req,res){
   }
 
   if (req.method === 'GET' && reqUrl.pathname === '/api/operator') {
+    const mint = reqUrl.searchParams.get('mint');
+    if (mint && validMint(mint) && marketConfigured && typeof hub.ensureToken === 'function') {
+      try {
+        await hub.ensureToken(mint);
+        discoveryCache = undefined;
+      } catch {}
+    }
     const projection = operatorReadModel.project({discovery: getDiscovery(), gateway: globalCommandGateway.getSnapshot(),
       health: globalProviderHealthTracker.getReport(), lifecycle: globalLifecycle.getState(), runtimeContext});
     res.setHeader('Content-Type','application/json'); res.end(JSON.stringify(projection)); return;
@@ -1202,6 +1215,13 @@ async function handleRequest(req,res){
   }
 
   if (req.method === 'GET' && reqUrl.pathname === '/api/discovery') {
+    const mint = reqUrl.searchParams.get('mint');
+    if (mint && validMint(mint) && marketConfigured && typeof hub.ensureToken === 'function') {
+      try {
+        await hub.ensureToken(mint);
+        discoveryCache = undefined;
+      } catch {}
+    }
     res.setHeader('Content-Type','application/json'); res.end(JSON.stringify(getDiscovery())); return;
   }
   if (req.method === 'GET' && reqUrl.pathname === '/api/health/loop') {
@@ -1217,6 +1237,9 @@ async function handleRequest(req,res){
     }
     const mint = reqUrl.searchParams.get('mint');
     if (!validMint(mint)) {res.writeHead(400);res.end('Invalid mint');return;}
+    if (typeof hub.ensureToken === 'function') {
+      try { await hub.ensureToken(mint); } catch {}
+    }
     const risk = await hub.risk(mint);
     discoveryRisks.set(mint, risk);
     while(discoveryRisks.size > 100) discoveryRisks.delete(discoveryRisks.keys().next().value);

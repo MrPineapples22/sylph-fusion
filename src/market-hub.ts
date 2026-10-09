@@ -270,13 +270,79 @@ export class MarketHub {
       throw e;
     }
   }
+  private investigatedMints = new Set<string>();
+
+  async ensureToken(mint: string): Promise<TokenRow | null> {
+    if (!validMint(mint)) return null;
+    this.investigatedMints.add(mint);
+    while (this.investigatedMints.size > 25) {
+      this.investigatedMints.delete(this.investigatedMints.keys().next().value!);
+    }
+    const now = Date.now();
+    const existing = this.tokens.find(t => t.mint === mint);
+    if (existing && Number.isFinite(existing.at) && now - existing.at < 10_000) {
+      return existing;
+    }
+    if (!this.dexUrl) return existing || null;
+
+    try {
+      const start = Date.now();
+      let pairs: any = await json(this.dexUrl + '/tokens/v1/solana/' + mint);
+      if (!Array.isArray(pairs) || pairs.length === 0) {
+        const search = await json(this.dexUrl + '/latest/dex/tokens/' + mint);
+        if (Array.isArray(search?.pairs)) {
+          pairs = search.pairs;
+        }
+      }
+      if (!Array.isArray(pairs) || pairs.length === 0) return existing || null;
+
+      const normalized = normalizePairs(pairs);
+      const token = normalized.find(t => t.mint === mint) || normalized[0];
+      if (!token) return existing || null;
+
+      const obs = [];
+      if (token.price !== null) {
+        obs.push({
+          provider: 'DEXSCREENER_API' as const,
+          value: token.price,
+          timestampMs: token.at,
+          latencyMs: Date.now() - start,
+          confidence: 0.92,
+        });
+      }
+      const validated = this.crossValidator.evaluateToken({
+        mint: token.mint,
+        symbol: token.symbol,
+        priceObservations: obs,
+        liquidityObservations: token.liquidity !== null ? [{ provider: 'DEXSCREENER_API' as const, value: token.liquidity, timestampMs: token.at, latencyMs: 50, confidence: 0.85 }] : [],
+        marketCapObservations: token.cap !== null ? [{ provider: 'DEXSCREENER_API' as const, value: token.cap, timestampMs: token.at, latencyMs: 50, confidence: 0.85 }] : [],
+      });
+      const enriched: TokenRow = {
+        ...token,
+        crossValidationStatus: validated.status,
+        confidenceScore: validated.confidence,
+      };
+
+      const idx = this.tokens.findIndex(t => t.mint === mint);
+      if (idx >= 0) {
+        this.tokens[idx] = enriched;
+      } else {
+        this.tokens.unshift(enriched);
+        if (this.tokens.length > 80) this.tokens.pop();
+      }
+      return enriched;
+    } catch {
+      return existing || null;
+    }
+  }
+
   private async dex() {
     if (!this.dexUrl) throw new Error('DexScreener adapter is not explicitly configured');
     const start = Date.now();
     try {
       const [profiles, pairs] = await Promise.all([json(this.dexUrl + '/token-profiles/latest/v1'), json(this.dexUrl + '/tokens/v1/solana/So11111111111111111111111111111111111111112')]);
       const posMints = this.positionMintsProvider ? this.positionMintsProvider().filter(validMint) : [];
-      const mints = [...new Set([...posMints, ...this.watches, ...this.kol.map(x => x.mint), ...(Array.isArray(profiles) ? profiles.filter(p => p.chainId === 'solana').map(p => p.tokenAddress).filter(validMint) : [])])].slice(0,30);
+      const mints = [...new Set([...posMints, ...this.investigatedMints, ...this.watches, ...this.kol.map(x => x.mint), ...(Array.isArray(profiles) ? profiles.filter(p => p.chainId === 'solana').map(p => p.tokenAddress).filter(validMint) : [])])].slice(0,30);
       const expanded = mints.length ? await json(this.dexUrl + '/tokens/v1/solana/' + mints.join(',')) : [];
       const normalized = normalizePairs([...(Array.isArray(expanded) ? expanded : []), ...(Array.isArray(pairs) ? pairs : [])]).slice(0,60);
       this.tokens = normalized.map(t => {

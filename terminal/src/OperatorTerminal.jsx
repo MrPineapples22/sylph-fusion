@@ -67,8 +67,10 @@ export default function OperatorTerminal(){
  },[]);
  useEffect(()=>{if(navigationFocus.current){heading.current?.focus();navigationFocus.current=false;}},[ui.workspace]);
  const [scanning,setScanning]=useState(false),[changes,setChanges]=useState([]),[tokenHistory,setTokenHistory]=useState(new Map());
+ const activeInvestigation=useRef(ui.investigation);
+ activeInvestigation.current=ui.investigation;
  useEffect(()=>{
-  const stop=startOperatorConnection({request:signal=>readJson('/api/operator',signal,3500),onState:state=>{latestConnection.current=state;setConnection(state);dispatch({type:state==='CONNECTED'?'CONNECTED':'REVALIDATE'});},onSnapshot:data=>{
+  const stop=startOperatorConnection({request:signal=>readJson(activeInvestigation.current ? ('/api/operator?mint=' + encodeURIComponent(activeInvestigation.current)) : '/api/operator',signal,3500),onState:state=>{latestConnection.current=state;setConnection(state);dispatch({type:state==='CONNECTED'?'CONNECTED':'REVALIDATE'});},onSnapshot:data=>{
    order.current=stableTokenOrder(order.current,data.rows||data.tokens||[]);
    const old=latestProjection.current;
    if(old){const next=[];for(const key of ['open','increase','reduce','close'])if(old.capabilities[key]?.state!==data.capabilities[key]?.state)next.push({id:`${data.authorityGeneration}-${data.projectionVersion}-${key}`,at:data.generatedAt,text:`${key.toUpperCase()} ${old.capabilities[key]?.state} → ${data.capabilities[key]?.state}`});if(old.marketData.state!==data.marketData.state)next.push({id:`${data.authorityGeneration}-${data.projectionVersion}-market`,at:data.generatedAt,text:`Market ${old.marketData.state} → ${data.marketData.state}`});if(next.length)setChanges(history=>[...next,...history].slice(0,80));}
@@ -100,6 +102,18 @@ export default function OperatorTerminal(){
  const tokens=projection?.rows||projection?.tokens||[];
  const byMint=useMemo(()=>new Map(tokens.map(t=>[t.mint,t])),[tokens]);
  const rows=useMemo(()=>order.current.map(m=>byMint.get(m)).filter(Boolean).filter(t=>(!query||`${t.symbol} ${t.mint}`.toLowerCase().includes(query.toLowerCase()))&&(filter==='All evidence'||filter==='Watch'&&t.tier==='DEVELOPING'||filter==='Vetoed'&&t.tier==='VETOED'||filter==='Prime'&&t.tier==='PRIME')),[byMint,query,filter]);
+ useEffect(()=>{
+  if(!ui.investigation||byMint.has(ui.investigation))return;
+  readJson('/api/operator?mint='+encodeURIComponent(ui.investigation))
+   .then(data=>{
+    if(data){
+     order.current=stableTokenOrder(order.current,data.rows||data.tokens||[]);
+     latestProjection.current=data;
+     setProjection(data);
+    }
+   })
+   .catch(()=>{});
+ },[ui.investigation,byMint]);
  const chosen=byMint.get(ui.investigation);
  const chosenHistory=tokenHistory.get(ui.investigation)||[];
  function investigate(token,event){origin.current=event?.currentTarget;if(ui.workspace!=='Token Intelligence')returnContext.current={workspace:ui.workspace,scroll:window.scrollY};selected.current=token.mint;scanId.current++;scanController.current?.abort();setScanning(false);setNotice('');dispatch({type:'INVESTIGATE',mint:token.mint});navigate('Token Intelligence');}
@@ -182,7 +196,7 @@ export default function OperatorTerminal(){
  useEffect(() => {
   if (!autoTradePrime || !current || projection?.environment?.mode !== 'SIMULATION' || projection?.capabilities?.open?.state !== 'READY') return;
   const positions = projection?.positions || [];
-  if (positions.length >= 3) return;
+  if (positions.length >= 2) return;
   if (projection?.feedStale) return;
 
   // 1. Gather all unowned, unvetoed pump breakout candidates (excluding base SOL & stablecoins)
@@ -223,8 +237,8 @@ export default function OperatorTerminal(){
      activePositionsCount: positions.length,
      maxPositions: 2,
    });
-   const rawTarget = sizing.optimalUsd > 0 ? sizing.optimalUsd : 15.0;
-   const tradeUsd = Math.round(Math.min(freeCash, Math.max(5.0, rawTarget)) * 100) / 100;
+   if (!sizing || sizing.optimalUsd <= 0) continue;
+   const tradeUsd = Math.round(Math.min(freeCash, sizing.optimalUsd) * 100) / 100;
    if (tradeUsd < 5.0) continue;
    setNotice(`⚡ Auto-trading breakout candidate ${label} ($${tradeUsd.toFixed(2)} dynamic Kelly size: ${sizing.rationale})…`);
 
