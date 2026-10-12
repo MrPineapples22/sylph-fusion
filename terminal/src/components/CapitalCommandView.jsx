@@ -570,6 +570,12 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
                     <span>Censoring: <b style={{color: (position.isHistoryCensored ?? position.censoringAnalysis?.isCensored) ? '#FF3B69' : '#14F195'}}>{(position.isHistoryCensored ?? position.censoringAnalysis?.isCensored) ? (position.censoringAnalysis?.censoringType || 'CENSORED') : 'COMPLETE'}</b></span>
                     <span>Cons Multiple: <b style={{color: '#14F195'}}>{Number.isFinite(position.conservativeReturnMultiple ?? position.censoringAnalysis?.conservativeReturnMultiple) ? `${(position.conservativeReturnMultiple ?? position.censoringAnalysis?.conservativeReturnMultiple).toFixed(2)}x` : '1.00x'}</b></span>
                   </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'2px',padding:'3px 6px',background:'rgba(245,158,11,0.04)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>Peak Multiple: <b style={{color: '#14F195'}}>{Number.isFinite(position.observedPeakMultiple ?? position.executablePeakAnalysis?.observedPeakMultiple) ? `${(position.observedPeakMultiple ?? position.executablePeakAnalysis?.observedPeakMultiple).toFixed(2)}x` : '1.00x'}</b></span>
+                    <span>Drop 50% Time: <b style={{color: (position.postPeakDrop50Seconds ?? position.executablePeakAnalysis?.postPeakDrop50Seconds ?? 999) < 15 ? '#FF3B69' : '#38BDF8'}}>{Number.isFinite(position.postPeakDrop50Seconds ?? position.executablePeakAnalysis?.postPeakDrop50Seconds) ? `${(position.postPeakDrop50Seconds ?? position.executablePeakAnalysis?.postPeakDrop50Seconds).toFixed(0)}s` : 'NONE'}</b></span>
+                    <span>Studies Reg: <b style={{color: '#14F195'}}>{`${position.registeredStudiesCount || 50}/50`}</b></span>
+                    <span>Exec Quote: <b style={{color: '#F59E0B'}}>{'UNAVAIL'}</b></span>
+                  </div>
                 </div>
               );
             })()}

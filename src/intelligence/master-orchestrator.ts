@@ -132,6 +132,9 @@ import { InformationFrontierEngine, type InformationFrontierState } from './exec
 import { SensorValueEngine, type SensorEscalationDecision } from './executable-alpha/information/sensor-value.js';
 import { ObservabilityGapEngine, type ObservabilityGapReport } from './executable-alpha/observation/observability-gap.js';
 import { CensoringModelEngine, type CensoringAnalysis } from './executable-alpha/observation/censoring-model.js';
+import { EconomicFreshnessEngine, type ExecutablePeakAnalysis, type PriceTick } from './executable-alpha/observation/economic-freshness.js';
+import { ResearchMatrixBridge, ALL_50_EXECUTABLE_ALPHA_STUDIES } from './executable-alpha/certification/research-matrix-bridge.js';
+import { AutonomousRDGovernorX } from './research-governor/rd-governor.js';
 import {
   AlphaHalfLifeEngine,
   type AlphaHalfLifeEstimate,
@@ -526,6 +529,12 @@ export interface AetherFluxViewModel {
   readonly maxObservationGapSeconds?: number;
   readonly isHistoryCensored?: boolean;
   readonly conservativeReturnMultiple?: number;
+  readonly executablePeakAnalysis?: ExecutablePeakAnalysis;
+  readonly observedPeakMultiple?: number | null;
+  readonly timeToPeakSeconds?: number | null;
+  readonly postPeakDrop50Seconds?: number | null;
+  readonly isOutlierPeak?: boolean;
+  readonly registeredStudiesCount?: number;
 }
 
 export interface MasterPipelineResult {
@@ -595,10 +604,14 @@ export interface MasterPipelineResult {
   readonly sensorDecision?: SensorEscalationDecision;
   readonly observabilityGap?: ObservabilityGapReport;
   readonly censoringAnalysis?: CensoringAnalysis;
+  readonly executablePeakAnalysis?: ExecutablePeakAnalysis;
+  readonly registeredStudiesCount?: number;
   readonly whyExecutionBlocked?: string;
 }
 
 export type {
+  ExecutablePeakAnalysis,
+  PriceTick,
   ObservabilityGapReport,
   CensoringAnalysis,
   RunnerSearchCostReport,
@@ -805,6 +818,8 @@ export class MasterIntelligenceEngine {
   public readonly nexus: NexusCanonicalState;
   public readonly laneScorecards: ExecutionLaneScorecardEngine;
   public readonly submissionRouter: MultiLaneSubmissionRouter;
+  public readonly rdGovernor: AutonomousRDGovernorX;
+  public readonly registeredStudiesCount: number;
 
   constructor() {
     this.kernel = new IntegrationKernel();
@@ -979,6 +994,8 @@ export class MasterIntelligenceEngine {
     this.nexus = new NexusCanonicalState();
     this.laneScorecards = new ExecutionLaneScorecardEngine();
     this.submissionRouter = new MultiLaneSubmissionRouter(this.laneScorecards);
+    this.rdGovernor = new AutonomousRDGovernorX();
+    this.registeredStudiesCount = ResearchMatrixBridge.registerAllStudies(this.rdGovernor);
 
     this.setupConnectionAuditor();
     this.registerComponents();
@@ -2559,6 +2576,27 @@ export class MasterIntelligenceEngine {
     );
 
     // ==========================================
+    // ECONOMIC FRESHNESS & TRAJECTORY PEAK ANALYSIS (Section VIII & Study EXECUTABLE-PEAK-X)
+    // ==========================================
+    const priceTicks: readonly PriceTick[] = (context as any).priceTicks ?? [
+      {
+        priceSol: initialPriceSol,
+        priceUsd: initialPriceSol * 150.0,
+        timestampMs: event.receivedTimestampMs - Math.max(10_000, ((context.tokenAgeSec ?? 30) * 1000)),
+        slot: BigInt(Math.max(1, event.slot - 60)),
+        quoteReservesLamports: BigInt(Math.round(context.liquiditySol * 1e9)),
+      },
+      {
+        priceSol: lastObservedPriceSol,
+        priceUsd: lastObservedPriceSol * 150.0,
+        timestampMs: event.receivedTimestampMs,
+        slot: BigInt(event.slot),
+        quoteReservesLamports: BigInt(Math.round(context.liquiditySol * 1e9)),
+      },
+    ];
+    const executablePeakAnalysis: ExecutablePeakAnalysis = (context as any).executablePeakAnalysis ?? EconomicFreshnessEngine.analyzeTrajectory(initialPriceSol, priceTicks);
+
+    // ==========================================
     // ALPHA HALF-LIFE, QUOTE DECAY & EXECUTION SHORTFALL (Sections XV, XVI & XX)
     // ==========================================
     const alphaHalfLife = AlphaHalfLifeEngine.estimateHalfLife({
@@ -2865,6 +2903,12 @@ export class MasterIntelligenceEngine {
     ) {
       decision = 'CHALLENGED_ABSTAIN';
       whyExecutionBlocked = `BLOCKED — INFORMATIVE CENSORING DETECTED (${censoringAnalysis.censoringType}, loss: ${censoringAnalysis.attributedLossPct.toFixed(1)}%)`;
+    } else if (
+      ((context as any).enforceEconomicFreshnessGating ?? false) &&
+      (executablePeakAnalysis.isOutlierPeak || (executablePeakAnalysis.status === 'OBSERVED_ONLY' && executablePeakAnalysis.postPeakDrop50Seconds !== undefined && executablePeakAnalysis.postPeakDrop50Seconds < 15.0))
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      whyExecutionBlocked = `BLOCKED — ECONOMIC FRESHNESS ANOMALY (${executablePeakAnalysis.isOutlierPeak ? 'OUTLIER_PEAK_EXCEEDED' : `FLASH_CRASH_POST_PEAK_${executablePeakAnalysis.postPeakDrop50Seconds}S`})`;
     } else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
       decision = 'AUTHORIZED_SELL';
       const exitResult = this.executeExit({
@@ -3995,6 +4039,12 @@ export class MasterIntelligenceEngine {
       maxObservationGapSeconds: observabilityGap.maxGapSeconds,
       isHistoryCensored: censoringAnalysis.isCensored,
       conservativeReturnMultiple: censoringAnalysis.conservativeReturnMultiple,
+      executablePeakAnalysis,
+      observedPeakMultiple: executablePeakAnalysis.status === 'OBSERVED_ONLY' ? executablePeakAnalysis.observedPeakMultiple : null,
+      timeToPeakSeconds: executablePeakAnalysis.timeToPeakSeconds,
+      postPeakDrop50Seconds: executablePeakAnalysis.postPeakDrop50Seconds ?? null,
+      isOutlierPeak: executablePeakAnalysis.isOutlierPeak,
+      registeredStudiesCount: this.registeredStudiesCount,
       links: {
         solscan: `https://solscan.io/token/${event.mint}`,
         pump: `https://pump.fun/${event.mint}`,
@@ -4265,6 +4315,8 @@ export class MasterIntelligenceEngine {
       sensorDecision,
       observabilityGap,
       censoringAnalysis,
+      executablePeakAnalysis,
+      registeredStudiesCount: this.registeredStudiesCount,
       whyExecutionBlocked: decision !== 'AUTHORIZED_BUY' ? whyExecutionBlocked : undefined,
     };
   }
@@ -5078,6 +5130,26 @@ export class MasterIntelligenceEngine {
       params.currentTimeMs,
       params.poolActive
     );
+  }
+
+  /**
+   * Section VIII & Study EXECUTABLE-PEAK-X: Economic Freshness Engine
+   * Analyzes observed price trajectory ticks and verifies peak quote availability.
+   */
+  public analyzeTrajectoryFreshness(initialPriceSol: number, ticks: readonly PriceTick[]): ExecutablePeakAnalysis {
+    return EconomicFreshnessEngine.analyzeTrajectory(initialPriceSol, ticks);
+  }
+
+  /**
+   * Sections XXIX, LIV, and LXII: Research Matrix Bridge
+   * Exposes autonomous R&D governor with all 50 registered studies.
+   */
+  public getResearchGovernor(): AutonomousRDGovernorX {
+    return this.rdGovernor;
+  }
+
+  public getRegisteredStudiesCount(): number {
+    return this.registeredStudiesCount;
   }
 
   /**
