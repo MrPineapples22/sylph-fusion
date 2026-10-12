@@ -90,3 +90,42 @@ fn main() {
         Err(e) => { eprintln!("V15 BLOCKED: {e}"); std::process::exit(2); }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use solana_system_interface::instruction::transfer;
+
+    #[test]
+    fn deterministic_litesvm_transfer_reconciles_fee_and_balances() {
+        let payer = Keypair::new();
+        let receiver = Keypair::new().pubkey();
+        let mut svm = LiteSVM::new();
+        let starting_balance = 1_000_000_000u64;
+        let amount = 123_456u64;
+        svm.airdrop(&payer.pubkey(), starting_balance).unwrap();
+        let ix = transfer(&payer.pubkey(), &receiver, amount);
+        let tx = Transaction::new(
+            &[&payer],
+            Message::new(&[ix], Some(&payer.pubkey())),
+            svm.latest_blockhash(),
+        );
+        let result = svm.send_transaction(tx).expect("system transfer must succeed");
+        let payer_after = svm.get_balance(&payer.pubkey()).unwrap();
+        let receiver_after = svm.get_balance(&receiver).unwrap();
+        assert_eq!(receiver_after, amount);
+        assert_eq!(payer_after + amount + result.fee, starting_balance);
+        assert!(result.compute_units_consumed > 0);
+    }
+
+    #[test]
+    fn sha256_rejects_different_binary_bytes() {
+        assert_ne!(hash(b"program-a"), hash(b"program-b"));
+        assert_eq!(hash(b""), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    }
+
+    #[test]
+    fn invalid_base64_is_rejected() {
+        assert!(decode("not base64!").is_err());
+    }
+}
