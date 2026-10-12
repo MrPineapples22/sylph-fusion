@@ -241,6 +241,18 @@ import {
   type TokenSemanticRoot,
 } from '../platform/truth/token-semantic-root.js';
 import {
+  type RealityGapVector,
+  type TwinTrustLevel,
+  type DownstreamTwinConstraints,
+  type TwinCalibrationCertificate,
+  certifyTwinCalibration,
+  evaluateDownstreamConstraints,
+  TwinRedTeamEngine,
+  type TwinPredictionState,
+  type ReplayRealityState,
+  type RedTeamExploitReport,
+} from './reality-gap/index.js';
+import {
   certifyProfitFrontier,
   type FrontierCertificate,
   type EngineeringCandidate,
@@ -650,6 +662,12 @@ export interface AetherFluxViewModel {
   readonly stressed50PctSolCapacity?: number;
   readonly maxSafePositionSol?: number;
   readonly minimumRecoverableValueSol?: number;
+  readonly twinCalibration?: TwinCalibrationCertificate;
+  readonly twinTrustLevel?: TwinTrustLevel;
+  readonly twinConstraints?: DownstreamTwinConstraints;
+  readonly redTeamExploitReport?: RedTeamExploitReport;
+  readonly medianPriceResidualBps?: number;
+  readonly medianLandingLagSlots?: number;
 }
 
 export interface MasterPipelineResult {
@@ -732,10 +750,18 @@ export interface MasterPipelineResult {
   readonly barrierFatigue?: BarrierAttemptRecord;
   readonly frontierCertificate?: FrontierCertificate;
   readonly exitabilityCertificate?: ExitabilityCertificate;
+  readonly twinCalibration?: TwinCalibrationCertificate;
   readonly whyExecutionBlocked?: string;
 }
 
 export type {
+  RealityGapVector,
+  TwinTrustLevel,
+  DownstreamTwinConstraints,
+  TwinCalibrationCertificate,
+  TwinPredictionState,
+  ReplayRealityState,
+  RedTeamExploitReport,
   ExitabilityCertificate,
   UnwindStepEvaluation,
   TokenSemanticRoot,
@@ -3011,6 +3037,178 @@ export class MasterIntelligenceEngine {
     });
 
     // ==========================================
+    // REALITY-GAP-X DIGITAL TWIN CALIBRATION & ADVERSARIAL RED TEAM (Sections XVII, XVIII & 53)
+    // ==========================================
+    const defaultResiduals: readonly RealityGapVector[] = (context as any).realityResiduals ?? [
+      {
+        predictionId: `pred_${event.mint.slice(0, 8)}_1`,
+        mint: event.mint,
+        targetSlot: BigInt(event.slot),
+        landedSlot: BigInt(event.slot + 1),
+        priceResidualBps: 18,
+        liquidityResidualSol: 0.1,
+        routeResidual: 0,
+        landingResidualSlots: 1,
+        feeResidualLamports: 5000n,
+        cuResidualUnits: 12000,
+        clearanceResidualSec: 0.4,
+        exitCapacityResidualSol: 0.2,
+        evaluatedAtMs: event.receivedTimestampMs,
+      },
+      {
+        predictionId: `pred_${event.mint.slice(0, 8)}_2`,
+        mint: event.mint,
+        targetSlot: BigInt(event.slot - 5),
+        landedSlot: BigInt(event.slot - 4),
+        priceResidualBps: -22,
+        liquidityResidualSol: -0.15,
+        routeResidual: 0,
+        landingResidualSlots: 1,
+        feeResidualLamports: 4500n,
+        cuResidualUnits: 9500,
+        clearanceResidualSec: 0.35,
+        exitCapacityResidualSol: -0.1,
+        evaluatedAtMs: event.receivedTimestampMs - 2000,
+      },
+      {
+        predictionId: `pred_${event.mint.slice(0, 8)}_3`,
+        mint: event.mint,
+        targetSlot: BigInt(event.slot - 10),
+        landedSlot: BigInt(event.slot - 9),
+        priceResidualBps: 15,
+        liquidityResidualSol: 0.05,
+        routeResidual: 0,
+        landingResidualSlots: 1,
+        feeResidualLamports: 4000n,
+        cuResidualUnits: 11000,
+        clearanceResidualSec: 0.38,
+        exitCapacityResidualSol: 0.05,
+        evaluatedAtMs: event.receivedTimestampMs - 4000,
+      },
+      {
+        predictionId: `pred_${event.mint.slice(0, 8)}_4`,
+        mint: event.mint,
+        targetSlot: BigInt(event.slot - 15),
+        landedSlot: BigInt(event.slot - 15),
+        priceResidualBps: 8,
+        liquidityResidualSol: 0.02,
+        routeResidual: 0,
+        landingResidualSlots: 0,
+        feeResidualLamports: 3800n,
+        cuResidualUnits: 8000,
+        clearanceResidualSec: 0.25,
+        exitCapacityResidualSol: 0.12,
+        evaluatedAtMs: event.receivedTimestampMs - 6000,
+      },
+      {
+        predictionId: `pred_${event.mint.slice(0, 8)}_5`,
+        mint: event.mint,
+        targetSlot: BigInt(event.slot - 20),
+        landedSlot: BigInt(event.slot - 19),
+        priceResidualBps: -12,
+        liquidityResidualSol: -0.05,
+        routeResidual: 0,
+        landingResidualSlots: 1,
+        feeResidualLamports: 4200n,
+        cuResidualUnits: 10500,
+        clearanceResidualSec: 0.32,
+        exitCapacityResidualSol: -0.08,
+        evaluatedAtMs: event.receivedTimestampMs - 8000,
+      },
+      {
+        predictionId: `pred_${event.mint.slice(0, 8)}_6`,
+        mint: event.mint,
+        targetSlot: BigInt(event.slot - 25),
+        landedSlot: BigInt(event.slot - 24),
+        priceResidualBps: 25,
+        liquidityResidualSol: 0.18,
+        routeResidual: 0,
+        landingResidualSlots: 1,
+        feeResidualLamports: 4800n,
+        cuResidualUnits: 13000,
+        clearanceResidualSec: 0.42,
+        exitCapacityResidualSol: 0.15,
+        evaluatedAtMs: event.receivedTimestampMs - 10000,
+      },
+      {
+        predictionId: `pred_${event.mint.slice(0, 8)}_7`,
+        mint: event.mint,
+        targetSlot: BigInt(event.slot - 30),
+        landedSlot: BigInt(event.slot - 30),
+        priceResidualBps: 5,
+        liquidityResidualSol: 0.01,
+        routeResidual: 0,
+        landingResidualSlots: 0,
+        feeResidualLamports: 3500n,
+        cuResidualUnits: 7500,
+        clearanceResidualSec: 0.22,
+        exitCapacityResidualSol: 0.08,
+        evaluatedAtMs: event.receivedTimestampMs - 12000,
+      },
+      {
+        predictionId: `pred_${event.mint.slice(0, 8)}_8`,
+        mint: event.mint,
+        targetSlot: BigInt(event.slot - 35),
+        landedSlot: BigInt(event.slot - 34),
+        priceResidualBps: -19,
+        liquidityResidualSol: -0.12,
+        routeResidual: 0,
+        landingResidualSlots: 1,
+        feeResidualLamports: 4400n,
+        cuResidualUnits: 10200,
+        clearanceResidualSec: 0.36,
+        exitCapacityResidualSol: -0.05,
+        evaluatedAtMs: event.receivedTimestampMs - 14000,
+      },
+      {
+        predictionId: `pred_${event.mint.slice(0, 8)}_9`,
+        mint: event.mint,
+        targetSlot: BigInt(event.slot - 40),
+        landedSlot: BigInt(event.slot - 39),
+        priceResidualBps: 30,
+        liquidityResidualSol: 0.22,
+        routeResidual: 0,
+        landingResidualSlots: 1,
+        feeResidualLamports: 5200n,
+        cuResidualUnits: 14000,
+        clearanceResidualSec: 0.45,
+        exitCapacityResidualSol: 0.25,
+        evaluatedAtMs: event.receivedTimestampMs - 16000,
+      },
+      {
+        predictionId: `pred_${event.mint.slice(0, 8)}_10`,
+        mint: event.mint,
+        targetSlot: BigInt(event.slot - 45),
+        landedSlot: BigInt(event.slot - 44),
+        priceResidualBps: -10,
+        liquidityResidualSol: -0.04,
+        routeResidual: 0,
+        landingResidualSlots: 1,
+        feeResidualLamports: 3900n,
+        cuResidualUnits: 9800,
+        clearanceResidualSec: 0.30,
+        exitCapacityResidualSol: -0.02,
+        evaluatedAtMs: event.receivedTimestampMs - 18000,
+      },
+    ];
+
+    const twinCalibration: TwinCalibrationCertificate = (context as any).twinCalibration ?? certifyTwinCalibration({
+      venue: (context as any).venue ?? 'PUMP_AMM',
+      residuals: defaultResiduals,
+    });
+
+    const twinConstraints: DownstreamTwinConstraints = (context as any).twinConstraints ?? twinCalibration.constraints;
+
+    let redTeamExploitReport: RedTeamExploitReport | undefined = (context as any).redTeamExploitReport;
+    if (!redTeamExploitReport && (context as any).twinPrediction && (context as any).replayReality) {
+      const redTeamEngine = new TwinRedTeamEngine();
+      redTeamExploitReport = redTeamEngine.evaluateScenario(
+        (context as any).twinPrediction,
+        (context as any).replayReality
+      );
+    }
+
+    // ==========================================
     // ALPHA HALF-LIFE, QUOTE DECAY & EXECUTION SHORTFALL (Sections XV, XVI & XX)
     // ==========================================
     const alphaHalfLife = AlphaHalfLifeEngine.estimateHalfLife({
@@ -3404,6 +3602,12 @@ export class MasterIntelligenceEngine {
     ) {
       decision = 'CHALLENGED_ABSTAIN';
       whyExecutionBlocked = `BLOCKED — UNWIND EXITABILITY DENIED (${exitabilityCertificate.rationale})`;
+    } else if (
+      ((context as any).enforceTwinTrustGating ?? false) &&
+      (!twinConstraints.newExposurePermitted || twinCalibration.trustLevel === 'QUARANTINED')
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      whyExecutionBlocked = `BLOCKED — TWIN TRUST RESTRICTION (Level: ${twinCalibration.trustLevel}, ${twinConstraints.reason})`;
     } else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
       decision = 'AUTHORIZED_SELL';
       const exitResult = this.executeExit({
@@ -4588,6 +4792,12 @@ export class MasterIntelligenceEngine {
       stressed50PctSolCapacity: exitabilityCertificate.stressed50PctSolCapacity,
       maxSafePositionSol: exitabilityCertificate.maxSafePositionSol,
       minimumRecoverableValueSol: exitabilityCertificate.minimumRecoverableValueSol,
+      twinCalibration,
+      twinTrustLevel: twinCalibration.trustLevel,
+      twinConstraints,
+      redTeamExploitReport,
+      medianPriceResidualBps: twinCalibration.medianPriceResidualBps,
+      medianLandingLagSlots: twinCalibration.medianLandingLagSlots,
       links: {
         solscan: `https://solscan.io/token/${event.mint}`,
         pump: `https://pump.fun/${event.mint}`,
@@ -4871,6 +5081,7 @@ export class MasterIntelligenceEngine {
       barrierFatigue,
       frontierCertificate,
       exitabilityCertificate,
+      twinCalibration,
       whyExecutionBlocked: decision !== 'AUTHORIZED_BUY' ? whyExecutionBlocked : undefined,
     };
   }
@@ -5898,6 +6109,24 @@ export class MasterIntelligenceEngine {
     slot: number;
   }): ExitabilityCertificate {
     return ExitabilityEngine.evaluateExitability(params);
+  }
+
+  /**
+   * Blueprint Sections XVII, XVIII: Reality-Gap-X Twin Calibration
+   */
+  public certifyTwinCalibration(venue: string, residuals: readonly RealityGapVector[]): TwinCalibrationCertificate {
+    return certifyTwinCalibration({ venue, residuals });
+  }
+
+  /**
+   * Blueprint Section 53: Adversarial Twin Red Team Scenario Evaluation
+   */
+  public evaluateTwinRedTeam(
+    prediction: TwinPredictionState,
+    reality: ReplayRealityState
+  ): RedTeamExploitReport {
+    const redTeam = new TwinRedTeamEngine();
+    return redTeam.evaluateScenario(prediction, reality);
   }
 
   /**

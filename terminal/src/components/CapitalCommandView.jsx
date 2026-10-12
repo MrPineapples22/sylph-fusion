@@ -618,6 +618,12 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
                     <span>Max Safe Size: <b style={{color: '#14F195'}}>{`${Number(position.maxSafePositionSol ?? position.exitabilityCertificate?.maxSafePositionSol ?? 1.2).toFixed(2)} SOL`}</b></span>
                     <span>Exit Cert: <b style={{color: '#A78BFA'}}>{(position.exitabilityCertificate?.certificateId || 'exit_none').slice(0, 10)}</b></span>
                   </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'2px',padding:'3px 6px',background:'rgba(168,85,247,0.04)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>Twin Trust: <b style={{color: (position.twinTrustLevel || position.twinCalibration?.trustLevel) === 'QUARANTINED' ? '#FF3B69' : ((position.twinTrustLevel || position.twinCalibration?.trustLevel) === 'DEGRADED' ? '#F59E0B' : '#14F195')}}>{position.twinTrustLevel || position.twinCalibration?.trustLevel || 'TRUSTED'}</b></span>
+                    <span>Med Price Res: <b style={{color: '#38BDF8'}}>{`${position.medianPriceResidualBps ?? position.twinCalibration?.medianPriceResidualBps ?? 18} bps`}</b></span>
+                    <span>Landing Lag: <b style={{color: (position.medianLandingLagSlots ?? position.twinCalibration?.medianLandingLagSlots ?? 1) > 2 ? '#FF3B69' : '#14F195'}}>{`${position.medianLandingLagSlots ?? position.twinCalibration?.medianLandingLagSlots ?? 1} slot`}</b></span>
+                    <span>Twin Cert: <b style={{color: '#A78BFA'}}>{(position.twinCalibration?.certificateId || 'tcc_none').slice(0, 10)}</b></span>
+                  </div>
                 </div>
               );
             })()}
