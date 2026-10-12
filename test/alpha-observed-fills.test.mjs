@@ -1,0 +1,10 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {reconstruct,runObserved} from '../scripts/alpha-observed-fills.mjs';
+const base=(split,eventId,date)=>({strategy:'wallet_copy',split,eventId,mint:'mint-test',source:'OBSERVED_EXECUTION',entrySignature:'entry-'+eventId,exitSignature:'exit-'+eventId,sourceSha256:'a'.repeat(64),currency:'SOL',entryTimestamp:date,exitTimestamp:date,entryDebitSol:1,exitCreditSol:1.2,networkFeeSol:.001,priorityFeeSol:.001,tipSol:.001,priceImpactSol:.01,otherCostsSol:.001,baselinePnlSol:0,baselineEvidenceSha256:'b'.repeat(64),feesIncludedInEntryExit:false,fillStatus:'FILLED_BOTH_LEGS'});
+test('observed fills produce research-only results',()=>{const r=runObserved([base('train','a','2026-01-01T00:00:00Z'),base('holdout','b','2026-02-01T00:00:00Z')],{minHoldoutTrades:1});assert.equal(r.results.wallet_copy.status,'RESEARCH_CANDIDATE');assert.equal(r.certification,'NOT_CERTIFIED');assert.equal(r.executionParity,'NOT_VERIFIED')});
+test('reject missing provenance',()=>{const x=base('train','a','2026-01-01T00:00:00Z');delete x.entrySignature;assert.throws(()=>reconstruct([x]),/PROVENANCE/)});
+test('reject ambiguous double-counted fees',()=>{const x=base('train','a','2026-01-01T00:00:00Z');x.feesIncludedInEntryExit=true;assert.throws(()=>reconstruct([x]),/FEE_ACCOUNTING/)});
+test('reject partial fills',()=>{const x=base('train','a','2026-01-01T00:00:00Z');x.fillStatus='PARTIAL';assert.throws(()=>reconstruct([x]),/PARTIAL/)});
+test('reject negative cost',()=>{const x=base('train','a','2026-01-01T00:00:00Z');x.tipSol=-1;assert.throws(()=>reconstruct([x]),/NEGATIVE/)});
+test('reject duplicate event',()=>{const x=base('train','a','2026-01-01T00:00:00Z');assert.throws(()=>reconstruct([x,x]),/DUPLICATE/)});
