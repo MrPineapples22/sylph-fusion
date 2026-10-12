@@ -588,6 +588,12 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
                     <span>Deficit: <b style={{color: (position.survivalDeficitUsd ?? position.evacuationCertificate?.survivalDeficitUsd ?? 0) > 0 ? '#F59E0B' : '#14F195'}}>{`$${Number(position.survivalDeficitUsd ?? position.evacuationCertificate?.survivalDeficitUsd ?? 0).toFixed(2)}`}</b></span>
                     <span>Cert: <b style={{color: '#A78BFA'}}>{(position.evacuationCertificate?.certificateId || 'pec_none').slice(0, 10)}</b></span>
                   </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'2px',padding:'3px 6px',background:'rgba(168,85,247,0.04)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>Ecology: <b style={{color: (position.isEcologySound ?? position.signalPortfolioCertificate?.isEcologySound) === false ? '#FF3B69' : '#14F195'}}>{(position.isEcologySound ?? position.signalPortfolioCertificate?.isEcologySound) === false ? 'DEFICIENT' : 'SOUND'}</b></span>
+                    <span>Alpha Units: <b style={{color: (position.effectiveIndependentAlphaUnits ?? position.signalPortfolioCertificate?.effectiveIndependentAlphaUnits ?? 2) < 2 ? '#FF3B69' : '#38BDF8'}}>{`${position.effectiveIndependentAlphaUnits ?? position.signalPortfolioCertificate?.effectiveIndependentAlphaUnits ?? 2} units`}</b></span>
+                    <span>Mechanism: <b style={{color: (position.inheritsFalsificationPrior ?? position.mechanismEvaluation?.inheritsFalsificationPrior) ? '#FF3B69' : (position.mechanismEvaluation?.isDuplicate ? '#F59E0B' : '#38BDF8')}}>{(position.inheritsFalsificationPrior ?? position.mechanismEvaluation?.inheritsFalsificationPrior) ? 'FALSIFIED' : (position.mechanismEvaluation?.isDuplicate ? 'DUPLICATE' : 'UNIQUE')}</b></span>
+                    <span>SPC Cert: <b style={{color: '#A78BFA'}}>{(position.signalPortfolioCertificate?.certificateId || 'spc_none').slice(0, 10)}</b></span>
+                  </div>
                 </div>
               );
             })()}

@@ -195,6 +195,22 @@ import {
   certifyPortfolioEvacuation,
   type PortfolioEvacuationCertificate,
 } from './survival/evacuation-x/portfolio-evacuation-certificate.js';
+import {
+  StrategyEcologyRegistry,
+  type StrategyMechanismFingerprint,
+  type FalsifiedMechanismRecord,
+  type MechanismSimilarityEvaluation,
+} from './signal-ecology/mechanism-fingerprint.js';
+import {
+  SignalFamilyAggregator,
+  type EcologyAggregationResult,
+} from './signal-ecology/family-aggregator.js';
+import {
+  certifySignalPortfolio,
+  type SignalPortfolioCertificate,
+} from './signal-ecology/signal-portfolio-certificate.js';
+import type { DecomposedRoleProfile, SignalRole } from './signal-ecology/signal-role.js';
+import type { SpecialistPrediction } from './signal-ecology/signal-specialist.js';
 import { OperatorPlaybookEngine } from './adversarial/operator-playbook.js';
 import { EcosystemPhaseEngine } from './signals/ecosystem-phase.js';
 import { MarketPhaseEngine } from './signals/market-phase-engine.js';
@@ -563,6 +579,11 @@ export interface AetherFluxViewModel {
   readonly isClearanceFeasible?: boolean;
   readonly evacuationP95CostBps?: number;
   readonly survivalDeficitUsd?: number;
+  readonly mechanismEvaluation?: MechanismSimilarityEvaluation;
+  readonly signalPortfolioCertificate?: SignalPortfolioCertificate;
+  readonly isEcologySound?: boolean;
+  readonly effectiveIndependentAlphaUnits?: number;
+  readonly inheritsFalsificationPrior?: boolean;
 }
 
 export interface MasterPipelineResult {
@@ -638,10 +659,20 @@ export interface MasterPipelineResult {
   readonly regimeTransport?: DistributionValidityCertificate;
   readonly evacuationAnalysis?: EvacuationAnalysisResult;
   readonly evacuationCertificate?: PortfolioEvacuationCertificate;
+  readonly mechanismEvaluation?: MechanismSimilarityEvaluation;
+  readonly signalPortfolioCertificate?: SignalPortfolioCertificate;
   readonly whyExecutionBlocked?: string;
 }
 
 export type {
+  StrategyMechanismFingerprint,
+  FalsifiedMechanismRecord,
+  MechanismSimilarityEvaluation,
+  EcologyAggregationResult,
+  SignalPortfolioCertificate,
+  DecomposedRoleProfile,
+  SignalRole,
+  SpecialistPrediction,
   EvacuationPositionRequest,
   EvacuationAnalysisResult,
   EvacuationFlowStep,
@@ -858,6 +889,7 @@ export class MasterIntelligenceEngine {
   public readonly submissionRouter: MultiLaneSubmissionRouter;
   public readonly rdGovernor: AutonomousRDGovernorX;
   public readonly registeredStudiesCount: number;
+  public readonly strategyEcology: StrategyEcologyRegistry;
 
   constructor() {
     this.kernel = new IntegrationKernel();
@@ -1034,6 +1066,7 @@ export class MasterIntelligenceEngine {
     this.submissionRouter = new MultiLaneSubmissionRouter(this.laneScorecards);
     this.rdGovernor = new AutonomousRDGovernorX();
     this.registeredStudiesCount = ResearchMatrixBridge.registerAllStudies(this.rdGovernor);
+    this.strategyEcology = new StrategyEcologyRegistry();
 
     this.setupConnectionAuditor();
     this.registerComponents();
@@ -2672,6 +2705,54 @@ export class MasterIntelligenceEngine {
     const evacuationCertificate: PortfolioEvacuationCertificate = (context as any).evacuationCertificate ?? certifyPortfolioEvacuation(BigInt(event.slot), evacuationAnalysis, evacuationMaxAllowableP95CostBps);
 
     // ==========================================
+    // STRATEGY MECHANISM FINGERPRINTING (Blueprint Section 41)
+    // ==========================================
+    const strategyFingerprint: Omit<StrategyMechanismFingerprint, 'fingerprintHash'> = (context as any).strategyFingerprint ?? {
+      strategyId: (context as any).strategyId ?? `strat_${policyDecision.policyName.toLowerCase().replace(/[^a-z0-9_]/g, '_')}`,
+      inputs: (context as any).strategyInputs ?? ['slot', 'price', 'liquidity', 'wallets', 'bondingCurvePct'],
+      featureTransformations: (context as any).featureTransformations ?? ['log_return', 'inflow_ratio', 'arrival_velocity'],
+      hypothesis: (context as any).hypothesis ?? 'Momentum with convex liquidity cushion',
+      decisionRule: (context as any).decisionRule ?? 'Enter when consensus is STRONG and reachability > 0.35',
+      riskRule: (context as any).riskRule ?? 'Stop loss at 25% or liquidity collapse',
+      capitalRule: (context as any).capitalRule ?? 'Convex Kelly bounded by 2.5% pool depth',
+      executionRoute: (context as any).executionRoute ?? 'Jito-Bundle with adaptive tip',
+      exitRule: (context as any).exitRule ?? 'Dynamic stopping liquidation ratchet',
+      targetRegime: regime.majorRegime,
+    };
+    const mechanismEvaluation: MechanismSimilarityEvaluation = (context as any).mechanismEvaluation ?? this.strategyEcology.evaluateCandidate(strategyFingerprint);
+
+    // ==========================================
+    // SIGNAL ECOLOGY-X & DECOMPOSED ROLES (Section XV)
+    // ==========================================
+    const decomposedRoleProfile: DecomposedRoleProfile = (context as any).decomposedRoleProfile ?? {
+      alphaScore: currentMultiple >= 2.0 ? 0.85 : 0.65,
+      riskScore: 1.0 - Math.min(1.0, oodAssessment.noveltyScore ?? 0.15),
+      executionCostBps: Math.round(liquidationSurface.base.points.find((p) => p.percentage === 100)?.impactBps ?? 150),
+      regimeConfidence: (regime as any).confidence ?? Math.min(1.0, regime.riskMultiplier),
+      authenticityProven: authenticityScore >= 0.60,
+      capacityUsd: liquidationSurface.stressedExitCapacityUsd,
+      survivalProbability: survivalCert.is_valid ? 0.95 : 0.40,
+    };
+    const defaultQuantiles = { p10: 0.1, p25: 0.25, p50: 0.5, p75: 0.75, p90: 0.9 };
+    const specialists: readonly SpecialistPrediction[] = (context as any).ecologySpecialists ?? [
+      { specialistId: 'spec_alpha_1', version: '1.0.0', role: 'ALPHA', target: event.mint, horizonSec: 300, pointEstimate: decomposedRoleProfile.alphaScore, quantiles: defaultQuantiles, uncertainty: 0.05, supportedContext: ['PUMP_CURVE'], evidenceRoot: `root_alpha_${event.mint.slice(0, 6)}`, evidenceAncestry: [], modelHash: 'hash_alpha', availableAtMs: event.receivedTimestampMs },
+      { specialistId: 'spec_risk_1', version: '1.0.0', role: 'RISK', target: event.mint, horizonSec: 300, pointEstimate: decomposedRoleProfile.riskScore, quantiles: defaultQuantiles, uncertainty: 0.03, supportedContext: ['PUMP_CURVE'], evidenceRoot: `root_risk_${event.mint.slice(0, 6)}`, evidenceAncestry: [], modelHash: 'hash_risk', availableAtMs: event.receivedTimestampMs },
+      { specialistId: 'spec_exec_1', version: '1.0.0', role: 'EXECUTION', target: event.mint, horizonSec: 300, pointEstimate: Math.min(1.0, decomposedRoleProfile.executionCostBps / 1000), quantiles: defaultQuantiles, uncertainty: 0.06, supportedContext: ['PUMP_CURVE'], evidenceRoot: `root_exec_${event.mint.slice(0, 6)}`, evidenceAncestry: [], modelHash: 'hash_exec', availableAtMs: event.receivedTimestampMs },
+      { specialistId: 'spec_regime_1', version: '1.0.0', role: 'REGIME', target: event.mint, horizonSec: 300, pointEstimate: decomposedRoleProfile.regimeConfidence, quantiles: defaultQuantiles, uncertainty: 0.04, supportedContext: ['PUMP_CURVE'], evidenceRoot: `root_regime_${event.mint.slice(0, 6)}`, evidenceAncestry: [], modelHash: 'hash_regime', availableAtMs: event.receivedTimestampMs },
+      { specialistId: 'spec_auth_1', version: '1.0.0', role: 'AUTHENTICITY', target: event.mint, horizonSec: 300, pointEstimate: decomposedRoleProfile.authenticityProven ? 1.0 : 0.0, quantiles: defaultQuantiles, uncertainty: 0.02, supportedContext: ['PUMP_CURVE'], evidenceRoot: `root_auth_${event.mint.slice(0, 6)}`, evidenceAncestry: [], modelHash: 'hash_auth', availableAtMs: event.receivedTimestampMs },
+      { specialistId: 'spec_cap_1', version: '1.0.0', role: 'CAPACITY', target: event.mint, horizonSec: 300, pointEstimate: Math.min(1.0, decomposedRoleProfile.capacityUsd / 10_000), quantiles: defaultQuantiles, uncertainty: 0.05, supportedContext: ['PUMP_CURVE'], evidenceRoot: `root_cap_${event.mint.slice(0, 6)}`, evidenceAncestry: [], modelHash: 'hash_cap', availableAtMs: event.receivedTimestampMs },
+      { specialistId: 'spec_surv_1', version: '1.0.0', role: 'SURVIVAL', target: event.mint, horizonSec: 300, pointEstimate: decomposedRoleProfile.survivalProbability, quantiles: defaultQuantiles, uncertainty: 0.03, supportedContext: ['PUMP_CURVE'], evidenceRoot: `root_surv_${event.mint.slice(0, 6)}`, evidenceAncestry: [], modelHash: 'hash_surv', availableAtMs: event.receivedTimestampMs },
+    ];
+    const familyAggregator = new SignalFamilyAggregator();
+    const ecologyAggregation = familyAggregator.aggregate(specialists);
+    const signalPortfolioCertificate: SignalPortfolioCertificate = (context as any).signalPortfolioCertificate ?? certifySignalPortfolio({
+      targetMint: event.mint,
+      slot: BigInt(event.slot),
+      aggregation: ecologyAggregation,
+      roleProfile: decomposedRoleProfile,
+    });
+
+    // ==========================================
     // ALPHA HALF-LIFE, QUOTE DECAY & EXECUTION SHORTFALL (Sections XV, XVI & XX)
     // ==========================================
     const alphaHalfLife = AlphaHalfLifeEngine.estimateHalfLife({
@@ -3004,6 +3085,18 @@ export class MasterIntelligenceEngine {
     ) {
       decision = 'CHALLENGED_ABSTAIN';
       whyExecutionBlocked = `BLOCKED — EVACUATION CLEARANCE INFEASIBLE (P95 Cost: ${evacuationCertificate.p95CostBps} bps, Deficit: $${evacuationCertificate.survivalDeficitUsd.toFixed(2)})`;
+    } else if (
+      ((context as any).enforceMechanismEcologyGating ?? false) &&
+      mechanismEvaluation.inheritsFalsificationPrior
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      whyExecutionBlocked = `BLOCKED — STRATEGY MECHANISM FALSIFIED PRIOR (${mechanismEvaluation.matchedStrategyId || 'KNOWN_FALSIFIED_MECHANISM'}, Hurdle: ${mechanismEvaluation.requiredOosSampleHurdle})`;
+    } else if (
+      ((context as any).enforceSignalPortfolioGating ?? false) &&
+      !signalPortfolioCertificate.isEcologySound
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      whyExecutionBlocked = `BLOCKED — SIGNAL PORTFOLIO ECOLOGY DEFICIENT (Units: ${signalPortfolioCertificate.effectiveIndependentAlphaUnits}, Survival: ${(signalPortfolioCertificate.roleProfile.survivalProbability * 100).toFixed(0)}%, Auth: ${signalPortfolioCertificate.roleProfile.authenticityProven})`;
     } else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
       decision = 'AUTHORIZED_SELL';
       const exitResult = this.executeExit({
@@ -4151,6 +4244,11 @@ export class MasterIntelligenceEngine {
       isClearanceFeasible: evacuationCertificate.clearanceFeasible,
       evacuationP95CostBps: evacuationCertificate.p95CostBps,
       survivalDeficitUsd: evacuationCertificate.survivalDeficitUsd,
+      mechanismEvaluation,
+      signalPortfolioCertificate,
+      isEcologySound: signalPortfolioCertificate.isEcologySound,
+      effectiveIndependentAlphaUnits: signalPortfolioCertificate.effectiveIndependentAlphaUnits,
+      inheritsFalsificationPrior: mechanismEvaluation.inheritsFalsificationPrior,
       links: {
         solscan: `https://solscan.io/token/${event.mint}`,
         pump: `https://pump.fun/${event.mint}`,
@@ -4427,6 +4525,8 @@ export class MasterIntelligenceEngine {
       regimeTransport,
       evacuationAnalysis,
       evacuationCertificate,
+      mechanismEvaluation,
+      signalPortfolioCertificate,
       whyExecutionBlocked: decision !== 'AUTHORIZED_BUY' ? whyExecutionBlocked : undefined,
     };
   }
@@ -5304,6 +5404,30 @@ export class MasterIntelligenceEngine {
     const analysis = model.analyzePortfolio(positions, deadlineSec);
     const certificate = certifyPortfolioEvacuation(slot, analysis, maxAllowableP95CostBps);
     return { analysis, certificate };
+  }
+
+  /**
+   * Blueprint Section 41: Strategy Mechanism Fingerprinting
+   * Evaluates candidate mechanism against registered and falsified ecology.
+   */
+  public evaluateStrategyMechanism(candidate: Omit<StrategyMechanismFingerprint, 'fingerprintHash'>): MechanismSimilarityEvaluation {
+    return this.strategyEcology.evaluateCandidate(candidate);
+  }
+
+  /**
+   * Blueprint Section XV: Signal Portfolio Ecology Certification
+   */
+  public certifySignalPortfolioEcology(params: {
+    targetMint: string;
+    slot: bigint;
+    aggregation: EcologyAggregationResult;
+    roleProfile: DecomposedRoleProfile;
+  }): SignalPortfolioCertificate {
+    return certifySignalPortfolio(params);
+  }
+
+  public getStrategyEcologyRegistry(): StrategyEcologyRegistry {
+    return this.strategyEcology;
   }
 
   /**
