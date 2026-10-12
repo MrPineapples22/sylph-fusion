@@ -7,14 +7,17 @@ test('Part 81 - Master Architecture End-to-End Scenario Loop with Unbroken Prove
   const master = new MasterIntelligenceEngine();
   certifySyntheticRuntimeForTestOnly(master);
   const mint = 'SoL55555555555555555555555555555555555555556';
+  const receivedAtMs = Date.now();
+  const sourceAtMs = receivedAtMs - 40;
 
   const canonicalEvent = {
     eventId: 'evt_e2e_master_001',
     eventType: 'TOKEN_CREATE',
     mint,
     slot: 448280100,
-    timestampNs: BigInt(Date.now()) * 1_000_000n,
-    receivedTimestampMs: Date.now(),
+    timestampNs: BigInt(sourceAtMs) * 1_000_000n,
+    sourceTimestampMs: sourceAtMs,
+    receivedTimestampMs: receivedAtMs,
     commitment: 'confirmed',
     payload: {
       mint,

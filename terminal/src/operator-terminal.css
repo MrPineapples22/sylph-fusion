@@ -293,6 +293,12 @@
 .op-terminal dd{margin:0;overflow-wrap:anywhere}
 .op-comparison-card dl{grid-template-columns:1fr 1fr;gap:var(--space-3)}
 .op-evidence-columns{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--space-6)}
+.op-market-evidence{font-size:11px;font-family:var(--font-mono,monospace);margin-top:8px}
+.op-market-evidence-patterns{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 6px}
+.op-market-evidence-patterns span{padding:3px 7px;border:1px solid rgba(56,189,248,.22);border-radius:999px;background:rgba(56,189,248,.06);color:rgba(210,230,245,.9);font-size:10px;line-height:1.35}
+.op-market-evidence-row{display:grid;grid-template-columns:minmax(125px,.7fr) minmax(0,1.3fr);gap:12px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+.op-market-evidence-row b{text-align:right;overflow-wrap:anywhere;font-weight:600}
+.op-market-evidence p{line-height:1.5}
 .op-evidence-columns>section{border-top:1px solid var(--border-subtle);padding-top:var(--space-4)}
 .op-metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,11rem),1fr));gap:var(--space-4);margin-top:var(--space-6)}
 .op-metric-card{padding:var(--space-4) var(--space-5);min-width:0;background:rgba(16,25,36,0.6);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,0.06);border-radius:var(--radius-card);box-shadow:0 4px 16px rgba(0,0,0,0.2);transition:transform 140ms ease,border-color 140ms ease,box-shadow 140ms ease}
@@ -422,6 +428,7 @@
 @keyframes op-enter{from{opacity:0;transform:translateY(var(--motion-translate))}to{opacity:1;transform:none}}
 @media(max-width:1199px){.op-shell-top{flex-wrap:wrap}}
 @media(max-width:599px){.op-metric-card-primary{grid-column:1/-1}.op-more-menu{margin:auto var(--space-4) calc(var(--space-4) + var(--safe-bottom));padding:var(--space-5)}.op-terminal .op-mobile-nav button{overflow-wrap:anywhere}.op-tray{padding-bottom:calc(var(--mobile-nav-height) + var(--safe-bottom) + var(--space-8))}}
+@media(max-width:599px){.op-market-evidence-row{grid-template-columns:1fr;gap:3px}.op-market-evidence-row b{text-align:left}}
 @media(pointer:coarse){.op-terminal .op-token-link{min-height:var(--control-touch-target)}}
 @media(prefers-reduced-motion:reduce){.op-dialog[open],.op-more-menu[open]{animation:none}}
 @media(forced-colors:active){.op-terminal{--background-secondary:Canvas;--surface-elevated:Canvas;--selected:Canvas;--selection-text:LinkText;--border-subtle:ButtonText;--control-border:ButtonText;--focus-ring:Highlight}.op-terminal .op-status{color:CanvasText;background:Canvas;border:1px solid CanvasText}.op-terminal button[aria-current=page]{outline:2px solid Highlight;outline-offset:-2px}}

@@ -7,6 +7,8 @@ import { RealizedEdgeBreakdownPanel } from './RealizedEdgeBreakdownPanel.jsx';
 export function CapitalCommandView({ capital = {}, positions = [], capabilities = {}, current = false, loading = false, mode = 'UNKNOWN', onClosePosition = () => {}, onSetCapital, tokens = [], autoExitGuardian = false, onToggleAutoExitGuardian }) {
   const [learningData, setLearningData] = React.useState(null);
   const [simulating, setSimulating] = React.useState(false);
+  const [learningStatus, setLearningStatus] = React.useState('loading');
+  const [learningUpdatedAt, setLearningUpdatedAt] = React.useState(null);
 
   const fetchLearning = React.useCallback(async () => {
     try {
@@ -15,16 +17,20 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
         if (res.ok) {
           const data = await res.json();
           setLearningData(data);
+          setLearningStatus('current');
+          setLearningUpdatedAt(Date.now());
+        } else {
+          setLearningStatus('unavailable');
         }
       }
     } catch {
-      // non-blocking
+      setLearningStatus('unavailable');
     }
   }, []);
 
   React.useEffect(() => {
     fetchLearning();
-    const interval = setInterval(fetchLearning, 3500);
+    const interval = setInterval(fetchLearning, 15000);
     return () => clearInterval(interval);
   }, [fetchLearning]);
 
@@ -46,26 +52,16 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
   };
 
   const learning = learningData || {
-    totalTradesEvaluated: 0,
-    winCount: 0,
-    lossCount: 0,
-    winRatePct: 0,
+    totalTradesEvaluated: 0, winCount: 0, lossCount: 0, winRatePct: 0,
     totalRealizedPnlUsd: 0,
-    attributionSummary: {
-      reinforceAlpha: 0,
-      neutralVariance: 0,
-      doNotReinforceLuck: 0,
-      penalizePolicy: 0,
-    },
-    adaptiveCalibration: {
-      baseHsiHurdle: 80,
-      adaptiveHsiHurdle: 80,
-      calibrationRegime: 'BALANCED',
-      recommendedStopPct: -12.0,
-      recommendedTargetPct: 15.0,
-    },
+    attributionSummary: { unknown: 0, reinforceAlpha: 0, neutralVariance: 0, doNotReinforceLuck: 0, penalizePolicy: 0 },
+    adaptiveCalibration: { baseHsiHurdle: 80, adaptiveHsiHurdle: 80, calibrationRegime: 'BALANCED' },
     recentAutopsies: [],
   };
+  const learningTrades = learning?.totalTradesEvaluated ?? 0;
+  const calibration = learning?.adaptiveCalibration;
+  const researchPnl = Number.isFinite(learning?.rawUnfilteredPnlUsd) ? learning.rawUnfilteredPnlUsd : null;
+  const learningMoney = (value) => `${value >= 0 ? '+' : '−'}${formatMoney(Math.abs(value))}`;
 
   const records = Array.isArray(positions) ? positions.filter(Boolean) : [];
   const closeState = current ? capabilities?.close?.state || 'UNKNOWN' : 'UNKNOWN';
@@ -324,6 +320,10 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
                 const ageMs = Number.isFinite(observedMs) ? Math.max(0, Date.now() - observedMs) : null;
                 const gap = position.gapStatus || position.gapCertificate?.status || position.observabilityGap?.status;
                 const attemptCount = position.executionTotalAttempts ?? position.executionAttemptStats?.totalAttempts ?? position.executionAttemptStats?.totalAttemptsObserved ?? 0;
+                const attempts = position.executionAttempts || position.executionAttemptStats?.attempts || position.executionAttemptStats?.recentAttempts;
+                const gapReceived = position.replay?.received ?? position.replayReceived ?? position.observedCount;
+                const gapExpected = position.replay?.expected ?? position.replayExpected ?? position.expectedCount;
+                const replayState = position.replay?.state || position.replayState || position.recoveryState;
                 const outcome = Number(attemptCount) > 0 ? (position.lastExecutionOutcome || position.executionOutcome) : null;
                 const attemptId = position.lastExecutionAttemptId || position.executionAttemptId;
                 const signature = position.lastExecutionSignature || position.signature;
@@ -336,12 +336,22 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
                 ].filter(([, amount]) => (typeof amount === 'number' && Number.isFinite(amount)) || (typeof amount === 'string' && /^\d+$/.test(amount)));
                 const netPnl = settled && Number.isFinite(position.realizedNetPnlSol) ? `${position.realizedNetPnlSol >= 0 ? '+' : ''}${position.realizedNetPnlSol} SOL` : 'Unknown';
                 const value = (v) => v == null || v === '' ? 'Unknown' : String(v);
-                const row = (label, content) => <div style={{display:'flex',justifyContent:'space-between',gap:'12px',padding:'5px 0',borderBottom:'1px solid rgba(255,255,255,0.05)'}}><span className="op-muted">{label}</span><b style={{textAlign:'right',overflowWrap:'anywhere'}}>{content}</b></div>;
-                return <div style={{fontSize:'11px',fontFamily:'var(--font-mono, monospace)',marginTop:'6px'}}>
+                const row = (label, content) => <div className="op-market-evidence-row"><span className="op-muted">{label}</span><b>{content}</b></div>;
+                const replayCoverage = gapReceived != null && gapExpected != null
+                  ? `${gapReceived} / ${gapExpected} observations${Number(gapReceived) < Number(gapExpected) ? ' · count shortfall' : ' · counts match'}`
+                  : 'Unknown · no coverage counts';
+                const attemptOutcomes = Array.isArray(attempts) && attempts.length
+                  ? attempts.map((attempt) => attempt.outcome || attempt.status || 'outcome unknown').join(', ')
+                  : null;
+                return <div className="op-market-evidence">
+                  <div className="op-market-evidence-patterns" aria-label="Evidence checks">
+                    {['Provenance & freshness', 'Fork identity', 'Replay completeness', 'All execution attempts', 'Settled costs'].map((pattern) => <span key={pattern}>{pattern}</span>)}
+                  </div>
                   {row('Source / provenance', value(source))}
                   {row('Freshness / gap', `${ageMs == null ? 'Unknown age' : `${Math.round(ageMs / 1000)}s old`} · ${value(gap)}`)}
                   {row('Fork identity', [position.slot != null ? `slot ${position.slot}` : null, value(position.blockhash) !== 'Unknown' ? `block ${position.blockhash}` : null, position.commitment || null].filter(Boolean).join(' · ') || 'Unknown')}
-                  {row('Execution attempt', outcome ? [outcome, attemptId ? `attempt ${attemptId}` : null, signature ? `sig ${signature}` : null, transport || null].filter(Boolean).join(' · ') : 'Unknown · no recorded attempt')}
+                  {row('Replay coverage', `${replayCoverage} · ${value(replayState)}`)}
+                  {row('Execution attempts', Number(attemptCount) > 0 ? `${attemptCount} recorded · ${attemptOutcomes ? `outcomes: ${attemptOutcomes}` : 'per-attempt outcomes unavailable'} · latest: ${[value(outcome), attemptId ? `attempt ${attemptId}` : null, signature ? `sig ${signature}` : null, transport || null].filter(Boolean).join(' · ')}` : '0 recorded · outcome unknown')}
                   {row('Settled net outcome', settled ? netPnl : 'Unknown · not confirmed settled')}
                   {row('Measured execution costs', actualCosts.length ? actualCosts.map(([name, amount]) => `${name}: ${amount} lamports`).join(' · ') : 'Unknown')}
                   {row('Liquidity depth', depth ? `Heuristic · ${value(depth.calibratedRoute)} · resilience ${Number.isFinite(depth.depthResilienceScore) ? `${(depth.depthResilienceScore * 100).toFixed(0)}%` : 'Unknown'} · max size ${Number.isFinite(depth.maxSafePositionSol) ? `${depth.maxSafePositionSol} SOL` : 'Unknown'} · ${depth.isDepthCollapsed === true ? 'collapsed' : depth.isDepthCollapsed === false ? 'not flagged collapsed' : 'collapse status unknown'}` : 'Heuristic profile unavailable')}
@@ -388,7 +398,7 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
             <div>
               <div className="op-eyebrow" style={{display:'flex',alignItems:'center',gap:'8px'}}>
                 <span>Blueprint Engine #39 · Pavlov Outcome Attribution</span>
-                <span style={{
+                {learningData && <span style={{
                   display:'inline-flex',
                   alignItems:'center',
                   gap:'4px',
@@ -401,19 +411,19 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
                   border: `1px solid ${learning.adaptiveCalibration.calibrationRegime === 'OPTIMAL' ? 'rgba(20,241,149,0.3)' : learning.adaptiveCalibration.calibrationRegime === 'DEFENSIVE' ? 'rgba(245,158,11,0.3)' : 'rgba(56,189,248,0.3)'}`
                 }}>
                   REGIME: {learning.adaptiveCalibration.calibrationRegime}
-                </span>
+                </span>}
               </div>
               <h3 style={{margin:'4px 0 2px'}}>Adaptive Trade Learning &amp; Pavlov Attribution</h3>
               <div style={{display:'flex',alignItems:'center',gap:'8px',margin:'4px 0 6px',flexWrap:'wrap'}}>
-                <span style={{fontSize:'11px',fontFamily:'var(--font-mono, monospace)',background:'rgba(20,241,149,0.08)',color:'#14F195',padding:'2px 8px',borderRadius:'4px',border:'1px solid rgba(20,241,149,0.25)'}}>
-                  📂 Telemetry: {learning.dataSource || 'D:/pump/SOL-SYLPH/pavlov_attributions.csv'} ({learning.totalCsvRecordsLoaded || learning.totalTradesEvaluated} autopsies)
+                <span style={{fontSize:'11px',fontFamily:'var(--font-mono, monospace)',background:'rgba(255,255,255,0.04)',color:'rgba(255,255,255,0.8)',padding:'2px 8px',borderRadius:'4px',border:'1px solid rgba(255,255,255,0.12)'}}>
+                  Source: {learning.dataSource || 'Unknown'} · {learningTrades} evaluated · {learning.dataQuality?.rejectedRows ?? 'Unknown'} rejected
                 </span>
                 <span style={{fontSize:'11px',color:'rgba(255,255,255,0.5)',fontFamily:'var(--font-mono, monospace)'}}>
-                  Authoritative CSV Supervised Ingestion
+                  {learningStatus === 'current' ? `Updated ${learningUpdatedAt ? `${Math.max(0, Math.round((Date.now() - learningUpdatedAt) / 1000))}s ago` : 'just now'}` : learningStatus === 'loading' ? 'Loading research snapshot…' : 'Snapshot unavailable · retrying'}
                 </span>
               </div>
               <p className="op-muted" style={{margin:0,fontSize:'12px'}}>
-                Classifies decision quality vs financial outcome into 4 Pavlov archetypes to eliminate luck-reinforcement, preserve valid policy during adverse tail variance, and dynamically calibrate the adaptive HSI hurdle.
+                Research attribution summarizes recorded closed paper trades. It does not establish future returns or authorize execution.
               </p>
             </div>
             <div style={{display:'flex',gap:'6px'}}>
@@ -440,7 +450,7 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
                   } catch {}
                 }}
                 style={{color:'#14F195',borderColor:'rgba(20,241,149,0.3)',background:'rgba(20,241,149,0.08)',fontWeight:600}}
-                title="Reload all trade autopsies directly from D:\pump\SOL-SYLPH\pavlov_attributions.csv"
+                title="Reload the configured research attribution source"
               >
                 🔄 Reload CSV
               </button>
@@ -458,35 +468,35 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
           <div className="op-metric-grid" style={{marginBottom:'14px'}}>
             <MetricCard
               label="Adaptive HSI Hurdle"
-              value={`${learning.adaptiveCalibration.adaptiveHsiHurdle} HSI`}
-              detail={`Base: ${learning.adaptiveCalibration.baseHsiHurdle} HSI · ${learning.adaptiveCalibration.calibrationRegime === 'DEFENSIVE' ? 'Tightened (+5) for capital defense' : learning.adaptiveCalibration.calibrationRegime === 'OPTIMAL' ? 'Optimal edge conviction' : 'Standard conviction'}`}
+              value={learningData ? `${calibration.adaptiveHsiHurdle} HSI` : 'Unknown'}
+              detail={learningData ? `Base: ${calibration.baseHsiHurdle} HSI · ${calibration.calibrationRegime} · research calibration` : 'Calibration unavailable'}
               emphasis
             />
             <MetricCard
-              label="Simulated Win Rate"
-              value={learning.totalTradesEvaluated > 0 ? `${(learning.policyWinRatePct && learning.policyWinRatePct > learning.winRatePct) ? learning.policyWinRatePct : learning.winRatePct}%` : 'No closed trades'}
-              detail={(learning.policyWinCount && learning.policyLossCount) ? `${learning.policyWinCount} Wins / ${learning.policyLossCount} Losses (${learning.policyWinCount + learning.policyLossCount} policy trades)` : `${learning.winCount} Wins / ${learning.lossCount} Losses (${learning.totalTradesEvaluated} total)`}
+              label="Recorded win rate"
+              value={learningTrades > 0 ? `${learning.winRatePct}%` : 'No closed trades'}
+              detail={learningTrades > 0 ? `${learning.winCount} wins / ${learning.lossCount} losses · ${learningTrades} total` : 'No outcome sample'}
             />
             <MetricCard
               label="Realized P&L · USD"
-              value={learning.totalTradesEvaluated > 0 ? `+${formatMoney(Math.max(0, (learning.policyRealizedPnlUsd !== undefined && learning.policyRealizedPnlUsd > 0) ? learning.policyRealizedPnlUsd : learning.totalRealizedPnlUsd))}` : '$0.00'}
-              detail={learning.counterfactualPrunedLossesUsd > 0 ? `Policy positive · +$${formatMoney(learning.counterfactualPrunedLossesUsd)} losses pruned by hurdle` : (learning.totalTradesEvaluated > 0 ? `${learning.totalTradesEvaluated} trade autopsies analyzed` : 'Awaiting position exits')}
+              value={learningTrades > 0 && researchPnl != null ? learningMoney(researchPnl) : 'No closed trades'}
+              detail={learningTrades > 0 ? 'Observed sample total · reported as recorded' : 'No outcome sample'}
               emphasis
             />
             <MetricCard
               label="Profit Capture Ratio (PCR)"
-              value={learning.totalTradesEvaluated > 0 ? `${((learning.averageProfitCaptureRatio ?? 0) * 100).toFixed(1)}%` : '—'}
+              value={learningTrades > 0 ? `${((learning.averageProfitCaptureRatio ?? 0) * 100).toFixed(1)}%` : 'Unknown'}
               detail="MFE realization efficiency across closed trades"
             />
             <MetricCard
               label="Exit Efficiency (EE)"
-              value={learning.totalTradesEvaluated > 0 ? `${((learning.averageExitEfficiency ?? 0) * 100).toFixed(1)}%` : '—'}
+              value={learningTrades > 0 ? `${((learning.averageExitEfficiency ?? 0) * 100).toFixed(1)}%` : 'Unknown'}
               detail="Excursion score (MFE vs MAE spread captured)"
             />
             <MetricCard
               label="Active Policy Rule"
-              value={learning.adaptiveCalibration.calibrationRegime === 'DEFENSIVE' ? 'DEFENSIVE (+5 HSI)' : 'ALPHA REINFORCEMENT'}
-              detail="Dynamic Bayesian hurdle feedback"
+              value={learningData ? calibration.calibrationRegime : 'Unknown'}
+              detail="Research-only attribution regime"
             />
           </div>
 

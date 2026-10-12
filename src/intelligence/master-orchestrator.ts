@@ -63,6 +63,13 @@ import { AdaptivePolicyRouter } from './policies/adaptive-router.js';
 import { OODSentinel } from './safety/ood-sentinel.js';
 import { PositionDefenseEngine } from './execution/position-defense.js';
 import { TokenUIState } from './ui-state.js';
+import {
+  BayesBeliefEngine,
+  type MissingnessState,
+  type BayesBeliefUpdate,
+  type HierarchicalPriorContext,
+  type CalibrationReport,
+} from './bayes/index.js';
 import { TemporalEvidenceGraph } from './graph/temporal-evidence-graph.js';
 import { FundingAncestryEngine } from './graph/funding-ancestry.js';
 import { FirstPassageEngine, type ProbabilisticForecastReport } from './science/first-passage.js';
@@ -317,7 +324,6 @@ import { HorizonExternalContext } from './horizon/external-context.js';
 import { SageCapabilityAssurance } from './sage/capability-assurance.js';
 import { StrategyIntent } from './contracts/blueprint-contracts.js';
 import { BohrCompetingHypothesisEngine } from './bohr/competing-hypotheses.js';
-import { BayesBeliefEngine } from './bayes/hierarchical-belief.js';
 import { PearlCausalEngine } from './pearl/causal-inference.js';
 import { EinsteinRelativityEngine } from './einstein/regime-relativity.js';
 import type { LiquidityMarketCapObservation, RelativeReturnObservation, SlippageQuoteObservation, VelocityObservation, VolumeObservation } from './einstein/regime-relativity.js';
@@ -714,6 +720,11 @@ export interface AetherFluxViewModel {
   readonly liquidityMaxSafePositionSol?: number;
   readonly liquidityCalibratedRoute?: AMMRouteType;
   readonly isLiquidityDepthCollapsed?: boolean;
+  readonly bayesBeliefUpdate?: BayesBeliefUpdate;
+  readonly bayesPosteriorProb?: number;
+  readonly bayesPriorProb?: number;
+  readonly bayesEffectiveEvidenceCount?: number;
+  readonly bayesUnknownMass?: number;
 }
 
 export interface MasterPipelineResult {
@@ -803,6 +814,7 @@ export interface MasterPipelineResult {
   readonly executionActionVector?: ExecutionActionVector;
   readonly executionAttemptStats?: ExecutionAttemptStats;
   readonly liquidityDepthProfile?: LiquidityDepthProfile;
+  readonly bayesBeliefUpdate?: BayesBeliefUpdate;
   readonly whyExecutionBlocked?: string;
 }
 
@@ -908,6 +920,10 @@ export type {
   LiquidityDepthProfile,
   TrancheImpact,
   AMMRouteType,
+  BayesBeliefUpdate,
+  HierarchicalPriorContext,
+  CalibrationReport,
+  MissingnessState,
 };
 
 export class MasterIntelligenceEngine {
@@ -3366,6 +3382,32 @@ export class MasterIntelligenceEngine {
       );
 
     // ==========================================
+    // BAYESIAN HIERARCHICAL BELIEF & EVIDENCE DISCOUNTING (Part IX, Blueprint §12, §14)
+    // ==========================================
+    const bayesPriorContext: HierarchicalPriorContext = (context as any).bayesPriorContext ?? {
+      global_population_prior: 0.04,
+      launch_class_prior: (event as any).platform === 'PUMP_FUN' ? 0.08 : 0.15,
+      market_regime_prior: regime.majorRegime === 'RISK_ON' ? 0.20 : 0.10,
+      liquidity_band_prior: poolSolReserves > 50 ? 0.18 : 0.08,
+      creator_class_prior: recurrenceRisk.isSerialRugger ? 0.01 : 0.12,
+    };
+    const bayesPrior: number =
+      (context as any).bayesPrior ?? this.bayes.calculateHierarchicalPrior(bayesPriorContext);
+    const bayesObservations = (context as any).bayesObservations ?? [
+      { field: 'hsi', value: cleanRoomState.isDeceptionSevere ? 0.15 : 0.85, trigger_group: 'telemetry_burst', weight: 1.0 },
+      { field: 'volume', value: context.txCount > 30 ? 0.80 : 0.40, trigger_group: 'telemetry_burst', weight: 1.0 },
+      { field: 'wallets', value: participantAnalysis.effectiveIndependentCount >= 3 ? 0.85 : 0.25, weight: 1.0 },
+    ];
+    const bayesBeliefUpdate: BayesBeliefUpdate =
+      (context as any).bayesBeliefUpdate ??
+      this.bayes.updateBelief({
+        mint: event.mint,
+        prior: bayesPrior,
+        observations: bayesObservations,
+        missing_fields: (context as any).bayesMissingFields,
+      });
+
+    // ==========================================
     // ALPHA HALF-LIFE, QUOTE DECAY & EXECUTION SHORTFALL (Sections XV, XVI & XX)
     // ==========================================
     const alphaHalfLife = AlphaHalfLifeEngine.estimateHalfLife({
@@ -3791,6 +3833,13 @@ export class MasterIntelligenceEngine {
     ) {
       decision = 'CHALLENGED_ABSTAIN';
       whyExecutionBlocked = `BLOCKED — LIQUIDITY DEPTH COLLAPSE (Safe: ${liquidityDepthProfile.maxSafePositionSol.toFixed(2)} SOL < Target, Resilience: ${(liquidityDepthProfile.depthResilienceScore * 100).toFixed(1)}%, Route: ${liquidityDepthProfile.calibratedRoute})`;
+    } else if (
+      ((context as any).enforceBayesBeliefGating ?? false) &&
+      (bayesBeliefUpdate.posterior_probability < ((context as any).minBayesPosterior ?? 0.15) ||
+        bayesBeliefUpdate.effective_evidence_count < ((context as any).minBayesEvidenceCount ?? 1.0))
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      whyExecutionBlocked = `BLOCKED — INSUFFICIENT BAYESIAN POSTERIOR BELIEF (Posterior: ${(bayesBeliefUpdate.posterior_probability * 100).toFixed(1)}%, Effective Count: ${bayesBeliefUpdate.effective_evidence_count.toFixed(1)})`;
     } else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
       decision = 'AUTHORIZED_SELL';
       const exitResult = this.executeExit({
@@ -4160,22 +4209,7 @@ export class MasterIntelligenceEngine {
       is_liquidity_locked: true,
     });
 
-    const hierarchicalPrior = this.bayes.calculateHierarchicalPrior({
-      global_population_prior: 0.05,
-      launch_class_prior: 0.08,
-      market_regime_prior: regime.majorRegime === 'RISK_ON' ? 0.12 : 0.04,
-      liquidity_band_prior: context.liquiditySol > 20 ? 0.10 : 0.03,
-      creator_class_prior: recurrenceRisk.isSerialRugger ? 0.01 : 0.07,
-    });
-    const bayesUpdate = this.bayes.updateBelief({
-      mint: event.mint,
-      prior: hierarchicalPrior,
-      observations: [
-        { field: 'pump_score', value: pumpScore / 100, trigger_group: 'trade_burst_primary', weight: 0.8 },
-        { field: 'effective_diversity', value: participantAnalysis.clusterDispersalRatio, trigger_group: 'wallet_clusters', weight: 1.0 },
-        { field: 'pod_safety', value: (100 - podRisk.dumpRiskScore) / 100, trigger_group: 'supply_overhang', weight: 0.9 },
-      ],
-    });
+    const bayesUpdate = bayesBeliefUpdate;
 
     const pearlCausal = this.pearl.evaluateIdentifiability({
       treatment: 'wallet_diversity_expansion',
@@ -5016,6 +5050,11 @@ export class MasterIntelligenceEngine {
       liquidityMaxSafePositionSol: liquidityDepthProfile.maxSafePositionSol,
       liquidityCalibratedRoute: liquidityDepthProfile.calibratedRoute,
       isLiquidityDepthCollapsed: liquidityDepthProfile.isDepthCollapsed,
+      bayesBeliefUpdate: bayesUpdate,
+      bayesPosteriorProb: bayesUpdate.posterior_probability,
+      bayesPriorProb: bayesUpdate.prior_probability,
+      bayesEffectiveEvidenceCount: bayesUpdate.effective_evidence_count,
+      bayesUnknownMass: bayesUpdate.unknown_probability_mass,
       links: {
         solscan: `https://solscan.io/token/${event.mint}`,
         pump: `https://pump.fun/${event.mint}`,
@@ -5306,6 +5345,7 @@ export class MasterIntelligenceEngine {
       executionActionVector,
       executionAttemptStats,
       liquidityDepthProfile,
+      bayesBeliefUpdate: bayesUpdate,
       whyExecutionBlocked: decision !== 'AUTHORIZED_BUY' ? whyExecutionBlocked : undefined,
     };
   }
@@ -6431,6 +6471,46 @@ export class MasterIntelligenceEngine {
     preferredRoute?: AMMRouteType
   ): LiquidityDepthProfile {
     return this.liquidityDepthEngine.calculateDepth(poolSolReserves, virtualTokenReserves, tranches, preferredRoute);
+  }
+
+  /**
+   * Part IX & Blueprint §12, §14: Bayesian Hierarchical Belief Engine
+   */
+  public getBayesBeliefEngine(): BayesBeliefEngine {
+    return this.bayes;
+  }
+
+  /**
+   * Part IX: Calculate Hierarchical Prior borrowing across population, class, regime, and liquidity
+   */
+  public calculateHierarchicalPrior(context: HierarchicalPriorContext): number {
+    return this.bayes.calculateHierarchicalPrior(context);
+  }
+
+  /**
+   * Part IX: Update Belief with Evidence Dependence Discounting & Unknown Mass Preservation
+   */
+  public updateBayesBelief(params: {
+    mint: string;
+    prior: number;
+    observations: readonly {
+      field: string;
+      value: number;
+      trigger_group?: string;
+      weight: number;
+    }[];
+    missing_fields?: Readonly<Record<string, MissingnessState>>;
+  }): BayesBeliefUpdate {
+    return this.bayes.updateBelief(params);
+  }
+
+  /**
+   * Part IX & Section 14: Evaluate Calibration & Brier Score against ground-truth outcomes
+   */
+  public evaluateBayesCalibration(
+    predictions: readonly { predicted_prob: number; actual_outcome: 0 | 1 }[]
+  ): CalibrationReport {
+    return this.bayes.evaluateCalibration(predictions);
   }
 
   /**

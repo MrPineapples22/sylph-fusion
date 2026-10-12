@@ -332,7 +332,6 @@ describe('Pass 61: Execution Attempt Ledger & Action Vector Integration (REQ-077
     assert.ok(vm.executionSuccessRatePct !== undefined);
     assert.ok(vm.executionTotalAttempts !== undefined);
     assert.ok(vm.executionTransport !== undefined);
-    assert.ok(vm.lastExecutionOutcome !== undefined);
-    assert.equal(vm.lastExecutionOutcome, 'FINALIZED_SUCCESS');
+    assert.equal(vm.lastExecutionOutcome, undefined, 'No attempt is recorded, so the projection must not invent a successful outcome');
   });
 });

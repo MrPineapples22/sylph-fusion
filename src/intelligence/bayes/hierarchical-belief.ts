@@ -3,6 +3,7 @@
  * Part IX — Hierarchical Priors, Evidence Dependence Discounting & Missingness Tracking
  */
 
+import { createHash } from 'node:crypto';
 import type { TokenHypothesisType } from '../bohr/competing-hypotheses.js';
 
 export type MissingnessState =
@@ -38,6 +39,7 @@ export interface BayesBeliefUpdate {
   readonly discounted_overlap_count: number;
   readonly missingness_records: Readonly<Record<string, MissingnessState>>;
   readonly unknown_probability_mass: number;
+  readonly update_hash: string;
   readonly updated_at_ms: number;
 }
 
@@ -58,6 +60,20 @@ export class BayesBeliefEngine {
   }
 
   /**
+   * Verify whether an update has achieved sufficient confidence.
+   */
+  public isBeliefConfident(update: BayesBeliefUpdate, minThreshold = 0.50): boolean {
+    return update.posterior_probability >= minThreshold;
+  }
+
+  /**
+   * Verify whether an update has observed sufficient independent evidence.
+   */
+  public isEvidenceSufficient(update: BayesBeliefUpdate, minEffectiveCount = 2.0): boolean {
+    return update.effective_evidence_count >= minEffectiveCount;
+  }
+
+  /**
    * Update belief using Bayesian rule with evidence dependence discounting.
    * If N signals share a single underlying trigger (e.g. 1 trade burst), discount correlation.
    */
@@ -68,10 +84,17 @@ export class BayesBeliefEngine {
       field: string;
       value: number;
       trigger_group?: string; // Signals sharing trigger_group are discounted
-      weight: number;
+      weight?: number;
     }[];
     missing_fields?: Readonly<Record<string, MissingnessState>>;
   }): BayesBeliefUpdate {
+    if (!params.mint || typeof params.mint !== 'string') {
+      throw new TypeError(`Invalid mint: must be a non-empty string (got ${params.mint})`);
+    }
+    if (!Number.isFinite(params.prior) || params.prior < 0 || params.prior > 1) {
+      throw new RangeError(`Invalid prior: must be a finite probability between 0 and 1 (got ${params.prior})`);
+    }
+
     let prior = params.prior;
     const triggerCounts = new Map<string, number>();
     let discountedOverlap = 0;
@@ -80,6 +103,10 @@ export class BayesBeliefEngine {
     let logOdds = Math.log(prior / (1 - prior));
 
     for (const obs of params.observations) {
+      const weight = obs.weight ?? 1.0;
+      if (!Number.isFinite(obs.value) || obs.value < 0 || obs.value > 1 || !Number.isFinite(weight) || weight < 0) {
+        throw new RangeError('Invalid Bayesian observation: value must be a probability and weight must be finite and non-negative');
+      }
       let discountFactor = 1.0;
       if (obs.trigger_group) {
         const seen = triggerCounts.get(obs.trigger_group) || 0;
@@ -94,7 +121,7 @@ export class BayesBeliefEngine {
       effectiveCount += discountFactor;
 
       // Evidence Likelihood Ratio update
-      const evidenceLR = obs.value >= 0.5 ? 1.0 + (obs.value - 0.5) * 2 * obs.weight : 1.0 / (1.0 + (0.5 - obs.value) * 2 * obs.weight);
+      const evidenceLR = obs.value >= 0.5 ? 1.0 + (obs.value - 0.5) * 2 * weight : 1.0 / (1.0 + (0.5 - obs.value) * 2 * weight);
       const effectiveLR = Math.pow(evidenceLR, discountFactor);
       logOdds += Math.log(effectiveLR);
     }
@@ -103,6 +130,11 @@ export class BayesBeliefEngine {
     // Enforce preservation of Unknown probability mass (clamp max confidence to 0.95)
     const posterior = Math.max(0.02, Math.min(0.95, Number(unconstrainedPosterior.toFixed(4))));
     const unknownMass = Math.max(0.05, Number((1.0 - posterior).toFixed(3)) * 0.15);
+    const updatedAtMs = Date.now();
+
+    const updateHash = createHash('sha256')
+      .update(`${params.mint}:${prior}:${posterior}:${effectiveCount}:${discountedOverlap}:${updatedAtMs}`)
+      .digest('hex');
 
     return {
       mint: params.mint,
@@ -115,7 +147,8 @@ export class BayesBeliefEngine {
         secondary_dex_volume: 'NOT_OBSERVABLE',
       },
       unknown_probability_mass: Number(unknownMass.toFixed(3)),
-      updated_at_ms: Date.now(),
+      update_hash: updateHash,
+      updated_at_ms: updatedAtMs,
     };
   }
 
