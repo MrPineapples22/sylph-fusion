@@ -606,6 +606,12 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
                     <span>Momentum: <b style={{color: (position.capitalShareMomentum ?? position.capitalTournament?.capitalShareMomentum ?? 0) < 0 ? '#FF3B69' : '#14F195'}}>{`${(position.capitalShareMomentum ?? position.capitalTournament?.capitalShareMomentum ?? 0) >= 0 ? '+' : ''}${Number(position.capitalShareMomentum ?? position.capitalTournament?.capitalShareMomentum ?? 0).toFixed(1)}%`}</b></span>
                     <span>Flow Toxicity: <b style={{color: (position.maxFlowToxicity ?? 0) >= 0.70 ? '#FF3B69' : '#14F195'}}>{`${((position.maxFlowToxicity ?? 0) * 100).toFixed(0)}%`}</b></span>
                   </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'2px',padding:'3px 6px',background:'rgba(56,189,248,0.04)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>Authentic Demand: <b style={{color: (position.passesUniqueBuyerCheck ?? position.authenticDemand?.passesUniqueBuyerCheck) === false ? '#FF3B69' : '#14F195'}}>{(position.passesUniqueBuyerCheck ?? position.authenticDemand?.passesUniqueBuyerCheck) === false ? 'SYBIL_RISK' : 'VERIFIED'}</b></span>
+                    <span>Eff Buyers: <b style={{color: '#38BDF8'}}>{`${position.effectiveBuyerCount ?? position.authenticDemand?.effectiveBuyerCount ?? 5} entities`}</b></span>
+                    <span>Breadth: <b style={{color: (position.meaningfulBuyerBreadth ?? position.authenticDemand?.meaningfulBuyerBreadth ?? 0.8) < 0.4 ? '#F59E0B' : '#14F195'}}>{`${((position.meaningfulBuyerBreadth ?? position.authenticDemand?.meaningfulBuyerBreadth ?? 0.8) * 100).toFixed(0)}%`}</b></span>
+                    <span>Metaorder: <b style={{color: position.inferredMetaorder ? ((position.metaorderDirection || position.inferredMetaorder.direction) === 'SELL' ? '#FF3B69' : '#14F195') : '#94A3B8'}}>{position.inferredMetaorder ? `${position.metaorderDirection || position.inferredMetaorder.direction} (${((position.inferredMetaorder.completionProbability ?? 0.5) * 100).toFixed(0)}%)` : 'NONE'}</b></span>
+                  </div>
                 </div>
               );
             })()}

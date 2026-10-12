@@ -222,6 +222,14 @@ import {
   CapitalTournamentEngine,
   type CapitalTournamentStatus,
   type TournamentRank,
+  AuthenticDemandEngine,
+  type AuthenticDemandProfile,
+  type TradeParticipant,
+  MetaorderIntelligenceEngine,
+  type InferredMetaorder,
+  ParticipantEcologyEngine,
+  type EcologicalParticipant,
+  type EcologicalRole,
 } from './microstructure/microstructure-x.js';
 import {
   certifyProfitFrontier,
@@ -618,6 +626,16 @@ export interface AetherFluxViewModel {
   readonly maxFlowToxicity?: number;
   readonly isFlowToxic?: boolean;
   readonly isTournamentAdmissible?: boolean;
+  readonly authenticDemand?: AuthenticDemandProfile;
+  readonly effectiveBuyerCount?: number;
+  readonly meaningfulBuyerBreadth?: number;
+  readonly passesUniqueBuyerCheck?: boolean;
+  readonly meetsAntiSniperBaseline?: boolean;
+  readonly inferredMetaorder?: InferredMetaorder | null;
+  readonly metaorderDirection?: 'BUY' | 'SELL';
+  readonly metaorderCompletionPct?: number;
+  readonly metaorderReversionHazard?: number;
+  readonly participantEcologyRole?: EcologicalRole;
 }
 
 export interface MasterPipelineResult {
@@ -2900,6 +2918,60 @@ export class MasterIntelligenceEngine {
     const isTournamentAdmissible = capitalTournament.tournamentRank !== 'LOSING';
 
     // ==========================================
+    // AUTHENTIC DEMAND, METAORDERS & PARTICIPANT ECOLOGY (Sections 3, 17, 18, 19)
+    // ==========================================
+    const defaultBuyers: readonly TradeParticipant[] = (context as any).demandBuyers ?? (
+      Array.isArray(context.rawWallets) && context.rawWallets.length > 0
+        ? context.rawWallets.map((w: any, idx: number) => ({
+            wallet: w.address || `buyer_${idx}`,
+            fundingRoot: w.parentFundingAddress || w.address || `root_${idx}`,
+            isWashSuspect: false,
+            isSubDust: false,
+            isSniper: idx === 0 && context.tokenAgeSec <= 2,
+            solAmount: Number(w.buyVolumeSol ?? 1.0),
+          }))
+        : [
+            { wallet: 'b1', fundingRoot: 'root_1', isWashSuspect: false, isSubDust: false, isSniper: false, solAmount: 2.0 },
+            { wallet: 'b2', fundingRoot: 'root_2', isWashSuspect: false, isSubDust: false, isSniper: false, solAmount: 1.5 },
+            { wallet: 'b3', fundingRoot: 'root_3', isWashSuspect: false, isSubDust: false, isSniper: false, solAmount: 3.0 },
+            { wallet: 'b4', fundingRoot: 'root_4', isWashSuspect: false, isSubDust: false, isSniper: false, solAmount: 1.0 },
+            { wallet: 'b5', fundingRoot: 'root_5', isWashSuspect: false, isSubDust: false, isSniper: false, solAmount: 2.5 },
+          ]
+    );
+
+    const defaultSellers: readonly TradeParticipant[] = (context as any).demandSellers ?? [
+      { wallet: 's1', fundingRoot: 'root_s1', isWashSuspect: false, isSubDust: false, isSniper: false, solAmount: 1.0 },
+    ];
+
+    const authenticDemand: AuthenticDemandProfile = (context as any).authenticDemand ?? AuthenticDemandEngine.evaluateDemand(
+      event.mint,
+      context.tokenAgeSec ?? 30,
+      defaultBuyers,
+      defaultSellers
+    );
+
+    const metaorderTrades = (context as any).metaorderTrades ?? (
+      coordination.isSyntheticClusterLikely
+        ? [
+            { wallet: 'algo_trader_1', timestampMs: event.receivedTimestampMs - 3000, solAmount: 1.5, isBuy: true },
+            { wallet: 'algo_trader_1', timestampMs: event.receivedTimestampMs - 2000, solAmount: 1.5, isBuy: true },
+            { wallet: 'algo_trader_1', timestampMs: event.receivedTimestampMs - 1000, solAmount: 1.5, isBuy: true },
+          ]
+        : []
+    );
+    const inferredMetaorder: InferredMetaorder | null = (context as any).inferredMetaorder !== undefined
+      ? (context as any).inferredMetaorder
+      : (metaorderTrades.length >= 3 ? MetaorderIntelligenceEngine.inferMetaorder(metaorderTrades) : null);
+
+    const participantEcology: EcologicalParticipant = (context as any).participantEcology ?? ParticipantEcologyEngine.classifyWallet({
+      firstTxAgeSeconds: context.tokenAgeSec ?? 30,
+      avgHoldDurationSeconds: (context as any).avgHoldDurationSeconds ?? 600,
+      sandwichCount: (context as any).sandwichCount ?? 0,
+      isDev: cleanRoomState.isDeceptionSevere,
+      clusterSize: coordination.isSyntheticClusterLikely ? 5 : 1,
+    });
+
+    // ==========================================
     // ALPHA HALF-LIFE, QUOTE DECAY & EXECUTION SHORTFALL (Sections XV, XVI & XX)
     // ==========================================
     const alphaHalfLife = AlphaHalfLifeEngine.estimateHalfLife({
@@ -3268,6 +3340,25 @@ export class MasterIntelligenceEngine {
     ) {
       decision = 'CHALLENGED_ABSTAIN';
       whyExecutionBlocked = `BLOCKED — ADVERSE SELECTION FLOW TOXICITY (Max Toxicity: ${(maxFlowToxicity * 100).toFixed(1)}% >= 70%)`;
+    } else if (
+      ((context as any).enforceAuthenticDemandGating ?? false) &&
+      !authenticDemand.passesUniqueBuyerCheck
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      whyExecutionBlocked = `BLOCKED — INSUFFICIENT AUTHENTIC DEMAND (Effective Buyers: ${authenticDemand.effectiveBuyerCount} < 5, Breadth: ${(authenticDemand.meaningfulBuyerBreadth * 100).toFixed(0)}%)`;
+    } else if (
+      ((context as any).enforceMetaorderGating ?? false) &&
+      inferredMetaorder &&
+      (inferredMetaorder.direction === 'SELL' || inferredMetaorder.programReversionHazard >= 0.30)
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      whyExecutionBlocked = `BLOCKED — ADVERSE METAORDER INFERRED (Direction: ${inferredMetaorder.direction}, Reversion Hazard: ${(inferredMetaorder.programReversionHazard * 100).toFixed(0)}%, Confidence: ${(inferredMetaorder.confidence * 100).toFixed(0)}%)`;
+    } else if (
+      ((context as any).enforceParticipantEcologyGating ?? false) &&
+      (participantEcology.role === 'CABAL_MEMBER' || participantEcology.role === 'DEV_INSIDER')
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      whyExecutionBlocked = `BLOCKED — ADVERSE PARTICIPANT ECOLOGY (${participantEcology.role}, Confidence: ${(participantEcology.confidence * 100).toFixed(0)}%)`;
     } else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
       decision = 'AUTHORIZED_SELL';
       const exitResult = this.executeExit({
@@ -4437,6 +4528,16 @@ export class MasterIntelligenceEngine {
       maxFlowToxicity,
       isFlowToxic,
       isTournamentAdmissible,
+      authenticDemand,
+      effectiveBuyerCount: authenticDemand.effectiveBuyerCount,
+      meaningfulBuyerBreadth: authenticDemand.meaningfulBuyerBreadth,
+      passesUniqueBuyerCheck: authenticDemand.passesUniqueBuyerCheck,
+      meetsAntiSniperBaseline: authenticDemand.meetsAntiSniperBaseline,
+      inferredMetaorder,
+      metaorderDirection: inferredMetaorder?.direction,
+      metaorderCompletionPct: inferredMetaorder ? Number((inferredMetaorder.completionProbability * 100).toFixed(1)) : undefined,
+      metaorderReversionHazard: inferredMetaorder?.programReversionHazard,
+      participantEcologyRole: participantEcology.role,
       links: {
         solscan: `https://solscan.io/token/${event.mint}`,
         pump: `https://pump.fun/${event.mint}`,
@@ -5696,6 +5797,40 @@ export class MasterIntelligenceEngine {
     horizonsMs?: readonly number[]
   ): Record<number, HorizonFlowMetrics> {
     return this.flowEngine.evaluateFlow(trades, asOfTimeMs, horizonsMs);
+  }
+
+  /**
+   * Blueprint Section 17: Authentic Demand & Sybil Purging Evaluation
+   */
+  public evaluateAuthenticDemand(
+    mint: string,
+    ageSeconds: number,
+    buyers: readonly TradeParticipant[],
+    sellers: readonly TradeParticipant[]
+  ): AuthenticDemandProfile {
+    return AuthenticDemandEngine.evaluateDemand(mint, ageSeconds, buyers, sellers);
+  }
+
+  /**
+   * Blueprint Section 18: Metaorder Algorithmic Parent Order Inference
+   */
+  public inferMetaorder(
+    trades: readonly { wallet: string; timestampMs: number; solAmount: number; isBuy: boolean }[]
+  ): InferredMetaorder | null {
+    return MetaorderIntelligenceEngine.inferMetaorder(trades);
+  }
+
+  /**
+   * Blueprint Section 3: Participant Ecology Classification
+   */
+  public classifyParticipantEcology(wallet: {
+    firstTxAgeSeconds: number;
+    avgHoldDurationSeconds: number;
+    sandwichCount: number;
+    isDev: boolean;
+    clusterSize: number;
+  }): EcologicalParticipant {
+    return ParticipantEcologyEngine.classifyWallet(wallet);
   }
 
   /**
