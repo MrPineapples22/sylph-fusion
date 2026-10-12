@@ -39,7 +39,7 @@ export class SelectivePredictionEngine {
 
     // Form split-conformal prediction set
     const predictionSet: ('WINNER_10X' | 'MODEST_MOVER' | 'COLLAPSE_RUG')[] = [];
-    if (predictedMultiple >= 5.0 && nonconformityScore <= 0.35) {
+    if (predictedMultiple >= 5.0) {
       predictionSet.push('WINNER_10X');
     }
     if (predictedMultiple >= 1.25 && predictedMultiple <= 8.0) {

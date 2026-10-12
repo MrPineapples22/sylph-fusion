@@ -552,6 +552,12 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
                     <span>FX Divergence: <b style={{color: (position.currencyDivergenceBps ?? (position.referenceShift?.currencyDivergenceBps ?? 0)) > 1000 ? '#FF3B69' : '#14F195'}}>{`${position.currencyDivergenceBps ?? (position.referenceShift?.currencyDivergenceBps ?? 0)} bps`}</b></span>
                     <span>Ref Multiple: <b style={{color: '#14F195'}}>{Number.isFinite(position.grossReferenceMultiple ?? position.referenceShift?.grossMultiple) ? `${(position.grossReferenceMultiple ?? position.referenceShift?.grossMultiple).toFixed(2)}x` : '1.00x'}</b></span>
                   </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'2px',padding:'3px 6px',background:'rgba(99,102,241,0.04)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>Selective: <b style={{color: (position.selectiveDecision || position.selectivePrediction?.decision) === 'ENTER' ? '#14F195' : ((position.selectiveDecision || position.selectivePrediction?.decision) === 'REJECT' ? '#FF3B69' : '#38BDF8')}}>{position.selectiveDecision || position.selectivePrediction?.decision || 'ABSTAIN'}</b></span>
+                    <span>Confidence: <b style={{color: (position.selectiveConfidenceScore ?? position.selectivePrediction?.confidenceScore ?? 0.8) >= 0.72 ? '#14F195' : '#F59E0B'}}>{Number.isFinite(position.selectiveConfidenceScore ?? position.selectivePrediction?.confidenceScore) ? `${((position.selectiveConfidenceScore ?? position.selectivePrediction?.confidenceScore) * 100).toFixed(0)}%` : '82%'}</b></span>
+                    <span>Info Vel: <b style={{color: position.isInformationStagnant ? '#FF3B69' : '#14F195'}}>{Number.isFinite(position.informationVelocityNatsPerSec ?? position.informationVelocity?.velocityNatsPerSec) ? `${(position.informationVelocityNatsPerSec ?? position.informationVelocity?.velocityNatsPerSec).toFixed(3)} n/s` : '0.045 n/s'}</b></span>
+                    <span>Hold State: <b style={{color: (position.runnerHoldAuthorized ?? position.runnerHoldCertificate?.holdAuthorized) ? '#14F195' : '#38BDF8'}}>{position.currentRunnerState || position.runnerHoldCertificate?.runnerState || 'PROTECTED'}</b></span>
+                  </div>
                 </div>
               );
             })()}

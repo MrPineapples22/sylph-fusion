@@ -101,7 +101,7 @@ import { ExitPolicyTournament } from './executable-alpha/exit/exit-tournament.js
 import { ExitRegretLedger, type ExitRegretAnalysis } from './executable-alpha/exit/regret-ledger.js';
 import { ExitPolicyTournament as ExitPolicyTournamentMatrix, type RunnerDependenceMetrics } from './research-matrix/exit-tournament.js';
 import type { PositionState, ResearchExitContext } from './executable-alpha/exit/exit-policy-interface.js';
-import type { ExitAttemptRecord, LiquidationSurface, ExecutionLatencyTrace } from './executable-alpha/types.js';
+import type { ExitAttemptRecord, LiquidationSurface, ExecutionLatencyTrace, RunnerHoldCertificate, RunnerState } from './executable-alpha/types.js';
 import { BayesErrorFrontierEngine, type BayesErrorAnalysis } from './executable-alpha/information/bayes-error-frontier.js';
 import { EarliestDecisionTimeEngine, type EarliestDecisionTimeProfile } from './executable-alpha/information/earliest-decision-time.js';
 import { RunnerDistinguishabilityCourt, type RunnerCourtFeatures, HISTORICAL_2X_TO_10X_BASE_RATE } from './executable-alpha/information/runner-distinguishability.js';
@@ -124,6 +124,9 @@ import { CapitalGenerationEngine, type CapitalGenerationReport } from './executa
 import { CapitalSurvivalEngine, type CapitalSurvivalReport } from './executable-alpha/flow/capital-survival.js';
 import { LatencyBudgetProfiler, type LatencyBreakdown } from './executable-alpha/execution/latency-budget.js';
 import { FixedReferenceShiftEngine, type BaselineReferenceAnalysis } from './executable-alpha/distribution/fixed-reference-shift.js';
+import { SelectivePredictionEngine, type SelectivePredictionResult } from './executable-alpha/information/selective-prediction.js';
+import { InformationVelocityEngine, type InformationVelocityProfile } from './executable-alpha/information/information-velocity.js';
+import { RunnerHoldManager } from './executable-alpha/exit/runner-hold.js';
 import {
   AlphaHalfLifeEngine,
   type AlphaHalfLifeEstimate,
@@ -495,6 +498,15 @@ export interface AetherFluxViewModel {
   readonly totalDecisionToLandingMs?: number;
   readonly currencyDivergenceBps?: number;
   readonly grossReferenceMultiple?: number;
+  readonly selectivePrediction?: SelectivePredictionResult;
+  readonly informationVelocity?: InformationVelocityProfile;
+  readonly runnerHoldCertificate?: RunnerHoldCertificate;
+  readonly selectiveDecision?: 'ENTER' | 'ABSTAIN' | 'REJECT';
+  readonly selectiveConfidenceScore?: number;
+  readonly informationVelocityNatsPerSec?: number;
+  readonly isInformationStagnant?: boolean;
+  readonly runnerHoldAuthorized?: boolean;
+  readonly currentRunnerState?: RunnerState;
 }
 
 export interface MasterPipelineResult {
@@ -556,6 +568,9 @@ export interface MasterPipelineResult {
   readonly pathwayBottleneck?: BottleneckAnalysis;
   readonly latencyBreakdown?: LatencyBreakdown;
   readonly referenceShift?: BaselineReferenceAnalysis;
+  readonly selectivePrediction?: SelectivePredictionResult;
+  readonly informationVelocity?: InformationVelocityProfile;
+  readonly runnerHoldCertificate?: RunnerHoldCertificate;
   readonly whyExecutionBlocked?: string;
 }
 
@@ -610,6 +625,10 @@ export type {
   BottleneckAnalysis,
   LatencyBreakdown,
   BaselineReferenceAnalysis,
+  SelectivePredictionResult,
+  InformationVelocityProfile,
+  RunnerHoldCertificate,
+  RunnerState,
 };
 
 export class MasterIntelligenceEngine {
@@ -2224,6 +2243,36 @@ export class MasterIntelligenceEngine {
     });
 
     // ==========================================
+    // INFORMATION ACCUMULATION VELOCITY & STAGNATION (Section IX & Study 10)
+    // ==========================================
+    const infoT0 = (context as any).infoT0 ?? Math.max(0.01, (cleanRoomState.isDeceptionSevere ? 0.05 : 0.15));
+    const infoT1 = (context as any).infoT1 ?? Math.max(0.02, infoT0 + 0.05);
+    const infoT2 = (context as any).infoT2 ?? Math.max(0.03, (1.0 - (oodAssessment.noveltyScore ?? 0.20)) * 0.5);
+    const infoDeltaSec = (context as any).infoDeltaSec ?? Math.max(1.0, context.tokenAgeSec / 3);
+    const informationVelocity: InformationVelocityProfile = (context as any).informationVelocity ?? InformationVelocityEngine.calculate(
+      infoT0,
+      infoT1,
+      infoT2,
+      infoDeltaSec
+    );
+
+    // ==========================================
+    // SELECTIVE PREDICTION & SPLIT-CONFORMAL COVERAGE (Sections IX, XXVII & Study 11)
+    // ==========================================
+    const predictedMultiple = (context as any).predictedMultiple ?? (spieEvaluation ? Math.max(1.0, 1.0 + (spieEvaluation.netExpectedEvBps / 1000.0)) : 2.5);
+    const uncertaintyWidth = (context as any).uncertaintyWidth ?? Math.max(0.05, (runnerDistinguishability ? (runnerDistinguishability.uncertaintyHigh - runnerDistinguishability.uncertaintyLow) : 0.20));
+    const authenticityScore = (context as any).authenticityScore ?? (tokenSecurity.isAllowed && !cleanRoomState.isDeceptionSevere ? 0.85 : 0.35);
+    const reachabilityScore = (context as any).reachabilityScore ?? Math.max(0.1, Math.min(1.0, (context.liquiditySol / Math.max(1, context.marketCapSol))));
+    const conformalAlpha = (context as any).conformalAlpha ?? 0.10;
+    const selectivePrediction: SelectivePredictionResult = (context as any).selectivePrediction ?? SelectivePredictionEngine.evaluate(
+      predictedMultiple,
+      uncertaintyWidth,
+      authenticityScore,
+      reachabilityScore,
+      conformalAlpha
+    );
+
+    // ==========================================
     // RUNNER SEARCH COST, TAIL CONCENTRATION & RUIN SURVIVABILITY (Sections XXV & XXVI)
     // ==========================================
     const runnerSearchCost = (context as any).recentCandidateOutcomes
@@ -2394,6 +2443,25 @@ export class MasterIntelligenceEngine {
       cumulativeOutflowsUsd,
       poolAgeSeconds,
       inflowObservationWindowSeconds: (context as any).inflowObservationWindowSeconds ?? 60,
+    });
+
+    // ==========================================
+    // RUNNER HOLD CERTIFICATE & STATE MACHINE (Sections XXXVI, XXXVII & Studies 34/35)
+    // ==========================================
+    const currentRunnerState: RunnerState = (context as any).runnerState ?? (currentMultiple >= 2.0 ? 'RUNNER_CANDIDATE' : 'PROTECTED');
+    const runnerHoldCertificate: RunnerHoldCertificate = (context as any).runnerHoldCertificate ?? RunnerHoldManager.issueCertificate({
+      positionId: `pos_${event.mint.slice(0, 8)}`,
+      mint: event.mint,
+      runnerState: currentRunnerState,
+      currentSlot: BigInt(event.slot),
+      informationSufficient: !informationVelocity.isStagnant && bayesErrorAnalysis.isBelowErrorCeiling,
+      calibratedRunnerProb: runnerDistinguishability?.calibratedRunnerProbability ?? 0.08,
+      failureCommittor: failureCommittor.qFail,
+      capitalRenewalScore: Math.max(0.0, Math.min(1.0, 1 - (oodAssessment.noveltyScore ?? 0.15))),
+      inventoryLiabilityAcceptable: !inventoryAbsorption.isOverhangDangerous,
+      exitReachabilityPositive: reachabilityScore >= 0.20,
+      liquidityStressAcceptable: liquidationSurface.stressedExitCapacityUsd >= 50.0,
+      authenticityStillValid: authenticityScore >= 0.60,
     });
 
     // ==========================================
@@ -2652,6 +2720,24 @@ export class MasterIntelligenceEngine {
     ) {
       decision = 'CHALLENGED_ABSTAIN';
       whyExecutionBlocked = `BLOCKED — CURRENCY REFERENCE DIVERGENCE (${referenceShift.currencyDivergenceBps} bps > ${((context as any).maxCurrencyDivergenceBps ?? 1000)} bps, valid: ${referenceShift.isValidBaseline})`;
+    } else if (
+      ((context as any).enforceSelectivePredictionGating ?? false) &&
+      selectivePrediction.decision === 'REJECT'
+    ) {
+      decision = 'RISK_REJECTED';
+      whyExecutionBlocked = `BLOCKED — SELECTIVE PREDICTION REJECTED (${selectivePrediction.reason})`;
+    } else if (
+      ((context as any).enforceSelectivePredictionGating ?? false) &&
+      selectivePrediction.decision === 'ABSTAIN'
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      whyExecutionBlocked = `BLOCKED — SELECTIVE PREDICTION ABSTAIN (${selectivePrediction.reason})`;
+    } else if (
+      ((context as any).enforceInformationVelocityGating ?? false) &&
+      informationVelocity.recommendedAction === 'STAGNANT_ABSTAIN'
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      whyExecutionBlocked = `BLOCKED — STAGNANT INFORMATION VELOCITY (Velocity: ${informationVelocity.velocityNatsPerSec.toFixed(5)} nats/s, Info: ${informationVelocity.currentInformationNats.toFixed(2)} nats)`;
     } else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
       decision = 'AUTHORIZED_SELL';
       const exitResult = this.executeExit({
@@ -3759,6 +3845,15 @@ export class MasterIntelligenceEngine {
       totalDecisionToLandingMs: execLatencyBreakdown.totalDecisionToLandingMs,
       currencyDivergenceBps: referenceShift.currencyDivergenceBps,
       grossReferenceMultiple: referenceShift.grossMultiple,
+      selectivePrediction,
+      informationVelocity,
+      runnerHoldCertificate,
+      selectiveDecision: selectivePrediction.decision,
+      selectiveConfidenceScore: selectivePrediction.confidenceScore,
+      informationVelocityNatsPerSec: informationVelocity.velocityNatsPerSec,
+      isInformationStagnant: informationVelocity.isStagnant,
+      runnerHoldAuthorized: runnerHoldCertificate.holdAuthorized,
+      currentRunnerState: runnerHoldCertificate.runnerState,
       links: {
         solscan: `https://solscan.io/token/${event.mint}`,
         pump: `https://pump.fun/${event.mint}`,
@@ -4021,6 +4116,9 @@ export class MasterIntelligenceEngine {
       pathwayBottleneck,
       latencyBreakdown: execLatencyBreakdown,
       referenceShift,
+      selectivePrediction,
+      informationVelocity,
+      runnerHoldCertificate,
       whyExecutionBlocked: decision !== 'AUTHORIZED_BUY' ? whyExecutionBlocked : undefined,
     };
   }
@@ -4699,6 +4797,65 @@ export class MasterIntelligenceEngine {
       params.solPriceUsdAtT0,
       params.solPriceUsdAtT1
     );
+  }
+
+  /**
+   * Sections IX, XXVII & Study 11: Selective Prediction & Split-Conformal Coverage
+   * Optimizes the risk-coverage trade-off with unambiguous conformal prediction sets.
+   */
+  public evaluateSelectivePrediction(params: {
+    predictedMultiple: number;
+    uncertaintyWidth: number;
+    authenticityScore: number;
+    reachabilityScore: number;
+    conformalAlpha?: number;
+  }): SelectivePredictionResult {
+    return SelectivePredictionEngine.evaluate(
+      params.predictedMultiple,
+      params.uncertaintyWidth,
+      params.authenticityScore,
+      params.reachabilityScore,
+      params.conformalAlpha
+    );
+  }
+
+  /**
+   * Section IX & Study 10: Information Velocity & Stagnation
+   * Computes rate of information accumulation and pinpoints uninformative stagnation.
+   */
+  public calculateInformationVelocity(params: {
+    infoT0: number;
+    infoT1: number;
+    infoT2: number;
+    deltaSec: number;
+  }): InformationVelocityProfile {
+    return InformationVelocityEngine.calculate(
+      params.infoT0,
+      params.infoT1,
+      params.infoT2,
+      params.deltaSec
+    );
+  }
+
+  /**
+   * Sections XXXVI & XXXVII: Runner Hold Certificate & State Machine
+   * Issues cryptographic hold certificate with strict fail-closed constraints.
+   */
+  public issueRunnerHoldCertificate(params: {
+    positionId: string;
+    mint: string;
+    runnerState: RunnerState;
+    currentSlot: bigint;
+    informationSufficient: boolean;
+    calibratedRunnerProb: number;
+    failureCommittor: number;
+    capitalRenewalScore: number;
+    inventoryLiabilityAcceptable: boolean;
+    exitReachabilityPositive: boolean;
+    liquidityStressAcceptable: boolean;
+    authenticityStillValid: boolean;
+  }): RunnerHoldCertificate {
+    return RunnerHoldManager.issueCertificate(params);
   }
 
   /**

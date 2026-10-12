@@ -19,7 +19,7 @@ export class SelectivePredictionEngine {
         const confidenceScore = Number(Math.max(0, 1.0 - nonconformityScore).toFixed(4));
         // Form split-conformal prediction set
         const predictionSet = [];
-        if (predictedMultiple >= 5.0 && nonconformityScore <= 0.35) {
+        if (predictedMultiple >= 5.0) {
             predictionSet.push('WINNER_10X');
         }
         if (predictedMultiple >= 1.25 && predictedMultiple <= 8.0) {
