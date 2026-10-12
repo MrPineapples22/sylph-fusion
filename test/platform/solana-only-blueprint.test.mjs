@@ -472,7 +472,6 @@ describe('SYLPH FUSION — Solana-Only Integration Blueprint', () => {
 
     // Section 27: Landing Cost Optimizer
     const optimization = transport.optimizeLane({
-      estimatedGrossEdgeLamports: 2_500_000n, // 0.0025 SOL edge
       targetProgram: '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8',
       benchmarkRegion: 'eu-west',
       congestionBucket: 'MEDIUM',
@@ -503,22 +502,51 @@ describe('SYLPH FUSION — Solana-Only Integration Blueprint', () => {
           baseFeeLamports: 5_000n,
           priorityFeeLamports: laneCosts[lane] - 5_000n,
           tipLamports: 0n,
-          realizedGrossEdgeLamports: noLand ? 0n : 100_000n,
+          realizedGrossEdgeLamports: noLand ? 0n : lane === 'SWQOS_LANE' ? 60_000n : 100_000n,
           postLandingSlippageBps: noLand ? undefined : 5,
         });
       }
     }
     const measured = transport.optimizeLane({
-      estimatedGrossEdgeLamports: 100_000n,
       targetProgram: '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8',
       benchmarkRegion: 'eu-west',
       congestionBucket: 'MEDIUM',
     });
     assert.equal(measured.status, 'RESEARCH_CANDIDATE');
-    assert.equal(measured.selectedLane, 'SWQOS_LANE');
+    assert.equal(measured.selectedLane, 'DIRECT_TPU');
     assert.equal(measured.matchedSampleCount, SolanaTransportTournament.MINIMUM_MATCHED_BENCHMARK_EVENTS);
     assert.equal(measured.promotionAuthority, 'NONE');
+    assert.equal(measured.expectedNetEdgeLamports, 46_666n);
     assert.equal(transport.getTelemetry().find((lane) => lane.lane === 'DIRECT_TPU').landingRatePct, 100 * 29 / 30);
+
+    const unpairedTransport = new SolanaTransportTournament();
+    for (let sample = 0; sample < SolanaTransportTournament.MINIMUM_MATCHED_BENCHMARK_EVENTS; sample += 1) {
+      for (const lane of SolanaTransportTournament.CANDIDATE_LANES) {
+        unpairedTransport.recordResolvedAttempt({
+          attemptId: `unpaired-${lane}-${sample}`,
+          benchmarkEventId: `unpaired-event-${sample}`,
+          targetProgram: '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8',
+          lane,
+          benchmarkRegion: 'eu-west',
+          congestionBucket: 'MEDIUM',
+          inputNotionalLamports: lane === 'JITO_BUNDLE' && sample === 0 ? 11_000_000n : 10_000_000n,
+          outcome: 'SUCCESS',
+          landingLatencyMs: 250,
+          baseFeeLamports: 5_000n,
+          priorityFeeLamports: 5_000n,
+          tipLamports: 0n,
+          realizedGrossEdgeLamports: 100_000n,
+          postLandingSlippageBps: 5,
+        });
+      }
+    }
+    const unpairedDecision = unpairedTransport.optimizeLane({
+      targetProgram: '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8',
+      benchmarkRegion: 'eu-west',
+      congestionBucket: 'MEDIUM',
+    });
+    assert.equal(unpairedDecision.status, 'ABSTAIN');
+    assert.equal(unpairedDecision.matchedSampleCount, SolanaTransportTournament.MINIMUM_MATCHED_BENCHMARK_EVENTS - 1);
 
     assert.throws(() => transport.recordResolvedAttempt({
       attemptId: 'bad-sample', benchmarkEventId: 'bad', targetProgram: 'program', lane: 'DIRECT_TPU',

@@ -630,6 +630,12 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
                     <span>Contention: <b style={{color: (position.observedContentionRatio ?? position.feeRecommendation?.observedContentionRatio ?? 0.2) >= 0.8 ? '#FF3B69' : '#14F195'}}>{`${((position.observedContentionRatio ?? position.feeRecommendation?.observedContentionRatio ?? 0.2) * 100).toFixed(0)}%`}</b></span>
                     <span>Policy Tier: <b style={{color: '#A78BFA'}}>{position.policyTier || position.executionPolicy?.tier || 'CHAMPION'}</b></span>
                   </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'2px',padding:'3px 6px',background:'rgba(59,130,246,0.04)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>Attempt: <b style={{color: (position.lastExecutionOutcome || 'FINALIZED_SUCCESS') === 'FINALIZED_SUCCESS' ? '#14F195' : '#FF3B69'}}>{position.lastExecutionOutcome || 'FINALIZED_SUCCESS'}</b></span>
+                    <span>Landing: <b style={{color: (position.executionLandingRatePct ?? 95.0) >= 80 ? '#14F195' : '#F59E0B'}}>{`${(position.executionLandingRatePct ?? 95.0).toFixed(1)}%`}</b></span>
+                    <span>Success: <b style={{color: (position.executionSuccessRatePct ?? 90.0) >= 75 ? '#14F195' : '#FF3B69'}}>{`${(position.executionSuccessRatePct ?? 90.0).toFixed(1)}%`}</b></span>
+                    <span>Transport: <b style={{color: '#38BDF8'}}>{position.executionTransport || position.executionActionVector?.transport || 'JITO_BUNDLE'}</b></span>
+                  </div>
                 </div>
               );
             })()}

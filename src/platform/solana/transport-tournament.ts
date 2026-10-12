@@ -163,17 +163,16 @@ export class SolanaTransportTournament {
 
   /**
    * Section 27: Landing-Cost Optimizer
-   * Computes P(land | fee, lane, congestion) * remainingEdge - fee - tip.
+   * Ranks lanes by paired, observed net outcomes. No caller-supplied edge forecast
+   * is substituted for the realized outcome evidence in the benchmark sample.
    */
   public optimizeLane(params: {
-    estimatedGrossEdgeLamports: bigint;
     targetProgram: string;
     benchmarkRegion: string;
     congestionBucket: 'LOW' | 'MEDIUM' | 'HIGH';
   }): LaneOptimizationDecision {
     const lanes = SolanaTransportTournament.CANDIDATE_LANES;
-    if (typeof params.estimatedGrossEdgeLamports !== 'bigint' || params.estimatedGrossEdgeLamports <= 0n ||
-        !params.targetProgram || !params.benchmarkRegion || !['LOW', 'MEDIUM', 'HIGH'].includes(params.congestionBucket)) {
+    if (!params.targetProgram || !params.benchmarkRegion || !['LOW', 'MEDIUM', 'HIGH'].includes(params.congestionBucket)) {
       throw new Error('INVALID_LANE_OPTIMIZATION_INPUT');
     }
     const byLane = new Map<TransportLane, Map<string, ResolvedTransportAttempt>>();
@@ -185,8 +184,15 @@ export class SolanaTransportTournament {
       }
       byLane.set(lane, matching);
     }
+    // A shared event id is only a valid paired benchmark when every lane used
+    // the same notional. This prevents unlike-sized attempts from being
+    // compared as if they were the same opportunity.
     const commonEvents = [...(byLane.get(lanes[0])?.keys() ?? [])]
-      .filter((eventId) => lanes.every((lane) => byLane.get(lane)?.has(eventId)));
+      .filter((eventId) => {
+        if (!lanes.every((lane) => byLane.get(lane)?.has(eventId))) return false;
+        const notionals = lanes.map((lane) => byLane.get(lane)!.get(eventId)!.inputNotionalLamports);
+        return notionals.every((notional) => notional === notionals[0]);
+      });
     if (commonEvents.length < SolanaTransportTournament.MINIMUM_MATCHED_BENCHMARK_EVENTS) {
       return Object.freeze({
         status: 'ABSTAIN', abstainReason: 'INSUFFICIENT_MATCHED_BENCHMARKS', selectedLane: null,
@@ -202,17 +208,19 @@ export class SolanaTransportTournament {
       const successes = attempts.filter((a) => a.outcome === 'SUCCESS').length;
       const totalTip = attempts.reduce((sum, a) => sum + a.tipLamports, 0n);
       const totalPriority = attempts.reduce((sum, a) => sum + a.priorityFeeLamports, 0n);
-      const totalCosts = attempts.reduce((sum, a) => sum + a.baseFeeLamports + a.priorityFeeLamports + a.tipLamports, 0n);
+      const totalNet = attempts.reduce((sum, a) =>
+        sum + a.realizedGrossEdgeLamports - a.baseFeeLamports - a.priorityFeeLamports - a.tipLamports, 0n);
       const n = BigInt(attempts.length);
-      const averageCostsCeil = (totalCosts + n - 1n) / n;
-      const expectedGross = (params.estimatedGrossEdgeLamports * BigInt(successes)) / n;
+      // Floor negative averages so sub-lamport rounding cannot turn a loss
+      // into a positive candidate.
+      const averageNet = totalNet >= 0n ? totalNet / n : -((-totalNet + n - 1n) / n);
       return {
         lane,
         landingRate: landings / attempts.length,
         successRate: successes / attempts.length,
         averageTip: (totalTip + n - 1n) / n,
         averagePriority: (totalPriority + n - 1n) / n,
-        expectedNet: expectedGross - averageCostsCeil,
+        expectedNet: averageNet,
       };
     }).sort((a, b) => a.expectedNet === b.expectedNet ? 0 : a.expectedNet > b.expectedNet ? -1 : 1);
     const best = scored[0];

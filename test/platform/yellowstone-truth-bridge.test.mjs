@@ -103,6 +103,28 @@ test('YellowstoneTruthBridge: Deduplication blocks repeated events from counting
   assert.equal(stats.total_ingested, 1);
 });
 
+test('YellowstoneTruthBridge: keeps same-slot observations from competing blocks distinct', () => {
+  const chainTruth = new ChainTruthEngine();
+  const bridge = new YellowstoneTruthBridge({ chainTruth });
+  const base = {
+    signature: 'forked-signature',
+    slot: 200001,
+    logs: ['Program log: Instruction: Buy'],
+  };
+  const forkA = { ...base, blockhash: '1'.repeat(32) };
+  const forkB = { ...base, blockhash: '2'.repeat(32) };
+
+  const firstFork = bridge.ingestTransactionUpdate(forkA);
+  assert.equal(firstFork.success, true);
+  assert.equal(bridge.ingestUpdate(forkA), false);
+  const secondFork = bridge.ingestTransactionUpdate(forkB);
+  assert.equal(secondFork.success, true);
+  assert.equal(chainTruth.getCommitmentSummary().totalTrackedEvents, 2);
+  assert.notEqual(firstFork.eventId, secondFork.eventId);
+  assert.equal(chainTruth.getEvent(firstFork.eventId).blockhash, forkA.blockhash);
+  assert.equal(chainTruth.getEvent(secondFork.eventId).blockhash, forkB.blockhash);
+});
+
 test('YellowstoneTruthBridge: decoded evidence hashes the fields used for event parsing', () => {
   const bridge = new YellowstoneTruthBridge({ chainTruth: new ChainTruthEngine() });
   const emitted = [];

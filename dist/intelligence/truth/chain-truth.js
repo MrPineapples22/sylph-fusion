@@ -21,7 +21,9 @@ export class ChainTruthEngine {
     latestConfirmedSlot = 0;
     latestFinalizedSlot = 0;
     /**
-     * Derive deterministic event identity from slot, signature, instruction, event type, and account.
+     * Derive deterministic event identity from slot, signature, instruction, event type,
+     * account, and known block identity. A transaction observed on two competing forks
+     * must remain two provenance records until fork resolution.
      */
     static deriveEventIdentity(event) {
         const slot = event.slot ?? 0;
@@ -31,7 +33,7 @@ export class ChainTruthEngine {
         const type = event.eventType;
         const acct = event.mint || event.wallet || 'noacct';
         return createHash('sha256')
-            .update(`${slot}:${sig}:${ix}:${innerIx}:${type}:${acct}`)
+            .update(`${slot}:${sig}:${ix}:${innerIx}:${type}:${acct}:${event.blockhash ?? ''}`)
             .digest('hex')
             .slice(0, 32);
     }

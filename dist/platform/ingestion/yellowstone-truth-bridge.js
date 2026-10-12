@@ -49,7 +49,8 @@ export class YellowstoneTruthBridge extends EventEmitter {
     ingestTransactionUpdate(update) {
         const receivedTime = Date.now();
         const slot = Number(update.slot);
-        if (!Number.isSafeInteger(slot) || slot < 0 || !update.signature || update.err || update.isVote) {
+        if (!Number.isSafeInteger(slot) || slot < 0 || !update.signature || update.err || update.isVote ||
+            (update.blockhash !== undefined && !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(update.blockhash))) {
             return { success: false, latencyMs: 0 };
         }
         const sourceTime = update.blockTimeMs ?? receivedTime;
@@ -79,10 +80,10 @@ export class YellowstoneTruthBridge extends EventEmitter {
         }
         // Hash the decoded fields used below. Extra caller-supplied bytes cannot prove
         // that a transport captured or decoded this event, so they are never used.
-        const rawPayload = JSON.stringify({ signature: update.signature, slot, logs: update.logs });
+        const rawPayload = JSON.stringify({ signature: update.signature, slot, blockhash: update.blockhash, logs: update.logs });
         const wireEncoding = 'DECODED_PROTOBUF_JSON_SERIALIZED_BYTES';
         const wireWitness = createWireWitness('SOLANA_GEYSER', 'TRANSACTION_STREAM', 'GRPC', rawPayload, 200, 'VALID', wireEncoding);
-        const eventId = `geyser_${slot}_${update.signature.slice(0, 16)}`;
+        const eventId = `geyser_${slot}_${update.signature}_${update.blockhash ?? 'unknown-block'}`;
         // Calibrate confidence by connection topology
         const sourceConfidence = this.topology === 'DIRECT_VALIDATOR_GEYSER'
             ? 0.999
@@ -95,6 +96,7 @@ export class YellowstoneTruthBridge extends EventEmitter {
             mint,
             wallet,
             signature: update.signature,
+            blockhash: update.blockhash,
             source: 'yellowstone_grpc',
             sourceTimestampMs: sourceTime,
             receivedTimestampMs: receivedTime,

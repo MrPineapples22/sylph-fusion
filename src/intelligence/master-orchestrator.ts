@@ -264,6 +264,12 @@ import {
   createPolicyArtifact,
   type ExecutionPolicyArtifact,
   type PolicyTier,
+  ExecutionAttemptLedger,
+  type ExecutionAttemptRecord,
+  type ExecutionAttemptOutcome,
+  type ExecutionAttemptStats,
+  type ExecutionActionVector,
+  type ExecutionTransportType,
 } from './execution-adaptation/index.js';
 import {
   certifyProfitFrontier,
@@ -690,6 +696,13 @@ export interface AetherFluxViewModel {
   readonly executionPolicy?: ExecutionPolicyArtifact;
   readonly policyTier?: PolicyTier;
   readonly policyHash?: string;
+  readonly executionActionVector?: ExecutionActionVector;
+  readonly executionAttemptStats?: ExecutionAttemptStats;
+  readonly executionLandingRatePct?: number;
+  readonly executionSuccessRatePct?: number;
+  readonly executionTotalAttempts?: number;
+  readonly executionTransport?: ExecutionTransportType;
+  readonly lastExecutionOutcome?: ExecutionAttemptOutcome;
 }
 
 export interface MasterPipelineResult {
@@ -776,6 +789,8 @@ export interface MasterPipelineResult {
   readonly flightRecord?: EconomicFlightRecord;
   readonly feeRecommendation?: WritableSetFeeRecommendation;
   readonly executionPolicy?: ExecutionPolicyArtifact;
+  readonly executionActionVector?: ExecutionActionVector;
+  readonly executionAttemptStats?: ExecutionAttemptStats;
   readonly whyExecutionBlocked?: string;
 }
 
@@ -1032,6 +1047,7 @@ export class MasterIntelligenceEngine {
   public readonly economicFlightRecorder: EconomicFlightRecorder;
   public readonly feeSurface: WritableSetFeeSurface;
   private activeExecutionPolicy: ExecutionPolicyArtifact;
+  public readonly executionAttemptLedger: ExecutionAttemptLedger;
 
   constructor() {
     this.kernel = new IntegrationKernel();
@@ -1222,6 +1238,7 @@ export class MasterIntelligenceEngine {
       targetCuBufferFraction: 0.20,
       preferredTransport: 'JITO_SINGLE_TX_BUNDLE',
     });
+    this.executionAttemptLedger = new ExecutionAttemptLedger();
 
     this.setupConnectionAuditor();
     this.registerComponents();
@@ -3292,6 +3309,27 @@ export class MasterIntelligenceEngine {
     const executionPolicy: ExecutionPolicyArtifact = (context as any).executionPolicy ?? this.activeExecutionPolicy;
 
     // ==========================================
+    // EXECUTION ACTION VECTOR & ATTEMPT STATS (Sections XX, XXI)
+    // ==========================================
+    const executionActionVector: ExecutionActionVector = (context as any).actionVector ?? {
+      transport: (context as any).transport ?? executionPolicy.preferredTransport,
+      route: (event as any).platform || 'PUMP_FUN',
+      txVersion: 'v0',
+      targetSlot: BigInt(event.slot),
+      region: 'GLOBAL',
+      cuLimit: 300_000,
+      priorityFeeMicroLamports: feeRecommendation.recommendedPriorityFeeMicroLamports,
+      jitoTipLamports: feeRecommendation.recommendedJitoTipLamports,
+      slippageBps: executionPolicy.maxSlippageBps,
+      expirySlots: 150,
+      retryPolicy: {
+        maxRetries: 3,
+        retryIntervalMs: 500,
+      },
+    };
+    const executionAttemptStats: ExecutionAttemptStats = (context as any).attemptStats ?? this.executionAttemptLedger.getStats();
+
+    // ==========================================
     // ALPHA HALF-LIFE, QUOTE DECAY & EXECUTION SHORTFALL (Sections XV, XVI & XX)
     // ==========================================
     const alphaHalfLife = AlphaHalfLifeEngine.estimateHalfLife({
@@ -3703,6 +3741,14 @@ export class MasterIntelligenceEngine {
     ) {
       decision = 'CHALLENGED_ABSTAIN';
       whyExecutionBlocked = `BLOCKED — UNPROMOTED EXECUTION POLICY (Tier: ${executionPolicy.tier}, ID: ${executionPolicy.policyId})`;
+    } else if (
+      ((context as any).enforceAttemptLedgerGating ?? false) &&
+      executionAttemptStats.totalAttempts >= 3 &&
+      (executionAttemptStats.deliveryFailedCount + executionAttemptStats.certifiedNoLandCount + executionAttemptStats.blockhashExpiredCount) / executionAttemptStats.totalAttempts >= 0.70
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      const unlandedRatio = (executionAttemptStats.deliveryFailedCount + executionAttemptStats.certifiedNoLandCount + executionAttemptStats.blockhashExpiredCount) / executionAttemptStats.totalAttempts;
+      whyExecutionBlocked = `BLOCKED — EXECUTION ATTEMPT DELIVERY COLLAPSE (Unlanded: ${(unlandedRatio * 100).toFixed(1)}% >= 70.0%, Total: ${executionAttemptStats.totalAttempts})`;
     } else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
       decision = 'AUTHORIZED_SELL';
       const exitResult = this.executeExit({
@@ -4916,6 +4962,13 @@ export class MasterIntelligenceEngine {
       executionPolicy,
       policyTier: executionPolicy.tier,
       policyHash: executionPolicy.policyHash,
+      executionActionVector,
+      executionAttemptStats,
+      executionLandingRatePct: executionAttemptStats.landingRatePct,
+      executionSuccessRatePct: executionAttemptStats.executionSuccessRatePct,
+      executionTotalAttempts: executionAttemptStats.totalAttempts,
+      executionTransport: executionActionVector.transport,
+      lastExecutionOutcome: (context as any).lastExecutionOutcome ?? (executionAttemptStats.totalAttempts > 0 ? (this.executionAttemptLedger.getAllAttempts().slice(-1)[0]?.outcome ?? 'FINALIZED_SUCCESS') : 'FINALIZED_SUCCESS'),
       links: {
         solscan: `https://solscan.io/token/${event.mint}`,
         pump: `https://pump.fun/${event.mint}`,
@@ -5203,6 +5256,8 @@ export class MasterIntelligenceEngine {
       flightRecord: finalFlightRecord,
       feeRecommendation,
       executionPolicy,
+      executionActionVector,
+      executionAttemptStats,
       whyExecutionBlocked: decision !== 'AUTHORIZED_BUY' ? whyExecutionBlocked : undefined,
     };
   }
@@ -6288,6 +6343,27 @@ export class MasterIntelligenceEngine {
     tip: bigint
   ): void {
     this.feeSurface.updateObservation(writableAccounts, programId, priorityFee, tip);
+  }
+
+  /**
+   * Blueprint Section XX & XXI: Execution Attempt Ledger
+   */
+  public getExecutionAttemptLedger(): ExecutionAttemptLedger {
+    return this.executionAttemptLedger;
+  }
+
+  /**
+   * Blueprint Section XX & XXI: Record Execution Attempt Across All Outcomes
+   */
+  public recordExecutionAttempt(attempt: ExecutionAttemptRecord): void {
+    this.executionAttemptLedger.recordAttempt(attempt);
+  }
+
+  /**
+   * Blueprint Section XX & XXI: Compute Execution Attempt Aggregated Statistics
+   */
+  public getExecutionAttemptStats(): ExecutionAttemptStats {
+    return this.executionAttemptLedger.getStats();
   }
 
   /**
