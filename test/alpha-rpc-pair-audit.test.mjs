@@ -1,0 +1,10 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {inspectPair} from '../scripts/alpha-rpc-pair-audit.mjs';
+const wallet='WALLET',mint='MINT';
+const tx=(buy)=>({slot:buy?1:2,blockTime:buy?1760000000:1760000100,transaction:{message:{accountKeys:[{pubkey:wallet}]}},meta:{err:null,fee:5000,preBalances:[buy?1000000000:899995000],postBalances:[buy?899995000:1099990000],preTokenBalances:[{mint,owner:wallet,uiTokenAmount:{amount:buy?'0':'100'}}],postTokenBalances:[{mint,owner:wallet,uiTokenAmount:{amount:buy?'100':'0'}}]}});
+const pair=()=>({wallet,mint,entrySignature:'entry',exitSignature:'exit',entryTransaction:tx(true),exitTransaction:tx(false)});
+test('reconciles simple observed two-leg balances without certifying',()=>{const r=inspectPair(pair());assert.equal(r.entryDebitLamports,'100000000');assert.equal(r.exitCreditLamports,'200000000');assert.equal(r.networkFeesLamports,'10000');assert.match(r.status,/NOT_EXECUTION_PARITY/)});
+test('rejects partial position',()=>{const x=pair();x.exitTransaction.meta.postTokenBalances[0].uiTokenAmount.amount='10';assert.throws(()=>inspectPair(x),/NON_CLOSED/)});
+test('rejects failed transactions',()=>{const x=pair();x.entryTransaction.meta.err={InstructionError:[0,'Custom']};assert.throws(()=>inspectPair(x),/FAILED/)});
+test('rejects unsupported non-payer wallet',()=>{const x=pair();x.entryTransaction.transaction.message.accountKeys.unshift({pubkey:'OTHER'});x.entryTransaction.meta.preBalances.unshift(1);x.entryTransaction.meta.postBalances.unshift(1);assert.throws(()=>inspectPair(x),/NON_PAYER/)});
