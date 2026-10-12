@@ -25,13 +25,31 @@ export interface TransportLaneTelemetry {
   readonly lane: TransportLane;
   readonly attemptsCount: number;
   readonly landingsCount: number;
-  readonly landingRatePct: number;
-  readonly meanLatencyMs: number;
-  readonly meanTipLamports: bigint;
-  readonly meanPriorityFeeLamports: bigint;
-  readonly instructionFailureRatePct: number;
-  readonly postLandingSlippageBps: number;
-  readonly netRealizedEdgeBps: number;
+  readonly successfulExecutionsCount: number;
+  readonly landingRatePct: number | null;
+  readonly meanLatencyMs: number | null;
+  readonly meanTipLamports: bigint | null;
+  readonly meanPriorityFeeLamports: bigint | null;
+  readonly instructionFailureRatePct: number | null;
+  readonly postLandingSlippageBps: number | null;
+  readonly netRealizedEdgeBps: number | null;
+}
+
+export interface ResolvedTransportAttempt {
+  readonly attemptId: string;
+  readonly benchmarkEventId: string;
+  readonly targetProgram: string;
+  readonly lane: TransportLane;
+  readonly benchmarkRegion: string;
+  readonly congestionBucket: 'LOW' | 'MEDIUM' | 'HIGH';
+  readonly inputNotionalLamports: bigint;
+  readonly outcome: 'SUCCESS' | 'INSTRUCTION_FAILURE' | 'NO_LAND';
+  readonly landingLatencyMs?: number;
+  readonly baseFeeLamports: bigint;
+  readonly priorityFeeLamports: bigint;
+  readonly tipLamports: bigint;
+  readonly realizedGrossEdgeLamports: bigint;
+  readonly postLandingSlippageBps?: number;
 }
 
 export interface SameEconomicGenerationPacket {
@@ -45,11 +63,16 @@ export interface SameEconomicGenerationPacket {
 }
 
 export interface LaneOptimizationDecision {
-  readonly selectedLane: TransportLane;
-  readonly expectedLandingProbPct: number;
-  readonly recommendedTipLamports: bigint;
-  readonly recommendedPriorityFeeLamports: bigint;
-  readonly expectedNetEdgeLamports: bigint;
+  readonly status: 'RESEARCH_CANDIDATE' | 'ABSTAIN';
+  readonly abstainReason?: 'INSUFFICIENT_MATCHED_BENCHMARKS' | 'NO_POSITIVE_EXPECTED_NET_EDGE';
+  readonly selectedLane: TransportLane | null;
+  readonly matchedSampleCount: number;
+  readonly expectedLandingProbPct: number | null;
+  readonly expectedExecutionSuccessPct: number | null;
+  readonly observedAverageTipLamports: bigint | null;
+  readonly observedAveragePriorityFeeLamports: bigint | null;
+  readonly expectedNetEdgeLamports: bigint | null;
+  readonly promotionAuthority: 'NONE';
   readonly fallbackLanes: readonly TransportLane[];
 }
 
@@ -63,34 +86,52 @@ export interface RouteRegretRecord {
 }
 
 export class SolanaTransportTournament {
+  public static readonly MINIMUM_MATCHED_BENCHMARK_EVENTS = 30;
   private readonly laneTelemetry = new Map<TransportLane, {
-    attempts: number;
-    landings: number;
-    totalLatencyMs: number;
-    totalTipLamports: bigint;
-    totalFeeLamports: bigint;
-    failures: number;
-    totalSlippageBps: number;
-    totalRealizedEdgeBps: number;
+    readonly attempts: ResolvedTransportAttempt[];
   }>();
 
   private readonly activeGenerations = new Set<string>();
   private readonly regretHistory: RouteRegretRecord[] = [];
+  private readonly attemptIds = new Set<string>();
+  private readonly matchedEventKeys = new Set<string>();
 
   constructor() {
-    const lanes: TransportLane[] = ['JITO_BUNDLE', 'DIRECT_TPU', 'SWQOS_LANE', 'VALIDATOR_RPC'];
-    for (const lane of lanes) {
-      this.laneTelemetry.set(lane, {
-        attempts: 10,
-        landings: 8,
-        totalLatencyMs: lane === 'JITO_BUNDLE' ? 1200 : lane === 'DIRECT_TPU' ? 450 : 600,
-        totalTipLamports: lane === 'JITO_BUNDLE' ? 1_000_000n : 0n,
-        totalFeeLamports: 50_000n,
-        failures: 1,
-        totalSlippageBps: 20,
-        totalRealizedEdgeBps: 85,
-      });
+    for (const lane of SolanaTransportTournament.CANDIDATE_LANES) this.laneTelemetry.set(lane, { attempts: [] });
+  }
+
+  public static readonly CANDIDATE_LANES: readonly TransportLane[] = [
+    'JITO_BUNDLE', 'DIRECT_TPU', 'SWQOS_LANE', 'VALIDATOR_RPC',
+  ];
+
+  /** Records one resolved, externally measured attempt. This research scorecard
+   * never sends transactions and refuses to infer outcomes from provider ACKs. */
+  public recordResolvedAttempt(attempt: ResolvedTransportAttempt): void {
+    if (!attempt || typeof attempt.attemptId !== 'string' || !attempt.attemptId.trim() ||
+        typeof attempt.benchmarkEventId !== 'string' || !attempt.benchmarkEventId.trim() ||
+        typeof attempt.targetProgram !== 'string' || !attempt.targetProgram.trim() ||
+        typeof attempt.benchmarkRegion !== 'string' || !attempt.benchmarkRegion.trim() ||
+        !SolanaTransportTournament.CANDIDATE_LANES.includes(attempt.lane) ||
+        !['LOW', 'MEDIUM', 'HIGH'].includes(attempt.congestionBucket) ||
+        typeof attempt.inputNotionalLamports !== 'bigint' || attempt.inputNotionalLamports <= 0n ||
+        !['SUCCESS', 'INSTRUCTION_FAILURE', 'NO_LAND'].includes(attempt.outcome) ||
+        [attempt.baseFeeLamports, attempt.priorityFeeLamports, attempt.tipLamports].some((v) => typeof v !== 'bigint' || v < 0n) ||
+        typeof attempt.realizedGrossEdgeLamports !== 'bigint' ||
+        (attempt.postLandingSlippageBps !== undefined && !Number.isFinite(attempt.postLandingSlippageBps))) {
+      throw new Error('INVALID_RESOLVED_TRANSPORT_ATTEMPT');
     }
+    const landed = attempt.outcome !== 'NO_LAND';
+    if ((landed && (!Number.isFinite(attempt.landingLatencyMs) || (attempt.landingLatencyMs as number) < 0)) ||
+        (!landed && attempt.landingLatencyMs !== undefined) ||
+        (attempt.outcome !== 'SUCCESS' && attempt.realizedGrossEdgeLamports !== 0n) ||
+        (attempt.outcome === 'SUCCESS' && attempt.postLandingSlippageBps === undefined)) {
+      throw new Error('INCONSISTENT_TRANSPORT_OUTCOME');
+    }
+    const laneEventKey = [attempt.targetProgram, attempt.benchmarkRegion, attempt.congestionBucket, attempt.benchmarkEventId, attempt.lane].join(':');
+    if (this.attemptIds.has(attempt.attemptId) || this.matchedEventKeys.has(laneEventKey)) throw new Error('DUPLICATE_TRANSPORT_ATTEMPT');
+    this.attemptIds.add(attempt.attemptId);
+    this.matchedEventKeys.add(laneEventKey);
+    this.laneTelemetry.get(attempt.lane)!.attempts.push(Object.freeze({ ...attempt }));
   }
 
   /**
@@ -126,37 +167,71 @@ export class SolanaTransportTournament {
    */
   public optimizeLane(params: {
     estimatedGrossEdgeLamports: bigint;
-    congestionMultiplier: number;
     targetProgram: string;
+    benchmarkRegion: string;
+    congestionBucket: 'LOW' | 'MEDIUM' | 'HIGH';
   }): LaneOptimizationDecision {
-    const lanes: TransportLane[] = ['JITO_BUNDLE', 'DIRECT_TPU', 'SWQOS_LANE', 'VALIDATOR_RPC'];
-    let bestDecision: LaneOptimizationDecision | null = null;
-    let bestNetEdge = -999_999_999_999n;
-
+    const lanes = SolanaTransportTournament.CANDIDATE_LANES;
+    if (typeof params.estimatedGrossEdgeLamports !== 'bigint' || params.estimatedGrossEdgeLamports <= 0n ||
+        !params.targetProgram || !params.benchmarkRegion || !['LOW', 'MEDIUM', 'HIGH'].includes(params.congestionBucket)) {
+      throw new Error('INVALID_LANE_OPTIMIZATION_INPUT');
+    }
+    const byLane = new Map<TransportLane, Map<string, ResolvedTransportAttempt>>();
     for (const lane of lanes) {
-      const stats = this.laneTelemetry.get(lane)!;
-      const landingProb = stats.attempts > 0 ? (stats.landings / stats.attempts) : 0.5;
-
-      const tip = lane === 'JITO_BUNDLE' ? BigInt(Math.floor(100_000 * params.congestionMultiplier)) : 0n;
-      const priorityFee = BigInt(Math.floor(25_000 * params.congestionMultiplier));
-
-      const expectedGross = BigInt(Math.floor(Number(params.estimatedGrossEdgeLamports) * landingProb));
-      const expectedNet = expectedGross - tip - priorityFee;
-
-      if (!bestDecision || expectedNet > bestNetEdge) {
-        bestNetEdge = expectedNet;
-        bestDecision = {
-          selectedLane: lane,
-          expectedLandingProbPct: landingProb * 100,
-          recommendedTipLamports: tip,
-          recommendedPriorityFeeLamports: priorityFee,
-          expectedNetEdgeLamports: expectedNet,
-          fallbackLanes: lanes.filter(l => l !== lane),
-        };
+      const matching = new Map<string, ResolvedTransportAttempt>();
+      for (const attempt of this.laneTelemetry.get(lane)!.attempts) {
+        if (attempt.targetProgram === params.targetProgram && attempt.benchmarkRegion === params.benchmarkRegion &&
+            attempt.congestionBucket === params.congestionBucket) matching.set(attempt.benchmarkEventId, attempt);
       }
+      byLane.set(lane, matching);
+    }
+    const commonEvents = [...(byLane.get(lanes[0])?.keys() ?? [])]
+      .filter((eventId) => lanes.every((lane) => byLane.get(lane)?.has(eventId)));
+    if (commonEvents.length < SolanaTransportTournament.MINIMUM_MATCHED_BENCHMARK_EVENTS) {
+      return Object.freeze({
+        status: 'ABSTAIN', abstainReason: 'INSUFFICIENT_MATCHED_BENCHMARKS', selectedLane: null,
+        matchedSampleCount: commonEvents.length, expectedLandingProbPct: null, expectedExecutionSuccessPct: null,
+        observedAverageTipLamports: null, observedAveragePriorityFeeLamports: null,
+        expectedNetEdgeLamports: null, promotionAuthority: 'NONE', fallbackLanes: [],
+      });
     }
 
-    return Object.freeze(bestDecision!);
+    const scored = lanes.map((lane) => {
+      const attempts = commonEvents.map((eventId) => byLane.get(lane)!.get(eventId)!);
+      const landings = attempts.filter((a) => a.outcome !== 'NO_LAND').length;
+      const successes = attempts.filter((a) => a.outcome === 'SUCCESS').length;
+      const totalTip = attempts.reduce((sum, a) => sum + a.tipLamports, 0n);
+      const totalPriority = attempts.reduce((sum, a) => sum + a.priorityFeeLamports, 0n);
+      const totalCosts = attempts.reduce((sum, a) => sum + a.baseFeeLamports + a.priorityFeeLamports + a.tipLamports, 0n);
+      const n = BigInt(attempts.length);
+      const averageCostsCeil = (totalCosts + n - 1n) / n;
+      const expectedGross = (params.estimatedGrossEdgeLamports * BigInt(successes)) / n;
+      return {
+        lane,
+        landingRate: landings / attempts.length,
+        successRate: successes / attempts.length,
+        averageTip: (totalTip + n - 1n) / n,
+        averagePriority: (totalPriority + n - 1n) / n,
+        expectedNet: expectedGross - averageCostsCeil,
+      };
+    }).sort((a, b) => a.expectedNet === b.expectedNet ? 0 : a.expectedNet > b.expectedNet ? -1 : 1);
+    const best = scored[0];
+    if (best.expectedNet <= 0n) {
+      return Object.freeze({
+        status: 'ABSTAIN', abstainReason: 'NO_POSITIVE_EXPECTED_NET_EDGE', selectedLane: null,
+        matchedSampleCount: commonEvents.length, expectedLandingProbPct: best.landingRate * 100,
+        expectedExecutionSuccessPct: best.successRate * 100, observedAverageTipLamports: best.averageTip,
+        observedAveragePriorityFeeLamports: best.averagePriority, expectedNetEdgeLamports: best.expectedNet,
+        promotionAuthority: 'NONE', fallbackLanes: [],
+      });
+    }
+    return Object.freeze({
+      status: 'RESEARCH_CANDIDATE', selectedLane: best.lane, matchedSampleCount: commonEvents.length,
+      expectedLandingProbPct: best.landingRate * 100, expectedExecutionSuccessPct: best.successRate * 100,
+      observedAverageTipLamports: best.averageTip, observedAveragePriorityFeeLamports: best.averagePriority,
+      expectedNetEdgeLamports: best.expectedNet, promotionAuthority: 'NONE',
+      fallbackLanes: scored.slice(1).filter((score) => score.expectedNet > 0n).map((score) => score.lane),
+    });
   }
 
   /**
@@ -193,25 +268,29 @@ export class SolanaTransportTournament {
   public getTelemetry(): readonly TransportLaneTelemetry[] {
     const res: TransportLaneTelemetry[] = [];
     for (const [lane, st] of this.laneTelemetry) {
-      const landingRatePct = st.attempts > 0 ? (st.landings / st.attempts) * 100 : 0;
-      const meanLatencyMs = st.attempts > 0 ? st.totalLatencyMs / st.attempts : 0;
-      const meanTipLamports = st.attempts > 0 ? st.totalTipLamports / BigInt(st.attempts) : 0n;
-      const meanPriorityFeeLamports = st.attempts > 0 ? st.totalFeeLamports / BigInt(st.attempts) : 0n;
-      const instructionFailureRatePct = st.attempts > 0 ? (st.failures / st.attempts) * 100 : 0;
-      const postLandingSlippageBps = st.attempts > 0 ? st.totalSlippageBps / st.attempts : 0;
-      const netRealizedEdgeBps = st.attempts > 0 ? st.totalRealizedEdgeBps / st.attempts : 0;
+      const n = st.attempts.length;
+      const landed = st.attempts.filter((a) => a.outcome !== 'NO_LAND');
+      const successes = st.attempts.filter((a) => a.outcome === 'SUCCESS');
+      const failures = st.attempts.filter((a) => a.outcome === 'INSTRUCTION_FAILURE');
+      const totalTip = st.attempts.reduce((sum, a) => sum + a.tipLamports, 0n);
+      const totalPriority = st.attempts.reduce((sum, a) => sum + a.priorityFeeLamports, 0n);
+      const totalNet = st.attempts.reduce((sum, a) => sum + a.realizedGrossEdgeLamports - a.baseFeeLamports - a.priorityFeeLamports - a.tipLamports, 0n);
+      const totalNotional = st.attempts.reduce((sum, a) => sum + a.inputNotionalLamports, 0n);
+      const latencySamples = landed.filter((a) => a.landingLatencyMs !== undefined);
+      const slippageSamples = successes.filter((a) => a.postLandingSlippageBps !== undefined);
 
       res.push(Object.freeze({
         lane,
-        attemptsCount: st.attempts,
-        landingsCount: st.landings,
-        landingRatePct,
-        meanLatencyMs,
-        meanTipLamports,
-        meanPriorityFeeLamports,
-        instructionFailureRatePct,
-        postLandingSlippageBps,
-        netRealizedEdgeBps,
+        attemptsCount: n,
+        landingsCount: landed.length,
+        successfulExecutionsCount: successes.length,
+        landingRatePct: n ? (landed.length / n) * 100 : null,
+        meanLatencyMs: latencySamples.length ? latencySamples.reduce((sum, a) => sum + (a.landingLatencyMs ?? 0), 0) / latencySamples.length : null,
+        meanTipLamports: n ? totalTip / BigInt(n) : null,
+        meanPriorityFeeLamports: n ? totalPriority / BigInt(n) : null,
+        instructionFailureRatePct: n ? (failures.length / n) * 100 : null,
+        postLandingSlippageBps: slippageSamples.length ? slippageSamples.reduce((sum, a) => sum + (a.postLandingSlippageBps ?? 0), 0) / slippageSamples.length : null,
+        netRealizedEdgeBps: totalNotional > 0n ? Number(totalNet) / Number(totalNotional) * 10_000 : null,
       }));
     }
     return Object.freeze(res);

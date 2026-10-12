@@ -624,6 +624,12 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
                     <span>Landing Lag: <b style={{color: (position.medianLandingLagSlots ?? position.twinCalibration?.medianLandingLagSlots ?? 1) > 2 ? '#FF3B69' : '#14F195'}}>{`${position.medianLandingLagSlots ?? position.twinCalibration?.medianLandingLagSlots ?? 1} slot`}</b></span>
                     <span>Twin Cert: <b style={{color: '#A78BFA'}}>{(position.twinCalibration?.certificateId || 'tcc_none').slice(0, 10)}</b></span>
                   </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'2px',padding:'3px 6px',background:'rgba(16,185,129,0.04)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>Flight Stage: <b style={{color: '#38BDF8'}}>{position.flightStage || position.flightRecord?.stage || 'DISCOVERED'}</b></span>
+                    <span>Fee Hierarchy: <b style={{color: (position.feeHierarchyTier || position.feeRecommendation?.matchedTier) === 'EXACT_WRITABLE_SET' ? '#14F195' : '#F59E0B'}}>{position.feeHierarchyTier || position.feeRecommendation?.matchedTier || 'EXACT_WRITABLE_SET'}</b></span>
+                    <span>Contention: <b style={{color: (position.observedContentionRatio ?? position.feeRecommendation?.observedContentionRatio ?? 0.2) >= 0.8 ? '#FF3B69' : '#14F195'}}>{`${((position.observedContentionRatio ?? position.feeRecommendation?.observedContentionRatio ?? 0.2) * 100).toFixed(0)}%`}</b></span>
+                    <span>Policy Tier: <b style={{color: '#A78BFA'}}>{position.policyTier || position.executionPolicy?.tier || 'CHAMPION'}</b></span>
+                  </div>
                 </div>
               );
             })()}

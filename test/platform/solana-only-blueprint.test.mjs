@@ -448,6 +448,9 @@ describe('SYLPH FUSION — Solana-Only Integration Blueprint', () => {
   test('Sections 25–29: SolanaTransportTournament enforces Same Economic Generation and optimizes landing cost', () => {
     const transport = new SolanaTransportTournament();
 
+    const noEvidenceTelemetry = transport.getTelemetry();
+    assert.equal(noEvidenceTelemetry.every((lane) => lane.attemptsCount === 0 && lane.landingRatePct === null), true);
+
     // Section 26: Same Economic Generation registration
     const packet = {
       economicFactId: 'fact_sol_alpha_88',
@@ -470,11 +473,59 @@ describe('SYLPH FUSION — Solana-Only Integration Blueprint', () => {
     // Section 27: Landing Cost Optimizer
     const optimization = transport.optimizeLane({
       estimatedGrossEdgeLamports: 2_500_000n, // 0.0025 SOL edge
-      congestionMultiplier: 1.2,
       targetProgram: '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8',
+      benchmarkRegion: 'eu-west',
+      congestionBucket: 'MEDIUM',
     });
-    assert.ok(optimization.selectedLane !== undefined);
-    assert.ok(optimization.expectedNetEdgeLamports > 0n);
+    assert.equal(optimization.status, 'ABSTAIN');
+    assert.equal(optimization.selectedLane, null);
+    assert.equal(optimization.expectedNetEdgeLamports, null);
+
+    const laneCosts = {
+      JITO_BUNDLE: 200_000n,
+      DIRECT_TPU: 50_000n,
+      SWQOS_LANE: 40_000n,
+      VALIDATOR_RPC: 80_000n,
+    };
+    for (let sample = 0; sample < SolanaTransportTournament.MINIMUM_MATCHED_BENCHMARK_EVENTS; sample += 1) {
+      for (const lane of SolanaTransportTournament.CANDIDATE_LANES) {
+        const noLand = lane === 'DIRECT_TPU' && sample === 0;
+        transport.recordResolvedAttempt({
+          attemptId: `${lane}-${sample}`,
+          benchmarkEventId: `same-economic-sample-${sample}`,
+          targetProgram: '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8',
+          lane,
+          benchmarkRegion: 'eu-west',
+          congestionBucket: 'MEDIUM',
+          inputNotionalLamports: 10_000_000n,
+          outcome: noLand ? 'NO_LAND' : 'SUCCESS',
+          landingLatencyMs: noLand ? undefined : 300 + sample,
+          baseFeeLamports: 5_000n,
+          priorityFeeLamports: laneCosts[lane] - 5_000n,
+          tipLamports: 0n,
+          realizedGrossEdgeLamports: noLand ? 0n : 100_000n,
+          postLandingSlippageBps: noLand ? undefined : 5,
+        });
+      }
+    }
+    const measured = transport.optimizeLane({
+      estimatedGrossEdgeLamports: 100_000n,
+      targetProgram: '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8',
+      benchmarkRegion: 'eu-west',
+      congestionBucket: 'MEDIUM',
+    });
+    assert.equal(measured.status, 'RESEARCH_CANDIDATE');
+    assert.equal(measured.selectedLane, 'SWQOS_LANE');
+    assert.equal(measured.matchedSampleCount, SolanaTransportTournament.MINIMUM_MATCHED_BENCHMARK_EVENTS);
+    assert.equal(measured.promotionAuthority, 'NONE');
+    assert.equal(transport.getTelemetry().find((lane) => lane.lane === 'DIRECT_TPU').landingRatePct, 100 * 29 / 30);
+
+    assert.throws(() => transport.recordResolvedAttempt({
+      attemptId: 'bad-sample', benchmarkEventId: 'bad', targetProgram: 'program', lane: 'DIRECT_TPU',
+      benchmarkRegion: 'eu-west', congestionBucket: 'MEDIUM', inputNotionalLamports: 1n,
+      outcome: 'NO_LAND', landingLatencyMs: 100, baseFeeLamports: 1n, priorityFeeLamports: 0n,
+      tipLamports: 0n, realizedGrossEdgeLamports: 0n,
+    }), /INCONSISTENT_TRANSPORT_OUTCOME/);
 
     // Section 29: RouteRegret recording
     const regret = transport.recordExecutionOutcome({

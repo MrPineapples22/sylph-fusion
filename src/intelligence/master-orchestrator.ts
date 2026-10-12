@@ -253,6 +253,19 @@ import {
   type RedTeamExploitReport,
 } from './reality-gap/index.js';
 import {
+  EconomicFlightRecorder,
+  SQLiteExecutionAttemptStore,
+  type EconomicFlightRecord,
+  type FlightLifecycleStage,
+  WritableSetFeeSurface,
+  type WritableSetFeeRecommendation,
+  type FeeSurfaceHierarchyTier,
+  computeWritableSetHash,
+  createPolicyArtifact,
+  type ExecutionPolicyArtifact,
+  type PolicyTier,
+} from './execution-adaptation/index.js';
+import {
   certifyProfitFrontier,
   type FrontierCertificate,
   type EngineeringCandidate,
@@ -668,6 +681,15 @@ export interface AetherFluxViewModel {
   readonly redTeamExploitReport?: RedTeamExploitReport;
   readonly medianPriceResidualBps?: number;
   readonly medianLandingLagSlots?: number;
+  readonly flightRecord?: EconomicFlightRecord;
+  readonly flightStage?: FlightLifecycleStage;
+  readonly flightRecordHash?: string;
+  readonly feeRecommendation?: WritableSetFeeRecommendation;
+  readonly feeHierarchyTier?: FeeSurfaceHierarchyTier;
+  readonly observedContentionRatio?: number;
+  readonly executionPolicy?: ExecutionPolicyArtifact;
+  readonly policyTier?: PolicyTier;
+  readonly policyHash?: string;
 }
 
 export interface MasterPipelineResult {
@@ -751,6 +773,9 @@ export interface MasterPipelineResult {
   readonly frontierCertificate?: FrontierCertificate;
   readonly exitabilityCertificate?: ExitabilityCertificate;
   readonly twinCalibration?: TwinCalibrationCertificate;
+  readonly flightRecord?: EconomicFlightRecord;
+  readonly feeRecommendation?: WritableSetFeeRecommendation;
+  readonly executionPolicy?: ExecutionPolicyArtifact;
   readonly whyExecutionBlocked?: string;
 }
 
@@ -847,6 +872,12 @@ export type {
   PrincipalRecoveryReport,
   InformationFrontierState,
   SensorEscalationDecision,
+  EconomicFlightRecord,
+  FlightLifecycleStage,
+  WritableSetFeeRecommendation,
+  FeeSurfaceHierarchyTier,
+  ExecutionPolicyArtifact,
+  PolicyTier,
 };
 
 export class MasterIntelligenceEngine {
@@ -997,6 +1028,10 @@ export class MasterIntelligenceEngine {
   public readonly rdGovernor: AutonomousRDGovernorX;
   public readonly registeredStudiesCount: number;
   public readonly strategyEcology: StrategyEcologyRegistry;
+  public readonly economicFlightStore: SQLiteExecutionAttemptStore;
+  public readonly economicFlightRecorder: EconomicFlightRecorder;
+  public readonly feeSurface: WritableSetFeeSurface;
+  private activeExecutionPolicy: ExecutionPolicyArtifact;
 
   constructor() {
     this.kernel = new IntegrationKernel();
@@ -1174,6 +1209,19 @@ export class MasterIntelligenceEngine {
     this.rdGovernor = new AutonomousRDGovernorX();
     this.registeredStudiesCount = ResearchMatrixBridge.registerAllStudies(this.rdGovernor);
     this.strategyEcology = new StrategyEcologyRegistry();
+
+    this.economicFlightStore = new SQLiteExecutionAttemptStore(':memory:');
+    this.economicFlightRecorder = new EconomicFlightRecorder(this.economicFlightStore);
+    this.feeSurface = new WritableSetFeeSurface();
+    this.activeExecutionPolicy = createPolicyArtifact({
+      tier: 'CHAMPION',
+      version: '1.0.0-PROD',
+      basePriorityFeeMicroLamports: 100_000n,
+      baseJitoTipLamports: 25_000n,
+      maxSlippageBps: 250,
+      targetCuBufferFraction: 0.20,
+      preferredTransport: 'JITO_SINGLE_TX_BUNDLE',
+    });
 
     this.setupConnectionAuditor();
     this.registerComponents();
@@ -1374,6 +1422,20 @@ export class MasterIntelligenceEngine {
       rootTimestampMs: event.receivedTimestampMs,
     });
 
+    const existingFlight = this.economicFlightStore.getLatest(event.eventId, `gen_${event.eventId}_0`);
+    const economicFactId = existingFlight ? `${event.eventId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}` : event.eventId;
+
+    const initialFlightRecord = this.economicFlightRecorder.recordDiscovery({
+      economicFactId,
+      mint: event.mint,
+      creator: context.programOwner || 'unknown_creator',
+      protocol: targetRoute,
+      regime: 'UNKNOWN',
+      discoveredAt: new Date(event.receivedTimestampMs).toISOString(),
+      observedAt: new Date(event.sourceTimestampMs).toISOString(),
+      knownAt: new Date(event.receivedTimestampMs).toISOString(),
+    });
+
     trace.recordStep({
       stepName: 'CANONICAL_INGESTION',
       componentId: 'MasterIntelligenceEngine',
@@ -1422,6 +1484,13 @@ export class MasterIntelligenceEngine {
         decisionTimestampMs: event.receivedTimestampMs,
         decisionSlot: event.slot,
       }
+    );
+
+    this.economicFlightRecorder.advanceLifecycle(
+      economicFactId,
+      initialFlightRecord.executionGenerationId,
+      'FILTER_EVALUATED',
+      {}
     );
 
     // 4. Wallet Intelligence & Effective Economic Participants
@@ -3209,6 +3278,20 @@ export class MasterIntelligenceEngine {
     }
 
     // ==========================================
+    // WRITABLE-SET FEE SURFACE & EXECUTION POLICY (Sections XX, XXII, XXIII)
+    // ==========================================
+    const feeWritableAccounts: readonly string[] = (context as any).writableAccounts ?? [
+      event.mint,
+      context.programOwner || 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+      'FeePayer111111111111111111111111111111111111111',
+    ];
+    const feeRecommendation: WritableSetFeeRecommendation = (context as any).feeRecommendation ?? this.feeSurface.getRecommendation(
+      feeWritableAccounts,
+      context.programOwner || 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
+    );
+    const executionPolicy: ExecutionPolicyArtifact = (context as any).executionPolicy ?? this.activeExecutionPolicy;
+
+    // ==========================================
     // ALPHA HALF-LIFE, QUOTE DECAY & EXECUTION SHORTFALL (Sections XV, XVI & XX)
     // ==========================================
     const alphaHalfLife = AlphaHalfLifeEngine.estimateHalfLife({
@@ -3608,6 +3691,18 @@ export class MasterIntelligenceEngine {
     ) {
       decision = 'CHALLENGED_ABSTAIN';
       whyExecutionBlocked = `BLOCKED — TWIN TRUST RESTRICTION (Level: ${twinCalibration.trustLevel}, ${twinConstraints.reason})`;
+    } else if (
+      ((context as any).enforceFeeContentionGating ?? false) &&
+      (feeRecommendation.observedContentionRatio >= 0.95 || (context as any).failOnHighContention)
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      whyExecutionBlocked = `BLOCKED — SEVERE WRITABLE-SET CONTENTION (Ratio: ${(feeRecommendation.observedContentionRatio * 100).toFixed(1)}%, Tier: ${feeRecommendation.matchedTier})`;
+    } else if (
+      ((context as any).enforcePolicyGating ?? false) &&
+      (executionPolicy.tier === 'PROBE' && !(context as any).allowProbePolicy)
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      whyExecutionBlocked = `BLOCKED — UNPROMOTED EXECUTION POLICY (Tier: ${executionPolicy.tier}, ID: ${executionPolicy.policyId})`;
     } else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
       decision = 'AUTHORIZED_SELL';
       const exitResult = this.executeExit({
@@ -4512,6 +4607,20 @@ export class MasterIntelligenceEngine {
       },
     };
 
+    const finalFlightRecord = this.economicFlightRecorder.advanceLifecycle(
+      economicFactId,
+      initialFlightRecord.executionGenerationId,
+      'DECISION_CREATED',
+      {
+        decisionAt: new Date().toISOString(),
+        decisionPrice: oracleSolPriceUsd > 0 ? oracleSolPriceUsd : null,
+        requestedInputLamports: allocatedSol > 0 ? BigInt(Math.round(allocatedSol * 1e9)) : null,
+        priorityFeeLamports: feeRecommendation.recommendedPriorityFeeMicroLamports,
+        jitoTipLamports: feeRecommendation.recommendedJitoTipLamports,
+        transport: executionPolicy.preferredTransport === 'JITO_SINGLE_TX_BUNDLE' ? 'JITO_BUNDLE' : 'RPC_FALLBACK',
+      }
+    );
+
     const symbol = event.mint.slice(0, 4).toUpperCase();
     const viewModel: AetherFluxViewModel = {
       time: new Date(event.receivedTimestampMs).toISOString().substring(11, 19),
@@ -4798,6 +4907,15 @@ export class MasterIntelligenceEngine {
       redTeamExploitReport,
       medianPriceResidualBps: twinCalibration.medianPriceResidualBps,
       medianLandingLagSlots: twinCalibration.medianLandingLagSlots,
+      flightRecord: finalFlightRecord,
+      flightStage: finalFlightRecord.stage,
+      flightRecordHash: finalFlightRecord.recordHash,
+      feeRecommendation,
+      feeHierarchyTier: feeRecommendation.matchedTier,
+      observedContentionRatio: feeRecommendation.observedContentionRatio,
+      executionPolicy,
+      policyTier: executionPolicy.tier,
+      policyHash: executionPolicy.policyHash,
       links: {
         solscan: `https://solscan.io/token/${event.mint}`,
         pump: `https://pump.fun/${event.mint}`,
@@ -5082,6 +5200,9 @@ export class MasterIntelligenceEngine {
       frontierCertificate,
       exitabilityCertificate,
       twinCalibration,
+      flightRecord: finalFlightRecord,
+      feeRecommendation,
+      executionPolicy,
       whyExecutionBlocked: decision !== 'AUTHORIZED_BUY' ? whyExecutionBlocked : undefined,
     };
   }
@@ -6127,6 +6248,46 @@ export class MasterIntelligenceEngine {
   ): RedTeamExploitReport {
     const redTeam = new TwinRedTeamEngine();
     return redTeam.evaluateScenario(prediction, reality);
+  }
+
+  /**
+   * Blueprint Sections 5, 6, 7: Economic Flight Recorder & Durable Attempt Store
+   */
+  public getEconomicFlightRecorder(): EconomicFlightRecorder {
+    return this.economicFlightRecorder;
+  }
+
+  /**
+   * Blueprint Section XXII: Writable-Set Contention Fee Surface
+   */
+  public getFeeSurface(): WritableSetFeeSurface {
+    return this.feeSurface;
+  }
+
+  /**
+   * Blueprint Section XXIII: Active Execution Policy Artifact
+   */
+  public getExecutionPolicy(): ExecutionPolicyArtifact {
+    return this.activeExecutionPolicy;
+  }
+
+  /**
+   * Blueprint Section XXIII: Promote or Switch Execution Policy
+   */
+  public setExecutionPolicy(policy: ExecutionPolicyArtifact): void {
+    this.activeExecutionPolicy = policy;
+  }
+
+  /**
+   * Blueprint Section XXII: Record Priority Fee & Tip Observation on Exact Writable Set
+   */
+  public recordFeeObservation(
+    writableAccounts: readonly string[],
+    programId: string,
+    priorityFee: bigint,
+    tip: bigint
+  ): void {
+    this.feeSurface.updateObservation(writableAccounts, programId, priorityFee, tip);
   }
 
   /**
