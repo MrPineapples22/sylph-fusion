@@ -576,6 +576,12 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
                     <span>Studies Reg: <b style={{color: '#14F195'}}>{`${position.registeredStudiesCount || 50}/50`}</b></span>
                     <span>Exec Quote: <b style={{color: '#F59E0B'}}>{'UNAVAIL'}</b></span>
                   </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'2px',padding:'3px 6px',background:'rgba(56,189,248,0.04)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>Migration: <b style={{color: (position.isMigratedCandidate ?? position.migrationSelection?.isMigrated) ? '#A78BFA' : '#14F195'}}>{(position.isMigratedCandidate ?? position.migrationSelection?.isMigrated) ? 'MIGRATED' : 'LAUNCH'}</b></span>
+                    <span>Surv Bias: <b style={{color: (position.survivorshipBiasPenalty ?? position.migrationSelection?.survivorshipBiasPenalty ?? 0) > 0.20 ? '#FF3B69' : '#14F195'}}>{Number.isFinite(position.survivorshipBiasPenalty ?? position.migrationSelection?.survivorshipBiasPenalty) ? `${((position.survivorshipBiasPenalty ?? position.migrationSelection?.survivorshipBiasPenalty) * 100).toFixed(0)}%` : '0%'}</b></span>
+                    <span>Transport: <b style={{color: (position.isRegimeTransportable ?? position.regimeTransport?.transportable) === false ? '#FF3B69' : '#14F195'}}>{(position.isRegimeTransportable ?? position.regimeTransport?.transportable) === false ? 'BLOCKED' : 'VALID'}</b></span>
+                    <span>Cov Shift: <b style={{color: (position.covariateShift ?? position.regimeTransport?.covariateShift ?? 0.15) > 0.40 ? '#FF3B69' : '#38BDF8'}}>{Number.isFinite(position.covariateShift ?? position.regimeTransport?.covariateShift) ? (position.covariateShift ?? position.regimeTransport?.covariateShift).toFixed(2) : '0.15'}</b></span>
+                  </div>
                 </div>
               );
             })()}

@@ -133,6 +133,8 @@ import { LandingPhysicsModel } from './executable-alpha/execution/landing-model.
 import { AccountContentionEngine, } from './executable-alpha/execution/account-contention.js';
 import { FeeResponseSurfaceEngine, } from './executable-alpha/execution/fee-response.js';
 import { TransportabilityCourt, } from './executable-alpha/distribution/transportability-court.js';
+import { RegimeTransportEngine, } from './executable-alpha/distribution/regime-transport.js';
+import { MigrationSelectionEngine, } from './executable-alpha/distribution/migration-selection.js';
 import { ObservationQualityEngine, } from './executable-alpha/observation/observation-quality.js';
 import { SensorRaceEngine, } from './executable-alpha/observation/sensor-race.js';
 import { MultiLaneSubmissionRouter } from './executable-alpha/execution/submission-router.js';
@@ -1746,19 +1748,26 @@ export class MasterIntelligenceEngine {
             ? ExecutableAlphaCertificateIssuer.evaluateAndIssue(context.alphaEvaluationInput)
             : undefined;
         // ==========================================
-        // DISTRIBUTION TRANSPORTABILITY COURT (Section XI & Study Family 4)
+        // DISTRIBUTION TRANSPORTABILITY COURT & REGIME TRANSPORT (Section XI & Study Family 4)
         // ==========================================
         const targetRegime = context.targetDistributionRegime ?? (context.tokenAgeSec < 60 ? 'NEW_LAUNCH' :
             context.tokenAgeSec < 300 ? 'BONDING_CURVE' :
                 (context.liquiditySol > 80 ? 'POST_MIGRATION' : 'BONDING_CURVE'));
         const sourceRegime = context.sourceDistributionRegime ?? 'NEW_LAUNCH';
+        const covariateShift = context.covariateShift ?? 0.12;
+        const conceptShift = context.conceptShift ?? 0.08;
+        const calibrationShift = context.calibrationShift ?? 0.04;
+        const isPostMigrationCandidate = context.isMigrated ?? (context.isPostMigrationSample ?? false);
+        const curveProgressPct = context.bondingCurvePct ?? (context.curveProgressPct ?? 0);
+        const migrationSelection = context.migrationSelection ?? MigrationSelectionEngine.evaluateCandidate(isPostMigrationCandidate, curveProgressPct);
+        const regimeTransport = context.regimeTransport ?? RegimeTransportEngine.evaluateTransportability(sourceRegime, targetRegime, covariateShift, conceptShift, calibrationShift);
         const transportabilityRuling = TransportabilityCourt.judge({
             sourceRegime,
             targetRegime,
-            covariateShift: context.covariateShift ?? 0.12,
-            conceptShift: context.conceptShift ?? 0.08,
-            calibrationShift: context.calibrationShift ?? 0.04,
-            isPostMigrationSample: context.isPostMigrationSample ?? false,
+            covariateShift,
+            conceptShift,
+            calibrationShift,
+            isPostMigrationSample: isPostMigrationCandidate,
             solUsdVolatilityRatio: context.solUsdVolatilityRatio ?? 1.05,
         });
         // ==========================================
@@ -2230,6 +2239,18 @@ export class MasterIntelligenceEngine {
             (executablePeakAnalysis.isOutlierPeak || (executablePeakAnalysis.status === 'OBSERVED_ONLY' && executablePeakAnalysis.postPeakDrop50Seconds !== undefined && executablePeakAnalysis.postPeakDrop50Seconds < 15.0))) {
             decision = 'CHALLENGED_ABSTAIN';
             whyExecutionBlocked = `BLOCKED — ECONOMIC FRESHNESS ANOMALY (${executablePeakAnalysis.isOutlierPeak ? 'OUTLIER_PEAK_EXCEEDED' : `FLASH_CRASH_POST_PEAK_${executablePeakAnalysis.postPeakDrop50Seconds}S`})`;
+        }
+        else if ((context.enforceMigrationSelectionGating ?? false) &&
+            migrationSelection.isMigrated &&
+            migrationSelection.survivorshipBiasPenalty > 0.30 &&
+            !(context.allowPostMigrationTrading ?? false)) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — MIGRATION SELECTION BIAS PENALTY (${(migrationSelection.survivorshipBiasPenalty * 100).toFixed(1)}% haircut, conditioned on curve survival)`;
+        }
+        else if ((context.enforceRegimeTransportGating ?? false) &&
+            !regimeTransport.transportable) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — REGIME TRANSPORT DISMISSED (${regimeTransport.blockers.join('; ')})`;
         }
         else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
             decision = 'AUTHORIZED_SELL';
@@ -3284,6 +3305,12 @@ export class MasterIntelligenceEngine {
             postPeakDrop50Seconds: executablePeakAnalysis.postPeakDrop50Seconds ?? null,
             isOutlierPeak: executablePeakAnalysis.isOutlierPeak,
             registeredStudiesCount: this.registeredStudiesCount,
+            migrationSelection,
+            regimeTransport,
+            isMigratedCandidate: migrationSelection.isMigrated,
+            survivorshipBiasPenalty: migrationSelection.survivorshipBiasPenalty,
+            isRegimeTransportable: regimeTransport.transportable,
+            transportBlockers: regimeTransport.blockers,
             links: {
                 solscan: `https://solscan.io/token/${event.mint}`,
                 pump: `https://pump.fun/${event.mint}`,
@@ -3554,6 +3581,8 @@ export class MasterIntelligenceEngine {
             censoringAnalysis,
             executablePeakAnalysis,
             registeredStudiesCount: this.registeredStudiesCount,
+            migrationSelection,
+            regimeTransport,
             whyExecutionBlocked: decision !== 'AUTHORIZED_BUY' ? whyExecutionBlocked : undefined,
         };
     }
@@ -4036,6 +4065,20 @@ export class MasterIntelligenceEngine {
     }
     getRegisteredStudiesCount() {
         return this.registeredStudiesCount;
+    }
+    /**
+     * Section XI & Studies POST-MIGRATION-SELECTION-X, MIGRATION-CAUSAL-EFFECT-X
+     * Evaluates population selection and survivorship bias penalty.
+     */
+    evaluateMigrationSelection(isMigrated, curveProgressPct = 0) {
+        return MigrationSelectionEngine.evaluateCandidate(isMigrated, curveProgressPct);
+    }
+    /**
+     * Section XI & Studies REGIME-TRANSPORTABILITY-X, FIXED-REFERENCE-SHIFT-X
+     * Evaluates cross-regime distribution transportability certificate.
+     */
+    evaluateRegimeTransport(sourceRegime, targetRegime, covariateShift = 0.15, conceptShift = 0.10, calibrationShift = 0.05) {
+        return RegimeTransportEngine.evaluateTransportability(sourceRegime, targetRegime, covariateShift, conceptShift, calibrationShift);
     }
     /**
      * System Intelligence & Omega Telemetry

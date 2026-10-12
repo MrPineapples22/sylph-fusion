@@ -166,7 +166,14 @@ import {
   TransportabilityCourt,
   type TransportabilityCourtRuling,
 } from './executable-alpha/distribution/transportability-court.js';
-import type { MarketRegimeType } from './executable-alpha/distribution/regime-transport.js';
+import {
+  RegimeTransportEngine,
+  type MarketRegimeType,
+} from './executable-alpha/distribution/regime-transport.js';
+import {
+  MigrationSelectionEngine,
+  type MigrationSelectionAnalysis,
+} from './executable-alpha/distribution/migration-selection.js';
 import {
   ObservationQualityEngine,
   type ObservationQualityInputs,
@@ -176,7 +183,7 @@ import {
   type SensorArrival,
   type SensorRaceResult,
 } from './executable-alpha/observation/sensor-race.js';
-import type { ObservationQualityCertificate } from './executable-alpha/types.js';
+import type { ObservationQualityCertificate, DistributionValidityCertificate } from './executable-alpha/types.js';
 import { MultiLaneSubmissionRouter, type SubmissionRoutingInput, type SubmissionRoutingDecision, type LaneEvaluation } from './executable-alpha/execution/submission-router.js';
 import { OperatorPlaybookEngine } from './adversarial/operator-playbook.js';
 import { EcosystemPhaseEngine } from './signals/ecosystem-phase.js';
@@ -535,6 +542,12 @@ export interface AetherFluxViewModel {
   readonly postPeakDrop50Seconds?: number | null;
   readonly isOutlierPeak?: boolean;
   readonly registeredStudiesCount?: number;
+  readonly migrationSelection?: MigrationSelectionAnalysis;
+  readonly regimeTransport?: DistributionValidityCertificate;
+  readonly isMigratedCandidate?: boolean;
+  readonly survivorshipBiasPenalty?: number;
+  readonly isRegimeTransportable?: boolean;
+  readonly transportBlockers?: readonly string[];
 }
 
 export interface MasterPipelineResult {
@@ -606,10 +619,14 @@ export interface MasterPipelineResult {
   readonly censoringAnalysis?: CensoringAnalysis;
   readonly executablePeakAnalysis?: ExecutablePeakAnalysis;
   readonly registeredStudiesCount?: number;
+  readonly migrationSelection?: MigrationSelectionAnalysis;
+  readonly regimeTransport?: DistributionValidityCertificate;
   readonly whyExecutionBlocked?: string;
 }
 
 export type {
+  MigrationSelectionAnalysis,
+  DistributionValidityCertificate,
   ExecutablePeakAnalysis,
   PriceTick,
   ObservabilityGapReport,
@@ -2370,7 +2387,7 @@ export class MasterIntelligenceEngine {
       : undefined;
 
     // ==========================================
-    // DISTRIBUTION TRANSPORTABILITY COURT (Section XI & Study Family 4)
+    // DISTRIBUTION TRANSPORTABILITY COURT & REGIME TRANSPORT (Section XI & Study Family 4)
     // ==========================================
     const targetRegime: MarketRegimeType = (context as any).targetDistributionRegime ?? (
       context.tokenAgeSec < 60 ? 'NEW_LAUNCH' :
@@ -2378,14 +2395,32 @@ export class MasterIntelligenceEngine {
       (context.liquiditySol > 80 ? 'POST_MIGRATION' : 'BONDING_CURVE')
     );
     const sourceRegime: MarketRegimeType = (context as any).sourceDistributionRegime ?? 'NEW_LAUNCH';
+    const covariateShift = (context as any).covariateShift ?? 0.12;
+    const conceptShift = (context as any).conceptShift ?? 0.08;
+    const calibrationShift = (context as any).calibrationShift ?? 0.04;
+    const isPostMigrationCandidate = (context as any).isMigrated ?? ((context as any).isPostMigrationSample ?? false);
+    const curveProgressPct = (context as any).bondingCurvePct ?? ((context as any).curveProgressPct ?? 0);
+
+    const migrationSelection: MigrationSelectionAnalysis = (context as any).migrationSelection ?? MigrationSelectionEngine.evaluateCandidate(
+      isPostMigrationCandidate,
+      curveProgressPct
+    );
+
+    const regimeTransport: DistributionValidityCertificate = (context as any).regimeTransport ?? RegimeTransportEngine.evaluateTransportability(
+      sourceRegime,
+      targetRegime,
+      covariateShift,
+      conceptShift,
+      calibrationShift
+    );
 
     const transportabilityRuling = TransportabilityCourt.judge({
       sourceRegime,
       targetRegime,
-      covariateShift: (context as any).covariateShift ?? 0.12,
-      conceptShift: (context as any).conceptShift ?? 0.08,
-      calibrationShift: (context as any).calibrationShift ?? 0.04,
-      isPostMigrationSample: (context as any).isPostMigrationSample ?? false,
+      covariateShift,
+      conceptShift,
+      calibrationShift,
+      isPostMigrationSample: isPostMigrationCandidate,
       solUsdVolatilityRatio: (context as any).solUsdVolatilityRatio ?? 1.05,
     });
 
@@ -2909,6 +2944,20 @@ export class MasterIntelligenceEngine {
     ) {
       decision = 'CHALLENGED_ABSTAIN';
       whyExecutionBlocked = `BLOCKED — ECONOMIC FRESHNESS ANOMALY (${executablePeakAnalysis.isOutlierPeak ? 'OUTLIER_PEAK_EXCEEDED' : `FLASH_CRASH_POST_PEAK_${executablePeakAnalysis.postPeakDrop50Seconds}S`})`;
+    } else if (
+      ((context as any).enforceMigrationSelectionGating ?? false) &&
+      migrationSelection.isMigrated &&
+      migrationSelection.survivorshipBiasPenalty > 0.30 &&
+      !((context as any).allowPostMigrationTrading ?? false)
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      whyExecutionBlocked = `BLOCKED — MIGRATION SELECTION BIAS PENALTY (${(migrationSelection.survivorshipBiasPenalty * 100).toFixed(1)}% haircut, conditioned on curve survival)`;
+    } else if (
+      ((context as any).enforceRegimeTransportGating ?? false) &&
+      !regimeTransport.transportable
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      whyExecutionBlocked = `BLOCKED — REGIME TRANSPORT DISMISSED (${regimeTransport.blockers.join('; ')})`;
     } else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
       decision = 'AUTHORIZED_SELL';
       const exitResult = this.executeExit({
@@ -4045,6 +4094,12 @@ export class MasterIntelligenceEngine {
       postPeakDrop50Seconds: executablePeakAnalysis.postPeakDrop50Seconds ?? null,
       isOutlierPeak: executablePeakAnalysis.isOutlierPeak,
       registeredStudiesCount: this.registeredStudiesCount,
+      migrationSelection,
+      regimeTransport,
+      isMigratedCandidate: migrationSelection.isMigrated,
+      survivorshipBiasPenalty: migrationSelection.survivorshipBiasPenalty,
+      isRegimeTransportable: regimeTransport.transportable,
+      transportBlockers: regimeTransport.blockers,
       links: {
         solscan: `https://solscan.io/token/${event.mint}`,
         pump: `https://pump.fun/${event.mint}`,
@@ -4317,6 +4372,8 @@ export class MasterIntelligenceEngine {
       censoringAnalysis,
       executablePeakAnalysis,
       registeredStudiesCount: this.registeredStudiesCount,
+      migrationSelection,
+      regimeTransport,
       whyExecutionBlocked: decision !== 'AUTHORIZED_BUY' ? whyExecutionBlocked : undefined,
     };
   }
@@ -5150,6 +5207,34 @@ export class MasterIntelligenceEngine {
 
   public getRegisteredStudiesCount(): number {
     return this.registeredStudiesCount;
+  }
+
+  /**
+   * Section XI & Studies POST-MIGRATION-SELECTION-X, MIGRATION-CAUSAL-EFFECT-X
+   * Evaluates population selection and survivorship bias penalty.
+   */
+  public evaluateMigrationSelection(isMigrated: boolean, curveProgressPct: number = 0): MigrationSelectionAnalysis {
+    return MigrationSelectionEngine.evaluateCandidate(isMigrated, curveProgressPct);
+  }
+
+  /**
+   * Section XI & Studies REGIME-TRANSPORTABILITY-X, FIXED-REFERENCE-SHIFT-X
+   * Evaluates cross-regime distribution transportability certificate.
+   */
+  public evaluateRegimeTransport(
+    sourceRegime: MarketRegimeType,
+    targetRegime: MarketRegimeType,
+    covariateShift: number = 0.15,
+    conceptShift: number = 0.10,
+    calibrationShift: number = 0.05
+  ): DistributionValidityCertificate {
+    return RegimeTransportEngine.evaluateTransportability(
+      sourceRegime,
+      targetRegime,
+      covariateShift,
+      conceptShift,
+      calibrationShift
+    );
   }
 
   /**
