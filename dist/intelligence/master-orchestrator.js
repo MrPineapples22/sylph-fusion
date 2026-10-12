@@ -47,7 +47,7 @@ import { ContextGate } from './context/context-gate.js';
 import { LatencyTraceEngine, ExecutionRaceGuard } from './execution/latency-trace.js';
 import { ActorKnowledgeGraph } from './adversarial/actor-graph.js';
 import { CoordinationScoreEngine } from './adversarial/coordination-score.js';
-import { LiquidityDepthEngine } from './microstructure/depth-engine.js';
+import { LiquidityDepthEngine, isLiquidityDepthGateBlocked, } from './microstructure/depth-engine.js';
 import { FlowToxicityEngine } from './microstructure/flow-toxicity.js';
 import { AdaptivePolicyRouter } from './policies/adaptive-router.js';
 import { OODSentinel } from './safety/ood-sentinel.js';
@@ -389,6 +389,7 @@ export class MasterIntelligenceEngine {
     feeSurface;
     activeExecutionPolicy;
     executionAttemptLedger;
+    liquidityDepthEngine;
     constructor() {
         this.kernel = new IntegrationKernel();
         this.chainTruth = new ChainTruthEngine();
@@ -572,6 +573,7 @@ export class MasterIntelligenceEngine {
             preferredTransport: 'JITO_SINGLE_TX_BUNDLE',
         });
         this.executionAttemptLedger = new ExecutionAttemptLedger();
+        this.liquidityDepthEngine = new LiquidityDepthEngine();
         this.setupConnectionAuditor();
         this.registerComponents();
     }
@@ -2383,6 +2385,16 @@ export class MasterIntelligenceEngine {
         };
         const executionAttemptStats = context.attemptStats ?? this.executionAttemptLedger.getStats();
         // ==========================================
+        // MICROSTRUCTURE LIQUIDITY DEPTH ENGINE (Major Update #4 & Sections 16, 28)
+        // ==========================================
+        const poolSolReserves = context.poolSolReserves ??
+            context.liquiditySol ??
+            context.realSolReserve ??
+            30.0;
+        const depthVirtualTokenReserves = context.virtualTokenReserves ?? virtualTokenReserves ?? 1000000000000n;
+        const liquidityDepthProfile = context.liquidityDepthProfile ??
+            this.liquidityDepthEngine.calculateDepth(poolSolReserves, depthVirtualTokenReserves, [0.25, 0.5, 1.0, 2.5, 5.0, 10.0], context.preferredAmmRoute);
+        // ==========================================
         // ALPHA HALF-LIFE, QUOTE DECAY & EXECUTION SHORTFALL (Sections XV, XVI & XX)
         // ==========================================
         const alphaHalfLife = AlphaHalfLifeEngine.estimateHalfLife({
@@ -2768,6 +2780,11 @@ export class MasterIntelligenceEngine {
             decision = 'CHALLENGED_ABSTAIN';
             const unlandedRatio = (executionAttemptStats.deliveryFailedCount + executionAttemptStats.certifiedNoLandCount + executionAttemptStats.blockhashExpiredCount) / executionAttemptStats.totalAttempts;
             whyExecutionBlocked = `BLOCKED — EXECUTION ATTEMPT DELIVERY COLLAPSE (Unlanded: ${(unlandedRatio * 100).toFixed(1)}% >= 70.0%, Total: ${executionAttemptStats.totalAttempts})`;
+        }
+        else if ((context.enforceLiquidityDepthGating ?? false) &&
+            isLiquidityDepthGateBlocked(liquidityDepthProfile, context.targetTradeSizeSol ?? 0.25)) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — LIQUIDITY DEPTH COLLAPSE (Safe: ${liquidityDepthProfile.maxSafePositionSol.toFixed(2)} SOL < Target, Resilience: ${(liquidityDepthProfile.depthResilienceScore * 100).toFixed(1)}%, Route: ${liquidityDepthProfile.calibratedRoute})`;
         }
         else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
             decision = 'AUTHORIZED_SELL';
@@ -3900,6 +3917,11 @@ export class MasterIntelligenceEngine {
             executionTotalAttempts: executionAttemptStats.totalAttempts,
             executionTransport: executionActionVector.transport,
             lastExecutionOutcome: context.lastExecutionOutcome ?? (executionAttemptStats.totalAttempts > 0 ? (this.executionAttemptLedger.getAllAttempts().slice(-1)[0]?.outcome ?? 'FINALIZED_SUCCESS') : 'FINALIZED_SUCCESS'),
+            liquidityDepthProfile,
+            liquidityDepthResilienceScore: liquidityDepthProfile.depthResilienceScore,
+            liquidityMaxSafePositionSol: liquidityDepthProfile.maxSafePositionSol,
+            liquidityCalibratedRoute: liquidityDepthProfile.calibratedRoute,
+            isLiquidityDepthCollapsed: liquidityDepthProfile.isDepthCollapsed,
             links: {
                 solscan: `https://solscan.io/token/${event.mint}`,
                 pump: `https://pump.fun/${event.mint}`,
@@ -4187,6 +4209,7 @@ export class MasterIntelligenceEngine {
             executionPolicy,
             executionActionVector,
             executionAttemptStats,
+            liquidityDepthProfile,
             whyExecutionBlocked: decision !== 'AUTHORIZED_BUY' ? whyExecutionBlocked : undefined,
         };
     }
@@ -4830,6 +4853,18 @@ export class MasterIntelligenceEngine {
      */
     getExecutionAttemptStats() {
         return this.executionAttemptLedger.getStats();
+    }
+    /**
+     * Major Update #4 & Sections 16, 28: Microstructure Liquidity Depth Engine
+     */
+    getLiquidityDepthEngine() {
+        return this.liquidityDepthEngine;
+    }
+    /**
+     * Major Update #4 & Sections 16, 28: Compute Liquidity Depth Profile & Non-Linear Tranches
+     */
+    evaluateLiquidityDepth(poolSolReserves, virtualTokenReserves = 1000000000000n, tranches, preferredRoute) {
+        return this.liquidityDepthEngine.calculateDepth(poolSolReserves, virtualTokenReserves, tranches, preferredRoute);
     }
     /**
      * System Intelligence & Omega Telemetry

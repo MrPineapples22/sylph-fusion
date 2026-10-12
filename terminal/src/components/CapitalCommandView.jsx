@@ -636,6 +636,12 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
                     <span>Success: <b style={{color: (position.executionSuccessRatePct ?? 90.0) >= 75 ? '#14F195' : '#FF3B69'}}>{`${(position.executionSuccessRatePct ?? 90.0).toFixed(1)}%`}</b></span>
                     <span>Transport: <b style={{color: '#38BDF8'}}>{position.executionTransport || position.executionActionVector?.transport || 'JITO_BUNDLE'}</b></span>
                   </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'2px',padding:'3px 6px',background:'rgba(245,158,11,0.04)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>Depth Resilience: <b style={{color: (position.liquidityDepthResilienceScore ?? position.liquidityDepthProfile?.depthResilienceScore ?? 0.8) >= 0.7 ? '#14F195' : '#F59E0B'}}>{`${((position.liquidityDepthResilienceScore ?? position.liquidityDepthProfile?.depthResilienceScore ?? 0.8) * 100).toFixed(0)}%`}</b></span>
+                    <span>Max Safe: <b style={{color: '#38BDF8'}}>{`${(position.liquidityMaxSafePositionSol ?? position.liquidityDepthProfile?.maxSafePositionSol ?? 2.5).toFixed(2)} SOL`}</b></span>
+                    <span>Route: <b style={{color: '#A78BFA'}}>{position.liquidityCalibratedRoute || position.liquidityDepthProfile?.calibratedRoute || 'DIRECT_BONDING_CURVE'}</b></span>
+                    <span>Depth: <b style={{color: (position.isLiquidityDepthCollapsed ?? position.liquidityDepthProfile?.isDepthCollapsed ?? false) ? '#FF3B69' : '#14F195'}}>{(position.isLiquidityDepthCollapsed ?? position.liquidityDepthProfile?.isDepthCollapsed ?? false) ? 'COLLAPSED' : 'HEALTHY'}</b></span>
+                  </div>
                 </div>
               );
             })()}

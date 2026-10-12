@@ -2,8 +2,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { SolanaArbitrageGraph } from '../../dist/platform/solana/arbitrage-graph.js';
 
-describe('ELITE UPDATE 1: SolanaArbitrageGraph Multi-Leg Profit & Math Precision', () => {
-  it('1. Detects profitable 4-leg arbitrage cycles with atomic execution premium', () => {
+describe('SolanaArbitrageGraph multi-leg estimates and safety checks', () => {
+  it('finds a positive estimated 4-leg cycle without inventing atomicity profit', () => {
     const arbGraph = new SolanaArbitrageGraph();
 
     // Leg 1: SOL -> USDC (Rate 150.0)
@@ -78,9 +78,9 @@ describe('ELITE UPDATE 1: SolanaArbitrageGraph Multi-Leg Profit & Math Precision
     assert.ok(cycles.length >= 1, 'Must find 4-leg arbitrage cycle');
     const cycle = cycles[0];
     assert.equal(cycle.legs.length, 4);
-    assert.equal(cycle.isSingleAtomicTransaction, true);
+    assert.equal(cycle.isSingleAtomicTransaction, false, 'atomic execution is not proven by graph topology');
     assert.ok(cycle.grossSpreadLamports > 0n);
-    assert.ok(cycle.atomicityPremiumLamports > 0n);
+    assert.equal(cycle.atomicityPremiumLamports, 0n);
     assert.ok(cycle.robustArbProfitLamports > 0n);
     assert.ok(cycle.profitBps > 500); // Expecting > 5% net profit
 
@@ -220,5 +220,22 @@ describe('ELITE UPDATE 1: SolanaArbitrageGraph Multi-Leg Profit & Math Precision
     assert.equal(cycles.length, 1);
     const cycleIds = new Set(cycles.map(c => c.cycleId));
     assert.equal(cycleIds.size, cycles.length, 'Every cycle must possess a unique ID');
+  });
+
+  it('rejects malformed market observations and unsafe notionals', () => {
+    const graph = new SolanaArbitrageGraph();
+    assert.throws(() => graph.updateEdge({ edgeId: 'bad', poolId: 'p', protocol: 'x', baseToken: 'A', quoteToken: 'B', rate: Infinity, feeBps: 0, impactBps: 0, availableCapacityLamports: 1n, freshnessMs: 0, executionProbability: 1 }));
+    assert.throws(() => graph.updateEdge({ edgeId: 'bad', poolId: 'p', protocol: 'x', baseToken: 'A', quoteToken: 'B', rate: 1, feeBps: 0, impactBps: 0, availableCapacityLamports: 1n, freshnessMs: 0, executionProbability: 1.1 }));
+    assert.throws(() => graph.findProfitableCycles({ rootToken: 'SOL', notionalLamports: BigInt(Number.MAX_SAFE_INTEGER) + 1n }));
+  });
+
+  it('replacing an edge ID with a different base token removes the stale adjacency entry', () => {
+    const graph = new SolanaArbitrageGraph();
+    const edge = { edgeId: 'shared-id', poolId: 'p1', protocol: 'x', baseToken: 'A', quoteToken: 'B', rate: 2, feeBps: 0, impactBps: 0, availableCapacityLamports: 10_000_000_000n, freshnessMs: 0, executionProbability: 1 };
+    graph.updateEdge(edge);
+    graph.updateEdge({ ...edge, poolId: 'p3', baseToken: 'B', quoteToken: 'C' });
+    graph.updateEdge({ ...edge, edgeId: 'return-edge', poolId: 'p2', baseToken: 'B', quoteToken: 'A', rate: 1 });
+
+    assert.deepEqual(graph.findProfitableCycles({ rootToken: 'A', notionalLamports: 1_000_000_000n, estimatedTipFeeLamports: 0n, minProfitBps: 0 }), []);
   });
 });

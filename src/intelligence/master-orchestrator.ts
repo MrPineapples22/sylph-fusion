@@ -51,7 +51,13 @@ import { ContextGate } from './context/context-gate.js';
 import { LatencyTraceEngine, ExecutionRaceGuard } from './execution/latency-trace.js';
 import { ActorKnowledgeGraph } from './adversarial/actor-graph.js';
 import { CoordinationScoreEngine } from './adversarial/coordination-score.js';
-import { LiquidityDepthEngine } from './microstructure/depth-engine.js';
+import {
+  LiquidityDepthEngine,
+  isLiquidityDepthGateBlocked,
+  type LiquidityDepthProfile,
+  type TrancheImpact,
+  type AMMRouteType,
+} from './microstructure/depth-engine.js';
 import { FlowToxicityEngine, type TradeTick, type HorizonFlowMetrics } from './microstructure/flow-toxicity.js';
 import { AdaptivePolicyRouter } from './policies/adaptive-router.js';
 import { OODSentinel } from './safety/ood-sentinel.js';
@@ -703,6 +709,11 @@ export interface AetherFluxViewModel {
   readonly executionTotalAttempts?: number;
   readonly executionTransport?: ExecutionTransportType;
   readonly lastExecutionOutcome?: ExecutionAttemptOutcome;
+  readonly liquidityDepthProfile?: LiquidityDepthProfile;
+  readonly liquidityDepthResilienceScore?: number;
+  readonly liquidityMaxSafePositionSol?: number;
+  readonly liquidityCalibratedRoute?: AMMRouteType;
+  readonly isLiquidityDepthCollapsed?: boolean;
 }
 
 export interface MasterPipelineResult {
@@ -791,6 +802,7 @@ export interface MasterPipelineResult {
   readonly executionPolicy?: ExecutionPolicyArtifact;
   readonly executionActionVector?: ExecutionActionVector;
   readonly executionAttemptStats?: ExecutionAttemptStats;
+  readonly liquidityDepthProfile?: LiquidityDepthProfile;
   readonly whyExecutionBlocked?: string;
 }
 
@@ -893,6 +905,9 @@ export type {
   FeeSurfaceHierarchyTier,
   ExecutionPolicyArtifact,
   PolicyTier,
+  LiquidityDepthProfile,
+  TrancheImpact,
+  AMMRouteType,
 };
 
 export class MasterIntelligenceEngine {
@@ -1048,6 +1063,7 @@ export class MasterIntelligenceEngine {
   public readonly feeSurface: WritableSetFeeSurface;
   private activeExecutionPolicy: ExecutionPolicyArtifact;
   public readonly executionAttemptLedger: ExecutionAttemptLedger;
+  public readonly liquidityDepthEngine: LiquidityDepthEngine;
 
   constructor() {
     this.kernel = new IntegrationKernel();
@@ -1239,6 +1255,7 @@ export class MasterIntelligenceEngine {
       preferredTransport: 'JITO_SINGLE_TX_BUNDLE',
     });
     this.executionAttemptLedger = new ExecutionAttemptLedger();
+    this.liquidityDepthEngine = new LiquidityDepthEngine();
 
     this.setupConnectionAuditor();
     this.registerComponents();
@@ -3330,6 +3347,25 @@ export class MasterIntelligenceEngine {
     const executionAttemptStats: ExecutionAttemptStats = (context as any).attemptStats ?? this.executionAttemptLedger.getStats();
 
     // ==========================================
+    // MICROSTRUCTURE LIQUIDITY DEPTH ENGINE (Major Update #4 & Sections 16, 28)
+    // ==========================================
+    const poolSolReserves: number =
+      (context as any).poolSolReserves ??
+      (context as any).liquiditySol ??
+      (context as any).realSolReserve ??
+      30.0;
+    const depthVirtualTokenReserves: bigint =
+      (context as any).virtualTokenReserves ?? virtualTokenReserves ?? 1_000_000_000_000n;
+    const liquidityDepthProfile: LiquidityDepthProfile =
+      (context as any).liquidityDepthProfile ??
+      this.liquidityDepthEngine.calculateDepth(
+        poolSolReserves,
+        depthVirtualTokenReserves,
+        [0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
+        (context as any).preferredAmmRoute
+      );
+
+    // ==========================================
     // ALPHA HALF-LIFE, QUOTE DECAY & EXECUTION SHORTFALL (Sections XV, XVI & XX)
     // ==========================================
     const alphaHalfLife = AlphaHalfLifeEngine.estimateHalfLife({
@@ -3749,6 +3785,12 @@ export class MasterIntelligenceEngine {
       decision = 'CHALLENGED_ABSTAIN';
       const unlandedRatio = (executionAttemptStats.deliveryFailedCount + executionAttemptStats.certifiedNoLandCount + executionAttemptStats.blockhashExpiredCount) / executionAttemptStats.totalAttempts;
       whyExecutionBlocked = `BLOCKED — EXECUTION ATTEMPT DELIVERY COLLAPSE (Unlanded: ${(unlandedRatio * 100).toFixed(1)}% >= 70.0%, Total: ${executionAttemptStats.totalAttempts})`;
+    } else if (
+      ((context as any).enforceLiquidityDepthGating ?? false) &&
+      isLiquidityDepthGateBlocked(liquidityDepthProfile, (context as any).targetTradeSizeSol ?? 0.25)
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      whyExecutionBlocked = `BLOCKED — LIQUIDITY DEPTH COLLAPSE (Safe: ${liquidityDepthProfile.maxSafePositionSol.toFixed(2)} SOL < Target, Resilience: ${(liquidityDepthProfile.depthResilienceScore * 100).toFixed(1)}%, Route: ${liquidityDepthProfile.calibratedRoute})`;
     } else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
       decision = 'AUTHORIZED_SELL';
       const exitResult = this.executeExit({
@@ -4969,6 +5011,11 @@ export class MasterIntelligenceEngine {
       executionTotalAttempts: executionAttemptStats.totalAttempts,
       executionTransport: executionActionVector.transport,
       lastExecutionOutcome: (context as any).lastExecutionOutcome ?? (executionAttemptStats.totalAttempts > 0 ? (this.executionAttemptLedger.getAllAttempts().slice(-1)[0]?.outcome ?? 'FINALIZED_SUCCESS') : 'FINALIZED_SUCCESS'),
+      liquidityDepthProfile,
+      liquidityDepthResilienceScore: liquidityDepthProfile.depthResilienceScore,
+      liquidityMaxSafePositionSol: liquidityDepthProfile.maxSafePositionSol,
+      liquidityCalibratedRoute: liquidityDepthProfile.calibratedRoute,
+      isLiquidityDepthCollapsed: liquidityDepthProfile.isDepthCollapsed,
       links: {
         solscan: `https://solscan.io/token/${event.mint}`,
         pump: `https://pump.fun/${event.mint}`,
@@ -5258,6 +5305,7 @@ export class MasterIntelligenceEngine {
       executionPolicy,
       executionActionVector,
       executionAttemptStats,
+      liquidityDepthProfile,
       whyExecutionBlocked: decision !== 'AUTHORIZED_BUY' ? whyExecutionBlocked : undefined,
     };
   }
@@ -6364,6 +6412,25 @@ export class MasterIntelligenceEngine {
    */
   public getExecutionAttemptStats(): ExecutionAttemptStats {
     return this.executionAttemptLedger.getStats();
+  }
+
+  /**
+   * Major Update #4 & Sections 16, 28: Microstructure Liquidity Depth Engine
+   */
+  public getLiquidityDepthEngine(): LiquidityDepthEngine {
+    return this.liquidityDepthEngine;
+  }
+
+  /**
+   * Major Update #4 & Sections 16, 28: Compute Liquidity Depth Profile & Non-Linear Tranches
+   */
+  public evaluateLiquidityDepth(
+    poolSolReserves: number,
+    virtualTokenReserves = 1_000_000_000_000n,
+    tranches?: readonly number[],
+    preferredRoute?: AMMRouteType
+  ): LiquidityDepthProfile {
+    return this.liquidityDepthEngine.calculateDepth(poolSolReserves, virtualTokenReserves, tranches, preferredRoute);
   }
 
   /**

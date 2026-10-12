@@ -7,8 +7,7 @@
  *    Orca, PumpSwap, Jupiter, and CLOBs.
  * 2. Multi-leg cycle detection: 2-leg, 3-leg, and 4-leg arbitrage cycles.
  * 3. RobustArbProfit = grossSpread - fees - priorityTip - impact - slippage - completionRisk.
- * 4. AtomicityPremium: Multi-instruction atomic transactions earn an execution risk bonus over
- *    split transactions, penalizing intermediate completion hazards.
+ * 4. Atomic inclusion is an execution property, not a source of economic profit.
  */
 
 import { hashCanonical } from '../pipeline/canonical-hashing.js';
@@ -55,10 +54,25 @@ export class SolanaArbitrageGraph {
    * Add or update an edge in the routing graph.
    */
   public updateEdge(edge: ArbGraphEdge): void {
+    if (!edge.edgeId.trim() || !edge.poolId.trim() || !edge.baseToken.trim() || !edge.quoteToken.trim()) {
+      throw new Error('Arbitrage edge identifiers and tokens must be non-empty');
+    }
+    if (!Number.isFinite(edge.rate) || edge.rate <= 0) throw new Error('Arbitrage edge rate must be finite and positive');
+    if (!Number.isFinite(edge.feeBps) || edge.feeBps < 0 || !Number.isFinite(edge.impactBps) || edge.impactBps < 0) {
+      throw new Error('Arbitrage edge fee and impact must be finite and non-negative');
+    }
+    if (!Number.isFinite(edge.executionProbability) || edge.executionProbability < 0 || edge.executionProbability > 1) {
+      throw new Error('Arbitrage edge execution probability must be between 0 and 1');
+    }
+    if (!Number.isFinite(edge.freshnessMs) || edge.freshnessMs < 0 || edge.availableCapacityLamports < 0n) {
+      throw new Error('Arbitrage edge freshness and capacity must be non-negative');
+    }
+    // Edge IDs identify one observation globally. If its base token changes, remove
+    // the prior adjacency entry too; filtering only the new bucket leaves stale routes.
+    this.removeEdge(edge.edgeId);
     const fromList = this.edges.get(edge.baseToken) || [];
-    const filtered = fromList.filter(e => e.edgeId !== edge.edgeId);
-    filtered.push(Object.freeze({ ...edge }));
-    this.edges.set(edge.baseToken, filtered);
+    fromList.push(Object.freeze({ ...edge }));
+    this.edges.set(edge.baseToken, fromList);
   }
 
   /**
@@ -83,6 +97,9 @@ export class SolanaArbitrageGraph {
     const tipFee = params.estimatedTipFeeLamports ?? 250_000n;
     const minBps = params.minProfitBps ?? 10; // Minimum 10 bps profit
     const maxLegs = params.maxLegs ?? 4;
+    if (!params.rootToken.trim() || params.notionalLamports <= 0n || params.notionalLamports > BigInt(Number.MAX_SAFE_INTEGER) || tipFee < 0n || !Number.isFinite(minBps) || minBps < 0 || !Number.isInteger(maxLegs) || maxLegs < 2 || maxLegs > 4) {
+      throw new Error('Invalid arbitrage search parameters');
+    }
     const cycles: ArbitrageCycle[] = [];
     const seenHashes = new Set<string>();
 
@@ -166,7 +183,7 @@ export class SolanaArbitrageGraph {
     }
 
     // Sort by robust net profit descending
-    return Object.freeze(cycles.sort((a, b) => Number(b.robustArbProfitLamports - a.robustArbProfitLamports)));
+    return Object.freeze(cycles.sort((a, b) => a.robustArbProfitLamports === b.robustArbProfitLamports ? 0 : a.robustArbProfitLamports > b.robustArbProfitLamports ? -1 : 1));
   }
 
   /**
@@ -198,15 +215,13 @@ export class SolanaArbitrageGraph {
     const slippageAndImpactLamports = BigInt(Math.floor(notionalNum * (totalImpactBps / 10_000)));
     const completionRiskLamports = BigInt(Math.floor(notionalNum * (totalCompletionRiskBps / 10_000)));
 
-    // On Solana, multi-instruction transactions within a single atomic payload carry an AtomicityPremium.
-    // Invariant: Atomicity premium is an execution risk bonus only awarded when the cycle has an intrinsically
-    // positive gross spread; negative spread cycles can never be made artificially profitable by an atomicity bonus.
-    const isSingleAtomicTransaction = legs.length <= 4;
-    const atomicityPremiumLamports = (isSingleAtomicTransaction && grossSpreadRatio > 0)
-      ? BigInt(Math.floor(notionalNum * 0.0015)) // 15 bps premium
-      : 0n;
+    // Cycle discovery does not prove that the compiled route fits one transaction or
+    // that bundle/rebroadcast semantics preserve atomicity. Never book a synthetic premium.
+    const isSingleAtomicTransaction = false;
+    const atomicityPremiumLamports = 0n;
 
-    // RobustArbProfit = grossSpread - fees - priorityTip - impact - slippage - completionRisk + atomicityPremium
+    // This is a research estimate from supplied rates and aggregate bps, not an executable quote.
+    // RobustArbProfit = estimated gross spread - supplied cost estimates.
     const totalDeductions = totalFeesLamports + tipFeeLamports + slippageAndImpactLamports + completionRiskLamports;
     const robustArbProfitLamports = grossSpreadLamports + atomicityPremiumLamports - totalDeductions;
     const profitBps = notionalNum > 0 ? (Number(robustArbProfitLamports) / notionalNum) * 10_000 : 0;

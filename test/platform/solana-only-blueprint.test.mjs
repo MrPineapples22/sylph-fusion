@@ -566,7 +566,7 @@ describe('SYLPH FUSION — Solana-Only Integration Blueprint', () => {
     assert.equal(regret.routeRegretBps, 15); // TPU would have been +15 bps better
   });
 
-  test('Sections 19 & 20: SolanaArbitrageGraph detects cycles and evaluates completion risk & atomicity premium', () => {
+  test('Sections 19 & 20: SolanaArbitrageGraph detects cycles without assuming atomicity profit', () => {
     const arbGraph = new SolanaArbitrageGraph();
 
     // Pool 1: SOL -> USDC (Raydium)
@@ -609,8 +609,8 @@ describe('SYLPH FUSION — Solana-Only Integration Blueprint', () => {
     assert.equal(cycles.length, 1);
     const cycle = cycles[0];
     assert.equal(cycle.legs.length, 2);
-    assert.equal(cycle.isSingleAtomicTransaction, true);
-    assert.ok(cycle.atomicityPremiumLamports > 0n);
+    assert.equal(cycle.atomicityPremiumLamports, 0n);
+    assert.equal(cycle.isSingleAtomicTransaction, false);
     assert.ok(cycle.robustArbProfitLamports > 0n);
     assert.ok(cycle.profitBps > 100); // Substantial gross edge net of costs
   });
