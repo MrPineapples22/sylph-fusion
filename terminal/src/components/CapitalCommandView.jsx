@@ -600,6 +600,12 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
                     <span>Barrier Eff: <b style={{color: '#38BDF8'}}>{`${(position.barrierFatigue?.attemptEfficiency ?? 1.25).toFixed(2)}x`}</b></span>
                     <span>Frontier Cert: <b style={{color: '#A78BFA'}}>{(position.frontierCertificate?.certificateId || 'frc_none').slice(0, 10)}</b></span>
                   </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'2px',padding:'3px 6px',background:'rgba(16,185,129,0.04)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>Tourn Rank: <b style={{color: (position.tournamentRank || position.capitalTournament?.tournamentRank) === 'LOSING' ? '#FF3B69' : ((position.tournamentRank || position.capitalTournament?.tournamentRank) === 'DOMINANT' ? '#14F195' : '#38BDF8')}}>{position.tournamentRank || position.capitalTournament?.tournamentRank || 'STABLE'}</b></span>
+                    <span>Cap Share: <b style={{color: '#14F195'}}>{`${Number(position.capitalSharePct ?? position.capitalTournament?.capitalSharePct ?? 25).toFixed(1)}%`}</b></span>
+                    <span>Momentum: <b style={{color: (position.capitalShareMomentum ?? position.capitalTournament?.capitalShareMomentum ?? 0) < 0 ? '#FF3B69' : '#14F195'}}>{`${(position.capitalShareMomentum ?? position.capitalTournament?.capitalShareMomentum ?? 0) >= 0 ? '+' : ''}${Number(position.capitalShareMomentum ?? position.capitalTournament?.capitalShareMomentum ?? 0).toFixed(1)}%`}</b></span>
+                    <span>Flow Toxicity: <b style={{color: (position.maxFlowToxicity ?? 0) >= 0.70 ? '#FF3B69' : '#14F195'}}>{`${((position.maxFlowToxicity ?? 0) * 100).toFixed(0)}%`}</b></span>
+                  </div>
                 </div>
               );
             })()}

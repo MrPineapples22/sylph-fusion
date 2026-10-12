@@ -52,7 +52,7 @@ import { LatencyTraceEngine, ExecutionRaceGuard } from './execution/latency-trac
 import { ActorKnowledgeGraph } from './adversarial/actor-graph.js';
 import { CoordinationScoreEngine } from './adversarial/coordination-score.js';
 import { LiquidityDepthEngine } from './microstructure/depth-engine.js';
-import { FlowToxicityEngine } from './microstructure/flow-toxicity.js';
+import { FlowToxicityEngine, type TradeTick, type HorizonFlowMetrics } from './microstructure/flow-toxicity.js';
 import { AdaptivePolicyRouter } from './policies/adaptive-router.js';
 import { OODSentinel } from './safety/ood-sentinel.js';
 import { PositionDefenseEngine } from './execution/position-defense.js';
@@ -221,6 +221,7 @@ import {
   type BarrierAttemptRecord,
   CapitalTournamentEngine,
   type CapitalTournamentStatus,
+  type TournamentRank,
 } from './microstructure/microstructure-x.js';
 import {
   certifyProfitFrontier,
@@ -609,6 +610,14 @@ export interface AetherFluxViewModel {
   readonly totalSellHazard?: number;
   readonly canSafelyAbsorbSell?: boolean;
   readonly frontierOptimalCandidate?: string;
+  readonly capitalTournament?: CapitalTournamentStatus;
+  readonly tournamentRank?: TournamentRank;
+  readonly capitalSharePct?: number;
+  readonly capitalShareMomentum?: number;
+  readonly flowToxicityMetrics?: Record<number, HorizonFlowMetrics>;
+  readonly maxFlowToxicity?: number;
+  readonly isFlowToxic?: boolean;
+  readonly isTournamentAdmissible?: boolean;
 }
 
 export interface MasterPipelineResult {
@@ -2861,6 +2870,36 @@ export class MasterIntelligenceEngine {
     const frontierCertificate: FrontierCertificate = (context as any).frontierCertificate ?? certifyProfitFrontier(engineeringCandidates);
 
     // ==========================================
+    // CAPITAL TOURNAMENT & FLOW TOXICITY (Sections 23, 24 & Master Blueprint Major Update #4)
+    // ==========================================
+    const tokenVolSol = (context as any).tokenVolumeSol ?? Math.max(1.0, context.liquiditySol * 0.25);
+    const universeVolSol = (context as any).totalUniverseVolumeSol ?? Math.max(tokenVolSol * 2.0, 100.0);
+    const prevSharePct = (context as any).previousSharePct ?? Math.min(100, Math.max(0, (tokenVolSol / universeVolSol) * 100 * 0.95));
+    const externalReservoir = (context as any).externalReservoirSol ?? 50.0;
+    const winnerProfitReservoir = (context as any).winnerProfitReservoirSol ?? 25.0;
+
+    const capitalTournament: CapitalTournamentStatus = (context as any).capitalTournament ?? CapitalTournamentEngine.evaluateRank(
+      event.mint,
+      tokenVolSol,
+      universeVolSol,
+      prevSharePct,
+      externalReservoir,
+      winnerProfitReservoir
+    );
+
+    const defaultToxicityTrades: readonly TradeTick[] = (context as any).flowTrades ?? [
+      { timestampMs: event.receivedTimestampMs - 500, isBuy: true, amountSol: Math.max(0.2, context.liquiditySol * 0.02) },
+      { timestampMs: event.receivedTimestampMs - 200, isBuy: false, amountSol: coordination.isSyntheticClusterLikely ? Math.max(1.5, context.liquiditySol * 0.15) : Math.max(0.1, context.liquiditySol * 0.01) },
+    ];
+    const flowToxicityMetrics: Record<number, HorizonFlowMetrics> = (context as any).flowToxicityMetrics ?? this.flowEngine.evaluateFlow(
+      defaultToxicityTrades,
+      event.receivedTimestampMs
+    );
+    const maxFlowToxicity = Math.max(0, ...Object.values(flowToxicityMetrics).map((m) => m.toxicityScore));
+    const isFlowToxic = maxFlowToxicity >= 0.70;
+    const isTournamentAdmissible = capitalTournament.tournamentRank !== 'LOSING';
+
+    // ==========================================
     // ALPHA HALF-LIFE, QUOTE DECAY & EXECUTION SHORTFALL (Sections XV, XVI & XX)
     // ==========================================
     const alphaHalfLife = AlphaHalfLifeEngine.estimateHalfLife({
@@ -3217,6 +3256,18 @@ export class MasterIntelligenceEngine {
     ) {
       decision = 'CHALLENGED_ABSTAIN';
       whyExecutionBlocked = `BLOCKED — CRITICAL SELL HAZARD OVERHANG (Hazard: ${(sellHazard.totalSellHazard * 100).toFixed(1)}%, Dev: ${(sellHazard.devDumpHazard * 100).toFixed(1)}%, Cabal: ${(sellHazard.cabalDumpHazard * 100).toFixed(1)}%)`;
+    } else if (
+      ((context as any).enforceCapitalTournamentGating ?? false) &&
+      capitalTournament.tournamentRank === 'LOSING'
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      whyExecutionBlocked = `BLOCKED — CAPITAL TOURNAMENT DEFEAT (Rank: LOSING, Share: ${capitalTournament.capitalSharePct.toFixed(1)}%, Momentum: ${capitalTournament.capitalShareMomentum.toFixed(1)}%)`;
+    } else if (
+      ((context as any).enforceFlowToxicityGating ?? false) &&
+      isFlowToxic
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      whyExecutionBlocked = `BLOCKED — ADVERSE SELECTION FLOW TOXICITY (Max Toxicity: ${(maxFlowToxicity * 100).toFixed(1)}% >= 70%)`;
     } else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
       decision = 'AUTHORIZED_SELL';
       const exitResult = this.executeExit({
@@ -4378,6 +4429,14 @@ export class MasterIntelligenceEngine {
       totalSellHazard: sellHazard.totalSellHazard,
       canSafelyAbsorbSell: sellHazard.canSafelyAbsorbSell,
       frontierOptimalCandidate: frontierCertificate.optimalCandidateId,
+      capitalTournament,
+      tournamentRank: capitalTournament.tournamentRank,
+      capitalSharePct: capitalTournament.capitalSharePct,
+      capitalShareMomentum: capitalTournament.capitalShareMomentum,
+      flowToxicityMetrics,
+      maxFlowToxicity,
+      isFlowToxic,
+      isTournamentAdmissible,
       links: {
         solscan: `https://solscan.io/token/${event.mint}`,
         pump: `https://pump.fun/${event.mint}`,
@@ -5605,6 +5664,38 @@ export class MasterIntelligenceEngine {
    */
   public certifyProfitFrontierCandidates(candidates: readonly EngineeringCandidate[]): FrontierCertificate {
     return certifyProfitFrontier(candidates);
+  }
+
+  /**
+   * Blueprint Sections 23 & 24: Capital Tournament Evaluation
+   */
+  public evaluateCapitalTournament(
+    mint: string,
+    tokenVolumeSol: number,
+    totalUniverseVolumeSol: number,
+    previousSharePct: number,
+    externalReservoirSol: number,
+    winnerProfitReservoirSol: number
+  ): CapitalTournamentStatus {
+    return CapitalTournamentEngine.evaluateRank(
+      mint,
+      tokenVolumeSol,
+      totalUniverseVolumeSol,
+      previousSharePct,
+      externalReservoirSol,
+      winnerProfitReservoirSol
+    );
+  }
+
+  /**
+   * Master Blueprint Major Update #4: Multi-Horizon Flow Toxicity Evaluation
+   */
+  public evaluateFlowToxicity(
+    trades: readonly TradeTick[],
+    asOfTimeMs?: number,
+    horizonsMs?: readonly number[]
+  ): Record<number, HorizonFlowMetrics> {
+    return this.flowEngine.evaluateFlow(trades, asOfTimeMs, horizonsMs);
   }
 
   /**
