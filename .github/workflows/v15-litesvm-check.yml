@@ -1,0 +1,23 @@
+name: V15 LiteSVM research compile
+on:
+  push:
+    branches: [research/v15-execution-parity-scaffold]
+  pull_request:
+    paths:
+      - 'research/v15/litesvm-runner/**'
+      - '.github/workflows/v15-litesvm-check.yml'
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: research/v15/litesvm-runner
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check Rust adapter
+        run: cargo check --all-targets
+      - name: Run Rust tests
+        run: cargo test
