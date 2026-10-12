@@ -17,6 +17,7 @@
  * 12. Autonomous Research Lab & Negative Knowledge
  * 13. Strategy Governance, Production Gates & Aether Flux UI ViewModels
  */
+import { createHash } from 'node:crypto';
 import { ChainTruthEngine } from './truth/chain-truth.js';
 import { RPCProviderPool } from './truth/rpc-pool.js';
 import { TemporalFirewall } from './truth/temporal-firewall.js';
@@ -56,6 +57,8 @@ import { BayesBeliefEngine, } from './bayes/index.js';
 import { StreamMultiplexer, shouldBlockStreamMultiplexer, } from '../platform/ingestion/stream-multiplexer.js';
 import { DEXStreamParser, } from '../platform/ingestion/dex-stream-parser.js';
 import { LandingBenchmarkEngine, shouldBlockLandingBenchmark, } from '../platform/execution/landing-benchmark.js';
+import { OrderedObservationStagingEngine, } from '../platform/ingestion/ordered-observation-buffer.js';
+import { SimulationRiskEnvelopeEngine, missingSimulationRiskCertificate, } from '../platform/execution/simulation-risk-envelope.js';
 import { TemporalEvidenceGraph } from './graph/temporal-evidence-graph.js';
 import { FundingAncestryEngine } from './graph/funding-ancestry.js';
 import { FirstPassageEngine } from './science/first-passage.js';
@@ -396,6 +399,8 @@ export class MasterIntelligenceEngine {
     streamMultiplexer;
     dexStreamParser;
     landingBenchmarkEngine;
+    orderedObservationBuffer;
+    simulationRiskEnvelope;
     constructor() {
         this.kernel = new IntegrationKernel();
         this.chainTruth = new ChainTruthEngine();
@@ -583,6 +588,8 @@ export class MasterIntelligenceEngine {
         this.streamMultiplexer = new StreamMultiplexer();
         this.dexStreamParser = new DEXStreamParser();
         this.landingBenchmarkEngine = new LandingBenchmarkEngine();
+        this.orderedObservationBuffer = new OrderedObservationStagingEngine();
+        this.simulationRiskEnvelope = new SimulationRiskEnvelopeEngine();
         this.setupConnectionAuditor();
         this.registerComponents();
     }
@@ -2440,6 +2447,42 @@ export class MasterIntelligenceEngine {
             ...(Object.hasOwn(event.payload ?? {}, 'err') ? { err: event.payload.err } : {}),
         });
         const landingBenchmark = this.landingBenchmarkEngine.evaluateBenchmark(String(context.landingBenchmarkId ?? event.eventId ?? event.slot));
+        const transactionIndex = event.transactionIndex;
+        const signature = event.payload?.signature ?? event.signature;
+        let observationDigest = null;
+        try {
+            const observationPayload = JSON.stringify({
+                eventId: event.eventId,
+                eventType: event.eventType,
+                mint: event.mint,
+                slot: event.slot,
+                signature,
+                transactionIndex,
+                payload: event.payload,
+            }, (_, value) => typeof value === 'bigint' ? value.toString() : value);
+            if (typeof observationPayload === 'string')
+                observationDigest = createHash('sha256').update(observationPayload).digest('hex');
+        }
+        catch {
+            // Cyclic or non-serializable payloads cannot be represented by this research staging helper.
+        }
+        const observationWatermarkReport = Number.isSafeInteger(transactionIndex) && transactionIndex >= 0 && typeof signature === 'string' && signature.length > 0 && observationDigest !== null
+            ? this.orderedObservationBuffer.stageObservation({
+                slot: event.slot,
+                transactionIndex,
+                signature,
+                eventType: event.eventType,
+                receivedAtMs: event.receivedTimestampMs,
+                observationDigest,
+            })
+            : this.orderedObservationBuffer.recordUnorderedObservation();
+        const simulationEvidence = context.simulationEvidence;
+        const simulationRiskCertificate = (simulationEvidence
+            ? this.simulationRiskEnvelope.evaluateSimulation(simulationEvidence, {
+                nowMs: event.receivedTimestampMs,
+                tradeNotionalSol: context.targetTradeSizeSol,
+            })
+            : missingSimulationRiskCertificate({ mint: event.mint, slot: event.slot, evaluatedAtMs: event.receivedTimestampMs }));
         // ==========================================
         // ALPHA HALF-LIFE, QUOTE DECAY & EXECUTION SHORTFALL (Sections XV, XVI & XX)
         // ==========================================
@@ -2849,6 +2892,21 @@ export class MasterIntelligenceEngine {
             decision = 'CHALLENGED_ABSTAIN';
             const observedRate = landingBenchmark.overallLandingRatePct === null ? 'unknown' : `${landingBenchmark.overallLandingRatePct.toFixed(1)}%`;
             whyExecutionBlocked = `BLOCKED — INSUFFICIENT LANDING BENCHMARK (${observedRate}; ${landingBenchmark.pairedTrialCount}/${landingBenchmark.requiredPairedTrialCount} complete paired trials; observation leader for review: ${landingBenchmark.observationLeaderForReview ?? 'unknown'})`;
+        }
+        else if ((context.enforceOrderedWatermarkGating ?? false) &&
+            (observationWatermarkReport.status === 'SPARSE_SLOT_OBSERVATIONS' ||
+                observationWatermarkReport.status === 'LATE_OBSERVATIONS' ||
+                observationWatermarkReport.status === 'UNORDERED_OBSERVATIONS' ||
+                observationWatermarkReport.status === 'CAPACITY_OVERFLOW' ||
+                observationWatermarkReport.hasObservedSlotHoles ||
+                observationWatermarkReport.hasLateObservations)) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — INGESTION ORDERING EVIDENCE INCOMPLETE (Status: ${observationWatermarkReport.status}, Pending: ${observationWatermarkReport.pendingCount}; replay completeness remains unestablished)`;
+        }
+        else if ((context.enforceSimulationRiskGating ?? false) &&
+            (!simulationRiskCertificate.isApproved || simulationRiskCertificate.verdict !== 'SIMULATION_APPROVED')) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — SIMULATION RISK FENCE BREACH (${simulationRiskCertificate.verdict}: ${simulationRiskCertificate.rejectionReason || 'UNAPPROVED'})`;
         }
         else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
             decision = 'AUTHORIZED_SELL';
@@ -3979,6 +4037,8 @@ export class MasterIntelligenceEngine {
             multiplexerReport,
             decodedDexTrade,
             landingBenchmark,
+            observationWatermarkReport,
+            simulationRiskCertificate,
             links: {
                 solscan: `https://solscan.io/token/${event.mint}`,
                 pump: `https://pump.fun/${event.mint}`,
@@ -4271,6 +4331,8 @@ export class MasterIntelligenceEngine {
             multiplexerReport,
             decodedDexTrade,
             landingBenchmark,
+            observationWatermarkReport,
+            simulationRiskCertificate,
             whyExecutionBlocked: decision !== 'AUTHORIZED_BUY' ? whyExecutionBlocked : undefined,
         };
     }
@@ -4951,35 +5013,37 @@ export class MasterIntelligenceEngine {
     evaluateBayesCalibration(predictions) {
         return this.bayes.evaluateCalibration(predictions);
     }
-    /**
-     * Institutional Stream Multiplexer (Richat & Yellowstone gRPC)
-     */
+    /** Metrics-only registry. It does not establish a live provider connection. */
     getStreamMultiplexer() {
         return this.streamMultiplexer;
     }
-    /**
-     * Institutional Zero-Copy DEX Stream Parser (Sol Parser SDK & Solana Streamer)
-     */
+    /** Research envelope inspector; protocol event decoding is not implemented. */
     getDexStreamParser() {
         return this.dexStreamParser;
     }
-    /**
-     * Institutional Landing Benchmark & Dynamic Tip Optimizer (Netticode & MOBIUS Searcher)
-     */
+    /** Stores observed paired transport attempts; does not submit transactions. */
     getLandingBenchmarkEngine() {
         return this.landingBenchmarkEngine;
     }
-    /**
-     * Parse raw transaction payload into normalized DEX trade event
-     */
+    /** Inspect a transaction envelope without inferring trade details. */
     parseDexTransaction(raw) {
         return this.dexStreamParser.parseTransaction(raw);
     }
-    /**
-     * Evaluate multi-lane landing benchmark and compute dynamic tip schedule
-     */
+    /** Evaluate recorded paired observations. The legacy contention argument is ignored. */
     evaluateLandingBenchmark(benchmarkId, legacyContentionRatio) {
         return this.landingBenchmarkEngine.evaluateBenchmark(benchmarkId, legacyContentionRatio);
+    }
+    getOrderedObservationBuffer() {
+        return this.orderedObservationBuffer;
+    }
+    getSimulationRiskEnvelope() {
+        return this.simulationRiskEnvelope;
+    }
+    stageObservation(observation) {
+        return this.orderedObservationBuffer.stageObservation(observation);
+    }
+    evaluateSimulationRisk(evidence, context) {
+        return this.simulationRiskEnvelope.evaluateSimulation(evidence, context);
     }
     /**
      * System Intelligence & Omega Telemetry

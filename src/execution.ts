@@ -19,6 +19,57 @@ const JUPITER_ROUTE_DISCRIMINATORS = new Set([
   'c1209b3341d69c81', // sharedAccountsRoute
 ]);
 
+export interface JupiterRouteHopEvidence {
+  readonly ammKey: string | null;
+  readonly label: string | null;
+  readonly inputMint: string;
+  readonly outputMint: string;
+  readonly inputAmount: string;
+  readonly outputAmount: string;
+  readonly percent: number;
+  readonly feeAmount: string | null;
+  readonly feeMint: string | null;
+}
+
+export interface JupiterBuildEvidence {
+  readonly router: 'JUPITER';
+  readonly orderMode: 'ExactIn';
+  readonly routePlan: readonly JupiterRouteHopEvidence[];
+  readonly quoteTimestampMs: number;
+  readonly lastValidBlockHeight: number;
+  readonly transactionVersion: null;
+  readonly transactionState: 'INSTRUCTIONS_ONLY';
+}
+
+function parseJupiterRoutePlan(value: unknown): readonly JupiterRouteHopEvidence[] | null {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 32) return null;
+  const isIntegerString = (item: unknown): item is string => typeof item === 'string' && /^(?:0|[1-9][0-9]*)$/.test(item);
+  const route: JupiterRouteHopEvidence[] = [];
+  for (const leg of value) {
+    const info = leg?.swapInfo;
+    if (!info || typeof info.inputMint !== 'string' || !info.inputMint ||
+        typeof info.outputMint !== 'string' || !info.outputMint ||
+        !isIntegerString(info.inAmount) || !isIntegerString(info.outAmount) ||
+        !Number.isSafeInteger(leg.percent) || leg.percent < 1 || leg.percent > 100 ||
+        (info.ammKey != null && typeof info.ammKey !== 'string') ||
+        (info.label != null && typeof info.label !== 'string') ||
+        (info.feeAmount != null && !isIntegerString(info.feeAmount)) ||
+        (info.feeMint != null && typeof info.feeMint !== 'string')) return null;
+    route.push({
+      ammKey: info.ammKey ?? null,
+      label: info.label ?? null,
+      inputMint: info.inputMint,
+      outputMint: info.outputMint,
+      inputAmount: info.inAmount,
+      outputAmount: info.outAmount,
+      percent: leg.percent,
+      feeAmount: info.feeAmount ?? null,
+      feeMint: info.feeMint ?? null,
+    });
+  }
+  return route;
+}
+
 function validateJupiterExactInInstruction(data: Buffer, amount: bigint, output: bigint, slippageBps: number): void {
   if (data.length < 31 || !JUPITER_ROUTE_DISCRIMINATORS.has(data.subarray(0, 8).toString('hex'))) {
     throw new Error('unsupported Jupiter exact-in route instruction');
@@ -45,6 +96,7 @@ export type Built = {
   solDelta: bigint;
   quotedOutput?: bigint;
   quoteTimestamp?: number;
+  routeEvidence?: JupiterBuildEvidence;
   overhead?: {
     tipLamports: string;
     priorityLamports: string;
@@ -99,7 +151,7 @@ export class Executor {
     } catch { this.floor = this.cfg.MIN_TIP_LAMPORTS; }
   }
   private tip(panic: boolean) { return Math.min(this.cfg.MAX_TIP_LAMPORTS, Math.max(this.cfg.MIN_TIP_LAMPORTS, this.floor * (panic ? 2 : 1))); }
-  async graduatedSell(mint: string, amount: bigint, slippage: number): Promise<{ instructions: TransactionInstruction[]; alts: AddressLookupTableAccount[]; output: bigint; minimumOutput: bigint; quoteTimestamp: number; lastValidBlockHeight: number }> {
+  async graduatedSell(mint: string, amount: bigint, slippage: number): Promise<{ instructions: TransactionInstruction[]; alts: AddressLookupTableAccount[]; output: bigint; minimumOutput: bigint; quoteTimestamp: number; lastValidBlockHeight: number; routeEvidence: JupiterBuildEvidence }> {
     if (!this.cfg.JUPITER_URL) throw new Error('Jupiter routing adapter is not explicitly configured');
     if (!this.cfg.JUPITER_API_KEY) throw new Error('Jupiter Swap API V2 requires an explicitly configured API key');
     if (amount <= 0n || !Number.isSafeInteger(slippage) || slippage < 0 || slippage > 10_000) throw new Error('invalid Jupiter quote inputs');
@@ -115,12 +167,13 @@ export class Executor {
     }).toString();
     const build = await httpJson<any>(url.toString(), this.cfg.RPC_TIMEOUT_MS, { headers });
     const isIntegerString = (value: unknown): value is string => typeof value === 'string' && /^(?:0|[1-9][0-9]*)$/.test(value);
+    const routePlan = parseJupiterRoutePlan(build?.routePlan);
     if (!build || build.inputMint !== mint || build.outputMint !== NATIVE_MINT.toBase58() || build.swapMode !== 'ExactIn' ||
       !isIntegerString(build.inAmount) || BigInt(build.inAmount) !== amount || !isIntegerString(build.outAmount) || BigInt(build.outAmount) <= 0n ||
       !isIntegerString(build.otherAmountThreshold) || BigInt(build.otherAmountThreshold) <= 0n || BigInt(build.otherAmountThreshold) > BigInt(build.outAmount) ||
       build.slippageBps !== slippage || !Array.isArray(build.setupInstructions) || !Array.isArray(build.computeBudgetInstructions) ||
       !Array.isArray(build.otherInstructions) || !build.swapInstruction || build.tipInstruction != null || build.otherInstructions.length !== 0 ||
-      !Array.isArray(build.routePlan) || build.routePlan.length === 0 || build.routePlan.length > 32 ||
+      routePlan === null ||
       !build.blockhashWithMetadata || !Array.isArray(build.blockhashWithMetadata.blockhash) || build.blockhashWithMetadata.blockhash.length !== 32 ||
       build.blockhashWithMetadata.blockhash.some((byte: unknown) => !Number.isInteger(byte) || (byte as number) < 0 || (byte as number) > 255) ||
       !Number.isSafeInteger(build.blockhashWithMetadata.lastValidBlockHeight) || build.blockhashWithMetadata.lastValidBlockHeight <= 0) {
@@ -183,6 +236,15 @@ export class Executor {
       minimumOutput,
       quoteTimestamp,
       lastValidBlockHeight: build.blockhashWithMetadata.lastValidBlockHeight,
+      routeEvidence: {
+        router: 'JUPITER',
+        orderMode: 'ExactIn',
+        routePlan: Object.freeze(routePlan.map((hop) => Object.freeze({ ...hop }))),
+        quoteTimestampMs: quoteTimestamp,
+        lastValidBlockHeight: build.blockhashWithMetadata.lastValidBlockHeight,
+        transactionVersion: null,
+        transactionState: 'INSTRUCTIONS_ONLY',
+      },
     };
   }
   /** Paper-only compatibility builder; direct live authority is quarantined. */
@@ -193,6 +255,7 @@ export class Executor {
     let instructions: TransactionInstruction[], alts: AddressLookupTableAccount[] = [];
     let output: bigint;
     let minimumOutput: bigint | undefined;
+    let routeEvidence: JupiterBuildEvidence | undefined;
     let quoteTimestamp = s.at;
     let lastValidBlockHeight = 0;
     if (s.curve.complete) {
@@ -201,6 +264,7 @@ export class Executor {
       if (Date.now() - s.at > this.cfg.QUOTE_MAX_AGE_MS) throw new Error('quote expired');
       instructions = route.instructions; alts = route.alts; output = route.output;
       minimumOutput = route.minimumOutput;
+      routeEvidence = route.routeEvidence;
       quoteTimestamp = route.quoteTimestamp;
       lastValidBlockHeight = route.lastValidBlockHeight;
     } else {
@@ -224,6 +288,7 @@ export class Executor {
       solDelta: side === 'buy' ? -amount - fee - 3_000_000n : executedSol - fee,
       quotedOutput: output,
       quoteTimestamp,
+      ...(routeEvidence === undefined ? {} : { routeEvidence }),
       overhead: {
         tipLamports: String(tip),
         priorityLamports: String(this.cfg.MAX_PRIORITY_LAMPORTS),

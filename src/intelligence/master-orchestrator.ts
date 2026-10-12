@@ -18,6 +18,7 @@
  * 13. Strategy Governance, Production Gates & Aether Flux UI ViewModels
  */
 
+import { createHash } from 'node:crypto';
 import { CanonicalEvent } from './truth/types.js';
 import { ChainTruthEngine } from './truth/chain-truth.js';
 import { RPCProviderPool } from './truth/rpc-pool.js';
@@ -88,6 +89,18 @@ import {
   type LandingBenchmarkCertificate,
   type ExecutionLaneType,
 } from '../platform/execution/landing-benchmark.js';
+import {
+  OrderedObservationStagingEngine,
+  type WatermarkGapReport,
+  type StagedObservation,
+} from '../platform/ingestion/ordered-observation-buffer.js';
+import {
+  SimulationRiskEnvelopeEngine,
+  missingSimulationRiskCertificate,
+  type SimulationRiskCertificate,
+  type SimulationEvidence,
+  type SimulationRiskVerdict,
+} from '../platform/execution/simulation-risk-envelope.js';
 import { TemporalEvidenceGraph } from './graph/temporal-evidence-graph.js';
 import { FundingAncestryEngine } from './graph/funding-ancestry.js';
 import { FirstPassageEngine, type ProbabilisticForecastReport } from './science/first-passage.js';
@@ -746,6 +759,8 @@ export interface AetherFluxViewModel {
   readonly multiplexerReport?: MultiplexerReport;
   readonly decodedDexTrade?: DecodedDEXTradeEvent;
   readonly landingBenchmark?: LandingBenchmarkCertificate;
+  readonly observationWatermarkReport?: WatermarkGapReport;
+  readonly simulationRiskCertificate?: SimulationRiskCertificate;
 }
 
 export interface MasterPipelineResult {
@@ -839,6 +854,8 @@ export interface MasterPipelineResult {
   readonly multiplexerReport?: MultiplexerReport;
   readonly decodedDexTrade?: DecodedDEXTradeEvent;
   readonly landingBenchmark?: LandingBenchmarkCertificate;
+  readonly observationWatermarkReport?: WatermarkGapReport;
+  readonly simulationRiskCertificate?: SimulationRiskCertificate;
   readonly whyExecutionBlocked?: string;
 }
 
@@ -955,6 +972,11 @@ export type {
   DEXTradeType,
   LandingBenchmarkCertificate,
   ExecutionLaneType,
+  WatermarkGapReport,
+  StagedObservation,
+  SimulationRiskCertificate,
+  SimulationEvidence,
+  SimulationRiskVerdict,
 };
 
 export class MasterIntelligenceEngine {
@@ -1114,6 +1136,8 @@ export class MasterIntelligenceEngine {
   public readonly streamMultiplexer: StreamMultiplexer;
   public readonly dexStreamParser: DEXStreamParser;
   public readonly landingBenchmarkEngine: LandingBenchmarkEngine;
+  public readonly orderedObservationBuffer: OrderedObservationStagingEngine;
+  public readonly simulationRiskEnvelope: SimulationRiskEnvelopeEngine;
 
   constructor() {
     this.kernel = new IntegrationKernel();
@@ -1309,6 +1333,8 @@ export class MasterIntelligenceEngine {
     this.streamMultiplexer = new StreamMultiplexer();
     this.dexStreamParser = new DEXStreamParser();
     this.landingBenchmarkEngine = new LandingBenchmarkEngine();
+    this.orderedObservationBuffer = new OrderedObservationStagingEngine();
+    this.simulationRiskEnvelope = new SimulationRiskEnvelopeEngine();
 
     this.setupConnectionAuditor();
     this.registerComponents();
@@ -3463,6 +3489,44 @@ export class MasterIntelligenceEngine {
       String((context as any).landingBenchmarkId ?? event.eventId ?? event.slot),
     );
 
+    const transactionIndex = (event as any).transactionIndex;
+    const signature = (event.payload as any)?.signature ?? (event as any).signature;
+    let observationDigest: string | null = null;
+    try {
+      const observationPayload = JSON.stringify({
+        eventId: event.eventId,
+        eventType: event.eventType,
+        mint: event.mint,
+        slot: event.slot,
+        signature,
+        transactionIndex,
+        payload: event.payload,
+      }, (_, value) => typeof value === 'bigint' ? value.toString() : value);
+      if (typeof observationPayload === 'string') observationDigest = createHash('sha256').update(observationPayload).digest('hex');
+    } catch {
+      // Cyclic or non-serializable payloads cannot be represented by this research staging helper.
+    }
+    const observationWatermarkReport: WatermarkGapReport =
+      Number.isSafeInteger(transactionIndex) && transactionIndex >= 0 && typeof signature === 'string' && signature.length > 0 && observationDigest !== null
+        ? this.orderedObservationBuffer.stageObservation({
+            slot: event.slot,
+            transactionIndex,
+            signature,
+            eventType: event.eventType,
+            receivedAtMs: event.receivedTimestampMs,
+            observationDigest,
+          })
+        : this.orderedObservationBuffer.recordUnorderedObservation();
+
+    const simulationEvidence: SimulationEvidence | undefined = (context as any).simulationEvidence;
+    const simulationRiskCertificate: SimulationRiskCertificate =
+      (simulationEvidence
+        ? this.simulationRiskEnvelope.evaluateSimulation(simulationEvidence, {
+            nowMs: event.receivedTimestampMs,
+            tradeNotionalSol: (context as any).targetTradeSizeSol,
+          })
+        : missingSimulationRiskCertificate({ mint: event.mint, slot: event.slot, evaluatedAtMs: event.receivedTimestampMs }));
+
     // ==========================================
     // ALPHA HALF-LIFE, QUOTE DECAY & EXECUTION SHORTFALL (Sections XV, XVI & XX)
     // ==========================================
@@ -3910,6 +3974,23 @@ export class MasterIntelligenceEngine {
       decision = 'CHALLENGED_ABSTAIN';
       const observedRate = landingBenchmark.overallLandingRatePct === null ? 'unknown' : `${landingBenchmark.overallLandingRatePct.toFixed(1)}%`;
       whyExecutionBlocked = `BLOCKED — INSUFFICIENT LANDING BENCHMARK (${observedRate}; ${landingBenchmark.pairedTrialCount}/${landingBenchmark.requiredPairedTrialCount} complete paired trials; observation leader for review: ${landingBenchmark.observationLeaderForReview ?? 'unknown'})`;
+    } else if (
+      ((context as any).enforceOrderedWatermarkGating ?? false) &&
+      (observationWatermarkReport.status === 'SPARSE_SLOT_OBSERVATIONS' ||
+        observationWatermarkReport.status === 'LATE_OBSERVATIONS' ||
+        observationWatermarkReport.status === 'UNORDERED_OBSERVATIONS' ||
+        observationWatermarkReport.status === 'CAPACITY_OVERFLOW' ||
+        observationWatermarkReport.hasObservedSlotHoles ||
+        observationWatermarkReport.hasLateObservations)
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      whyExecutionBlocked = `BLOCKED — INGESTION ORDERING EVIDENCE INCOMPLETE (Status: ${observationWatermarkReport.status}, Pending: ${observationWatermarkReport.pendingCount}; replay completeness remains unestablished)`;
+    } else if (
+      ((context as any).enforceSimulationRiskGating ?? false) &&
+      (!simulationRiskCertificate.isApproved || simulationRiskCertificate.verdict !== 'SIMULATION_APPROVED')
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      whyExecutionBlocked = `BLOCKED — SIMULATION RISK FENCE BREACH (${simulationRiskCertificate.verdict}: ${simulationRiskCertificate.rejectionReason || 'UNAPPROVED'})`;
     } else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
       decision = 'AUTHORIZED_SELL';
       const exitResult = this.executeExit({
@@ -5128,6 +5209,8 @@ export class MasterIntelligenceEngine {
       multiplexerReport,
       decodedDexTrade,
       landingBenchmark,
+      observationWatermarkReport,
+      simulationRiskCertificate,
       links: {
         solscan: `https://solscan.io/token/${event.mint}`,
         pump: `https://pump.fun/${event.mint}`,
@@ -5422,6 +5505,8 @@ export class MasterIntelligenceEngine {
       multiplexerReport,
       decodedDexTrade,
       landingBenchmark,
+      observationWatermarkReport,
+      simulationRiskCertificate,
       whyExecutionBlocked: decision !== 'AUTHORIZED_BUY' ? whyExecutionBlocked : undefined,
     };
   }
@@ -6620,6 +6705,25 @@ export class MasterIntelligenceEngine {
   /** Evaluate recorded paired observations. The legacy contention argument is ignored. */
   public evaluateLandingBenchmark(benchmarkId: string | number, legacyContentionRatio?: number): LandingBenchmarkCertificate {
     return this.landingBenchmarkEngine.evaluateBenchmark(benchmarkId, legacyContentionRatio);
+  }
+
+  public getOrderedObservationBuffer(): OrderedObservationStagingEngine {
+    return this.orderedObservationBuffer;
+  }
+
+  public getSimulationRiskEnvelope(): SimulationRiskEnvelopeEngine {
+    return this.simulationRiskEnvelope;
+  }
+
+  public stageObservation(observation: StagedObservation): WatermarkGapReport {
+    return this.orderedObservationBuffer.stageObservation(observation);
+  }
+
+  public evaluateSimulationRisk(
+    evidence: SimulationEvidence,
+    context?: { nowMs?: number; tradeNotionalSol?: number; dailyDrawdownSol?: number }
+  ): SimulationRiskCertificate {
+    return this.simulationRiskEnvelope.evaluateSimulation(evidence, context);
   }
 
   /**

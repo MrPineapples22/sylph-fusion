@@ -14,6 +14,36 @@ const JUPITER_ROUTE_DISCRIMINATORS = new Set([
     'e517cb977ae3ad2a', // route
     'c1209b3341d69c81', // sharedAccountsRoute
 ]);
+function parseJupiterRoutePlan(value) {
+    if (!Array.isArray(value) || value.length === 0 || value.length > 32)
+        return null;
+    const isIntegerString = (item) => typeof item === 'string' && /^(?:0|[1-9][0-9]*)$/.test(item);
+    const route = [];
+    for (const leg of value) {
+        const info = leg?.swapInfo;
+        if (!info || typeof info.inputMint !== 'string' || !info.inputMint ||
+            typeof info.outputMint !== 'string' || !info.outputMint ||
+            !isIntegerString(info.inAmount) || !isIntegerString(info.outAmount) ||
+            !Number.isSafeInteger(leg.percent) || leg.percent < 1 || leg.percent > 100 ||
+            (info.ammKey != null && typeof info.ammKey !== 'string') ||
+            (info.label != null && typeof info.label !== 'string') ||
+            (info.feeAmount != null && !isIntegerString(info.feeAmount)) ||
+            (info.feeMint != null && typeof info.feeMint !== 'string'))
+            return null;
+        route.push({
+            ammKey: info.ammKey ?? null,
+            label: info.label ?? null,
+            inputMint: info.inputMint,
+            outputMint: info.outputMint,
+            inputAmount: info.inAmount,
+            outputAmount: info.outAmount,
+            percent: leg.percent,
+            feeAmount: info.feeAmount ?? null,
+            feeMint: info.feeMint ?? null,
+        });
+    }
+    return route;
+}
 function validateJupiterExactInInstruction(data, amount, output, slippageBps) {
     if (data.length < 31 || !JUPITER_ROUTE_DISCRIMINATORS.has(data.subarray(0, 8).toString('hex'))) {
         throw new Error('unsupported Jupiter exact-in route instruction');
@@ -95,12 +125,13 @@ export class Executor {
         }).toString();
         const build = await httpJson(url.toString(), this.cfg.RPC_TIMEOUT_MS, { headers });
         const isIntegerString = (value) => typeof value === 'string' && /^(?:0|[1-9][0-9]*)$/.test(value);
+        const routePlan = parseJupiterRoutePlan(build?.routePlan);
         if (!build || build.inputMint !== mint || build.outputMint !== NATIVE_MINT.toBase58() || build.swapMode !== 'ExactIn' ||
             !isIntegerString(build.inAmount) || BigInt(build.inAmount) !== amount || !isIntegerString(build.outAmount) || BigInt(build.outAmount) <= 0n ||
             !isIntegerString(build.otherAmountThreshold) || BigInt(build.otherAmountThreshold) <= 0n || BigInt(build.otherAmountThreshold) > BigInt(build.outAmount) ||
             build.slippageBps !== slippage || !Array.isArray(build.setupInstructions) || !Array.isArray(build.computeBudgetInstructions) ||
             !Array.isArray(build.otherInstructions) || !build.swapInstruction || build.tipInstruction != null || build.otherInstructions.length !== 0 ||
-            !Array.isArray(build.routePlan) || build.routePlan.length === 0 || build.routePlan.length > 32 ||
+            routePlan === null ||
             !build.blockhashWithMetadata || !Array.isArray(build.blockhashWithMetadata.blockhash) || build.blockhashWithMetadata.blockhash.length !== 32 ||
             build.blockhashWithMetadata.blockhash.some((byte) => !Number.isInteger(byte) || byte < 0 || byte > 255) ||
             !Number.isSafeInteger(build.blockhashWithMetadata.lastValidBlockHeight) || build.blockhashWithMetadata.lastValidBlockHeight <= 0) {
@@ -173,6 +204,15 @@ export class Executor {
             minimumOutput,
             quoteTimestamp,
             lastValidBlockHeight: build.blockhashWithMetadata.lastValidBlockHeight,
+            routeEvidence: {
+                router: 'JUPITER',
+                orderMode: 'ExactIn',
+                routePlan: Object.freeze(routePlan.map((hop) => Object.freeze({ ...hop }))),
+                quoteTimestampMs: quoteTimestamp,
+                lastValidBlockHeight: build.blockhashWithMetadata.lastValidBlockHeight,
+                transactionVersion: null,
+                transactionState: 'INSTRUCTIONS_ONLY',
+            },
         };
     }
     /** Paper-only compatibility builder; direct live authority is quarantined. */
@@ -184,6 +224,7 @@ export class Executor {
         let instructions, alts = [];
         let output;
         let minimumOutput;
+        let routeEvidence;
         let quoteTimestamp = s.at;
         let lastValidBlockHeight = 0;
         if (s.curve.complete) {
@@ -196,6 +237,7 @@ export class Executor {
             alts = route.alts;
             output = route.output;
             minimumOutput = route.minimumOutput;
+            routeEvidence = route.routeEvidence;
             quoteTimestamp = route.quoteTimestamp;
             lastValidBlockHeight = route.lastValidBlockHeight;
         }
@@ -223,6 +265,7 @@ export class Executor {
             solDelta: side === 'buy' ? -amount - fee - 3000000n : executedSol - fee,
             quotedOutput: output,
             quoteTimestamp,
+            ...(routeEvidence === undefined ? {} : { routeEvidence }),
             overhead: {
                 tipLamports: String(tip),
                 priorityLamports: String(this.cfg.MAX_PRIORITY_LAMPORTS),

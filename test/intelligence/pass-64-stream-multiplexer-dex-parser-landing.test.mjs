@@ -334,6 +334,11 @@ describe('Pass 64: Stream Metrics, DEX Observation Envelope & Paired Landing Ben
       ...baseContext,
       enforceLandingBenchmarkGating: true,
       minLandingBenchmarkRatePct: 70.0,
+      simulationRiskCertificate: {
+        isApproved: true,
+        verdict: 'SIMULATION_APPROVED',
+        authority: 'RESEARCH_ONLY_NO_EXECUTION_AUTHORITY',
+      },
     });
     assert.equal(landingBlockedResult.decision, 'CHALLENGED_ABSTAIN');
     assert.match(landingBlockedResult.whyExecutionBlocked || '', /INSUFFICIENT LANDING BENCHMARK/);
@@ -343,6 +348,21 @@ describe('Pass 64: Stream Metrics, DEX Observation Envelope & Paired Landing Ben
     assert.ok(landingBlockedResult.viewModel.decodedDexTrade);
     assert.ok(landingBlockedResult.viewModel.landingBenchmark);
     assert.equal(landingBlockedResult.viewModel.multiplexerReport.healthyProviders, 0);
+    assert.equal(landingBlockedResult.viewModel.simulationRiskCertificate.isApproved, false);
+    assert.equal(landingBlockedResult.viewModel.simulationRiskCertificate.rejectionReason, 'SIMULATION_EVIDENCE_MISSING');
+
+    // Subtest 5E: Caller-supplied clear reports cannot hide missing transaction ordering evidence.
+    const guardedMaster = new MasterIntelligenceEngine();
+    certifySyntheticRuntimeForTestOnly(guardedMaster);
+    const orderedOverrideResult = await guardedMaster.processEvent(baseEvent, {
+      ...baseContext,
+      enforceOrderedWatermarkGating: true,
+      observationWatermarkReport: { status: 'OBSERVATIONS_ORDERED', completeness: 'NOT_ESTABLISHED', pendingCount: 0 },
+      simulationRiskCertificate: { isApproved: true, verdict: 'SIMULATION_APPROVED' },
+    });
+    assert.equal(orderedOverrideResult.decision, 'CHALLENGED_ABSTAIN');
+    assert.match(orderedOverrideResult.whyExecutionBlocked || '', /ORDERING EVIDENCE INCOMPLETE/);
+    assert.equal(orderedOverrideResult.viewModel.simulationRiskCertificate.isApproved, false);
 
     // Subtest 5D: Public helper methods
     assert.ok(master.getStreamMultiplexer() instanceof StreamMultiplexer);

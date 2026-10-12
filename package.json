@@ -32,7 +32,7 @@
     "research:pumpfun:verify": "node scripts/verify-pumpfun-evidence.mjs",
     "research:pumpfun:cohorts": "node scripts/analyze-pumpfun-cohorts.mjs",
     "test:research:pumpfun": "node --test test/pumpfun-rpc-ingest.test.mjs test/pumpfun-cohort-analysis.test.mjs",
-    "test:upstream-patterns": "node --test test/platform/upstream-pattern-adaptations.test.mjs",
+    "test:upstream-patterns": "node --test test/platform/upstream-pattern-adaptations.test.mjs test/platform/ordered-observation-buffer.test.mjs test/platform/simulation-risk-envelope.test.mjs",
     "test": "npm run build:engine && npm run test:core && npm run test:intelligence && npm run test:platform && npm run test:terminal",
     "start": "node --env-file=.env dist/fusion.js",
     "check": "node --env-file=.env dist/fusion.js --check",

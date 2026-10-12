@@ -75,7 +75,29 @@ test('V2 Router build sends exact-in sell request with API key and accepts no-AL
   assert.equal(result.alts.length, 0);
   assert.equal(result.instructions.length, 1);
   assert.equal(result.lastValidBlockHeight, 300);
+  assert.deepEqual(result.routeEvidence, {
+    router: 'JUPITER',
+    orderMode: 'ExactIn',
+    routePlan: [{ ammKey: null, label: null, inputMint: mint, outputMint: nativeMint, inputAmount: '1000', outputAmount: '50000', percent: 100, feeAmount: null, feeMint: null }],
+    quoteTimestampMs: result.quoteTimestamp,
+    lastValidBlockHeight: 300,
+    transactionVersion: null,
+    transactionState: 'INSTRUCTIONS_ONLY',
+  });
   assert.ok(Number.isSafeInteger(result.quoteTimestamp));
+});
+
+test('V2 build preserves normalized router path and fee denomination as research evidence', async t => {
+  const route = response({ routePlan: [{ swapInfo: {
+    ammKey: 'amm-fixture', label: 'Fixture AMM', inputMint: mint, outputMint: nativeMint,
+    inAmount: '1000', outAmount: '50000', feeAmount: '7', feeMint: nativeMint,
+  }, percent: 100 }] });
+  t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify(route)));
+  const executor = new Executor(cfg, {}, {}, key);
+  const result = await executor.graduatedSell(mint, 1000n, 1000);
+  assert.equal(result.routeEvidence.routePlan[0].ammKey, 'amm-fixture');
+  assert.equal(result.routeEvidence.routePlan[0].feeMint, nativeMint);
+  assert.equal(result.routeEvidence.transactionVersion, null);
 });
 
 test('V2 Router build retains only bounded compute-unit-price instructions', async t => {
