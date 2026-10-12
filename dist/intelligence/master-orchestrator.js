@@ -143,6 +143,8 @@ import { certifyPortfolioEvacuation, } from './survival/evacuation-x/portfolio-e
 import { StrategyEcologyRegistry, } from './signal-ecology/mechanism-fingerprint.js';
 import { SignalFamilyAggregator, } from './signal-ecology/family-aggregator.js';
 import { certifySignalPortfolio, } from './signal-ecology/signal-portfolio-certificate.js';
+import { SellHazardEngine, MevContaminationEngine, BarrierFatigueEngine, } from './microstructure/microstructure-x.js';
+import { certifyProfitFrontier, } from './profit-frontier/index.js';
 import { OperatorPlaybookEngine } from './adversarial/operator-playbook.js';
 import { EcosystemPhaseEngine } from './signals/ecosystem-phase.js';
 import { MarketPhaseEngine } from './signals/market-phase-engine.js';
@@ -2015,6 +2017,66 @@ export class MasterIntelligenceEngine {
             roleProfile: decomposedRoleProfile,
         });
         // ==========================================
+        // MARKET MICROSTRUCTURE-X & SELL HAZARD (Sections 16, 20, 24, 30)
+        // ==========================================
+        const defaultHolders = context.inventoryHolders ?? [
+            {
+                wallet: (context.rawWallets?.[0]?.address ?? 'holder_1'),
+                balanceTokens: BigInt(Math.round(((context.txCount > 5 ? 100_000_000 : 50_000_000) * 1e6))),
+                costBasisUsd: poolUnitTokenPriceUsd * 0.8,
+                isDevOrCabal: cleanRoomState.isDeceptionSevere,
+                acquisitionTimeMs: event.receivedTimestampMs - Math.max(10_000, context.tokenAgeSec * 1000),
+            },
+            {
+                wallet: (context.rawWallets?.[1]?.address ?? 'holder_2'),
+                balanceTokens: BigInt(Math.round(40_000_000 * 1e6)),
+                costBasisUsd: poolUnitTokenPriceUsd * 0.95,
+                isDevOrCabal: false,
+                acquisitionTimeMs: event.receivedTimestampMs - Math.max(5_000, (context.tokenAgeSec * 1000) / 2),
+            },
+        ];
+        const sellHazard = context.sellHazard ?? SellHazardEngine.evaluateSellHazard(event.mint, poolUnitTokenPriceUsd, defaultHolders, context.devWallet ?? context.rawWallets?.[0]?.address);
+        const defaultTrades = context.recentTrades ?? [
+            { solAmount: Math.max(0.5, context.liquiditySol * 0.05), isMev: false },
+            { solAmount: Math.max(0.2, context.liquiditySol * 0.02), isMev: coordination.isSyntheticClusterLikely },
+        ];
+        const mevContamination = context.mevContamination ?? MevContaminationEngine.evaluateContamination(defaultTrades, event.mint);
+        const barrierFatigue = context.barrierFatigue ?? BarrierFatigueEngine.recordAttempt({
+            attemptId: `bar_${event.mint.slice(0, 8)}_${event.slot}`,
+            targetBarrierMultiplier: currentMultiple >= 2.0 ? 5.0 : 2.0,
+            independentCapitalSpentSol: Math.max(0.1, context.liquiditySol * 0.1),
+            mechanicalCapitalSpentSol: coordination.isSyntheticClusterLikely ? context.liquiditySol * 0.2 : 0.0,
+            startPriceUsd: poolUnitTokenPriceUsd * 0.5,
+            endPriceUsd: poolUnitTokenPriceUsd,
+            trappedInventoryTokens: BigInt(Math.round((context.insiderHoldingTokens ?? 10_000_000) * 1e6)),
+        });
+        // ==========================================
+        // PROFIT FRONTIER-X CERTIFICATION (Master Blueprint Section LI)
+        // ==========================================
+        const engineeringCandidates = context.frontierCandidates ?? [
+            {
+                candidateId: 'ENG_LANE_ADAPTATION',
+                targetSubsystem: 'EXECUTION_ROUTER',
+                expectedImprovementBps: 180,
+                estimatedEffortHours: 12,
+                reversibility: 'EASY',
+                evpiUsd: 1500,
+                expectedNetBenefitUsd: 2400,
+                proposedAtMs: event.receivedTimestampMs,
+            },
+            {
+                candidateId: 'ENG_BARRIER_FATIGUE_PREDICTOR',
+                targetSubsystem: 'MICROSTRUCTURE_ENGINE',
+                expectedImprovementBps: 95,
+                estimatedEffortHours: 8,
+                reversibility: 'EASY',
+                evpiUsd: 800,
+                expectedNetBenefitUsd: 1200,
+                proposedAtMs: event.receivedTimestampMs,
+            },
+        ];
+        const frontierCertificate = context.frontierCertificate ?? certifyProfitFrontier(engineeringCandidates);
+        // ==========================================
         // ALPHA HALF-LIFE, QUOTE DECAY & EXECUTION SHORTFALL (Sections XV, XVI & XX)
         // ==========================================
         const alphaHalfLife = AlphaHalfLifeEngine.estimateHalfLife({
@@ -2337,6 +2399,16 @@ export class MasterIntelligenceEngine {
             !signalPortfolioCertificate.isEcologySound) {
             decision = 'CHALLENGED_ABSTAIN';
             whyExecutionBlocked = `BLOCKED — SIGNAL PORTFOLIO ECOLOGY DEFICIENT (Units: ${signalPortfolioCertificate.effectiveIndependentAlphaUnits}, Survival: ${(signalPortfolioCertificate.roleProfile.survivalProbability * 100).toFixed(0)}%, Auth: ${signalPortfolioCertificate.roleProfile.authenticityProven})`;
+        }
+        else if ((context.enforceMevContaminationGating ?? false) &&
+            mevContamination.isContaminated) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — MEV CONTAMINATION EXCESSIVE (Ratio: ${(mevContamination.mevContaminationRatio * 100).toFixed(1)}% >= 40%)`;
+        }
+        else if ((context.enforceSellHazardGating ?? false) &&
+            !sellHazard.canSafelyAbsorbSell) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — CRITICAL SELL HAZARD OVERHANG (Hazard: ${(sellHazard.totalSellHazard * 100).toFixed(1)}%, Dev: ${(sellHazard.devDumpHazard * 100).toFixed(1)}%, Cabal: ${(sellHazard.cabalDumpHazard * 100).toFixed(1)}%)`;
         }
         else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
             decision = 'AUTHORIZED_SELL';
@@ -3407,6 +3479,15 @@ export class MasterIntelligenceEngine {
             isEcologySound: signalPortfolioCertificate.isEcologySound,
             effectiveIndependentAlphaUnits: signalPortfolioCertificate.effectiveIndependentAlphaUnits,
             inheritsFalsificationPrior: mechanismEvaluation.inheritsFalsificationPrior,
+            sellHazard,
+            mevContamination,
+            barrierFatigue,
+            frontierCertificate,
+            isMevContaminated: mevContamination.isContaminated,
+            mevContaminationRatio: mevContamination.mevContaminationRatio,
+            totalSellHazard: sellHazard.totalSellHazard,
+            canSafelyAbsorbSell: sellHazard.canSafelyAbsorbSell,
+            frontierOptimalCandidate: frontierCertificate.optimalCandidateId,
             links: {
                 solscan: `https://solscan.io/token/${event.mint}`,
                 pump: `https://pump.fun/${event.mint}`,
@@ -3683,6 +3764,10 @@ export class MasterIntelligenceEngine {
             evacuationCertificate,
             mechanismEvaluation,
             signalPortfolioCertificate,
+            sellHazard,
+            mevContamination,
+            barrierFatigue,
+            frontierCertificate,
             whyExecutionBlocked: decision !== 'AUTHORIZED_BUY' ? whyExecutionBlocked : undefined,
         };
     }
@@ -4205,6 +4290,30 @@ export class MasterIntelligenceEngine {
     }
     getStrategyEcologyRegistry() {
         return this.strategyEcology;
+    }
+    /**
+     * Blueprint Section 20: Sell Hazard & Supply Overhang Evaluation
+     */
+    evaluateSellHazard(mint, currentPriceUsd, holders, devWallet) {
+        return SellHazardEngine.evaluateSellHazard(mint, currentPriceUsd, holders, devWallet);
+    }
+    /**
+     * Blueprint Section 30: MEV Contamination Evaluation
+     */
+    evaluateMevContamination(trades, mint) {
+        return MevContaminationEngine.evaluateContamination(trades, mint);
+    }
+    /**
+     * Blueprint Section 16: Barrier Fatigue Attempt Recording
+     */
+    recordBarrierAttempt(input) {
+        return BarrierFatigueEngine.recordAttempt(input);
+    }
+    /**
+     * Master Blueprint Section LI: Profit Frontier-X Certification
+     */
+    certifyProfitFrontierCandidates(candidates) {
+        return certifyProfitFrontier(candidates);
     }
     /**
      * System Intelligence & Omega Telemetry

@@ -594,6 +594,12 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
                     <span>Mechanism: <b style={{color: (position.inheritsFalsificationPrior ?? position.mechanismEvaluation?.inheritsFalsificationPrior) ? '#FF3B69' : (position.mechanismEvaluation?.isDuplicate ? '#F59E0B' : '#38BDF8')}}>{(position.inheritsFalsificationPrior ?? position.mechanismEvaluation?.inheritsFalsificationPrior) ? 'FALSIFIED' : (position.mechanismEvaluation?.isDuplicate ? 'DUPLICATE' : 'UNIQUE')}</b></span>
                     <span>SPC Cert: <b style={{color: '#A78BFA'}}>{(position.signalPortfolioCertificate?.certificateId || 'spc_none').slice(0, 10)}</b></span>
                   </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'2px',padding:'3px 6px',background:'rgba(245,158,11,0.04)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>MEV Contam: <b style={{color: (position.mevContaminationRatio ?? position.mevContamination?.mevContaminationRatio ?? 0) >= 0.40 ? '#FF3B69' : '#14F195'}}>{`${((position.mevContaminationRatio ?? position.mevContamination?.mevContaminationRatio ?? 0) * 100).toFixed(0)}%`}</b></span>
+                    <span>Sell Hazard: <b style={{color: (position.totalSellHazard ?? position.sellHazard?.totalSellHazard ?? 0.20) >= 0.65 ? '#FF3B69' : '#14F195'}}>{`${((position.totalSellHazard ?? position.sellHazard?.totalSellHazard ?? 0.20) * 100).toFixed(0)}%`}</b></span>
+                    <span>Barrier Eff: <b style={{color: '#38BDF8'}}>{`${(position.barrierFatigue?.attemptEfficiency ?? 1.25).toFixed(2)}x`}</b></span>
+                    <span>Frontier Cert: <b style={{color: '#A78BFA'}}>{(position.frontierCertificate?.certificateId || 'frc_none').slice(0, 10)}</b></span>
+                  </div>
                 </div>
               );
             })()}
