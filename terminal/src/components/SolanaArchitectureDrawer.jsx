@@ -28,6 +28,11 @@ export function SolanaArchitectureDrawer({
   const [liveArbitrage, setLiveArbitrage] = useState(arbitrageCycles);
   const [liveCapacity, setLiveCapacity] = useState(capacityData);
   const [liveEcology, setLiveEcology] = useState(strategyEcology);
+  const [laneScorecards, setLaneScorecards] = useState([]);
+  const [laneEvidenceStatus, setLaneEvidenceStatus] = useState('UNKNOWN');
+  const [laneEvidenceError, setLaneEvidenceError] = useState('');
+  const [laneEvidenceLoading, setLaneEvidenceLoading] = useState(false);
+  const [laneEvidenceRefresh, setLaneEvidenceRefresh] = useState(0);
   const [paperMaxRiskData, setPaperMaxRiskData] = useState(null);
   const [v8ReplayData, setV8ReplayData] = useState(null);
   const [monteCarloData, setMonteCarloData] = useState(null);
@@ -36,9 +41,11 @@ export function SolanaArchitectureDrawer({
   useEffect(() => {
     if (!isOpen) return;
     let active = true;
+    setLaneEvidenceLoading(true);
+    setLaneEvidenceError('');
     async function loadLiveData() {
       try {
-        const [rLeases, rSensors, rTransport, rArb, rCap, rEco, rMaxRisk, rReplay, rMonte] = await Promise.allSettled([
+        const [rLeases, rSensors, rTransport, rArb, rCap, rEco, rMaxRisk, rReplay, rMonte, rLaneScorecards] = await Promise.allSettled([
           fetch('/api/solana/protocol-leases').then(r => r.json()),
           fetch('/api/solana/sensor-tournament').then(r => r.json()),
           fetch('/api/solana/transport-tournament').then(r => r.json()),
@@ -48,6 +55,10 @@ export function SolanaArchitectureDrawer({
           fetch('/api/paper/max-risk').then(r => r.json()),
           fetch('/api/paper/v8-replay').then(r => r.json()),
           fetch('/api/paper/monte-carlo').then(r => r.json()),
+          fetch('/api/research/landing-lanes').then(r => {
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            return r.json();
+          }),
         ]);
         if (!active) return;
         if (rLeases.status === 'fulfilled' && rLeases.value?.leases) setLiveLeases(rLeases.value.leases);
@@ -59,11 +70,25 @@ export function SolanaArchitectureDrawer({
         if (rMaxRisk.status === 'fulfilled') setPaperMaxRiskData(rMaxRisk.value);
         if (rReplay.status === 'fulfilled') setV8ReplayData(rReplay.value);
         if (rMonte.status === 'fulfilled') setMonteCarloData(rMonte.value);
-      } catch {}
+        if (rLaneScorecards.status === 'fulfilled' && Array.isArray(rLaneScorecards.value?.scorecards)) {
+          setLaneScorecards(rLaneScorecards.value.scorecards);
+          setLaneEvidenceStatus(rLaneScorecards.value.evidenceStatus || 'UNKNOWN');
+          setLaneEvidenceError('');
+        } else {
+          setLaneEvidenceStatus('UNAVAILABLE');
+          setLaneEvidenceError(rLaneScorecards.status === 'rejected' ? 'The landing-lane research endpoint could not be reached.' : 'The endpoint returned an unrecognized response.');
+        }
+      } catch {
+        if (active) {
+          setLaneEvidenceStatus('UNAVAILABLE');
+          setLaneEvidenceError('The landing-lane evidence request failed before a response was available.');
+        }
+      }
+      finally { if (active) setLaneEvidenceLoading(false); }
     }
     loadLiveData();
     return () => { active = false; };
-  }, [isOpen]);
+  }, [isOpen, laneEvidenceRefresh]);
 
   async function handleToggleMode(newMode) {
     setIsTogglingMode(true);
@@ -262,6 +287,39 @@ export function SolanaArchitectureDrawer({
           {/* TAB 3: TRANSPORT LANES */}
           {activeTab === 'transport' && (
             <div className="space-y-4">
+              <section className="bg-slate-900/60 rounded-lg p-4 border border-slate-800" aria-labelledby="landing-lane-evidence-title">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div>
+                    <h3 id="landing-lane-evidence-title" className="text-xs uppercase font-bold text-slate-300">Landing-lane research evidence</h3>
+                    <p className="mt-1 text-[11px] text-slate-500">Resolved local scorecard observations · no lane selection or execution authority</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-amber-400" role="status" aria-live="polite">{laneEvidenceLoading ? 'Refreshing…' : laneEvidenceStatus.replaceAll('_', ' ')}</span>
+                    <button type="button" className="op-button" onClick={() => setLaneEvidenceRefresh(value => value + 1)} disabled={laneEvidenceLoading} aria-label="Refresh landing-lane evidence">Refresh</button>
+                  </div>
+                </div>
+                {laneEvidenceError ? <p className="mt-3 text-xs text-rose-300">{laneEvidenceError}</p> : laneScorecards.length === 0 ? (
+                  <p className="mt-3 text-xs text-slate-400">No resolved lane attempts are recorded in this server process. The scorecard is memory-only and resets on restart; no live collector supplies outcomes. Optimization requires at least 30 resolved attempts per lane.</p>
+                ) : (
+                  <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {laneScorecards.map(card => {
+                      const count = Number.isInteger(card.resolvedAttempts) && card.resolvedAttempts >= 0 ? card.resolvedAttempts : null;
+                      const percent = value => Number.isFinite(value) ? `${(value * 100).toFixed(1)}%` : 'UNKNOWN';
+                      const amount = value => Number.isFinite(value) ? `$${value.toFixed(4)}` : 'UNKNOWN';
+                      return <article key={card.laneId} className="rounded-md border border-slate-800 bg-slate-950/40 p-3">
+                        <div className="flex items-center justify-between gap-2"><strong className="text-sm text-slate-200">{card.laneId || 'Lane identity unknown'}</strong><span className="text-[10px] text-amber-400">UNVERIFIED LOCAL SAMPLE</span></div>
+                        <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-slate-400">
+                          <div><dt>Resolved attempts</dt><dd>{count == null ? 'UNKNOWN' : `${count} / 30 minimum`}</dd></div>
+                          <div><dt>Reported landing rate</dt><dd>{percent(card.landingRate)}</dd></div>
+                          <div><dt>P95 landing time</dt><dd>{Number.isFinite(card.p95LandingMs) ? `${card.p95LandingMs} ms` : 'UNKNOWN'}</dd></div>
+                          <div><dt>Average fee / tip</dt><dd>{amount(card.averageFeeUsd)} / {amount(card.averageTipUsd)}</dd></div>
+                        </dl>
+                        <p className="mt-2 text-[10px] text-slate-500">Model threshold: {card.eligibleForOptimization === true ? 'met' : card.eligibleForOptimization === false ? 'not met' : 'unknown'}. This local scorecard is not paired same-event evidence.</p>
+                      </article>;
+                    })}
+                  </div>
+                )}
+              </section>
               <div className="bg-slate-900/60 rounded-lg p-4 border border-slate-800">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs uppercase font-bold text-slate-400">

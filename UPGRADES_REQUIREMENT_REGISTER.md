@@ -141,6 +141,8 @@ REQ-090/093 system drawer UX update (2026-10-12): Removed its dormant canned pro
 
 REQ-085 UI/API update (2026-10-12): Added an explicit local research inspector backed by a fresh `DualPathReconciliationEngine` per request, with a 16 KiB body bound, decimal-string/u64 amount checks, no persistence, and no decision connection. The UI shows status and certificate with caller-supplied/unauthenticated labels. Position evidence also renders a bounded report summary if the position payload supplies `dualPathReconciliation`; the live projection still does not supply it. Four focused HTTP tests cover match, discrepancy, invalid amount, body limit, content type, and method behavior; the package runtime-closure audit includes the new helper and reconciler dependency. UI build and server/helper syntax checks succeeded; no browser payload check was run.
 
+REQ-054/050 research API and transport UX update (2026-10-12): Removed the two hardcoded landing-lane attempts and the synthetic runner-search-cost outcome batch from terminal startup/API behavior. Empty lane scorecards now report `NO_OBSERVATIONS`; runner search cost reports `UNAVAILABLE` until source-attributed outcomes are connected. The transport drawer now shows request/empty/error states, per-lane sample counts and model threshold, and marks populated scorecards unverified and memory-only. Focused response tests cover empty and populated labeling plus unavailable runner search; no persistent attempt writer, live landing collector, or matched same-event lane evidence was added.
+
 ## 3. Exit Excellence 50 Control Status
 
 Complete institutional control inventory across execution policy, SPIE expected-value arbitration, and competing-risk hazard dynamics:

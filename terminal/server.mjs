@@ -67,6 +67,7 @@ import {
 } from '../dist/platform/pipeline/realized-edge-ledger.js';
 import {handleCapitalReserveRequest} from './capital-reserve-policy.mjs';
 import {handleDualPathResearchRequest} from './dual-path-research.mjs';
+import {buildLandingLaneResearchResponse, buildRunnerSearchCostUnavailableResponse} from './research-evidence.mjs';
 import {
   LocalMarketUniverse,
   ProtocolCompatibilityRegistry,
@@ -108,7 +109,6 @@ import {
   ExecutableLiquidationSurfaceEngine,
   ExitPolicyTournament,
   ExecutionLaneScorecardEngine,
-  RunnerSearchCostEngine,
   PortfolioRuinEngine,
   ProspectiveLawCourt,
 } from '../dist/intelligence/executable-alpha/index.js';
@@ -178,26 +178,6 @@ const terminalOrganicTakeover = new OrganicTakeoverDetector();
 const globalAlphaGovernor = new AutonomousRDGovernorX();
 ResearchMatrixBridge.registerAllStudies(globalAlphaGovernor);
 const globalLaneScorecards = new ExecutionLaneScorecardEngine();
-globalLaneScorecards.recordAttempt({
-  laneId: 'Jito-Bundle',
-  landed: true,
-  sameSlot: true,
-  nextSlot: false,
-  latencyMs: 380,
-  feeUsd: 0.05,
-  tipUsd: 0.25,
-  implementationShortfallUsd: 0.85,
-});
-globalLaneScorecards.recordAttempt({
-  laneId: 'Direct-TPU',
-  landed: true,
-  sameSlot: false,
-  nextSlot: true,
-  latencyMs: 440,
-  feeUsd: 0.03,
-  tipUsd: 0.00,
-  implementationShortfallUsd: 1.40,
-});
 const globalExitTournament = new ExitPolicyTournament('dynamic-stopping');
 const globalLawCourt = new ProspectiveLawCourt({
   sessionId: 'court-prospective-session-001',
@@ -2083,31 +2063,13 @@ async function handleRequest(req,res){
   if (req.method === 'GET' && reqUrl.pathname === '/api/research/landing-lanes') {
     const scorecards = globalLaneScorecards.getAllScorecards();
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({
-      ok: true,
-      minimumEvidenceThresholdAttempts: ExecutionLaneScorecardEngine.MINIMUM_RESOLVED_ATTEMPTS,
-      scorecards,
-      invariant: 'ACK != LANDED. Signature returned != LANDED. Only Terminality Authority decides terminality.',
-    }));
+    res.end(JSON.stringify(buildLandingLaneResearchResponse(scorecards, ExecutionLaneScorecardEngine.MINIMUM_RESOLVED_ATTEMPTS)));
     return;
   }
 
   if (req.method === 'GET' && reqUrl.pathname === '/api/research/runner-search-cost') {
-    // Demonstration synthetic evaluation over candidate batch
-    const demoOutcomes = [
-      { candidateId: 'c1', isRunner: false, netRealizedPnLUsd: -95.4, feesAndFrictionUsd: 3.2 },
-      { candidateId: 'c2', isRunner: false, netRealizedPnLUsd: -110.2, feesAndFrictionUsd: 3.5 },
-      { candidateId: 'c3', isRunner: false, netRealizedPnLUsd: -85.0, feesAndFrictionUsd: 3.0 },
-      { candidateId: 'c4', isRunner: true, netRealizedPnLUsd: 875.0, feesAndFrictionUsd: 4.5 },
-    ];
-    const report = RunnerSearchCostEngine.calculateSearchCost(demoOutcomes);
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({
-      ok: true,
-      searchCostFormula: 'RunnerSearchCost = sum(LossesBeforeRunner) + ExecutionFriction',
-      report,
-      empiricalGroundTruth: 'Because runners are 0.397% (1 in 250), unselected search cost easily overwhelms gross wins.',
-    }));
+    res.end(JSON.stringify(buildRunnerSearchCostUnavailableResponse()));
     return;
   }
 
