@@ -144,6 +144,8 @@ import { StrategyEcologyRegistry, } from './signal-ecology/mechanism-fingerprint
 import { SignalFamilyAggregator, } from './signal-ecology/family-aggregator.js';
 import { certifySignalPortfolio, } from './signal-ecology/signal-portfolio-certificate.js';
 import { SellHazardEngine, MevContaminationEngine, BarrierFatigueEngine, CapitalTournamentEngine, AuthenticDemandEngine, MetaorderIntelligenceEngine, ParticipantEcologyEngine, } from './microstructure/microstructure-x.js';
+import { ExitabilityEngine, } from './exitability/exitability-certificate.js';
+import { TokenSemanticEngine, } from '../platform/truth/token-semantic-root.js';
 import { certifyProfitFrontier, } from './profit-frontier/index.js';
 import { OperatorPlaybookEngine } from './adversarial/operator-playbook.js';
 import { EcosystemPhaseEngine } from './signals/ecosystem-phase.js';
@@ -2134,6 +2136,25 @@ export class MasterIntelligenceEngine {
             clusterSize: coordination.isSyntheticClusterLikely ? 5 : 1,
         });
         // ==========================================
+        // STRESSED LIQUIDITY UNWIND CURVE & EXITABILITY CERTIFICATE (Blueprint Section 28 & Priority Item 8)
+        // ==========================================
+        const tokenSemanticRoot = context.tokenSemanticRoot ?? TokenSemanticEngine.evaluateSemantics({
+            mint: event.mint,
+            tokenProgram: context.tokenProgram,
+            decodedState: context.decodedMintState,
+            slot: event.slot,
+        });
+        const exitabilityCertificate = context.exitabilityCertificate ?? ExitabilityEngine.evaluateExitability({
+            mint: event.mint,
+            intendedPositionTokensRaw: context.intendedPositionTokensRaw ?? 1000000000n,
+            intendedPositionSolValue: context.intendedPositionSolValue ?? (context.liquiditySol > 0 ? Math.min(context.liquiditySol * 0.05, 0.5) : 0.5),
+            tokenSemanticRoot,
+            poolSolReserve: context.liquiditySol > 0 ? context.liquiditySol : 30.0,
+            poolTokenReserve: context.poolTokenReserve ?? 1_000_000_000,
+            availableRoutes: context.availableRoutes,
+            slot: event.slot,
+        });
+        // ==========================================
         // ALPHA HALF-LIFE, QUOTE DECAY & EXECUTION SHORTFALL (Sections XV, XVI & XX)
         // ==========================================
         const alphaHalfLife = AlphaHalfLifeEngine.estimateHalfLife({
@@ -2492,6 +2513,11 @@ export class MasterIntelligenceEngine {
             (participantEcology.role === 'CABAL_MEMBER' || participantEcology.role === 'DEV_INSIDER')) {
             decision = 'CHALLENGED_ABSTAIN';
             whyExecutionBlocked = `BLOCKED — ADVERSE PARTICIPANT ECOLOGY (${participantEcology.role}, Confidence: ${(participantEcology.confidence * 100).toFixed(0)}%)`;
+        }
+        else if ((context.enforceExitabilityGating ?? false) &&
+            (exitabilityCertificate.verdict === 'DENIED_EXIT_COLLAPSE' || !exitabilityCertificate.isApprovedForExecution)) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — UNWIND EXITABILITY DENIED (${exitabilityCertificate.rationale})`;
         }
         else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
             decision = 'AUTHORIZED_SELL';
@@ -3589,6 +3615,11 @@ export class MasterIntelligenceEngine {
             metaorderCompletionPct: inferredMetaorder ? Number((inferredMetaorder.completionProbability * 100).toFixed(1)) : undefined,
             metaorderReversionHazard: inferredMetaorder?.programReversionHazard,
             participantEcologyRole: participantEcology.role,
+            exitabilityCertificate,
+            exitabilityVerdict: exitabilityCertificate.verdict,
+            stressed50PctSolCapacity: exitabilityCertificate.stressed50PctSolCapacity,
+            maxSafePositionSol: exitabilityCertificate.maxSafePositionSol,
+            minimumRecoverableValueSol: exitabilityCertificate.minimumRecoverableValueSol,
             links: {
                 solscan: `https://solscan.io/token/${event.mint}`,
                 pump: `https://pump.fun/${event.mint}`,
@@ -3869,6 +3900,7 @@ export class MasterIntelligenceEngine {
             mevContamination,
             barrierFatigue,
             frontierCertificate,
+            exitabilityCertificate,
             whyExecutionBlocked: decision !== 'AUTHORIZED_BUY' ? whyExecutionBlocked : undefined,
         };
     }
@@ -4445,6 +4477,12 @@ export class MasterIntelligenceEngine {
      */
     classifyParticipantEcology(wallet) {
         return ParticipantEcologyEngine.classifyWallet(wallet);
+    }
+    /**
+     * Blueprint Section 28 (Priority Item 8): Stressed Liquidity Unwind Curve & Exitability Certificate
+     */
+    evaluateExitability(params) {
+        return ExitabilityEngine.evaluateExitability(params);
     }
     /**
      * System Intelligence & Omega Telemetry

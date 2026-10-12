@@ -232,6 +232,15 @@ import {
   type EcologicalRole,
 } from './microstructure/microstructure-x.js';
 import {
+  ExitabilityEngine,
+  type ExitabilityCertificate,
+  type UnwindStepEvaluation,
+} from './exitability/exitability-certificate.js';
+import {
+  TokenSemanticEngine,
+  type TokenSemanticRoot,
+} from '../platform/truth/token-semantic-root.js';
+import {
   certifyProfitFrontier,
   type FrontierCertificate,
   type EngineeringCandidate,
@@ -636,6 +645,11 @@ export interface AetherFluxViewModel {
   readonly metaorderCompletionPct?: number;
   readonly metaorderReversionHazard?: number;
   readonly participantEcologyRole?: EcologicalRole;
+  readonly exitabilityCertificate?: ExitabilityCertificate;
+  readonly exitabilityVerdict?: 'PERMITTED' | 'SIZING_REDUCED' | 'DENIED_EXIT_COLLAPSE';
+  readonly stressed50PctSolCapacity?: number;
+  readonly maxSafePositionSol?: number;
+  readonly minimumRecoverableValueSol?: number;
 }
 
 export interface MasterPipelineResult {
@@ -717,10 +731,14 @@ export interface MasterPipelineResult {
   readonly mevContamination?: MevContaminationReport;
   readonly barrierFatigue?: BarrierAttemptRecord;
   readonly frontierCertificate?: FrontierCertificate;
+  readonly exitabilityCertificate?: ExitabilityCertificate;
   readonly whyExecutionBlocked?: string;
 }
 
 export type {
+  ExitabilityCertificate,
+  UnwindStepEvaluation,
+  TokenSemanticRoot,
   SellHazardProfile,
   InventoryHolder,
   MevContaminationReport,
@@ -2972,6 +2990,27 @@ export class MasterIntelligenceEngine {
     });
 
     // ==========================================
+    // STRESSED LIQUIDITY UNWIND CURVE & EXITABILITY CERTIFICATE (Blueprint Section 28 & Priority Item 8)
+    // ==========================================
+    const tokenSemanticRoot: TokenSemanticRoot = (context as any).tokenSemanticRoot ?? TokenSemanticEngine.evaluateSemantics({
+      mint: event.mint,
+      tokenProgram: (context as any).tokenProgram,
+      decodedState: (context as any).decodedMintState,
+      slot: event.slot,
+    });
+
+    const exitabilityCertificate: ExitabilityCertificate = (context as any).exitabilityCertificate ?? ExitabilityEngine.evaluateExitability({
+      mint: event.mint,
+      intendedPositionTokensRaw: (context as any).intendedPositionTokensRaw ?? 1_000_000_000n,
+      intendedPositionSolValue: (context as any).intendedPositionSolValue ?? (context.liquiditySol > 0 ? Math.min(context.liquiditySol * 0.05, 0.5) : 0.5),
+      tokenSemanticRoot,
+      poolSolReserve: context.liquiditySol > 0 ? context.liquiditySol : 30.0,
+      poolTokenReserve: (context as any).poolTokenReserve ?? 1_000_000_000,
+      availableRoutes: (context as any).availableRoutes,
+      slot: event.slot,
+    });
+
+    // ==========================================
     // ALPHA HALF-LIFE, QUOTE DECAY & EXECUTION SHORTFALL (Sections XV, XVI & XX)
     // ==========================================
     const alphaHalfLife = AlphaHalfLifeEngine.estimateHalfLife({
@@ -3359,6 +3398,12 @@ export class MasterIntelligenceEngine {
     ) {
       decision = 'CHALLENGED_ABSTAIN';
       whyExecutionBlocked = `BLOCKED — ADVERSE PARTICIPANT ECOLOGY (${participantEcology.role}, Confidence: ${(participantEcology.confidence * 100).toFixed(0)}%)`;
+    } else if (
+      ((context as any).enforceExitabilityGating ?? false) &&
+      (exitabilityCertificate.verdict === 'DENIED_EXIT_COLLAPSE' || !exitabilityCertificate.isApprovedForExecution)
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      whyExecutionBlocked = `BLOCKED — UNWIND EXITABILITY DENIED (${exitabilityCertificate.rationale})`;
     } else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
       decision = 'AUTHORIZED_SELL';
       const exitResult = this.executeExit({
@@ -4538,6 +4583,11 @@ export class MasterIntelligenceEngine {
       metaorderCompletionPct: inferredMetaorder ? Number((inferredMetaorder.completionProbability * 100).toFixed(1)) : undefined,
       metaorderReversionHazard: inferredMetaorder?.programReversionHazard,
       participantEcologyRole: participantEcology.role,
+      exitabilityCertificate,
+      exitabilityVerdict: exitabilityCertificate.verdict,
+      stressed50PctSolCapacity: exitabilityCertificate.stressed50PctSolCapacity,
+      maxSafePositionSol: exitabilityCertificate.maxSafePositionSol,
+      minimumRecoverableValueSol: exitabilityCertificate.minimumRecoverableValueSol,
       links: {
         solscan: `https://solscan.io/token/${event.mint}`,
         pump: `https://pump.fun/${event.mint}`,
@@ -4820,6 +4870,7 @@ export class MasterIntelligenceEngine {
       mevContamination,
       barrierFatigue,
       frontierCertificate,
+      exitabilityCertificate,
       whyExecutionBlocked: decision !== 'AUTHORIZED_BUY' ? whyExecutionBlocked : undefined,
     };
   }
@@ -5831,6 +5882,22 @@ export class MasterIntelligenceEngine {
     clusterSize: number;
   }): EcologicalParticipant {
     return ParticipantEcologyEngine.classifyWallet(wallet);
+  }
+
+  /**
+   * Blueprint Section 28 (Priority Item 8): Stressed Liquidity Unwind Curve & Exitability Certificate
+   */
+  public evaluateExitability(params: {
+    mint: string;
+    intendedPositionTokensRaw: bigint;
+    intendedPositionSolValue: number;
+    tokenSemanticRoot: TokenSemanticRoot;
+    poolSolReserve: number;
+    poolTokenReserve: number;
+    availableRoutes?: readonly string[];
+    slot: number;
+  }): ExitabilityCertificate {
+    return ExitabilityEngine.evaluateExitability(params);
   }
 
   /**

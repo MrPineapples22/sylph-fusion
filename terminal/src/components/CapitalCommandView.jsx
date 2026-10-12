@@ -612,6 +612,12 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
                     <span>Breadth: <b style={{color: (position.meaningfulBuyerBreadth ?? position.authenticDemand?.meaningfulBuyerBreadth ?? 0.8) < 0.4 ? '#F59E0B' : '#14F195'}}>{`${((position.meaningfulBuyerBreadth ?? position.authenticDemand?.meaningfulBuyerBreadth ?? 0.8) * 100).toFixed(0)}%`}</b></span>
                     <span>Metaorder: <b style={{color: position.inferredMetaorder ? ((position.metaorderDirection || position.inferredMetaorder.direction) === 'SELL' ? '#FF3B69' : '#14F195') : '#94A3B8'}}>{position.inferredMetaorder ? `${position.metaorderDirection || position.inferredMetaorder.direction} (${((position.inferredMetaorder.completionProbability ?? 0.5) * 100).toFixed(0)}%)` : 'NONE'}</b></span>
                   </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'2px',padding:'3px 6px',background:'rgba(244,63,94,0.04)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>Exit Verdict: <b style={{color: (position.exitabilityVerdict || position.exitabilityCertificate?.verdict) === 'DENIED_EXIT_COLLAPSE' ? '#FF3B69' : ((position.exitabilityVerdict || position.exitabilityCertificate?.verdict) === 'SIZING_REDUCED' ? '#F59E0B' : '#14F195')}}>{position.exitabilityVerdict || position.exitabilityCertificate?.verdict || 'PERMITTED'}</b></span>
+                    <span>Stressed 50% Cap: <b style={{color: '#38BDF8'}}>{`${Number(position.stressed50PctSolCapacity ?? position.exitabilityCertificate?.stressed50PctSolCapacity ?? 15.0).toFixed(1)} SOL`}</b></span>
+                    <span>Max Safe Size: <b style={{color: '#14F195'}}>{`${Number(position.maxSafePositionSol ?? position.exitabilityCertificate?.maxSafePositionSol ?? 1.2).toFixed(2)} SOL`}</b></span>
+                    <span>Exit Cert: <b style={{color: '#A78BFA'}}>{(position.exitabilityCertificate?.certificateId || 'exit_none').slice(0, 10)}</b></span>
+                  </div>
                 </div>
               );
             })()}
