@@ -582,6 +582,12 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
                     <span>Transport: <b style={{color: (position.isRegimeTransportable ?? position.regimeTransport?.transportable) === false ? '#FF3B69' : '#14F195'}}>{(position.isRegimeTransportable ?? position.regimeTransport?.transportable) === false ? 'BLOCKED' : 'VALID'}</b></span>
                     <span>Cov Shift: <b style={{color: (position.covariateShift ?? position.regimeTransport?.covariateShift ?? 0.15) > 0.40 ? '#FF3B69' : '#38BDF8'}}>{Number.isFinite(position.covariateShift ?? position.regimeTransport?.covariateShift) ? (position.covariateShift ?? position.regimeTransport?.covariateShift).toFixed(2) : '0.15'}</b></span>
                   </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'2px',padding:'3px 6px',background:'rgba(239,68,68,0.04)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>Evac Feasible: <b style={{color: (position.isClearanceFeasible ?? position.evacuationCertificate?.clearanceFeasible) === false ? '#FF3B69' : '#14F195'}}>{(position.isClearanceFeasible ?? position.evacuationCertificate?.clearanceFeasible) === false ? 'INFEASIBLE' : 'FEASIBLE'}</b></span>
+                    <span>P95 Cost: <b style={{color: (position.evacuationP95CostBps ?? position.evacuationCertificate?.p95CostBps ?? 0) > 1000 ? '#FF3B69' : '#38BDF8'}}>{`${position.evacuationP95CostBps ?? position.evacuationCertificate?.p95CostBps ?? 0} bps`}</b></span>
+                    <span>Deficit: <b style={{color: (position.survivalDeficitUsd ?? position.evacuationCertificate?.survivalDeficitUsd ?? 0) > 0 ? '#F59E0B' : '#14F195'}}>{`$${Number(position.survivalDeficitUsd ?? position.evacuationCertificate?.survivalDeficitUsd ?? 0).toFixed(2)}`}</b></span>
+                    <span>Cert: <b style={{color: '#A78BFA'}}>{(position.evacuationCertificate?.certificateId || 'pec_none').slice(0, 10)}</b></span>
+                  </div>
                 </div>
               );
             })()}

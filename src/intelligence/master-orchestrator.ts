@@ -185,6 +185,16 @@ import {
 } from './executable-alpha/observation/sensor-race.js';
 import type { ObservationQualityCertificate, DistributionValidityCertificate } from './executable-alpha/types.js';
 import { MultiLaneSubmissionRouter, type SubmissionRoutingInput, type SubmissionRoutingDecision, type LaneEvaluation } from './executable-alpha/execution/submission-router.js';
+import {
+  EvacuationFlowModel,
+  type EvacuationPositionRequest,
+  type EvacuationAnalysisResult,
+  type EvacuationFlowStep,
+} from './survival/evacuation-x/evacuation-flow-model.js';
+import {
+  certifyPortfolioEvacuation,
+  type PortfolioEvacuationCertificate,
+} from './survival/evacuation-x/portfolio-evacuation-certificate.js';
 import { OperatorPlaybookEngine } from './adversarial/operator-playbook.js';
 import { EcosystemPhaseEngine } from './signals/ecosystem-phase.js';
 import { MarketPhaseEngine } from './signals/market-phase-engine.js';
@@ -548,6 +558,11 @@ export interface AetherFluxViewModel {
   readonly survivorshipBiasPenalty?: number;
   readonly isRegimeTransportable?: boolean;
   readonly transportBlockers?: readonly string[];
+  readonly evacuationAnalysis?: EvacuationAnalysisResult;
+  readonly evacuationCertificate?: PortfolioEvacuationCertificate;
+  readonly isClearanceFeasible?: boolean;
+  readonly evacuationP95CostBps?: number;
+  readonly survivalDeficitUsd?: number;
 }
 
 export interface MasterPipelineResult {
@@ -621,10 +636,16 @@ export interface MasterPipelineResult {
   readonly registeredStudiesCount?: number;
   readonly migrationSelection?: MigrationSelectionAnalysis;
   readonly regimeTransport?: DistributionValidityCertificate;
+  readonly evacuationAnalysis?: EvacuationAnalysisResult;
+  readonly evacuationCertificate?: PortfolioEvacuationCertificate;
   readonly whyExecutionBlocked?: string;
 }
 
 export type {
+  EvacuationPositionRequest,
+  EvacuationAnalysisResult,
+  EvacuationFlowStep,
+  PortfolioEvacuationCertificate,
   MigrationSelectionAnalysis,
   DistributionValidityCertificate,
   ExecutablePeakAnalysis,
@@ -2632,6 +2653,25 @@ export class MasterIntelligenceEngine {
     const executablePeakAnalysis: ExecutablePeakAnalysis = (context as any).executablePeakAnalysis ?? EconomicFreshnessEngine.analyzeTrajectory(initialPriceSol, priceTicks);
 
     // ==========================================
+    // EVACUATION-X CONVEX FLOW MODEL & CERTIFICATE (Sections XXVI & XXVII)
+    // ==========================================
+    const openPositionsForEvac: readonly EvacuationPositionRequest[] = (context as any).openPositionsForEvac ?? [
+      {
+        mint: event.mint,
+        poolAddress: `pool_${event.mint.slice(0, 8)}`,
+        balanceRaw: BigInt(Math.round(((context as any).positionTokens ?? 1_000_000) * 1e6)),
+        markPriceUsd: poolUnitTokenPriceUsd,
+        availableLiquidityUsd: initialPoolSolReservesUsd,
+        expectedDailyVolumeUsd: Math.max(1000.0, context.liquiditySol * 150.0 * 2.0),
+      },
+    ];
+    const evacuationDeadlineSec = (context as any).evacuationDeadlineSec ?? 300;
+    const evacuationMaxAllowableP95CostBps = (context as any).evacuationMaxAllowableP95CostBps ?? 1500;
+    const evacuationFlowModel = new EvacuationFlowModel();
+    const evacuationAnalysis: EvacuationAnalysisResult = (context as any).evacuationAnalysis ?? evacuationFlowModel.analyzePortfolio(openPositionsForEvac, evacuationDeadlineSec);
+    const evacuationCertificate: PortfolioEvacuationCertificate = (context as any).evacuationCertificate ?? certifyPortfolioEvacuation(BigInt(event.slot), evacuationAnalysis, evacuationMaxAllowableP95CostBps);
+
+    // ==========================================
     // ALPHA HALF-LIFE, QUOTE DECAY & EXECUTION SHORTFALL (Sections XV, XVI & XX)
     // ==========================================
     const alphaHalfLife = AlphaHalfLifeEngine.estimateHalfLife({
@@ -2958,6 +2998,12 @@ export class MasterIntelligenceEngine {
     ) {
       decision = 'CHALLENGED_ABSTAIN';
       whyExecutionBlocked = `BLOCKED — REGIME TRANSPORT DISMISSED (${regimeTransport.blockers.join('; ')})`;
+    } else if (
+      ((context as any).enforceEvacuationClearanceGating ?? false) &&
+      !evacuationCertificate.clearanceFeasible
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      whyExecutionBlocked = `BLOCKED — EVACUATION CLEARANCE INFEASIBLE (P95 Cost: ${evacuationCertificate.p95CostBps} bps, Deficit: $${evacuationCertificate.survivalDeficitUsd.toFixed(2)})`;
     } else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
       decision = 'AUTHORIZED_SELL';
       const exitResult = this.executeExit({
@@ -4100,6 +4146,11 @@ export class MasterIntelligenceEngine {
       survivorshipBiasPenalty: migrationSelection.survivorshipBiasPenalty,
       isRegimeTransportable: regimeTransport.transportable,
       transportBlockers: regimeTransport.blockers,
+      evacuationAnalysis,
+      evacuationCertificate,
+      isClearanceFeasible: evacuationCertificate.clearanceFeasible,
+      evacuationP95CostBps: evacuationCertificate.p95CostBps,
+      survivalDeficitUsd: evacuationCertificate.survivalDeficitUsd,
       links: {
         solscan: `https://solscan.io/token/${event.mint}`,
         pump: `https://pump.fun/${event.mint}`,
@@ -4374,6 +4425,8 @@ export class MasterIntelligenceEngine {
       registeredStudiesCount: this.registeredStudiesCount,
       migrationSelection,
       regimeTransport,
+      evacuationAnalysis,
+      evacuationCertificate,
       whyExecutionBlocked: decision !== 'AUTHORIZED_BUY' ? whyExecutionBlocked : undefined,
     };
   }
@@ -5235,6 +5288,22 @@ export class MasterIntelligenceEngine {
       conceptShift,
       calibrationShift
     );
+  }
+
+  /**
+   * Sections XXVI & XXVII: Evacuation-X Convex Flow Model
+   * Evaluates portfolio liquidation flow and issues clearance certificate.
+   */
+  public evaluatePortfolioEvacuation(
+    positions: readonly EvacuationPositionRequest[],
+    slot: bigint,
+    deadlineSec: number = 300,
+    maxAllowableP95CostBps: number = 1500
+  ): { analysis: EvacuationAnalysisResult; certificate: PortfolioEvacuationCertificate } {
+    const model = new EvacuationFlowModel();
+    const analysis = model.analyzePortfolio(positions, deadlineSec);
+    const certificate = certifyPortfolioEvacuation(slot, analysis, maxAllowableP95CostBps);
+    return { analysis, certificate };
   }
 
   /**

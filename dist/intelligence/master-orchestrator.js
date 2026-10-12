@@ -138,6 +138,8 @@ import { MigrationSelectionEngine, } from './executable-alpha/distribution/migra
 import { ObservationQualityEngine, } from './executable-alpha/observation/observation-quality.js';
 import { SensorRaceEngine, } from './executable-alpha/observation/sensor-race.js';
 import { MultiLaneSubmissionRouter } from './executable-alpha/execution/submission-router.js';
+import { EvacuationFlowModel, } from './survival/evacuation-x/evacuation-flow-model.js';
+import { certifyPortfolioEvacuation, } from './survival/evacuation-x/portfolio-evacuation-certificate.js';
 import { OperatorPlaybookEngine } from './adversarial/operator-playbook.js';
 import { EcosystemPhaseEngine } from './signals/ecosystem-phase.js';
 import { MarketPhaseEngine } from './signals/market-phase-engine.js';
@@ -1944,6 +1946,24 @@ export class MasterIntelligenceEngine {
         ];
         const executablePeakAnalysis = context.executablePeakAnalysis ?? EconomicFreshnessEngine.analyzeTrajectory(initialPriceSol, priceTicks);
         // ==========================================
+        // EVACUATION-X CONVEX FLOW MODEL & CERTIFICATE (Sections XXVI & XXVII)
+        // ==========================================
+        const openPositionsForEvac = context.openPositionsForEvac ?? [
+            {
+                mint: event.mint,
+                poolAddress: `pool_${event.mint.slice(0, 8)}`,
+                balanceRaw: BigInt(Math.round((context.positionTokens ?? 1_000_000) * 1e6)),
+                markPriceUsd: poolUnitTokenPriceUsd,
+                availableLiquidityUsd: initialPoolSolReservesUsd,
+                expectedDailyVolumeUsd: Math.max(1000.0, context.liquiditySol * 150.0 * 2.0),
+            },
+        ];
+        const evacuationDeadlineSec = context.evacuationDeadlineSec ?? 300;
+        const evacuationMaxAllowableP95CostBps = context.evacuationMaxAllowableP95CostBps ?? 1500;
+        const evacuationFlowModel = new EvacuationFlowModel();
+        const evacuationAnalysis = context.evacuationAnalysis ?? evacuationFlowModel.analyzePortfolio(openPositionsForEvac, evacuationDeadlineSec);
+        const evacuationCertificate = context.evacuationCertificate ?? certifyPortfolioEvacuation(BigInt(event.slot), evacuationAnalysis, evacuationMaxAllowableP95CostBps);
+        // ==========================================
         // ALPHA HALF-LIFE, QUOTE DECAY & EXECUTION SHORTFALL (Sections XV, XVI & XX)
         // ==========================================
         const alphaHalfLife = AlphaHalfLifeEngine.estimateHalfLife({
@@ -2251,6 +2271,11 @@ export class MasterIntelligenceEngine {
             !regimeTransport.transportable) {
             decision = 'CHALLENGED_ABSTAIN';
             whyExecutionBlocked = `BLOCKED — REGIME TRANSPORT DISMISSED (${regimeTransport.blockers.join('; ')})`;
+        }
+        else if ((context.enforceEvacuationClearanceGating ?? false) &&
+            !evacuationCertificate.clearanceFeasible) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — EVACUATION CLEARANCE INFEASIBLE (P95 Cost: ${evacuationCertificate.p95CostBps} bps, Deficit: $${evacuationCertificate.survivalDeficitUsd.toFixed(2)})`;
         }
         else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
             decision = 'AUTHORIZED_SELL';
@@ -3311,6 +3336,11 @@ export class MasterIntelligenceEngine {
             survivorshipBiasPenalty: migrationSelection.survivorshipBiasPenalty,
             isRegimeTransportable: regimeTransport.transportable,
             transportBlockers: regimeTransport.blockers,
+            evacuationAnalysis,
+            evacuationCertificate,
+            isClearanceFeasible: evacuationCertificate.clearanceFeasible,
+            evacuationP95CostBps: evacuationCertificate.p95CostBps,
+            survivalDeficitUsd: evacuationCertificate.survivalDeficitUsd,
             links: {
                 solscan: `https://solscan.io/token/${event.mint}`,
                 pump: `https://pump.fun/${event.mint}`,
@@ -3583,6 +3613,8 @@ export class MasterIntelligenceEngine {
             registeredStudiesCount: this.registeredStudiesCount,
             migrationSelection,
             regimeTransport,
+            evacuationAnalysis,
+            evacuationCertificate,
             whyExecutionBlocked: decision !== 'AUTHORIZED_BUY' ? whyExecutionBlocked : undefined,
         };
     }
@@ -4079,6 +4111,16 @@ export class MasterIntelligenceEngine {
      */
     evaluateRegimeTransport(sourceRegime, targetRegime, covariateShift = 0.15, conceptShift = 0.10, calibrationShift = 0.05) {
         return RegimeTransportEngine.evaluateTransportability(sourceRegime, targetRegime, covariateShift, conceptShift, calibrationShift);
+    }
+    /**
+     * Sections XXVI & XXVII: Evacuation-X Convex Flow Model
+     * Evaluates portfolio liquidation flow and issues clearance certificate.
+     */
+    evaluatePortfolioEvacuation(positions, slot, deadlineSec = 300, maxAllowableP95CostBps = 1500) {
+        const model = new EvacuationFlowModel();
+        const analysis = model.analyzePortfolio(positions, deadlineSec);
+        const certificate = certifyPortfolioEvacuation(slot, analysis, maxAllowableP95CostBps);
+        return { analysis, certificate };
     }
     /**
      * System Intelligence & Omega Telemetry
