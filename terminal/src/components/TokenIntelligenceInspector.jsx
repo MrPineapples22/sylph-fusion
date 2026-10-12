@@ -44,7 +44,11 @@ function formatScientificPercent(value) {
     : 'UNAVAILABLE';
 }
 
-export function TokenIntelligenceInspector({ mint, initialData = null }) {
+function reportedBoolean(value, trueLabel = 'YES', falseLabel = 'NO') {
+  return value === true ? trueLabel : value === false ? falseLabel : 'UNKNOWN';
+}
+
+export function TokenIntelligenceInspector({ mint, initialData = null, riskReport = null, riskLoading = false }) {
   const [data, setData] = useState(initialData);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -52,7 +56,8 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
 
   useEffect(() => {
     if (!mint) return;
-    if (initialData && (initialData.token?.mint === mint || initialData.mint === mint)) {
+    if (initialData && (initialData.token?.mint === mint || initialData.mint === mint)
+      && (initialData.evidenceStatus || hasCompleteVerifiedEvidence(initialData))) {
       setData(initialData);
       setLoading(false);
       setError(null);
@@ -100,7 +105,7 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
     return (
       <div className="intelligence-loading" role="status">
         <Activity size={20} className="animate-spin text-accent" />
-        <span>Synthesizing multi-agent intelligence for {mint.slice(0, 6)}…</span>
+        <span>Loading the supplied evidence snapshot for {mint.slice(0, 6)}…</span>
       </div>
     );
   }
@@ -125,17 +130,43 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
 
   if (data.evidenceStatus === 'PARTIAL') {
     const token = data.token;
+    const report = riskReport && riskReport.mint === mint && !riskReport.error ? riskReport : null;
+    const ageSeconds = report && Number.isFinite(report.at) ? Math.max(0, Math.floor((Date.now() - report.at) / 1000)) : null;
+    const formatPct = (bps) => Number.isFinite(bps) ? `${(bps / 100).toFixed(1)}%` : 'Unavailable';
+    const safeLabel = report?.safe === true ? 'SOURCE CHECKS PASSED' : report?.safe === false ? 'RISK FLAGGED' : 'INDETERMINATE';
+    const riskTone = report?.safe === true ? 'text-success' : report?.safe === false ? 'text-danger' : 'text-muted';
+    const authorityLabel = report?.authorities?.status === 'revoked' ? 'Revoked' : report?.authorities?.status === 'active' ? 'Active' : 'Unknown';
+    const topHolderLabel = report?.holders?.top10Status === 'within-limit' ? 'Within 40% threshold' : report?.holders?.top10Status === 'over-limit' ? 'Above 40% threshold' : 'Unavailable';
+    const providerNames = report?.providers ? Object.entries(report.providers).filter(([, status]) => status === 'live').map(([name]) => name) : [];
     return <section className="token-intelligence-inspector" aria-label="Token evidence">
-      <h3>Observed token data</h3>
-      <p role="status">{data.explanation}</p>
-      <dl>
-        <dt>Mint</dt><dd>{mint}</dd>
-        <dt>Price (USD)</dt><dd>{token?.price ?? 'Unavailable'}</dd>
-        <dt>Liquidity (USD)</dt><dd>{token?.liquidity ?? 'Unavailable'}</dd>
-        <dt>Market cap (USD)</dt><dd>{token?.cap ?? 'Unavailable'}</dd>
-        <dt>Source</dt><dd>{token ? 'DEX Screener market snapshot' : 'No indexed observation'}</dd>
-      </dl>
-      <p>Use the token safety panel for the current risk scan. Buyer provenance and yield benchmarks are unavailable.</p>
+      <header className="partial-evidence-header">
+        <div><span className="eyebrow">LIVE TOKEN EVIDENCE</span><h3>Observed market &amp; safety data</h3></div>
+        <span className="evidence-status-chip">PARTIAL · READ ONLY</span>
+      </header>
+      <p className="partial-evidence-note" role="status">{data.explanation}</p>
+      <div className="partial-market-grid" aria-label="Observed market snapshot">
+        <div><small>PRICE</small><strong>{token?.price != null ? `$${token.price}` : 'Unavailable'}</strong></div>
+        <div><small>LIQUIDITY</small><strong>{token?.liquidity != null ? `$${token.liquidity}` : 'Unavailable'}</strong></div>
+        <div><small>MARKET CAP</small><strong>{token?.cap != null ? `$${token.cap}` : 'Unavailable'}</strong></div>
+        <div><small>MARKET SOURCE</small><strong>{token ? 'DEX Screener' : 'No indexed observation'}</strong></div>
+      </div>
+      <section className="partial-risk-section" aria-label="Token risk scan">
+        <div className="partial-risk-heading"><div><span className="eyebrow">INDEPENDENT RISK SCAN</span><h4 className={riskTone}>{riskLoading ? 'Scanning…' : report ? safeLabel : riskReport?.error ? 'SCAN UNAVAILABLE' : 'AWAITING SCAN'}</h4></div>
+          <span className="risk-age">{ageSeconds == null ? (riskLoading ? 'Updating' : 'No scan yet') : `Updated ${ageSeconds < 60 ? `${ageSeconds}s` : `${Math.floor(ageSeconds / 60)}m`} ago`}</span></div>
+        {report ? <>
+          <div className="partial-risk-grid">
+            <div><small>RUGCHECK SCORE</small><strong>{Number.isFinite(report.score) ? report.score : 'Unavailable'}</strong></div>
+            <div><small>AUTHORITIES</small><strong>{authorityLabel}</strong><span>Mint {report.authorities?.mint ? 'active' : report.authorities?.mint === null ? 'not reported' : 'unknown'} · Freeze {report.authorities?.freeze ? 'active' : report.authorities?.freeze === null ? 'not reported' : 'unknown'}</span></div>
+            <div><small>TOP 10 HOLDERS</small><strong>{formatPct(report.holders?.top10Bps)}</strong><span>{topHolderLabel}</span></div>
+            <div><small>LIQUIDITY STATE</small><strong>{report.liquidity?.state?.replace('_', ' ') || 'Unknown'}</strong><span>{report.liquidity?.pools ?? 0} reported pools{report.liquidity?.lockedPct != null ? ` · ${report.liquidity.lockedPct}% locked` : ''}</span></div>
+          </div>
+          <div className="partial-risk-footer"><span>Sources live: {providerNames.length ? providerNames.join(', ') : 'none'}</span>
+            <div>{Object.entries(report.links || {}).map(([label, href]) => href && <a key={label} href={href} target="_blank" rel="noopener noreferrer">{label === 'solscan' ? 'Solscan' : label === 'tracker' ? 'Tracker' : 'Rugcheck'} <ExternalLink size={11} /></a>)}</div>
+          </div>
+          {Array.isArray(report.risks) && report.risks.length > 0 && <details className="partial-risk-flags"><summary>{report.risks.length} reported risk flag{report.risks.length === 1 ? '' : 's'}</summary><ul>{report.risks.slice(0, 8).map((item, index) => <li key={`${item.name}-${index}`}><b>{item.name}</b>{item.description ? ` — ${item.description}` : ''}</li>)}</ul></details>}
+        </> : <p className="partial-risk-empty">{riskReport?.error ? `Risk scan failed: ${riskReport.error}` : 'Run the safety scan to load source reported risk checks. Missing values remain unknown.'}</p>}
+      </section>
+      <p className="partial-evidence-footnote">Buyer provenance, calibrated forecasts, and yield benchmarks are unavailable from the connected sources. This panel reports observations and does not authorize a trade.</p>
     </section>;
   }
 
@@ -230,8 +261,8 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
         <span className="health-item" title="System Health (SYS)">SYS <b style={{ color: healthStrip.sys === 'OK' ? '#10b981' : '#ef4444' }}>{healthStrip.sys === 'OK' ? '✓' : '!'}</b></span>
         <span className="health-item" title="Authorization (AUT)">AUT <b style={{ color: healthStrip.aut === 'OK' ? '#10b981' : '#ef4444' }}>{healthStrip.aut === 'OK' ? '✓' : '!'}</b></span>
         <span className="health-strip-spacer" />
-        <span className="health-intel-pill" title="Compact Derived Intelligence">INTEL: <b>{data.intel || 'STRONG'}</b></span>
-        <span className="health-risk-pill" title="Compact Unified Risk">RISK: <b>{data.risk || 'LOW'}</b></span>
+        <span className="health-intel-pill" title="Compact Derived Intelligence">INTEL: <b>{data.intel || 'UNAVAILABLE'}</b></span>
+        <span className="health-risk-pill" title="Compact Unified Risk">RISK: <b>{data.risk || 'UNKNOWN'}</b></span>
       </div>
 
       {/* Part VI - Consolidated SYLPH Unified Intelligence Hero Box */}
@@ -242,71 +273,71 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
           </div>
           <div className="unified-hero-thesis">
             <span style={{ color: 'var(--muted)', fontSize: '11px', marginRight: '6px' }}>PRIMARY THESIS:</span>
-            {unified.primaryThesis || overview.behaviorState || 'Organic accumulation'}
+            {unified.primaryThesis || overview.behaviorState || 'UNAVAILABLE'}
           </div>
         </div>
 
         <div className="unified-hero-grid">
           <div className="unified-hero-cell">
             <small>BELIEF</small>
-            <b style={{ color: '#38bdf8' }}>{unified.beliefState || 'Supported'}</b>
+            <b style={{ color: '#38bdf8' }}>{unified.beliefState || 'UNAVAILABLE'}</b>
           </div>
           <div className="unified-hero-cell">
             <small>UNCERTAINTY</small>
-            <b style={{ color: (unified.uncertainty || 'Medium') === 'High' ? '#f43f5e' : '#cbd5e1' }}>
-              {unified.uncertainty || 'Medium'}
+            <b style={{ color: unified.uncertainty === 'High' ? '#f43f5e' : '#cbd5e1' }}>
+              {unified.uncertainty || 'UNAVAILABLE'}
             </b>
           </div>
           <div className="unified-hero-cell">
             <small>ATTENTION</small>
-            <b style={{ color: '#c084fc' }}>{unified.attentionTier || data.attn || 'A4'}</b>
+            <b style={{ color: '#c084fc' }}>{unified.attentionTier || data.attn || 'UNAVAILABLE'}</b>
           </div>
           <div className="unified-hero-cell">
             <small>PHASE</small>
-            <b>{unified.phase || overview.lifecycle || 'Accumulation'}</b>
+            <b>{unified.phase || overview.lifecycle || 'UNAVAILABLE'}</b>
           </div>
           <div className="unified-hero-cell">
             <small>TRAJECTORY</small>
-            <b style={{ color: '#60a5fa' }}>{unified.trajectory || data.path || 'Accelerating'}</b>
+            <b style={{ color: '#60a5fa' }}>{unified.trajectory || data.path || 'UNAVAILABLE'}</b>
           </div>
           <div className="unified-hero-cell">
             <small>STRUCTURAL INT</small>
-            <b style={{ color: (unified.structuralIntegrity || 'Strong') === 'Strong' ? '#10b981' : '#f59e0b' }}>
-              {unified.structuralIntegrity || 'Strong'}
+            <b style={{ color: unified.structuralIntegrity === 'Strong' ? '#10b981' : '#f59e0b' }}>
+              {unified.structuralIntegrity || 'UNAVAILABLE'}
             </b>
           </div>
           <div className="unified-hero-cell">
             <small>STABILITY</small>
-            <b style={{ color: '#34d399' }}>{unified.stabilityState || data.stab || 'Stable'}</b>
+            <b style={{ color: '#34d399' }}>{unified.stabilityState || data.stab || 'UNAVAILABLE'}</b>
           </div>
           <div className="unified-hero-cell">
             <small>INFORMATION</small>
-            <b style={{ color: '#2dd4bf' }}>{unified.informationState || data.edgeState || 'Early'}</b>
+            <b style={{ color: '#2dd4bf' }}>{unified.informationState || data.edgeState || 'UNAVAILABLE'}</b>
           </div>
           <div className="unified-hero-cell">
             <small>FORECAST ROBUST</small>
-            <b>{unified.forecastRobustness || 'Moderate'}</b>
+            <b>{unified.forecastRobustness || 'UNAVAILABLE'}</b>
           </div>
           <div className="unified-hero-cell">
             <small>AGENT STATE</small>
-            <b title={unified.counterpartyIntent || 'Whale accumulation suspected'}>
-              {unified.counterpartyIntent || 'Accumulating'}
+            <b title={unified.counterpartyIntent || 'Counterparty intent is unavailable'}>
+              {unified.counterpartyIntent || 'UNAVAILABLE'}
             </b>
           </div>
           <div className="unified-hero-cell">
             <small>EXITABILITY</small>
-            <b style={{ color: '#10b981' }}>{unified.exitability || 'Strong'}</b>
+            <b style={{ color: '#10b981' }}>{unified.exitability || 'UNAVAILABLE'}</b>
           </div>
         </div>
 
         <div className="unified-action-row">
           <div className="unified-action-box">
             <small>NEXT QUESTION (DISCRIMINATING NEED)</small>
-            <strong>{unified.nextQuestion || 'Are entering wallets independent?'}</strong>
+            <strong>{unified.nextQuestion || 'UNAVAILABLE'}</strong>
           </div>
           <div className="unified-action-box action-box-next">
             <small>NEXT ACTION</small>
-            <strong>{unified.nextAction || 'INVESTIGATE'}</strong>
+            <strong>{unified.nextAction || 'UNAVAILABLE'}</strong>
           </div>
         </div>
       </div>
@@ -357,19 +388,19 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
         <div className="inspector-content overview-panel">
           <div className="inspector-badge-row">
             <span className={`status-pill ${overview.currentStatus === 'VERIFIED_ENTRY' ? 'status-pass' : 'status-warn'}`}>
-              {overview.currentStatus || 'OBSERVING'}
+              {overview.currentStatus || 'UNKNOWN'}
             </span>
-            <span className="pill-regime">REGIME: {overview.marketRegime || 'NORMAL'}</span>
-            <span className="pill-lifecycle">STAGE: {overview.lifecycle || 'EARLY'}</span>
-            <span className="pill-behavior">PHASE: {blueprintTelemetry?.phase?.compactPhaseCode || overview.behaviorState || 'DISC'}</span>
+            <span className="pill-regime">REGIME: {overview.marketRegime || 'UNKNOWN'}</span>
+            <span className="pill-lifecycle">STAGE: {overview.lifecycle || 'UNKNOWN'}</span>
+            <span className="pill-behavior">PHASE: {blueprintTelemetry?.phase?.compactPhaseCode || overview.behaviorState || 'UNKNOWN'}</span>
             <span className="pill-behavior" style={{ background: 'rgba(131, 197, 230, 0.15)', color: 'var(--cyan)' }}>
-              FLOW: {blueprintTelemetry?.flow?.flowCode || 'INFLOW'}
+              FLOW: {blueprintTelemetry?.flow?.flowCode || 'UNKNOWN'}
             </span>
             <span className="pill-behavior" style={{ background: 'rgba(231, 188, 118, 0.15)', color: 'var(--warn)' }}>
-              THESIS: {blueprintTelemetry?.thesis?.state || 'INTACT'}
+              THESIS: {blueprintTelemetry?.thesis?.state || 'UNKNOWN'}
             </span>
             <span className="pill-behavior" style={{ background: 'rgba(137, 199, 165, 0.2)', color: 'var(--good)' }}>
-              PROOF: {blueprintTelemetry?.proof?.proofState || 'UNVERIFIED'}
+              PROOF: {blueprintTelemetry?.proof?.proofState || 'UNKNOWN'}
             </span>
           </div>
 
@@ -383,18 +414,18 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
 
           {/* Blueprint Part LXXX - Position Survival Summary */}
           <div className="position-survival-strip" aria-label="Position Survival Summary">
-            <span className="pos-surv-item">EXIT: <b className="cap-good">{capitalAuthority?.survivalHealth || 'HEALTHY'}</b></span>
-            <span className="pos-surv-item">COVER: <b className="cap-good">{capitalAuthority?.exitCoveragePct ?? 100}%</b></span>
-            <span className="pos-surv-item">STRESS: <b className="cap-cyan">{capitalAuthority?.stressedCoveragePct ?? 82}%</b></span>
-            <span className="pos-surv-item">PROOF: <b className="cap-cyan">{capitalAuthority?.positionSurvival?.exitProofLevel?.slice(0, 2) || 'E5'}</b></span>
-            <span className="pos-surv-item">EVAC: <b>{capitalAuthority?.positionSurvival?.timeToEvacuateSec ?? 3.2}s</b></span>
-            <span className="pos-surv-item">PROOF AGE: <small>{capitalAuthority?.positionSurvival?.proofAgeSec ?? 0.8}s</small></span>
+            <span className="pos-surv-item">EXIT: <b className={capitalAuthority?.survivalHealth ? 'cap-good' : 'cap-warn'}>{capitalAuthority?.survivalHealth || 'UNKNOWN'}</b></span>
+            <span className="pos-surv-item">COVER: <b className="cap-cyan">{capitalAuthority?.exitCoveragePct ?? 'UNAVAILABLE'}{capitalAuthority?.exitCoveragePct != null ? '%' : ''}</b></span>
+            <span className="pos-surv-item">STRESS: <b className="cap-cyan">{capitalAuthority?.stressedCoveragePct ?? 'UNAVAILABLE'}{capitalAuthority?.stressedCoveragePct != null ? '%' : ''}</b></span>
+            <span className="pos-surv-item">PROOF: <b className="cap-cyan">{capitalAuthority?.positionSurvival?.exitProofLevel?.slice(0, 2) || 'UNKNOWN'}</b></span>
+            <span className="pos-surv-item">EVAC: <b>{capitalAuthority?.positionSurvival?.timeToEvacuateSec ?? 'UNAVAILABLE'}{capitalAuthority?.positionSurvival?.timeToEvacuateSec != null ? 's' : ''}</b></span>
+            <span className="pos-surv-item">PROOF AGE: <small>UNAVAILABLE</small></span>
           </div>
 
           <div className="grid-metrics">
             <div className="metric-box">
               <small>HSI Suspicion</small>
-              <strong className={overview.hsi >= 50 ? 'text-danger' : 'text-success'}>
+              <strong className={!Number.isFinite(overview.hsi) ? 'text-muted' : overview.hsi >= 50 ? 'text-danger' : 'text-success'}>
                 {overview.hsi ?? '—'}/100
               </strong>
             </div>
@@ -406,50 +437,50 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
             </div>
             <div className="metric-box">
               <small>PoD Overhang</small>
-              <strong className={overview.pod >= 40 ? 'text-warning' : 'text-success'}>
+              <strong className={!Number.isFinite(overview.pod) ? 'text-muted' : overview.pod >= 40 ? 'text-warning' : 'text-success'}>
                 {overview.pod ?? '—'}
               </strong>
             </div>
             <div className="metric-box">
               <small>Rug State</small>
-              <strong className={overview.rug === 'CLEAN' ? 'text-success' : 'text-danger'}>
+              <strong className={overview.rug == null ? 'text-muted' : overview.rug === 'CLEAN' ? 'text-success' : 'text-danger'}>
                 {overview.rug || 'UNKNOWN'}
               </strong>
             </div>
             <div className="metric-box">
               <small>Safety Confidence</small>
-              <strong>{overview.safetyConfidence ?? '—'}%</strong>
+              <strong>{overview.safetyConfidence == null ? 'UNAVAILABLE' : `${overview.safetyConfidence}%`}</strong>
             </div>
             <div className="metric-box">
               <small>Pump Probability</small>
-              <strong>{overview.pumpProbability ?? '—'}%</strong>
+              <strong>{overview.pumpProbability == null ? 'UNAVAILABLE' : `${overview.pumpProbability}%`}</strong>
             </div>
             <div className="metric-box">
               <small>Manipulation Risk</small>
-              <strong className={overview.manipulationRisk > 50 ? 'text-danger' : 'text-success'}>
-                {overview.manipulationRisk ?? '—'}%
+              <strong className={!Number.isFinite(overview.manipulationRisk) ? 'text-muted' : overview.manipulationRisk > 50 ? 'text-danger' : 'text-success'}>
+                {overview.manipulationRisk == null ? 'UNAVAILABLE' : `${overview.manipulationRisk}%`}
               </strong>
             </div>
             <div className="metric-box">
               <small>Liquidity Quality</small>
-              <strong>{overview.liquidityQuality ?? '—'}/100</strong>
+              <strong>{overview.liquidityQuality == null ? 'UNAVAILABLE' : `${overview.liquidityQuality}/100`}</strong>
             </div>
             <div className="metric-box" title="Streamflow Vesting & Contract Distribution Provenance">
               <small>Organic Buyer Ratio</small>
               <strong className={buyerQuality.organicBuyerRatio != null ? (buyerQuality.organicBuyerRatio >= 0.75 ? 'text-success' : buyerQuality.organicBuyerRatio >= 0.45 ? 'text-warning' : 'text-danger') : ''}>
-                {buyerQuality.organicBuyerRatio != null ? `${Math.round(buyerQuality.organicBuyerRatio * 100)}%` : `${Math.round((initialData?.organicBuyerRatio ?? 0.82) * 100)}%`}
+                {Number.isFinite(buyerQuality.organicBuyerRatio) ? `${Math.round(buyerQuality.organicBuyerRatio * 100)}%` : Number.isFinite(initialData?.organicBuyerRatio) ? `${Math.round(initialData.organicBuyerRatio * 100)}%` : 'UNAVAILABLE'}
               </strong>
               <small style={{ fontSize: '10px', color: '#8E95A5', display: 'block', marginTop: '2px' }}>
-                Vesting: {holderQuality.streamflowVestingCount ?? initialData?.streamflowVestingCount ?? 0} wallets
+                Vesting: {holderQuality.streamflowVestingCount ?? initialData?.streamflowVestingCount ?? 'UNAVAILABLE'}{holderQuality.streamflowVestingCount != null || initialData?.streamflowVestingCount != null ? ' wallets' : ''}
               </small>
             </div>
             <div className="metric-box" title="Macro Yield Hurdle (Exponent / Lulo Benchmark)">
               <small>Yield Hurdle Rate</small>
               <strong style={{ color: '#83c5e6' }}>
-                {capitalRegime.lowerRiskOpportunityCostAprPct != null ? `${capitalRegime.lowerRiskOpportunityCostAprPct}% APR` : `${initialData?.macroHurdleAprPct ?? 9.5}% APR`}
+                {capitalRegime.lowerRiskOpportunityCostAprPct != null ? `${capitalRegime.lowerRiskOpportunityCostAprPct}% APR` : Number.isFinite(initialData?.macroHurdleAprPct) ? `${initialData.macroHurdleAprPct}% APR` : 'UNAVAILABLE'}
               </strong>
               <small style={{ fontSize: '10px', color: '#8E95A5', display: 'block', marginTop: '2px' }}>
-                Regime: {capitalRegime.regimeState || 'BALANCED'}
+                Regime: {capitalRegime.regimeState || 'UNKNOWN'}
               </small>
             </div>
           </div>
@@ -457,17 +488,17 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
           {/* Special States (Section LXXVII) */}
           <div className="special-states-bar">
             <small>CORE STATUS:</small>
-            <span className={specialStates.solarCoreEligible ? 'badge-active' : 'badge-inactive'}>
-              Solar Core: {specialStates.solarCoreEligible ? 'ELIGIBLE' : 'INELIGIBLE'}
+            <span className={specialStates.solarCoreEligible === true ? 'badge-active' : 'badge-inactive'}>
+              Solar Core: {reportedBoolean(specialStates.solarCoreEligible, 'ELIGIBLE', 'INELIGIBLE')}
             </span>
-            <span className={specialStates.diamondCoreEligible ? 'badge-active' : 'badge-inactive'}>
-              Diamond Core: {specialStates.diamondCoreEligible ? 'ACTIVE' : 'INACTIVE'}
+            <span className={specialStates.diamondCoreEligible === true ? 'badge-active' : 'badge-inactive'}>
+              Diamond Core: {reportedBoolean(specialStates.diamondCoreEligible, 'ACTIVE', 'INACTIVE')}
             </span>
-            <span className={specialStates.podProtectionActive ? 'badge-warn' : 'badge-inactive'}>
-              PoD Protection: {specialStates.podProtectionActive ? 'TRIGGERED' : 'CLEAR'}
+            <span className={specialStates.podProtectionActive == null ? 'badge-inactive' : specialStates.podProtectionActive ? 'badge-warn' : 'badge-inactive'}>
+              PoD Protection: {reportedBoolean(specialStates.podProtectionActive, 'TRIGGERED', 'NOT TRIGGERED')}
             </span>
-            <span className={specialStates.safeStateVerified ? 'badge-active' : 'badge-inactive'}>
-              Safe Verified: {specialStates.safeStateVerified ? 'YES' : 'NO'}
+            <span className={specialStates.safeStateVerified === true ? 'badge-active' : 'badge-inactive'}>
+              Safe Verified: {reportedBoolean(specialStates.safeStateVerified)}
             </span>
           </div>
         </div>
@@ -479,11 +510,7 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
           <div className="forensics-section">
             <h4 style={{ color: 'var(--good)' }}><CheckCircle2 size={15} /> 1. WHY? (EVIDENCE SUPPORTING CURRENT STATE)</h4>
             <ul>
-              {(blueprintTelemetry?.forensics?.why?.length ? blueprintTelemetry.forensics.why : (decisionExplanation.why || [
-                'Structural safety invariants verified intact (no mint/freeze backdoor).',
-                'Market authenticity supported by active bonding curve trading.',
-                'Execution quotes verified with acceptable price impact.',
-              ])).map((item, idx) => (
+              {(blueprintTelemetry?.forensics?.why?.length ? blueprintTelemetry.forensics.why : (Array.isArray(decisionExplanation.why) ? decisionExplanation.why : ['No source-supplied supporting rationale.'])).map((item, idx) => (
                 <li key={idx}>{item}</li>
               ))}
             </ul>
@@ -494,9 +521,7 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
               <XCircle size={15} /> 2. WHY NOT? (GATES / DISQUALIFIERS)
             </h4>
             <ul>
-              {(blueprintTelemetry?.forensics?.whyNot?.length ? blueprintTelemetry.forensics.whyNot : [
-                'Zero hard gating blockers present. All non-negotiable safety gates passed.',
-              ]).map((item, idx) => (
+              {(blueprintTelemetry?.forensics?.whyNot?.length ? blueprintTelemetry.forensics.whyNot : ['No source-supplied gate or disqualifier summary.']).map((item, idx) => (
                 <li key={idx} className={blueprintTelemetry?.forensics?.whyNot?.length ? 'text-danger' : ''}>{item}</li>
               ))}
             </ul>
@@ -505,9 +530,7 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
           <div className="forensics-section">
             <h4 style={{ color: 'var(--cyan)' }}><Clock size={15} /> 3. WHAT CHANGED? (STATE TRANSITION DELTA)</h4>
             <ul>
-              {(blueprintTelemetry?.forensics?.whatChanged?.length ? blueprintTelemetry.forensics.whatChanged : [
-                'State epoch incremented; fresh market observations reconciled without anomaly.',
-              ]).map((item, idx) => (
+              {(blueprintTelemetry?.forensics?.whatChanged?.length ? blueprintTelemetry.forensics.whatChanged : ['No prior-state comparison was supplied.']).map((item, idx) => (
                 <li key={idx}>{item}</li>
               ))}
             </ul>
@@ -516,9 +539,7 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
           <div className="forensics-section">
             <h4 style={{ color: 'var(--warn)' }}><ShieldCheck size={15} /> 4. WHY STILL VALID? (THESIS RESILIENCE)</h4>
             <ul>
-              {(blueprintTelemetry?.forensics?.whyStillValid?.length ? blueprintTelemetry.forensics.whyStillValid : [
-                'Thesis remains justified: independent capital flows and liquidity depth support continuous holding.',
-              ]).map((item, idx) => (
+              {(blueprintTelemetry?.forensics?.whyStillValid?.length ? blueprintTelemetry.forensics.whyStillValid : ['No source-supplied thesis resilience evidence.']).map((item, idx) => (
                 <li key={idx}>{item}</li>
               ))}
             </ul>
@@ -528,8 +549,8 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
           <div className="forensics-section mt-4 pt-4 border-t border-[#1f2937]">
             <h4 style={{ color: 'var(--cyan)' }}><Clock size={15} /> DECISION PIPELINE &amp; TEMPORAL TRANSITIONS</h4>
             <DecisionTimeline
-              currentStage={overview?.disposition === 'REJECTED' || specialStates?.podProtectionActive ? 'GATED' : overview?.confidenceScore > 75 ? 'EVALUATED' : 'SCREENED'}
-              evaluatedAt={data?.timestamp || Date.now()}
+              currentStage={['OBSERVED', 'SCREENED', 'EVALUATED', 'GATED', 'SETTLED'].includes(overview?.currentStage) ? overview.currentStage : null}
+              evaluatedAt={data?.timestamp ?? overview?.evaluatedAt ?? null}
             />
           </div>
         </div>
@@ -550,7 +571,7 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
               <strong className={blueprintTelemetry?.proof?.structuralValid === true ? 'text-good' : blueprintTelemetry?.proof?.structuralValid === false ? 'text-danger' : 'text-warning'}>
                 {blueprintTelemetry?.proof?.structuralValid === true ? 'PASSED (1/3)' : blueprintTelemetry?.proof?.structuralValid === false ? 'FAILED' : 'UNVERIFIED'}
               </strong>
-              <small style={{ marginTop: '3px' }}>Mint &amp; Freeze: Revoked<br/>Token-2022: Safe</small>
+              <small style={{ marginTop: '3px' }}>Certificate detail not included in this projection.</small>
             </div>
 
             <div className={`cert-card ${blueprintTelemetry?.proof?.marketValid === true ? 'cert-pass' : blueprintTelemetry?.proof?.marketValid === false ? 'cert-fail' : 'cert-unknown'}`}>
@@ -558,7 +579,7 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
               <strong className={blueprintTelemetry?.proof?.marketValid === true ? 'text-good' : blueprintTelemetry?.proof?.marketValid === false ? 'text-danger' : 'text-warning'}>
                 {blueprintTelemetry?.proof?.marketValid === true ? 'PASSED (2/3)' : blueprintTelemetry?.proof?.marketValid === false ? 'FAILED' : 'UNVERIFIED'}
               </strong>
-              <small style={{ marginTop: '3px' }}>Actors: Independent<br/>Wash Trading: Bounded</small>
+              <small style={{ marginTop: '3px' }}>Certificate detail not included in this projection.</small>
             </div>
 
             <div className={`cert-card ${blueprintTelemetry?.proof?.executionValid === true ? 'cert-pass' : blueprintTelemetry?.proof?.executionValid === false ? 'cert-fail' : 'cert-unknown'}`}>
@@ -566,7 +587,7 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
               <strong className={blueprintTelemetry?.proof?.executionValid === true ? 'text-good' : blueprintTelemetry?.proof?.executionValid === false ? 'text-danger' : 'text-warning'}>
                 {blueprintTelemetry?.proof?.executionValid === true ? 'PASSED (3/3)' : blueprintTelemetry?.proof?.executionValid === false ? 'FAILED' : 'UNVERIFIED'}
               </strong>
-              <small style={{ marginTop: '3px' }}>Round-trip: Valid<br/>Exit Depth: Verified</small>
+              <small style={{ marginTop: '3px' }}>Certificate detail not included in this projection.</small>
             </div>
           </div>
 
@@ -599,7 +620,7 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
             </div>
             <div className="metric-box">
               <small>Safety Kernel</small>
-              <strong className={blueprintTelemetry?.proof?.executionValid === true ? 'text-good' : 'text-warning'}>{blueprintTelemetry?.proof?.executionValid === true ? 'PERMITTED' : 'UNVERIFIED'}</strong>
+              <strong className={blueprintTelemetry?.proof?.executionValid === true ? 'text-good' : 'text-warning'}>{blueprintTelemetry?.proof?.executionValid === true ? 'PROOF PASSED' : blueprintTelemetry?.proof?.executionValid === false ? 'PROOF FAILED' : 'UNVERIFIED'}</strong>
             </div>
           </div>
         </div>
@@ -608,7 +629,7 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
         <div className="inspector-content explanation-panel">
           <div className="explanation-section">
             <h4><Info size={16} /> WHAT DOES SYLPH BELIEVE?</h4>
-            <p className="belief-text">{decisionExplanation.whatSylphBelieves || 'Formulating hypothesis…'}</p>
+            <p className="belief-text">{decisionExplanation.whatSylphBelieves || 'UNAVAILABLE — no source-provided explanation'}</p>
           </div>
 
           <div className="explanation-section">
@@ -654,7 +675,7 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
         <div className="inspector-content capital-authority-panel">
           <div className="panel-sub-header">
             <h4><Lock size={15} /> CAPITAL AUTHORITY, VAULT CUSTODY & INVARIANTS</h4>
-            <span className="badge-pill cap-good">{capitalAuthority?.authorityMode || 'A5 NORMAL'}</span>
+            <span className="badge-pill cap-warn">{capitalAuthority?.authorityMode || 'UNKNOWN'}</span>
           </div>
 
           <p className="blueprint-tab-desc">
@@ -665,35 +686,35 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
           <div className="grid-metrics">
             <div className="metric-box">
               <small>Authority Mode (Part LXXI)</small>
-              <strong className="cap-cyan">{capitalAuthority?.authorityMode || 'A5 NORMAL'}</strong>
+              <strong className="cap-cyan">{capitalAuthority?.authorityMode || 'UNKNOWN'}</strong>
             </div>
             <div className="metric-box">
               <small>Capital Truth (Part II)</small>
-              <strong className="cap-good">{capitalAuthority?.capitalStatus || 'VERIFIED'}</strong>
+              <strong className={capitalAuthority?.capitalStatus === 'VERIFIED' ? 'cap-good' : 'cap-warn'}>{capitalAuthority?.capitalStatus || 'UNKNOWN'}</strong>
             </div>
             <div className="metric-box">
               <small>Confirmed Cash</small>
-              <strong>{capitalAuthority?.assuranceDeep?.confirmedCapitalSol ?? 50} SOL</strong>
+              <strong>{capitalAuthority?.assuranceDeep?.confirmedCapitalSol ?? 'UNAVAILABLE'}{capitalAuthority?.assuranceDeep?.confirmedCapitalSol != null ? ' SOL' : ''}</strong>
             </div>
             <div className="metric-box">
               <small>Reserved Cash</small>
-              <strong>{capitalAuthority?.assuranceDeep?.reservedCapitalSol ?? 0} SOL</strong>
+              <strong>{capitalAuthority?.assuranceDeep?.reservedCapitalSol ?? 'UNAVAILABLE'}{capitalAuthority?.assuranceDeep?.reservedCapitalSol != null ? ' SOL' : ''}</strong>
             </div>
             <div className="metric-box">
               <small>Emergency Reserve (Zone 0)</small>
-              <strong className="cap-good">{capitalAuthority?.assuranceDeep?.emergencyReserveSol ?? 5} SOL</strong>
+              <strong className="cap-cyan">{capitalAuthority?.assuranceDeep?.emergencyReserveSol ?? 'UNAVAILABLE'}{capitalAuthority?.assuranceDeep?.emergencyReserveSol != null ? ' SOL' : ''}</strong>
             </div>
             <div className="metric-box">
               <small>Max Blast Radius / TX</small>
-              <strong className="cap-cyan">{capitalAuthority?.assuranceDeep?.maxBlastRadiusSol ?? 2.5} SOL</strong>
+              <strong className="cap-cyan">{capitalAuthority?.assuranceDeep?.maxBlastRadiusSol ?? 'UNAVAILABLE'}{capitalAuthority?.assuranceDeep?.maxBlastRadiusSol != null ? ' SOL' : ''}</strong>
             </div>
             <div className="metric-box">
               <small>Max Compromise Loss</small>
-              <strong className="cap-warn">{capitalAuthority?.assuranceDeep?.maxCompromiseLossSol ?? 25} SOL</strong>
+              <strong className="cap-warn">{capitalAuthority?.assuranceDeep?.maxCompromiseLossSol ?? 'UNAVAILABLE'}{capitalAuthority?.assuranceDeep?.maxCompromiseLossSol != null ? ' SOL' : ''}</strong>
             </div>
             <div className="metric-box">
               <small>Revocation Epoch / Priority</small>
-              <strong>Epoch {capitalAuthority?.signingGate?.revocationEpoch ?? 1} ({capitalAuthority?.revocationPriority || 'R0'})</strong>
+              <strong>Epoch {capitalAuthority?.signingGate?.revocationEpoch ?? 'UNKNOWN'} ({capitalAuthority?.revocationPriority || 'UNKNOWN'})</strong>
             </div>
           </div>
 
@@ -702,11 +723,11 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
               <ShieldCheck size={14} /> ATOMIC SIGNATURE GATE & FORMAL INVARIANTS
             </h5>
             <div className="signing-gate-detail-row">
-              <span>Gate Status: <b>{capitalAuthority?.signingGate?.gateReady ? 'READY' : 'HELD'}</b></span>
-              <span>Reservation: <b>{capitalAuthority?.signingGate?.reservationPass ? 'VALIDATED' : 'MISSING'}</b></span>
-              <span>Control Epoch: <b>{capitalAuthority?.signingGate?.controlEpoch ?? 1}</b></span>
-              <span>Revocation Epoch: <b>{capitalAuthority?.signingGate?.revocationEpoch ?? 1}</b></span>
-              <span>Vault Signer: <b className="cap-good">{capitalAuthority?.vaultArmed ? 'ARMED (Zone 0)' : 'LOCKED'}</b></span>
+              <span>Gate Status: <b>{capitalAuthority?.signingGate?.gateReady == null ? 'UNKNOWN' : capitalAuthority.signingGate.gateReady ? 'READY' : 'HELD'}</b></span>
+              <span>Reservation: <b>{capitalAuthority?.signingGate?.reservationPass == null ? 'UNKNOWN' : capitalAuthority.signingGate.reservationPass ? 'VALIDATED' : 'MISSING'}</b></span>
+              <span>Control Epoch: <b>{capitalAuthority?.signingGate?.controlEpoch ?? 'UNKNOWN'}</b></span>
+              <span>Revocation Epoch: <b>{capitalAuthority?.signingGate?.revocationEpoch ?? 'UNKNOWN'}</b></span>
+              <span>Vault Signer: <b className={capitalAuthority?.vaultArmed == null ? 'cap-warn' : capitalAuthority.vaultArmed ? 'cap-good' : ''}>{capitalAuthority?.vaultArmed == null ? 'UNKNOWN' : capitalAuthority.vaultArmed ? 'ARMED (Zone 0)' : 'LOCKED'}</b></span>
             </div>
             <div style={{ marginTop: '8px', fontSize: '11px', color: '#94a3b8' }}>
               <strong>State Root:</strong> <code>{capitalAuthority?.assuranceDeep?.capitalStateRoot || '—'}</code>
@@ -720,7 +741,7 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
         <div className="inspector-content survival-evacuation-panel">
           <div className="panel-sub-header">
             <h4><Activity size={15} /> POSITION SURVIVAL CORE & PORTFOLIO EVACUATION SOLVER</h4>
-            <span className="badge-pill cap-good">{capitalAuthority?.survivalHealth || 'HEALTHY'}</span>
+            <span className="badge-pill cap-warn">{capitalAuthority?.survivalHealth || 'UNKNOWN'}</span>
           </div>
 
           <p className="blueprint-tab-desc">
@@ -731,45 +752,37 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
           <div className="grid-metrics">
             <div className="metric-box">
               <small>Exit Proof Ladder</small>
-              <strong className="cap-cyan">{capitalAuthority?.positionSurvival?.exitProofLevel || 'E5'}</strong>
+              <strong className="cap-cyan">{capitalAuthority?.positionSurvival?.exitProofLevel || 'UNKNOWN'}</strong>
             </div>
             <div className="metric-box">
               <small>Normal Exit Coverage</small>
-              <strong className="cap-good">{capitalAuthority?.exitCoveragePct ?? 100}%</strong>
+              <strong className="cap-cyan">{capitalAuthority?.exitCoveragePct ?? 'UNAVAILABLE'}{capitalAuthority?.exitCoveragePct != null ? '%' : ''}</strong>
             </div>
             <div className="metric-box">
               <small>Stressed Exit Coverage</small>
-              <strong className="cap-cyan">{capitalAuthority?.stressedCoveragePct ?? 82}%</strong>
+              <strong className="cap-cyan">{capitalAuthority?.stressedCoveragePct ?? 'UNAVAILABLE'}{capitalAuthority?.stressedCoveragePct != null ? '%' : ''}</strong>
             </div>
             <div className="metric-box">
               <small>Portfolio Evac Time</small>
-              <strong>{capitalAuthority?.positionSurvival?.timeToEvacuateSec ?? 3.2}s</strong>
+              <strong>{capitalAuthority?.positionSurvival?.timeToEvacuateSec ?? 'UNAVAILABLE'}{capitalAuthority?.positionSurvival?.timeToEvacuateSec != null ? 's' : ''}</strong>
             </div>
             <div className="metric-box">
-              <small>Partial Exit Proofs Tested</small>
-              <strong className="cap-good">25% · 50% · 75% · 100%</strong>
+              <small>Reported Tranche Sizes</small>
+              <strong className="cap-cyan">{Array.isArray(capitalAuthority?.positionSurvival?.partialExitTested) && capitalAuthority.positionSurvival.partialExitTested.length ? capitalAuthority.positionSurvival.partialExitTested.map((pct) => `${pct}%`).join(' · ') : 'UNAVAILABLE'}</strong>
             </div>
             <div className="metric-box">
               <small>Epistemic Proof Debt</small>
-              <strong className={Number(capitalAuthority?.assuranceDeep?.proofDebtScore || 0) > 10 ? 'cap-warn' : 'cap-good'}>
-                {capitalAuthority?.assuranceDeep?.proofDebtScore ?? 0}
+              <strong className={capitalAuthority?.assuranceDeep?.proofDebtScore == null ? 'cap-warn' : Number(capitalAuthority.assuranceDeep.proofDebtScore) > 10 ? 'cap-warn' : 'cap-good'}>
+                {capitalAuthority?.assuranceDeep?.proofDebtScore ?? 'UNAVAILABLE'}
               </strong>
             </div>
           </div>
 
           <div className="card-box" style={{ marginTop: '12px' }}>
             <h5 style={{ margin: '0 0 8px 0', color: '#38bdf8', fontSize: '11px' }}>
-              PARTIAL TRANCHE LIQUIDATION VERIFICATION (Part XXIV)
+              PARTIAL TRANCHE EVIDENCE (Part XXIV)
             </h5>
-            <div className="partial-exit-grid">
-              {[25, 50, 75, 100].map((pct) => (
-                <div key={pct} className="tranche-card">
-                  <small>Tranche {pct}%</small>
-                  <b>VERIFIED</b>
-                  <span>Impact: &lt;1.8%</span>
-                </div>
-              ))}
-            </div>
+            <p className="text-muted text-xs">The field above lists reported tranche sizes. Per-tranche test results and market impact measurements are unavailable in this projection.</p>
           </div>
         </div>
       )}
@@ -778,31 +791,31 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
       {activeTab === 'forecast' && (
         <div className="inspector-content forecast-panel">
           <h4>Multi-Horizon Probabilistic Return Distribution</h4>
-          <p className="panel-sub">Point-in-time calibrated estimates; not deterministic guarantees.</p>
+          <p className="panel-sub">Research estimates only. Missing forecasts remain unavailable; empirical calibration is not established.</p>
           <div className="forecast-grid">
             <div className="forecast-row">
               <span>+10% within 30s</span>
-              <strong>{Math.round((forecast.p10Return30s || 0) * 100)}%</strong>
+              <strong>{Number.isFinite(forecast.p10Return30s) ? `${Math.round(forecast.p10Return30s * 100)}%` : 'UNAVAILABLE'}</strong>
             </div>
             <div className="forecast-row">
               <span>+20% within 1m</span>
-              <strong>{Math.round((forecast.p20Return1m || 0) * 100)}%</strong>
+              <strong>{Number.isFinite(forecast.p20Return1m) ? `${Math.round(forecast.p20Return1m * 100)}%` : 'UNAVAILABLE'}</strong>
             </div>
             <div className="forecast-row">
               <span>+50% within 5m</span>
-              <strong>{Math.round((forecast.p50Return5m || 0) * 100)}%</strong>
+              <strong>{Number.isFinite(forecast.p50Return5m) ? `${Math.round(forecast.p50Return5m * 100)}%` : 'UNAVAILABLE'}</strong>
             </div>
             <div className="forecast-row">
               <span>+100% within 15m</span>
-              <strong>{Math.round((forecast.p100Return15m || 0) * 100)}%</strong>
+              <strong>{Number.isFinite(forecast.p100Return15m) ? `${Math.round(forecast.p100Return15m * 100)}%` : 'UNAVAILABLE'}</strong>
             </div>
             <div className="forecast-row danger-row">
               <span>-20% within 1m</span>
-              <strong>{Math.round((forecast.pMinus20Return1m || 0) * 100)}%</strong>
+              <strong>{Number.isFinite(forecast.pMinus20Return1m) ? `${Math.round(forecast.pMinus20Return1m * 100)}%` : 'UNAVAILABLE'}</strong>
             </div>
             <div className="forecast-row danger-row">
               <span>-50% within 5m</span>
-              <strong>{Math.round((forecast.pMinus50Return5m || 0) * 100)}%</strong>
+              <strong>{Number.isFinite(forecast.pMinus50Return5m) ? `${Math.round(forecast.pMinus50Return5m * 100)}%` : 'UNAVAILABLE'}</strong>
             </div>
           </div>
 
@@ -810,19 +823,19 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
           <div className="forecast-grid">
             <div className="forecast-row">
               <span>Survive 15m</span>
-              <strong className="text-success">{Math.round((forecast.pSurvive15m || 0) * 100)}%</strong>
+              <strong className="text-muted">{Number.isFinite(forecast.pSurvive15m) ? `${Math.round(forecast.pSurvive15m * 100)}%` : 'UNAVAILABLE'}</strong>
             </div>
             <div className="forecast-row">
               <span>Survive 1h</span>
-              <strong>{Math.round((forecast.pSurvive1h || 0) * 100)}%</strong>
+              <strong>{Number.isFinite(forecast.pSurvive1h) ? `${Math.round(forecast.pSurvive1h * 100)}%` : 'UNAVAILABLE'}</strong>
             </div>
             <div className="forecast-row">
               <span>Survive 24h</span>
-              <strong>{Math.round((forecast.pSurvive24h || 0) * 100)}%</strong>
+              <strong>{Number.isFinite(forecast.pSurvive24h) ? `${Math.round(forecast.pSurvive24h * 100)}%` : 'UNAVAILABLE'}</strong>
             </div>
             <div className="forecast-row">
               <span>Collapse Hazard</span>
-              <strong className={forecast.collapseHazard > 40 ? 'text-danger' : 'text-success'}>
+              <strong className={!Number.isFinite(forecast.collapseHazard) ? 'text-muted' : forecast.collapseHazard > 40 ? 'text-danger' : 'text-success'}>
                 {forecast.collapseHazard ?? '—'}%
               </strong>
             </div>
@@ -844,8 +857,8 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
             </div>
             <div className="summary-card">
               <small>Coordination Score</small>
-              <strong className={walletEntity.coordinationScore > 0.6 ? 'text-danger' : 'text-success'}>
-                {(walletEntity.coordinationScore ?? 0).toFixed(2)}
+              <strong className={!Number.isFinite(walletEntity.coordinationScore) ? 'text-muted' : walletEntity.coordinationScore > 0.6 ? 'text-danger' : 'text-success'}>
+                {Number.isFinite(walletEntity.coordinationScore) ? walletEntity.coordinationScore.toFixed(2) : 'UNAVAILABLE'}
               </strong>
             </div>
             <div className="summary-card">
@@ -856,14 +869,16 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
 
           <div className="entity-cluster-detail">
             <h4>Suspected Sybil &amp; Timing Coordination</h4>
-            <p className={walletEntity.suspectedCoordination ? 'text-danger font-semibold' : 'text-success'}>
-              {walletEntity.suspectedCoordination
-                ? 'High probability of programmatic wallet coordination / wash generation detected.'
-                : 'No anomalous microsecond timing clusters or uniform trade sizes detected.'}
+            <p className={walletEntity.suspectedCoordination === true ? 'text-danger font-semibold' : walletEntity.suspectedCoordination === false ? 'text-success' : 'text-muted'}>
+              {walletEntity.suspectedCoordination === true
+                ? 'Programmatic wallet coordination or wash generation is flagged by the source.'
+                : walletEntity.suspectedCoordination === false
+                  ? 'The source reports no coordination flag; this does not establish that coordination is absent.'
+                  : 'Coordination assessment unavailable.'}
             </p>
             <p className="text-xs text-muted mt-1">
-              Top Whale Concentration: {walletEntity.whaleParticipationPct ?? 0}% · Funding Ancestry Overlap:{' '}
-              {walletEntity.sharedFundingAncestry ? 'YES (common ancestor)' : 'NO'}
+              Top Whale Concentration: {walletEntity.whaleParticipationPct ?? 'UNAVAILABLE'}{walletEntity.whaleParticipationPct != null ? '%' : ''} · Funding Ancestry Overlap:{' '}
+              {walletEntity.sharedFundingAncestry == null ? 'UNKNOWN' : walletEntity.sharedFundingAncestry ? 'YES (common ancestor)' : 'NO FLAG REPORTED'}
             </p>
           </div>
         </div>
@@ -877,7 +892,7 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
             <p className="font-semibold text-accent">{council.primaryThesis || 'No thesis'}</p>
             <div className="council-opposition mt-2">
               <small className="text-muted">STRONGEST OPPOSITION / SKEPTIC CHALLENGE:</small>
-              <p className="text-warning">{council.strongestOpposition || 'None'}</p>
+              <p className="text-warning">{council.strongestOpposition || 'UNAVAILABLE'}</p>
             </div>
             {council.minorityReport && (
               <div className="minority-box mt-2">
@@ -887,9 +902,9 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
             )}
             <div className="council-confidence mt-2">
               <small>Council Confidence: </small>
-              <b>{council.councilConfidence ?? 0}%</b> · Disagreement:{' '}
-              <b className={council.materialDisagreement ? 'text-warning' : 'text-success'}>
-                {council.materialDisagreement ? 'DETECTED' : 'RESOLVED'}
+              <b>{council.councilConfidence ?? 'UNAVAILABLE'}{council.councilConfidence != null ? '%' : ''}</b> · Disagreement:{' '}
+              <b className={council.materialDisagreement == null ? 'text-muted' : council.materialDisagreement ? 'text-warning' : 'text-success'}>
+                {council.materialDisagreement == null ? 'UNKNOWN' : council.materialDisagreement ? 'DETECTED' : 'NO DISAGREEMENT FLAG REPORTED'}
               </b>
             </div>
           </div>
@@ -926,14 +941,14 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
             <dt>Funder Ancestor:</dt>
             <dd className="font-mono text-xs">{knowledgeGraph.funderAddress || '—'}</dd>
             <dt>Historical Deployments:</dt>
-            <dd>{knowledgeGraph.historicalLaunchesCount ?? 0} launches</dd>
+            <dd>{knowledgeGraph.historicalLaunchesCount ?? 'UNAVAILABLE'}{knowledgeGraph.historicalLaunchesCount != null ? ' launches' : ''}</dd>
             <dt>Past RUG / Collapse Count:</dt>
             <dd className={knowledgeGraph.pastRugsCount > 0 ? 'text-danger font-bold' : ''}>
-              {knowledgeGraph.pastRugsCount ?? 0}
+              {knowledgeGraph.pastRugsCount ?? 'UNAVAILABLE'}
             </dd>
             <dt>Serial Rugger Flag:</dt>
-            <dd className={knowledgeGraph.isSerialRugger ? 'text-danger font-bold' : 'text-success'}>
-              {knowledgeGraph.isSerialRugger ? 'CRITICAL RISK (SERIAL RUGGER)' : 'CLEAN'}
+            <dd className={knowledgeGraph.isSerialRugger == null ? 'text-muted' : knowledgeGraph.isSerialRugger ? 'text-danger font-bold' : 'text-success'}>
+              {knowledgeGraph.isSerialRugger == null ? 'UNKNOWN' : knowledgeGraph.isSerialRugger ? 'SOURCE REPORTS SERIAL-RUGGER FLAG' : 'NO SERIAL-RUGGER FLAG REPORTED'}
             </dd>
           </dl>
 
@@ -972,25 +987,25 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
             </div>
             <div className="blueprint-card">
               <small>INDEPENDENT FAMILIES</small>
-              <strong className="text-good">{scout.effectiveIndependentFamilies ?? 1} family</strong>
+              <strong>{scout.effectiveIndependentFamilies ?? 'UNAVAILABLE'}{scout.effectiveIndependentFamilies != null ? ' families' : ''}</strong>
             </div>
             <div className="blueprint-card">
               <small>NET ACTION</small>
               <strong className={scout.netAction === 'ENTER' ? 'text-good' : scout.netAction === 'EXIT' ? 'text-danger' : ''}>
-                {scout.netAction || 'OBSERVE'}
+                {scout.netAction || 'UNAVAILABLE'}
               </strong>
             </div>
             <div className="blueprint-card">
               <small>NET SIZE</small>
-              <strong>{(scout.netSizeSol ?? 0).toFixed(2)} SOL</strong>
+              <strong>{Number.isFinite(scout.netSizeSol) ? `${scout.netSizeSol.toFixed(2)} SOL` : 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>CONSENSUS SCORE</small>
-              <strong className="text-cyan">{scout.consensusScore ?? 75}%</strong>
+              <strong className="text-cyan">{scout.consensusScore ?? 'UNAVAILABLE'}{scout.consensusScore != null ? '%' : ''}</strong>
             </div>
             <div className="blueprint-card">
               <small>REMAINING CAPACITY</small>
-              <strong>{(scout.remainingCapacitySol ?? 10).toFixed(1)} SOL</strong>
+              <strong>{Number.isFinite(scout.remainingCapacitySol) ? `${scout.remainingCapacitySol.toFixed(1)} SOL` : 'UNAVAILABLE'}</strong>
             </div>
           </div>
 
@@ -998,11 +1013,11 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
             <h4><Scale size={13} /> Internal Netting &amp; Virtual Strategy Books</h4>
             <dl className="blueprint-dl">
               <dt>Prevented DEX Round-Trip:</dt>
-              <dd className="text-good font-bold">{(scout.preventedRoundTripSol ?? 0).toFixed(2)} SOL (Internal Netting)</dd>
+              <dd>{Number.isFinite(scout.preventedRoundTripSol) ? `${scout.preventedRoundTripSol.toFixed(2)} SOL` : 'UNAVAILABLE'} (reported round-trip estimate)</dd>
               <dt>Supporting Strategies:</dt>
-              <dd>{scout.supportingStrategiesCount ?? 1} strategy intents</dd>
+              <dd>{scout.supportingStrategiesCount ?? 'UNAVAILABLE'}{scout.supportingStrategiesCount != null ? ' strategy intents' : ''}</dd>
               <dt>Opposing Strategies:</dt>
-              <dd>{scout.opposingStrategiesCount ?? 0} strategy intents</dd>
+              <dd>{scout.opposingStrategiesCount ?? 'UNAVAILABLE'}{scout.opposingStrategiesCount != null ? ' strategy intents' : ''}</dd>
               <dt>Conflict Engine:</dt>
               <dd className="text-good">Directional, horizon, &amp; capital conflicts resolved via multi-objective utility (No last-strategy-wins)</dd>
               <dt>Virtual Book Separation:</dt>
@@ -1024,29 +1039,29 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
           <div className="blueprint-grid">
             <div className="blueprint-card">
               <small>AVAILABLE CAPITAL</small>
-              <strong className="text-good">{(pathfinder.availableCapitalSol ?? 90).toFixed(1)} SOL</strong>
+              <strong>{Number.isFinite(pathfinder.availableCapitalSol) ? `${pathfinder.availableCapitalSol.toFixed(1)} SOL` : 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>DEPLOYED CAPITAL</small>
-              <strong>{(pathfinder.deployedCapitalSol ?? 5.5).toFixed(1)} SOL</strong>
+              <strong>{Number.isFinite(pathfinder.deployedCapitalSol) ? `${pathfinder.deployedCapitalSol.toFixed(1)} SOL` : 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
-              <small>AUTHORIZED SIZE</small>
-              <strong className="text-good">{(pathfinder.authorizedSizeSol ?? 0.5).toFixed(2)} SOL</strong>
+              <small>REPORTED PLANNING SIZE</small>
+              <strong>{typeof pathfinder.authorizedSizeSol === 'number' && Number.isFinite(pathfinder.authorizedSizeSol) ? `${pathfinder.authorizedSizeSol.toFixed(2)} SOL` : 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>OPTIONALITY SCORE</small>
-              <strong className="text-cyan">{Math.round((pathfinder.optionalityScore ?? 0.85) * 100)}/100</strong>
+              <strong className="text-cyan">{Number.isFinite(pathfinder.optionalityScore) ? `${Math.round(pathfinder.optionalityScore * 100)}/100` : 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>TRAPPING RISK</small>
-              <strong className={(pathfinder.trappingScore ?? 0.15) > 0.4 ? 'text-danger' : 'text-good'}>
-                {Math.round((pathfinder.trappingScore ?? 0.15) * 100)}%
+              <strong className={!Number.isFinite(pathfinder.trappingScore) ? 'text-muted' : pathfinder.trappingScore > 0.4 ? 'text-danger' : 'text-success'}>
+                {Number.isFinite(pathfinder.trappingScore) ? `${Math.round(pathfinder.trappingScore * 100)}%` : 'UNAVAILABLE'}
               </strong>
             </div>
             <div className="blueprint-card">
               <small>EXIT DEPTH</small>
-              <strong>{(pathfinder.exitLiquidityDepthSol ?? 45).toFixed(1)} SOL</strong>
+              <strong>{Number.isFinite(pathfinder.exitLiquidityDepthSol) ? `${pathfinder.exitLiquidityDepthSol.toFixed(1)} SOL` : 'UNAVAILABLE'}</strong>
             </div>
           </div>
 
@@ -1057,12 +1072,12 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
               <i>&rarr;</i>
               <span>EVALUATE HORIZONS</span>
               <i>&rarr;</i>
-              <span>AUTHORIZE IMMEDIATE ({(pathfinder.authorizedSizeSol ?? 0.5).toFixed(2)} SOL)</span>
+              <span>RESEARCH-ONLY SIZE ({typeof pathfinder.authorizedSizeSol === 'number' && Number.isFinite(pathfinder.authorizedSizeSol) ? `${pathfinder.authorizedSizeSol.toFixed(2)} SOL` : 'UNAVAILABLE'})</span>
               <i>&rarr;</i>
               <span>RECALCULATE NEXT TICK</span>
             </div>
             <p className="text-muted text-xs mt-2" style={{ margin: '8px 0 0 0' }}>
-              PATHFINDER authorizes only the immediate action. Future capital release curves are modeled with uncertainty and never treated as guaranteed.
+              This planning view does not authorize a transaction. Future capital release curves require source evidence and remain uncertain.
             </p>
           </div>
         </div>
@@ -1080,29 +1095,29 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
           <div className="blueprint-grid">
             <div className="blueprint-card">
               <small>MISSION MODE</small>
-              <strong className="text-cyan">{compass.missionMode || 'NORMAL'}</strong>
+              <strong className="text-cyan">{compass.missionMode || 'UNKNOWN'}</strong>
             </div>
             <div className="blueprint-card">
               <small>DECISION UTILITY</small>
-              <strong>{(compass.compositeUtilityScore ?? 0.72).toFixed(2)}</strong>
+              <strong>{Number.isFinite(compass.compositeUtilityScore) ? compass.compositeUtilityScore.toFixed(2) : 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>HARD CONSTRAINTS</small>
-              <strong className={compass.hardConstraintsPassed !== false ? 'text-good' : 'text-danger'}>
-                {compass.hardConstraintsPassed !== false ? 'SATISFIED' : 'BREACHED'}
+              <strong className={compass.hardConstraintsPassed == null ? 'text-muted' : compass.hardConstraintsPassed ? 'text-success' : 'text-danger'}>
+                {compass.hardConstraintsPassed == null ? 'UNKNOWN' : compass.hardConstraintsPassed ? 'SATISFIED' : 'BREACHED'}
               </strong>
             </div>
             <div className="blueprint-card">
               <small>ACTION SCALING</small>
-              <strong>{(compass.recommendedActionScaling ?? 1.0).toFixed(2)}x</strong>
+              <strong>{Number.isFinite(compass.recommendedActionScaling) ? `${compass.recommendedActionScaling.toFixed(2)}x` : 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>CONSTITUTION</small>
-              <strong className="font-mono text-xs">{constitution.constitutionVersion || 'v1.0.0-CONST'}</strong>
+              <strong className="font-mono text-xs">{constitution.constitutionVersion || 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>ACTIVE POLICIES</small>
-              <strong>{constitution.activePoliciesCount ?? 7} layers</strong>
+              <strong>{constitution.activePoliciesCount ?? 'UNAVAILABLE'}{constitution.activePoliciesCount != null ? ' layers' : ''}</strong>
             </div>
           </div>
 
@@ -1125,11 +1140,11 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
             </div>
             <dl className="blueprint-dl mt-2" style={{ marginTop: '8px' }}>
               <dt>Authorized Modifier:</dt>
-              <dd className="font-mono text-xs">{constitution.authorizedModifier || 'SYSTEM_ROOT_MULTISIG'}</dd>
+              <dd className="font-mono text-xs">{constitution.authorizedModifier || 'UNAVAILABLE'}</dd>
               <dt>Authority Clamping:</dt>
               <dd className="text-good font-bold">STRICT: Subsystems may restrict/reduce authority, NEVER expand independently</dd>
               <dt>Mission Rationale:</dt>
-              <dd>{compass.rationale || 'Nominal operational bounds; balanced risk/edge optimization active.'}</dd>
+              <dd>{compass.rationale || 'UNAVAILABLE'}</dd>
             </dl>
           </div>
         </div>
@@ -1147,35 +1162,35 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
           <div className="blueprint-grid">
             <div className="blueprint-card">
               <small>SAFETY MARGIN</small>
-              <strong className={(guardian.overallMarginPct ?? 92) < 20 ? 'text-danger' : 'text-good'}>
-                {Math.round(guardian.overallMarginPct ?? 92)}%
+              <strong className={!Number.isFinite(guardian.overallMarginPct) ? 'text-muted' : guardian.overallMarginPct < 20 ? 'text-danger' : 'text-success'}>
+                {Number.isFinite(guardian.overallMarginPct) ? `${Math.round(guardian.overallMarginPct)}%` : 'UNAVAILABLE'}
               </strong>
             </div>
             <div className="blueprint-card">
               <small>CLOSEST BOUNDARY</small>
-              <strong className="text-cyan">{guardian.closestBoundary || 'FEED_AGE'}</strong>
+              <strong className="text-cyan">{guardian.closestBoundary || 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>MARGIN TREND</small>
-              <strong className={guardian.marginTrend === 'DEGRADING' ? 'text-warn' : 'text-good'}>
-                {guardian.marginTrend || 'STABLE'}
+              <strong className={guardian.marginTrend == null ? 'text-muted' : guardian.marginTrend === 'DEGRADING' ? 'text-warn' : 'text-good'}>
+                {guardian.marginTrend || 'UNAVAILABLE'}
               </strong>
             </div>
             <div className="blueprint-card">
               <small>SAFETY DEBT</small>
-              <strong className={(guardian.safetyDebtScore ?? 0) > 3 ? 'text-warn' : 'text-good'}>
-                {guardian.safetyDebtScore ?? 0}
+              <strong className={!Number.isFinite(guardian.safetyDebtScore) ? 'text-muted' : guardian.safetyDebtScore > 3 ? 'text-warn' : 'text-success'}>
+                {guardian.safetyDebtScore ?? 'UNAVAILABLE'}
               </strong>
             </div>
             <div className="blueprint-card">
               <small>RECOVERY STAGE</small>
-              <strong className={phoenix.currentStage === 'NORMAL' ? 'text-good' : 'text-danger'}>
-                {phoenix.currentStage || 'NORMAL'}
+              <strong className={phoenix.currentStage == null ? 'text-muted' : phoenix.currentStage === 'NORMAL' ? 'text-success' : 'text-danger'}>
+                {phoenix.currentStage || 'UNAVAILABLE'}
               </strong>
             </div>
             <div className="blueprint-card">
               <small>AUTHORITY EPOCH</small>
-              <strong className="font-mono">Epoch #{phoenix.authorityEpoch ?? 1}</strong>
+              <strong className="font-mono">Epoch #{phoenix.authorityEpoch ?? 'UNAVAILABLE'}</strong>
             </div>
           </div>
 
@@ -1183,17 +1198,17 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
             <h4><Activity size={13} /> Defense-in-Depth &amp; Reconstitution Sequence</h4>
             <dl className="blueprint-dl">
               <dt>Barrier Erosion:</dt>
-              <dd className={guardian.barrierErosionDetected ? 'text-danger font-bold' : 'text-good'}>
-                {guardian.barrierErosionDetected ? 'EROSION DETECTED (INVESTIGATING)' : 'CLEAN &middot; All 6 Barriers Independent'}
+              <dd className={guardian.barrierErosionDetected == null ? 'text-muted' : guardian.barrierErosionDetected ? 'text-danger font-bold' : 'text-success'}>
+                {guardian.barrierErosionDetected == null ? 'UNKNOWN' : guardian.barrierErosionDetected ? 'EROSION DETECTED (INVESTIGATING)' : 'No erosion flag reported'}
               </dd>
               <dt>New Entries Permitted:</dt>
-              <dd className={phoenix.newEntriesPermitted !== false ? 'text-good' : 'text-danger font-bold'}>
-                {phoenix.newEntriesPermitted !== false ? 'AUTHORIZED' : 'BLOCKED (FAIL-CLOSED)'}
+              <dd className={phoenix.newEntriesPermitted == null ? 'text-muted' : phoenix.newEntriesPermitted ? 'text-success' : 'text-danger font-bold'}>
+                {phoenix.newEntriesPermitted == null ? 'UNKNOWN' : phoenix.newEntriesPermitted ? 'SOURCE REPORTS PERMITTED' : 'BLOCKED (SOURCE REPORT)'}
               </dd>
               <dt>Emergency Exits:</dt>
-              <dd className="text-good font-bold">{phoenix.emergencyExitsAvailable !== false ? 'AVAILABLE' : 'DEGRADED'}</dd>
+              <dd className={phoenix.emergencyExitsAvailable == null ? 'text-muted' : phoenix.emergencyExitsAvailable ? 'text-success' : 'text-danger'}>{phoenix.emergencyExitsAvailable == null ? 'UNKNOWN' : phoenix.emergencyExitsAvailable ? 'SOURCE REPORTS AVAILABLE' : 'DEGRADED (SOURCE REPORT)'}</dd>
               <dt>Recovery Watermark:</dt>
-              <dd className="font-mono text-xs">Chain Head Slot #{phoenix.chainHeadSlot || '250,000'}</dd>
+              <dd className="font-mono text-xs">Chain Head Slot #{phoenix.chainHeadSlot ?? 'UNAVAILABLE'}</dd>
             </dl>
           </div>
         </div>
@@ -1211,31 +1226,31 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
           <div className="blueprint-grid">
             <div className="blueprint-card">
               <small>ESTABLISHED KNOWLEDGE</small>
-              <strong className="text-good">{archimedes.establishedKnowledgeCount ?? 5} laws</strong>
+              <strong>{archimedes.establishedKnowledgeCount ?? 'UNAVAILABLE'}{archimedes.establishedKnowledgeCount != null ? ' laws' : ''}</strong>
             </div>
             <div className="blueprint-card">
               <small>OPEN QUESTIONS</small>
-              <strong>{archimedes.openQuestionsCount ?? 3} queued</strong>
+              <strong>{archimedes.openQuestionsCount ?? 'UNAVAILABLE'}{archimedes.openQuestionsCount != null ? ' queued' : ''}</strong>
             </div>
             <div className="blueprint-card">
               <small>APPLICABILITY</small>
-              <strong className={archimedes.applicabilityVerified !== false ? 'text-good' : 'text-warn'}>
-                {archimedes.applicabilityVerified !== false ? 'WITHIN ENVELOPE' : 'OUTSIDE ENVELOPE'}
+              <strong className={archimedes.applicabilityVerified == null ? 'text-muted' : archimedes.applicabilityVerified ? 'text-success' : 'text-warn'}>
+                {archimedes.applicabilityVerified == null ? 'UNKNOWN' : archimedes.applicabilityVerified ? 'WITHIN ENVELOPE' : 'OUTSIDE ENVELOPE'}
               </strong>
             </div>
             <div className="blueprint-card">
               <small>COUNTERFACTUAL BRANCH</small>
-              <strong className="text-cyan">{mirror.bestCounterfactualBranch || 'LIVE'}</strong>
+              <strong className="text-cyan">{mirror.bestCounterfactualBranch || 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>DECISION REGRET</small>
-              <strong className={(mirror.decisionRegretSol ?? 0) <= 0 ? 'text-good' : 'text-warn'}>
-                {(mirror.decisionRegretSol ?? 0).toFixed(2)} SOL
+              <strong className={!Number.isFinite(mirror.decisionRegretSol) ? 'text-muted' : mirror.decisionRegretSol <= 0 ? 'text-success' : 'text-warn'}>
+                {Number.isFinite(mirror.decisionRegretSol) ? `${mirror.decisionRegretSol.toFixed(2)} SOL` : 'UNAVAILABLE'}
               </strong>
             </div>
             <div className="blueprint-card">
               <small>ATTRIBUTION VERDICT</small>
-              <strong className="text-good">{mirror.attributionVerdict || 'EDGE_SUPPORTED'}</strong>
+              <strong>{mirror.attributionVerdict || 'UNAVAILABLE'}</strong>
             </div>
           </div>
 
@@ -1253,7 +1268,7 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
               <span>CERTIFIED IMPROVEMENT</span>
             </div>
             <p className="text-muted text-xs mt-2" style={{ margin: '8px 0 0 0' }}>
-              Envelope Status: {archimedes.applicabilityReason || 'Current token age, liquidity depth, and spread are within certified knowledge domain.'}
+              Envelope Status: {archimedes.applicabilityReason || 'UNAVAILABLE'}
             </p>
           </div>
         </div>
@@ -1271,32 +1286,32 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
           <div className="blueprint-grid">
             <div className="blueprint-card">
               <small>MACRO REGIME</small>
-              <strong className="text-cyan">{horizon.primaryRegime || 'SOL_SPECIFIC_STRENGTH'}</strong>
+              <strong className="text-cyan">{horizon.primaryRegime || 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>REGIME CONFIDENCE</small>
-              <strong className="text-good">{Math.round((horizon.regimeConfidence ?? 0.85) * 100)}%</strong>
+              <strong>{Number.isFinite(horizon.regimeConfidence) ? `${Math.round(horizon.regimeConfidence * 100)}%` : 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>NETWORK STRESS</small>
-              <strong className={horizon.networkStressLevel === 'HIGH' ? 'text-danger' : 'text-good'}>
-                {horizon.networkStressLevel || 'LOW'}
+              <strong className={horizon.networkStressLevel == null ? 'text-muted' : horizon.networkStressLevel === 'HIGH' ? 'text-danger' : 'text-success'}>
+                {horizon.networkStressLevel || 'UNAVAILABLE'}
               </strong>
             </div>
             <div className="blueprint-card">
               <small>EFFECTIVE PARTICIPANTS</small>
-              <strong className="text-good">{sentinelX.effectiveParticipants ?? 4} actors</strong>
+              <strong>{sentinelX.effectiveParticipants ?? 'UNAVAILABLE'}{sentinelX.effectiveParticipants != null ? ' actors' : ''}</strong>
             </div>
             <div className="blueprint-card">
               <small>SIGNAL SATURATION</small>
-              <strong className={sentinelX.signalSaturation === 'COMPROMISED' ? 'text-danger' : 'text-cyan'}>
-                {sentinelX.signalSaturation || 'EMERGING'}
+              <strong className={sentinelX.signalSaturation == null ? 'text-muted' : sentinelX.signalSaturation === 'COMPROMISED' ? 'text-danger' : 'text-cyan'}>
+                {sentinelX.signalSaturation || 'UNAVAILABLE'}
               </strong>
             </div>
             <div className="blueprint-card">
               <small>RED-TEAM BAIT RISK</small>
-              <strong className={(sentinelX.redTeamRiskScore ?? 0.1) > 0.4 ? 'text-danger' : 'text-good'}>
-                {Math.round((sentinelX.redTeamRiskScore ?? 0.1) * 100)}%
+              <strong className={!Number.isFinite(sentinelX.redTeamRiskScore) ? 'text-muted' : sentinelX.redTeamRiskScore > 0.4 ? 'text-danger' : 'text-success'}>
+                {Number.isFinite(sentinelX.redTeamRiskScore) ? `${Math.round(sentinelX.redTeamRiskScore * 100)}%` : 'UNAVAILABLE'}
               </strong>
             </div>
           </div>
@@ -1305,13 +1320,13 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
             <h4><Radar size={13} /> Competing Explanations &amp; Causal Transmission Chain</h4>
             <dl className="blueprint-dl">
               <dt>Primary Hypothesis:</dt>
-              <dd className="text-cyan font-bold">{sentinelX.primaryHypothesis || 'ORGANIC_DEMAND'}</dd>
+              <dd className="text-cyan font-bold">{sentinelX.primaryHypothesis || 'UNAVAILABLE'}</dd>
               <dt>Causal Transmission:</dt>
-              <dd className="font-mono text-xs">{horizon.causalTransmissionChain || 'BTC stable &rarr; SOL net inflow &rarr; DEX liquidity expansion &rarr; Meme velocity'}</dd>
+              <dd className="font-mono text-xs">{horizon.causalTransmissionChain || 'UNAVAILABLE'}</dd>
               <dt>SAGE Capability Score:</dt>
-              <dd className="text-good font-bold">{sage.overallCapabilityScore ?? 100}/100 (Hot-Path: {sage.hotPathObservedMs ?? 8}ms)</dd>
+              <dd>{sage.overallCapabilityScore ?? 'UNAVAILABLE'}{sage.overallCapabilityScore != null ? '/100' : ''} · hot-path {sage.hotPathObservedMs ?? 'UNAVAILABLE'}{sage.hotPathObservedMs != null ? 'ms' : ''}</dd>
               <dt>Active Spillovers:</dt>
-              <dd>{horizon.activeSpilloversCount ?? 1} cross-market spillover active</dd>
+              <dd>{horizon.activeSpilloversCount ?? 'UNAVAILABLE'}{horizon.activeSpilloversCount != null ? ' reported cross-market spillovers' : ''}</dd>
             </dl>
           </div>
         </div>
@@ -1359,7 +1374,7 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
               <dt>Critical Question:</dt>
               <dd className="font-bold text-warn">{bohr.discriminatingQuestion || 'UNAVAILABLE'}</dd>
               <dt>Effective Evidence:</dt>
-              <dd>{formatScientificNumber(bayes.effectiveEvidenceCount)} independent evidence units (correlated trade bursts discounted)</dd>
+              <dd>{formatScientificNumber(bayes.effectiveEvidenceCount)} effective evidence count (correlated trade bursts discounted; not a raw source count)</dd>
               <dt>Hierarchical Priors:</dt>
               <dd className="text-muted">Uncalibrated heuristic prior; empirical cohort calibration is unavailable.</dd>
               <dt>Unknown Mass Policy:</dt>
@@ -1442,27 +1457,27 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
           <div className="blueprint-grid">
             <div className="blueprint-card">
               <small>ACTIVE STRATEGY</small>
-              <strong className="text-cyan">{darwin.activeStrategyId || 'breakout_momentum_v1'}</strong>
+              <strong className="text-cyan">{darwin.activeStrategyId || 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>LIFECYCLE STAGE</small>
-              <strong className="text-good">{darwin.lifecycleStage || 'ACTIVE'}</strong>
+              <strong>{darwin.lifecycleStage || 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>STRATEGY SHARPE</small>
-              <strong className="text-good">{(darwin.sharpeRatio ?? 2.1).toFixed(2)}</strong>
+              <strong>{Number.isFinite(darwin.sharpeRatio) ? darwin.sharpeRatio.toFixed(2) : 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>MAX DRAWDOWN</small>
-              <strong>{(darwin.maxDrawdownPct ?? 11.4).toFixed(1)}%</strong>
+              <strong>{Number.isFinite(darwin.maxDrawdownPct) ? `${darwin.maxDrawdownPct.toFixed(1)}%` : 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>MENDEL GENE COUNT</small>
-              <strong className="text-cyan">{mendel.activeGeneCount ?? 8} explicit genes</strong>
+              <strong>{mendel.activeGeneCount ?? 'UNAVAILABLE'}{mendel.activeGeneCount != null ? ' explicit genes' : ''}</strong>
             </div>
             <div className="blueprint-card">
               <small>GENE INTERACTION</small>
-              <strong className="text-good">{mendel.interactionState || 'SYNERGISTIC'}</strong>
+              <strong>{mendel.interactionState || 'UNAVAILABLE'}</strong>
             </div>
           </div>
 
@@ -1476,8 +1491,8 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
               <dt>12 Gene Manifest:</dt>
               <dd className="font-mono text-xs">Entry &middot; Filter &middot; Timing &middot; Scale &middot; Evidence &middot; Wallet &middot; Regime &middot; Sizing &middot; Risk &middot; Exit &middot; Recovery &middot; Adapter</dd>
               <dt>Shared Gene Exposure:</dt>
-              <dd className={ledger.hiddenGeneRisk ? 'text-danger' : 'text-good'}>
-                {ledger.hiddenGeneRisk ? 'WARNING: High shared gene exposure detected' : 'NOMINAL: Portfolio gene diversification verified'}
+              <dd className={ledger.hiddenGeneRisk == null ? 'text-muted' : ledger.hiddenGeneRisk ? 'text-danger' : 'text-success'}>
+                {ledger.hiddenGeneRisk == null ? 'UNAVAILABLE' : ledger.hiddenGeneRisk ? 'Source reports high shared gene exposure' : 'Source reports no hidden-gene risk flag'}
               </dd>
             </dl>
           </div>
@@ -1496,31 +1511,31 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
           <div className="blueprint-grid">
             <div className="blueprint-card">
               <small>TEMPORAL INTEGRITY</small>
-              <strong className={pasteur.temporalIntegrityValid !== false ? 'text-good' : 'text-danger'}>
-                {pasteur.temporalIntegrityValid !== false ? 'LEAK-FREE (4 CLOCKS)' : 'TEMPORAL_LEAK'}
+              <strong className={pasteur.temporalIntegrityValid == null ? 'text-muted' : pasteur.temporalIntegrityValid ? 'text-success' : 'text-danger'}>
+                {pasteur.temporalIntegrityValid == null ? 'UNKNOWN' : pasteur.temporalIntegrityValid ? 'SOURCE REPORTS VALID (4 CLOCKS)' : 'TEMPORAL LEAK REPORTED'}
               </strong>
             </div>
             <div className="blueprint-card">
               <small>HOLDOUT EXPOSURES</small>
-              <strong>{pasteur.testExposureCount ?? 1} / 5 max</strong>
+              <strong>{pasteur.testExposureCount ?? 'UNAVAILABLE'}{pasteur.testExposureCount != null ? ' / 5 max' : ''}</strong>
             </div>
             <div className="blueprint-card">
               <small>REPLICATED CLAIMS</small>
-              <strong className="text-cyan">{curie.applicableClaimsCount ?? 3} applicable</strong>
+              <strong>{curie.applicableClaimsCount ?? 'UNAVAILABLE'}{curie.applicableClaimsCount != null ? ' applicable claims' : ''}</strong>
             </div>
             <div className="blueprint-card">
               <small>APPLICABILITY ENVELOPE</small>
-              <strong className={curie.isEnvelopeValid !== false ? 'text-good' : 'text-warn'}>
-                {curie.isEnvelopeValid !== false ? 'VERIFIED IN-BOUNDS' : 'OUT_OF_BOUNDS'}
+              <strong className={curie.isEnvelopeValid == null ? 'text-muted' : curie.isEnvelopeValid ? 'text-success' : 'text-warn'}>
+                {curie.isEnvelopeValid == null ? 'UNKNOWN' : curie.isEnvelopeValid ? 'SOURCE REPORTS IN-BOUNDS' : 'OUT_OF_BOUNDS REPORTED'}
               </strong>
             </div>
             <div className="blueprint-card">
               <small>AVAILABLE CAPITAL</small>
-              <strong className="text-good">{(ledger.availableCashSol ?? 100).toFixed(1)} SOL</strong>
+              <strong>{Number.isFinite(ledger.availableCashSol) ? `${ledger.availableCashSol.toFixed(1)} SOL` : 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>RESERVED CAPITAL</small>
-              <strong>{(ledger.reservedSol ?? 0).toFixed(2)} SOL</strong>
+              <strong>{Number.isFinite(ledger.reservedSol) ? `${ledger.reservedSol.toFixed(2)} SOL` : 'UNAVAILABLE'}</strong>
             </div>
           </div>
 
@@ -1555,37 +1570,36 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
           <div className="blueprint-grid">
             <div className="blueprint-card">
               <small>PRIMARY THESIS</small>
-              <strong className="text-cyan">{unified.primaryThesis || overview.behaviorState || 'Organic accumulation'}</strong>
+              <strong className="text-cyan">{unified.primaryThesis || overview.behaviorState || 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>BELIEF STATE</small>
-              <strong className="text-good">{unified.beliefState || 'Supported'}</strong>
+              <strong>{unified.beliefState || 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>COMPOSITE UNCERTAINTY</small>
-              <strong className={(unified.uncertainty || 'Medium') === 'High' ? 'text-danger' : 'text-good'}>
-                {unified.uncertainty || 'Medium'}
+              <strong>{unified.uncertainty || 'UNAVAILABLE'}
               </strong>
             </div>
             <div className="blueprint-card">
               <small>BOHR ATTENTION TIER</small>
-              <strong style={{ color: '#c084fc' }}>{unified.attentionTier || data.attn || 'A4 INVESTIGATE'}</strong>
+              <strong>{unified.attentionTier || data.attn || 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>KEPLER TRAJECTORY</small>
-              <strong style={{ color: '#60a5fa' }}>{unified.trajectory || data.path || 'Accelerating'}</strong>
+              <strong>{unified.trajectory || data.path || 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>CHANDRASEKHAR STABILITY</small>
-              <strong style={{ color: '#34d399' }}>{unified.stabilityState || data.stab || 'Stable'}</strong>
+              <strong>{unified.stabilityState || data.stab || 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>SHANNON INFORMATION</small>
-              <strong style={{ color: '#2dd4bf' }}>{unified.informationState || data.edgeState || 'Early'}</strong>
+              <strong>{unified.informationState || data.edgeState || 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>FORECAST ROBUSTNESS</small>
-              <strong>{unified.forecastRobustness || 'Moderate'}</strong>
+              <strong>{unified.forecastRobustness || 'UNAVAILABLE'}</strong>
             </div>
           </div>
 
@@ -1593,17 +1607,17 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
             <h4><Layers size={13} /> Curie 8-Dimensional Uncertainty Vector &amp; Stop-Thinking Evaluation</h4>
             <dl className="blueprint-dl">
               <dt>Epistemic Uncertainty:</dt>
-              <dd className="font-mono text-xs">{unified.uncertainty === 'High' ? '0.62 (Reducible via Tesla Investigation)' : '0.24 (Low — core facts established)'}</dd>
+              <dd className="font-mono text-xs">UNAVAILABLE</dd>
               <dt>Aleatoric Noise:</dt>
-              <dd className="font-mono text-xs">0.31 (Irreducible on-chain microstructure randomness)</dd>
+              <dd className="font-mono text-xs">UNAVAILABLE</dd>
               <dt>Distributional Drift:</dt>
-              <dd className="font-mono text-xs">0.12 (Regime stable in Pump.fun cohort)</dd>
+              <dd className="font-mono text-xs">UNAVAILABLE</dd>
               <dt>Stop-Thinking Rule:</dt>
-              <dd className="text-good">Information gain exceeds delay cost &rarr; INVESTIGATION PROCEEDS</dd>
+              <dd>{unified.stopThinkingRule || 'UNAVAILABLE'}</dd>
               <dt>Next Question:</dt>
-              <dd className="text-cyan">{unified.nextQuestion || 'Are entering wallets independent?'}</dd>
+              <dd className="text-cyan">{unified.nextQuestion || 'UNAVAILABLE'}</dd>
               <dt>Action Evaluated:</dt>
-              <dd><b className="text-good">{unified.nextAction || 'INVESTIGATE'}</b> (Action compared against ENTER, WAIT, SCALE, ABSTAIN)</dd>
+              <dd><b>{unified.nextAction || 'UNAVAILABLE'}</b></dd>
             </dl>
           </div>
         </div>
@@ -1623,32 +1637,32 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
 
           <div className="why-category-card">
             <h5>WHY INTERESTING?</h5>
-            <p>{unified.whyReport?.whyInteresting || `${unified.primaryThesis || 'Organic buying'} detected with active buyer acceleration and positive expected value.`}</p>
-            <span className="provenance-tag">Source: Cantor Universe + Bohr Multi-Resolution Attention + PumpScore</span>
+            <p>{unified.whyReport?.whyInteresting || 'UNAVAILABLE — no source-provided explanation'}</p>
+            <span className="provenance-tag">Detailed provenance is unavailable in this projection.</span>
           </div>
 
           <div className="why-category-card">
             <h5>WHY FILTERED / WHY NO TRADE?</h5>
-            <p>{unified.whyReport?.whyFiltered || unified.whyReport?.whyNoTrade || 'Not filtered: token cleared all structural invariants, rug checks, and Guardian position limits.'}</p>
-            <span className="provenance-tag">Source: Noether Invariants + CleanRoom Deception Engine + Guardian Risk</span>
+            <p>{unified.whyReport?.whyFiltered || unified.whyReport?.whyNoTrade || 'UNAVAILABLE — no source-provided explanation'}</p>
+            <span className="provenance-tag">Detailed provenance is unavailable in this projection.</span>
           </div>
 
           <div className="why-category-card">
             <h5>WHY PROTECTED?</h5>
-            <p>{unified.whyReport?.whyProtected || (overview.pod > 50 ? `PoD protection active: sniper dump risk overhang at ${overview.pod}/100.` : 'Freeze authority disabled, mint authority revoked, liquidity verified locked.')}</p>
-            <span className="provenance-tag">Source: TokenProgramInspector + RugCheck XYZ + PoD Risk Authority</span>
+            <p>{unified.whyReport?.whyProtected || 'UNAVAILABLE — no source-provided explanation'}</p>
+            <span className="provenance-tag">Detailed provenance is unavailable in this projection.</span>
           </div>
 
           <div className="why-category-card">
             <h5>WHY WAIT / WHY INVESTIGATE?</h5>
-            <p>{unified.whyReport?.whyWait || 'Tesla active discovery indicates net positive information gain from awaiting secondary cluster confirmation before full capital sizing.'}</p>
-            <span className="provenance-tag">Source: Tesla Information-Gain Engine + Bayes Decision Optimizer</span>
+            <p>{unified.whyReport?.whyWait || 'UNAVAILABLE — no source-provided explanation'}</p>
+            <span className="provenance-tag">Detailed provenance is unavailable in this projection.</span>
           </div>
 
           <div className="why-category-card">
             <h5>WHY TRADE (OR EXIT)?</h5>
-            <p>{unified.whyReport?.whyTrade || (overview.currentStatus === 'VERIFIED_ENTRY' ? 'Formally authorized: consensus achieved, zero safety violations, execution permit issued.' : 'Held in qualified investigation stage pending cluster verification.')}</p>
-            <span className="provenance-tag">Source: Von Neumann Execution State Machine + Hermes Synchronization</span>
+            <p>{unified.whyReport?.whyTrade || 'UNAVAILABLE — no source-provided explanation'}</p>
+            <span className="provenance-tag">This inspector does not provide transaction authorization.</span>
           </div>
         </div>
       )}
@@ -1668,27 +1682,27 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
           <div className="blueprint-grid">
             <div className="blueprint-card">
               <small>CURRENT STAGE</small>
-              <strong className="text-cyan">{unified.cantorStage || 'STAGE_4_WALLET_INFO'}</strong>
+              <strong className="text-cyan">{unified.cantorStage || 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>ASSIGNED UNIVERSES</small>
-              <strong>{(unified.cantorUniverses || ['BREAKOUT', 'ACCUMULATION']).join(', ')}</strong>
+              <strong>{Array.isArray(unified.cantorUniverses) ? unified.cantorUniverses.join(', ') || 'NONE REPORTED' : 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>GLOBAL TRACKED</small>
-              <strong>142 candidates</strong>
+              <strong>UNAVAILABLE</strong>
             </div>
             <div className="blueprint-card">
               <small>OPPORTUNITY DENSITY</small>
-              <strong className="text-good">0.74 (Healthy)</strong>
+              <strong>UNAVAILABLE</strong>
             </div>
             <div className="blueprint-card">
               <small>SEARCH LOAD</small>
-              <strong>18.4% compute budget</strong>
+              <strong>UNAVAILABLE</strong>
             </div>
             <div className="blueprint-card">
               <small>RESURRECTION STATUS</small>
-              <strong className="text-good">ELIGIBLE (Fresh Liquidity)</strong>
+              <strong>UNAVAILABLE</strong>
             </div>
           </div>
 
@@ -1696,11 +1710,11 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
             <h4><GitBranch size={13} /> Progressive Funnel Hierarchy &amp; Universes</h4>
             <dl className="blueprint-dl">
               <dt>Screening Funnel:</dt>
-              <dd className="font-mono text-xs">GLOBAL (142) &rarr; CHEAP SCREEN (88) &rarr; STRUCTURAL (42) &rarr; WALLET (18) &rarr; BOHR A4 (7) &rarr; FULL INTEL (3)</dd>
+              <dd className="font-mono text-xs">UNAVAILABLE</dd>
               <dt>Active Universes:</dt>
-              <dd className="font-mono text-xs">BREAKOUT, ACCUMULATION, REVIVAL, WHALE, SMART WALLET, LIQUIDITY EXPANSION, NOVELTY</dd>
+              <dd className="font-mono text-xs">{Array.isArray(unified.cantorUniverses) ? unified.cantorUniverses.join(', ') || 'NONE REPORTED' : 'UNAVAILABLE'}</dd>
               <dt>Resurrection Rule:</dt>
-              <dd>Tokens failing early screening are re-evaluated if independent buyer count doubles or liquidity expands &gt; 25%</dd>
+              <dd>UNAVAILABLE</dd>
             </dl>
           </div>
         </div>
@@ -1721,35 +1735,35 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
           <div className="blueprint-grid">
             <div className="blueprint-card">
               <small>SYSTEM HEALTH</small>
-              <strong className="text-good">NOMINAL (Green)</strong>
+              <strong>{dataHealth.sourceStatus || 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>ARCHITECTURE INTEGRITY</small>
-              <strong className="text-cyan">BABBAGE VERIFIED (PASS)</strong>
+              <strong>UNAVAILABLE</strong>
             </div>
             <div className="blueprint-card">
               <small>DATA QUALITY</small>
-              <strong className="text-good">OPTIMAL (99.8% Coverage)</strong>
+              <strong>UNAVAILABLE</strong>
             </div>
             <div className="blueprint-card">
               <small>RESOURCE LOAD</small>
-              <strong>Archimedes Normal (12% CPU)</strong>
+              <strong>UNAVAILABLE</strong>
             </div>
             <div className="blueprint-card">
               <small>RECOVERY MODE</small>
-              <strong className="text-good">Faraday Green (P0 Safety Active)</strong>
+              <strong>UNAVAILABLE</strong>
             </div>
             <div className="blueprint-card">
               <small>EXECUTION MODE</small>
-              <strong>Paper / Simulation Isolated</strong>
+              <strong>{data.mode || 'UNAVAILABLE'}</strong>
             </div>
             <div className="blueprint-card">
               <small>SECURITY BOUNDARY</small>
-              <strong className="text-cyan">Zone 0 Signer Isolated</strong>
+              <strong>UNAVAILABLE</strong>
             </div>
             <div className="blueprint-card">
               <small>ACTIVE INCIDENTS</small>
-              <strong className="text-good">0 detected</strong>
+              <strong>UNAVAILABLE</strong>
             </div>
           </div>
 
@@ -1757,11 +1771,11 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
             <h4><ShieldCheck size={13} /> Watson Root Cause &amp; Architecture Audit</h4>
             <dl className="blueprint-dl">
               <dt>Watson Diagnostic:</dt>
-              <dd className="text-good">{unified.watsonRootCause || 'All 41 canonical engines connected. 0 orphan outputs, 0 illegal authorization paths.'}</dd>
+              <dd>{unified.watsonRootCause || 'UNAVAILABLE — no source-provided diagnostic'}</dd>
               <dt>Babbage Contract Check:</dt>
               <dd className="font-mono text-xs">Mendeleev &rarr; Gauss &rarr; Atlas &rarr; Newton/Shannon/Copernicus &rarr; Noether &rarr; Cantor &rarr; Bohr &rarr; Kepler &rarr; Einstein &rarr; Bayes &rarr; Apollo &rarr; Prometheus &rarr; Guardian &rarr; Sentinel &rarr; Von Neumann &rarr; Hermes &rarr; Execution</dd>
               <dt>Edison Verifier:</dt>
-              <dd className="font-mono text-xs">25 / 25 Golden Verification Scenarios PASS</dd>
+              <dd className="font-mono text-xs">UNAVAILABLE</dd>
               <dt>Sentinel Zero-Trust:</dt>
               <dd>Zone 0 (Signing) &lt;--isolated--&gt; Zone 3 (Intelligence) &lt;--isolated--&gt; Zone 5 (Research)</dd>
             </dl>
@@ -1784,35 +1798,35 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
           <div className="blueprint-grid">
             <div className="blueprint-card">
               <small>ACTIVE EXPERIMENT</small>
-              <strong className="text-cyan">EXP-2026-FUSION-09</strong>
+              <strong className="text-cyan">UNAVAILABLE</strong>
             </div>
             <div className="blueprint-card">
               <small>PIPELINE STAGE</small>
-              <strong>STAGE 5: SHADOW REPLAY</strong>
+              <strong>UNAVAILABLE</strong>
             </div>
             <div className="blueprint-card">
               <small>FISHER STATISTICAL FDR</small>
-              <strong className="text-good">q &lt; 0.05 (Benjamini-Hochberg PASS)</strong>
+              <strong>UNAVAILABLE</strong>
             </div>
             <div className="blueprint-card">
               <small>FEYNMAN CALIBRATION</small>
-              <strong className="text-good">Brier Score 0.118 (Calibrated)</strong>
+              <strong>UNAVAILABLE</strong>
             </div>
             <div className="blueprint-card">
               <small>DARWIN CHAMPION</small>
-              <strong>Breakout-Momentum-v2.4</strong>
+              <strong>UNAVAILABLE</strong>
             </div>
             <div className="blueprint-card">
               <small>DARWIN CHALLENGER</small>
-              <strong className="text-cyan">Multi-Scale-Bohr-v3.0</strong>
+              <strong className="text-cyan">UNAVAILABLE</strong>
             </div>
             <div className="blueprint-card">
               <small>GALILEO SURPRISE</small>
-              <strong>0.14 (Low — reality matches model)</strong>
+              <strong>UNAVAILABLE</strong>
             </div>
             <div className="blueprint-card">
               <small>REJECTED GRAVEYARD</small>
-              <strong>38 hypotheses archived</strong>
+              <strong>UNAVAILABLE</strong>
             </div>
           </div>
 
@@ -1822,11 +1836,11 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
               <dt>Controlled Pipeline:</dt>
               <dd className="font-mono text-xs">HYPOTHESIS &rarr; OFFLINE &rarr; ATLAS REPLAY &rarr; MAXWELL &rarr; SHADOW &rarr; PAPER &rarr; CANARY &rarr; LIMITED &rarr; PRODUCTION</dd>
               <dt>Da Vinci Synthesis:</dt>
-              <dd>Generating feature combinations: Trajectory curvature &times; Cluster dispersal &times; Shannon freshness</dd>
+              <dd>UNAVAILABLE</dd>
               <dt>Falsification Criterion:</dt>
-              <dd>Any model whose live drawdown exceeds Maxwell 99th percentile by 1.5x is immediately quarantined</dd>
+              <dd>UNAVAILABLE</dd>
               <dt>Negative Experiments:</dt>
-              <dd>38 failed candidate hypotheses permanently archived in Fisher evidence repository to prevent cyclical re-discovery</dd>
+              <dd>UNAVAILABLE</dd>
             </dl>
           </div>
         </div>
@@ -1841,70 +1855,15 @@ export function TokenIntelligenceInspector({ mint, initialData = null }) {
             </h4>
           </div>
           <p className="blueprint-tab-desc">
-            Once capital is exposed: Position Monitoring &gt; New Token Discovery &gt; Research. Real-time exitability and cascade defense.
+            Position-specific telemetry is not included in this token-intelligence projection. The figures below remain unavailable until a selected position is linked to reconciled paper-ledger evidence.
           </p>
 
-          <div className="blueprint-grid">
-            <div className="blueprint-card">
-              <small>CURRENT THESIS</small>
-              <strong className="text-cyan">{unified.primaryThesis || 'Organic accumulation'}</strong>
+          <div className="empty-substate" role="status" aria-live="polite">
+            <Info size={18} />
+            <div>
+              <b>Position evidence is not connected here</b>
+              <p>Use the paper Positions view for recorded size and P&amp;L. This inspector has no linked position, measured exit route, quote-age sample, or execution-health record.</p>
             </div>
-            <div className="blueprint-card">
-              <small>THESIS HEALTH</small>
-              <strong className="text-good">94% INTACT</strong>
-            </div>
-            <div className="blueprint-card">
-              <small>ALLOCATED SIZE</small>
-              <strong>0.75 SOL (Liquidity-Adjusted)</strong>
-            </div>
-            <div className="blueprint-card">
-              <small>NET PAPER PNL</small>
-              <strong className="text-good">+12.4% (+0.093 SOL)</strong>
-            </div>
-            <div className="blueprint-card">
-              <small>EXITABILITY SCORE</small>
-              <strong className="text-good">{unified.exitability || 'Strong'} (Slippage &lt; 1.2%)</strong>
-            </div>
-            <div className="blueprint-card">
-              <small>CHANDRASEKHAR STABILITY</small>
-              <strong style={{ color: '#34d399' }}>{unified.stabilityState || 'Stable'} (Reserve &gt; 4.5x)</strong>
-            </div>
-            <div className="blueprint-card">
-              <small>LIQUIDITY DEPTH</small>
-              <strong>${(overview.liquidityQuality * 250).toLocaleString()} USD active</strong>
-            </div>
-            <div className="blueprint-card">
-              <small>WHALE DISTRIBUTION</small>
-              <strong className="text-good">None in top 3 clusters</strong>
-            </div>
-            <div className="blueprint-card">
-              <small>CRITICALITY DISTANCE</small>
-              <strong className="text-good">38% buffer to cascade</strong>
-            </div>
-            <div className="blueprint-card">
-              <small>HERMES EXIT ROUTE</small>
-              <strong className="text-cyan">Jupiter Direct (Orca / Raydium)</strong>
-            </div>
-            <div className="blueprint-card">
-              <small>QUOTE FRESHNESS</small>
-              <strong className="text-good">180ms (Within 500ms limit)</strong>
-            </div>
-            <div className="blueprint-card">
-              <small>EXECUTION HEALTH</small>
-              <strong className="text-good">NOMINAL (P95 142ms)</strong>
-            </div>
-          </div>
-
-          <div className="blueprint-section-card" style={{ marginTop: '8px' }}>
-            <h4><ShieldAlert size={13} /> Continuous Position Defense &amp; Exit Triggers</h4>
-            <dl className="blueprint-dl">
-              <dt>Hard Exit Conditions:</dt>
-              <dd className="font-mono text-xs">Trailing Stop -8.0% | Max Drawdown -12.0% | Invariant Break &gt; 2.5x | Creator Dump &gt; 1.0 SOL</dd>
-              <dt>Cascade Reserve:</dt>
-              <dd>Chandrasekhar stress models confirm order book can absorb 3.5 SOL immediate sell without cascade collapse</dd>
-              <dt>Monitoring Frequency:</dt>
-              <dd className="text-cyan">BOHR Tier A5 Live Position: 100ms multi-resolution loop with Hermes bypass priority</dd>
-            </dl>
           </div>
         </div>
       )}

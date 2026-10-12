@@ -1880,6 +1880,7 @@ export class Engine {
       requestedAmountUnit: side === 'buy' ? 'LAMPORTS' : 'TOKEN_RAW',
       quotedOutput: built.quotedOutput?.toString() ?? null,
       quotedOutputUnit: side === 'buy' ? 'TOKEN_RAW' : 'LAMPORTS',
+      ...(built.routeEvidence === undefined ? {} : { routeEvidence: built.routeEvidence }),
       marketSnapshotAtMs: built.quoteTimestamp ?? null,
       marketSnapshotAgeMs: built.quoteTimestamp === undefined ? null : Math.max(0, Date.now() - built.quoteTimestamp),
       baseFeeLamports: built.overhead?.baseFeeLamports ?? null,

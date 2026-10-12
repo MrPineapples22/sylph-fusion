@@ -11,6 +11,7 @@ const files = ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.env.ex
   'terminal/evidence-view.mjs', 'terminal/local-request.mjs'];
 const trees = ['dist', 'terminal/dist', 'ui'];
 const allowed = new Set(['.js', '.mjs', '.map', '.json', '.html', '.css', '.svg', '.png', '.ico', '.woff', '.woff2']);
+const approvedTerminalRuntimeHelpers = new Set(['terminal/src/learning-projection.js']);
 
 // Parse syntax instead of searching text: comments and string contents are not imports.
 export function runtimeModuleClosure(root, entry = 'terminal/server.mjs') {
@@ -19,7 +20,8 @@ export function runtimeModuleClosure(root, entry = 'terminal/server.mjs') {
   function visit(relative) {
     relative = path.normalize(relative);
     const portable = relative.replaceAll('\\', '/');
-    if (!/^(?:terminal\/[^/]+\.mjs|dist\/.+\.(?:mjs|js|json))$/.test(portable)) {
+    if (!/^(?:terminal\/[^/]+\.mjs|dist\/.+\.(?:mjs|js|json))$/.test(portable) &&
+        !approvedTerminalRuntimeHelpers.has(portable)) {
       throw new Error('Disallowed runtime dependency: ' + portable);
     }
     let full = root;

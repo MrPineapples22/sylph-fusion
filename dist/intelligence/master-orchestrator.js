@@ -59,6 +59,7 @@ import { DEXStreamParser, } from '../platform/ingestion/dex-stream-parser.js';
 import { LandingBenchmarkEngine, shouldBlockLandingBenchmark, } from '../platform/execution/landing-benchmark.js';
 import { OrderedObservationStagingEngine, } from '../platform/ingestion/ordered-observation-buffer.js';
 import { SimulationRiskEnvelopeEngine, missingSimulationRiskCertificate, } from '../platform/execution/simulation-risk-envelope.js';
+import { DualPathReconciliationEngine, } from '../platform/ingestion/dual-path-reconciler.js';
 import { TemporalEvidenceGraph } from './graph/temporal-evidence-graph.js';
 import { FundingAncestryEngine } from './graph/funding-ancestry.js';
 import { FirstPassageEngine } from './science/first-passage.js';
@@ -401,6 +402,7 @@ export class MasterIntelligenceEngine {
     landingBenchmarkEngine;
     orderedObservationBuffer;
     simulationRiskEnvelope;
+    dualPathReconciliationEngine;
     constructor() {
         this.kernel = new IntegrationKernel();
         this.chainTruth = new ChainTruthEngine();
@@ -590,6 +592,7 @@ export class MasterIntelligenceEngine {
         this.landingBenchmarkEngine = new LandingBenchmarkEngine();
         this.orderedObservationBuffer = new OrderedObservationStagingEngine();
         this.simulationRiskEnvelope = new SimulationRiskEnvelopeEngine();
+        this.dualPathReconciliationEngine = new DualPathReconciliationEngine();
         this.setupConnectionAuditor();
         this.registerComponents();
     }
@@ -2483,6 +2486,15 @@ export class MasterIntelligenceEngine {
                 tradeNotionalSol: context.targetTradeSizeSol,
             })
             : missingSimulationRiskCertificate({ mint: event.mint, slot: event.slot, evaluatedAtMs: event.receivedTimestampMs }));
+        const dualPathInstructionEvidence = context.dualPathInstructionEvidence ?? null;
+        const dualPathLogEvidence = context.dualPathLogEvidence ?? null;
+        const hasDualPathInput = dualPathInstructionEvidence !== null || dualPathLogEvidence !== null;
+        const dualPathReconciliation = hasDualPathInput
+            ? this.dualPathReconciliationEngine.reconcile(dualPathInstructionEvidence, dualPathLogEvidence)
+            : undefined;
+        const dualPathCertificate = dualPathReconciliation
+            ? this.dualPathReconciliationEngine.certify(dualPathReconciliation)
+            : undefined;
         // ==========================================
         // ALPHA HALF-LIFE, QUOTE DECAY & EXECUTION SHORTFALL (Sections XV, XVI & XX)
         // ==========================================
@@ -2907,6 +2919,11 @@ export class MasterIntelligenceEngine {
             (!simulationRiskCertificate.isApproved || simulationRiskCertificate.verdict !== 'SIMULATION_APPROVED')) {
             decision = 'CHALLENGED_ABSTAIN';
             whyExecutionBlocked = `BLOCKED — SIMULATION RISK FENCE BREACH (${simulationRiskCertificate.verdict}: ${simulationRiskCertificate.rejectionReason || 'UNAPPROVED'})`;
+        }
+        else if ((context.enforceDualPathReconciliationGating ?? false) &&
+            (!dualPathCertificate || !dualPathCertificate.isApproved || dualPathReconciliation?.isConflicted || dualPathReconciliation?.status === 'DISCREPANCY_CONFLICT')) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — PARSER DUAL-PATH DISCREPANCY CONFLICT DETECTED (${dualPathReconciliation?.status ?? 'MISSING_EVIDENCE'}: ${dualPathReconciliation?.conflictReason || 'DISCREPANCY_UNRESOLVED'})`;
         }
         else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
             decision = 'AUTHORIZED_SELL';
@@ -4039,6 +4056,8 @@ export class MasterIntelligenceEngine {
             landingBenchmark,
             observationWatermarkReport,
             simulationRiskCertificate,
+            dualPathReconciliation,
+            dualPathCertificate,
             links: {
                 solscan: `https://solscan.io/token/${event.mint}`,
                 pump: `https://pump.fun/${event.mint}`,
@@ -4333,6 +4352,8 @@ export class MasterIntelligenceEngine {
             landingBenchmark,
             observationWatermarkReport,
             simulationRiskCertificate,
+            dualPathReconciliation,
+            dualPathCertificate,
             whyExecutionBlocked: decision !== 'AUTHORIZED_BUY' ? whyExecutionBlocked : undefined,
         };
     }
@@ -5044,6 +5065,13 @@ export class MasterIntelligenceEngine {
     }
     evaluateSimulationRisk(evidence, context) {
         return this.simulationRiskEnvelope.evaluateSimulation(evidence, context);
+    }
+    getDualPathReconciliationEngine() {
+        return this.dualPathReconciliationEngine;
+    }
+    reconcileDualPathEvidence(instruction, log) {
+        const report = this.dualPathReconciliationEngine.reconcile(instruction, log);
+        return { report, certificate: this.dualPathReconciliationEngine.certify(report) };
     }
     /**
      * System Intelligence & Omega Telemetry

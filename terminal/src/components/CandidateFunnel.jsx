@@ -5,7 +5,6 @@ import {
   TrendingDown,
   CheckCircle2,
   AlertOctagon,
-  ShieldCheck,
   Zap,
   Clock,
   Layers,
@@ -16,9 +15,9 @@ const FUNNEL_GATES = [
   { id: 'discovered', label: 'Discovered', desc: 'Observed pool events' },
   { id: 'aged', label: 'Aged', desc: 'Age >= 10s' },
   { id: 'buyerThreshold', label: 'Buyer Threshold', desc: 'Buyers >= 5 & Buy > 2x Sell' },
-  { id: 'safetyPassed', label: 'Safety Passed', desc: 'Authorities revoked, creator intact' },
+  { id: 'safetyPassed', label: 'Safety Reported', desc: 'Source-reported safety stage' },
   { id: 'driftPassed', label: 'Drift Passed', desc: 'Reserves drift within +-200 BPS' },
-  { id: 'eligible', label: 'Eligible', desc: 'Active curve or verified AMM route' },
+  { id: 'eligible', label: 'Eligibility Reported', desc: 'Source-reported eligibility stage' },
   { id: 'paperFilled', label: 'Paper-Filled', desc: 'Settled paper position' },
 ];
 
@@ -53,22 +52,27 @@ export function CandidateFunnel({ funnelData, liveCandidates = [], onSelectStage
         </div>
 
         <div className="soak-card-footer">
-          <span>
-            <ShieldCheck size={12} /> Sequential gating guarantees zero real funds are risked before passing authorities, liquidity floor, and drift checks.
-          </span>
+          <span>Telemetry status only. This funnel does not authorize trades or prove a live risk boundary.</span>
         </div>
       </article>
     );
   }
 
+  const candidates = Array.isArray(liveCandidates) ? liveCandidates : [];
+  const reportedCount = (key) => Number.isSafeInteger(funnelData?.[key]) && funnelData[key] >= 0 ? funnelData[key] : null;
+  const countFromCandidates = (required, predicate) => {
+    if (candidates.some((candidate) => !required(candidate))) return null;
+    return candidates.filter(predicate).length;
+  };
   const counts = {
-    discovered: funnelData?.discovered ?? liveCandidates.length,
-    aged: funnelData?.aged ?? liveCandidates.filter(c => (c.age ?? 0) >= 10_000).length,
-    buyerThreshold: funnelData?.buyerThreshold ?? liveCandidates.filter(c => (c.buyers ?? 0) >= 5 && !c.devSold).length,
-    safetyPassed: funnelData?.safetyPassed ?? liveCandidates.filter(c => (c.buyers ?? 0) >= 5 && !c.devSold && (!c.curve || !c.curve.complete || c.migrationState === 'RAYDIUM_ACTIVE' || c.migrationState === 'AMM_STABILIZED' || c.migrationState === 'MIGRATION_PENDING')).length,
-    driftPassed: funnelData?.driftPassed ?? liveCandidates.filter(c => c.drift?.passed).length,
-    eligible: funnelData?.eligible ?? liveCandidates.filter(c => c.drift?.passed && (!c.curve || !c.curve.complete || c.migrationState === 'RAYDIUM_ACTIVE' || c.migrationState === 'AMM_STABILIZED') && !c.devSold).length,
-    paperFilled: funnelData?.paperFilled ?? 0,
+    discovered: reportedCount('discovered') ?? candidates.length,
+    aged: reportedCount('aged') ?? countFromCandidates((c) => Number.isFinite(c?.age), (c) => c.age >= 10_000),
+    buyerThreshold: reportedCount('buyerThreshold') ?? countFromCandidates((c) => Number.isFinite(c?.buyers) && typeof c?.devSold === 'boolean', (c) => c.buyers >= 5 && !c.devSold),
+    // Candidate-level buyer/migration hints do not establish safety approval or route eligibility.
+    safetyPassed: reportedCount('safetyPassed'),
+    driftPassed: reportedCount('driftPassed') ?? countFromCandidates((c) => typeof c?.drift?.passed === 'boolean', (c) => c.drift.passed),
+    eligible: reportedCount('eligible'),
+    paperFilled: reportedCount('paperFilled'),
   };
 
   const topCount = Math.max(1, counts.discovered);
@@ -79,14 +83,17 @@ export function CandidateFunnel({ funnelData, liveCandidates = [], onSelectStage
     if (onSelectStage) onSelectStage(next);
   };
 
-  const dropOffs = funnelData?.stageDropOffs || [
-    { from: 'discovered', to: 'aged', dropCount: Math.max(0, counts.discovered - counts.aged), topReason: 'Age < 10s or token aged out' },
-    { from: 'aged', to: 'buyer threshold', dropCount: Math.max(0, counts.aged - counts.buyerThreshold), topReason: 'Buyer accumulation or RPC rate limits' },
-    { from: 'buyer threshold', to: 'safety passed', dropCount: Math.max(0, counts.buyerThreshold - counts.safetyPassed), topReason: 'Creator concentration or rug check failure' },
-    { from: 'safety passed', to: 'drift passed', dropCount: Math.max(0, counts.safetyPassed - counts.driftPassed), topReason: 'Dual drift exceeded (+-200 BPS)' },
-    { from: 'drift passed', to: 'eligible', dropCount: Math.max(0, counts.driftPassed - counts.eligible), topReason: 'Unverified AMM migration or cash reserve limit' },
-    { from: 'eligible', to: 'paper-filled', dropCount: Math.max(0, counts.eligible - counts.paperFilled), topReason: 'In-flight execution pending or max positions cap' },
-  ];
+  const stageDropOffs = Array.isArray(funnelData?.stageDropOffs) ? funnelData.stageDropOffs : null;
+  const dropOffs = stageDropOffs || FUNNEL_GATES.slice(0, -1).map((gate, index) => {
+    const fromCount = counts[gate.id];
+    const toCount = counts[FUNNEL_GATES[index + 1].id];
+    return {
+      from: gate.id,
+      to: FUNNEL_GATES[index + 1].id,
+      dropCount: Number.isSafeInteger(fromCount) && Number.isSafeInteger(toCount) ? Math.max(0, fromCount - toCount) : null,
+      topReason: 'No source-reported attrition reason.',
+    };
+  });
 
   const isEmpty = counts.discovered === 0;
 
@@ -98,32 +105,31 @@ export function CandidateFunnel({ funnelData, liveCandidates = [], onSelectStage
           <h3>Candidate Funnel View</h3>
         </div>
         <div className="funnel-header-meta">
-          <span className="count font-mono">{counts.discovered} total candidates</span>
+          <span className="count font-mono">{counts.discovered} candidates in snapshot</span>
           <span className="pill pill-funnel font-mono">
-            <CheckCircle2 size={11} /> {counts.paperFilled} filled ({((counts.paperFilled / topCount) * 100).toFixed(1)}%)
+            {counts.paperFilled == null ? <HelpCircle size={11} /> : <CheckCircle2 size={11} />} {counts.paperFilled == null ? '— paper fills' : `${counts.paperFilled} paper fills (${((counts.paperFilled / topCount) * 100).toFixed(1)}%)`}
           </span>
         </div>
       </header>
 
       <p className="funnel-subtitle">
-        Tracks token progression through each mandatory safety and liquidity gate. Pinpoints exactly where opportunities drop out.
+        Shows source-reported gate totals and counts derived from complete candidate fields. Missing safety or eligibility totals remain unknown.
       </p>
 
       {isEmpty ? (
         <div className="funnel-empty-state" role="status">
           <Filter size={24} />
-          <b>No candidates currently in evaluation pipeline</b>
-          <small>Waiting for token create and trade events on the monitored Solana cluster.</small>
+          <b>No candidates in the supplied snapshot</b>
+          <small>This snapshot does not establish complete feed coverage or prove that no opportunities occurred.</small>
         </div>
       ) : (
         <div className="funnel-stepper-container" role="region" aria-label="Candidate gate funnel">
           <div className="funnel-stages-row">
             {FUNNEL_GATES.map((gate, idx) => {
-              const count = counts[gate.id] ?? 0;
-              const pctOfTotal = ((count / topCount) * 100).toFixed(1);
+              const count = counts[gate.id];
+              const pctOfTotal = Number.isSafeInteger(count) ? `${((count / topCount) * 100).toFixed(1)}%` : '—';
               const isSelected = selectedGate === gate.id;
-              const prevCount = idx > 0 ? (counts[FUNNEL_GATES[idx - 1].id] ?? 0) : null;
-              const stepPassPct = prevCount && prevCount > 0 ? ((count / prevCount) * 100).toFixed(0) : null;
+              const prevCount = idx > 0 ? counts[FUNNEL_GATES[idx - 1].id] : null;
 
               return (
                 <React.Fragment key={gate.id}>
@@ -132,15 +138,15 @@ export function CandidateFunnel({ funnelData, liveCandidates = [], onSelectStage
                     onClick={() => handleGateClick(gate.id)}
                     role="button"
                     tabIndex={0}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleGateClick(gate.id); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleGateClick(gate.id); } }}
                     aria-pressed={isSelected}
-                    title={`${gate.label}: ${count} candidates (${pctOfTotal}% of total)`}
+                    title={`${gate.label}: ${count ?? 'unknown'} candidates (${pctOfTotal} of total)`}
                   >
                     <div className="stage-top">
                       <span className="stage-index">{idx + 1}</span>
-                      <span className="stage-pct font-mono">{pctOfTotal}%</span>
+                      <span className="stage-pct font-mono">{pctOfTotal}</span>
                     </div>
-                    <div className="stage-count font-mono">{count}</div>
+                    <div className="stage-count font-mono">{count ?? '—'}</div>
                     <div className="stage-label">{gate.label}</div>
                     <div className="stage-desc">{gate.desc}</div>
 
@@ -148,7 +154,7 @@ export function CandidateFunnel({ funnelData, liveCandidates = [], onSelectStage
                       <div
                         className="stage-bar-fill"
                         style={{
-                          width: `${Math.max(4, Math.min(100, (count / topCount) * 100))}%`,
+                          width: Number.isSafeInteger(count) ? `${Math.max(4, Math.min(100, (count / topCount) * 100))}%` : '0%',
                           backgroundColor: idx === FUNNEL_GATES.length - 1 ? '#14F195' : idx >= 3 ? '#00C2FF' : '#9945FF'
                         }}
                       />
@@ -158,10 +164,10 @@ export function CandidateFunnel({ funnelData, liveCandidates = [], onSelectStage
                   {idx < FUNNEL_GATES.length - 1 && (
                     <div className="funnel-connector">
                       <ArrowRight size={14} className="connector-arrow" />
-                      {dropOffs[idx] && dropOffs[idx].dropCount > 0 && (
+                      {dropOffs[idx] && Number.isSafeInteger(dropOffs[idx].dropCount) && dropOffs[idx].dropCount > 0 && (
                         <span
                           className="funnel-drop-badge font-mono"
-                          title={`Drop-off: ${dropOffs[idx].dropCount} (${dropOffs[idx].topReason})`}
+                          title={`Count difference: ${dropOffs[idx].dropCount} (${dropOffs[idx].topReason || 'Reason unavailable'})`}
                         >
                           -{dropOffs[idx].dropCount}
                         </span>
@@ -178,16 +184,16 @@ export function CandidateFunnel({ funnelData, liveCandidates = [], onSelectStage
             <div className="drawer-header">
               <TrendingDown size={14} />
               <span>GATE DROP-OFF FORENSICS</span>
-              <small>Empirical attrition reasons across sequential verification gates</small>
+              <small>{stageDropOffs ? 'Source-reported attrition details' : 'Count differences only; causes were not supplied'}</small>
             </div>
             <div className="drawer-grid">
               {dropOffs.map((d, i) => (
                 <div key={d.from + d.to} className="drop-card">
                   <div className="drop-card-top">
                     <span className="drop-route font-mono">{FUNNEL_GATES[i]?.label} → {FUNNEL_GATES[i + 1]?.label}</span>
-                    <b className="drop-count font-mono">-{d.dropCount}</b>
+                    <b className="drop-count font-mono">{Number.isSafeInteger(d.dropCount) ? `-${d.dropCount}` : '—'}</b>
                   </div>
-                  <p className="drop-reason">{d.topReason}</p>
+                  <p className="drop-reason">{d.topReason || 'No source-reported attrition reason.'}</p>
                 </div>
               ))}
             </div>
@@ -196,9 +202,7 @@ export function CandidateFunnel({ funnelData, liveCandidates = [], onSelectStage
       )}
 
       <div className="soak-card-footer">
-        <span>
-          <ShieldCheck size={12} /> Sequential gating guarantees zero real funds are risked before passing authorities, liquidity floor, and drift checks.
-        </span>
+          <span>Telemetry status only. This funnel does not authorize trades or prove a live risk boundary.</span>
       </div>
     </article>
   );

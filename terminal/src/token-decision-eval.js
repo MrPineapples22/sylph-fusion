@@ -4,10 +4,9 @@
 export const MAX_PRICE_DRIFT_BPS = 200;
 export const MAX_LIQUIDITY_DROP_BPS = 200;
 
-// Empirical alpha thresholds established from 523,351 Solana Pump.fun launches:
-// Median observation arrival gap < 1.0s marks genuine competing block-0/1 multi-buyer flow (2x win rate doubles from 14.0% to 28.9%).
+// Configured research screening thresholds. They are not calibration certificates.
 export const MAX_DISCOVERY_GAP_SECONDS = 1.0;
-// Entry quote must be <= 1.15x initial curve price (preventing frontrun / chasing already-pumped tokens).
+// Local entry quote guard; it does not establish absence of frontrunning.
 export const MAX_OPENING_PRICE_RATIO = 1.15;
 
 // Pre-committed exit contract (STAGED_DERISK_2X_TRAIL yielded Profit Factor 1.121 and +$119k out-of-sample).
@@ -94,7 +93,7 @@ export function evaluateTokenDecision({
   asset,
   candidate = null,
   driftTelemetry = null,
-  solPriceUsd = 150,
+  solPriceUsd = null,
   rejectionReason = null,
   isEligible = false,
   eligibilityNotes = '',
@@ -353,13 +352,13 @@ export function evaluateTokenDecision({
     isSniperCooldown,
     isMigrationPending,
     isTransitionPending: isMigrationPending,
-    netEdge: asset.netEdgePct || asset.edge || '+0.0%',
-    opportunityStage: asset.decision || 'WATCH',
-    spieNetEv: asset.netEdgePct || asset.edge || '+0.0%',
+    netEdge: asset.netEdgePct ?? asset.edge ?? null,
+    opportunityStage: asset.decision ?? null,
+    spieNetEv: asset.spieNetEv ?? asset.netEdgePct ?? asset.edge ?? null,
     medianObsGapSec,
     initialPriceRatio,
     isHighVelocity: medianObsGapSec != null ? !isVelocityViolated : null,
     isPriceChasing: initialPriceRatio != null ? isChasingViolated : null,
-    empiricalExitPolicy: DEFAULT_EMPIRICAL_EXIT_POLICY,
+    empiricalExitPolicy: candidate?.empiricalExitPolicy ?? asset.empiricalExitPolicy ?? DEFAULT_EMPIRICAL_EXIT_POLICY,
   };
 }

@@ -433,7 +433,7 @@ export default React.memo(function LiveDashboard() {
             <div className="capital-authority-strip" aria-label="Capital Authority Strip">
               <div className="capital-strip-badge" title="Part I & LXXI: Institutional Authority Lattice Mode">
                 <span className="cap-label">AUTHORITY:</span>
-                <span className="cap-val cap-cyan">{cap.authorityMode || 'OBSERVE_ONLY'}</span>
+                <span className="cap-val cap-cyan">{cap.authorityMode || 'UNKNOWN'}</span>
               </div>
               <div className="capital-strip-badge" title="Part II & IV: Authoritative Double-Entry Capital Truth">
                 <span className="cap-label">CAPITAL:</span>
@@ -457,7 +457,7 @@ export default React.memo(function LiveDashboard() {
               </div>
               <div className="capital-strip-badge" title="Part XVIII & XIX: Zone 0 Hardware Custody Vault">
                 <span className="cap-label">VAULT:</span>
-                <span className={`cap-val ${cap.vaultArmed ? 'cap-good' : 'cap-warn'}`}>{cap.vaultArmed ? 'ARMED' : 'LOCKED'}</span>
+                <span className={`cap-val ${cap.vaultArmed == null ? 'cap-warn' : cap.vaultArmed ? 'cap-good' : 'cap-warn'}`}>{cap.vaultArmed == null ? 'UNKNOWN' : cap.vaultArmed ? 'ARMED' : 'LOCKED'}</span>
               </div>
               <div className="capital-strip-badge" title="Part LXVIII: Blockchain Consensus Mirror">
                 <span className="cap-label">CHAIN:</span>
@@ -487,13 +487,13 @@ export default React.memo(function LiveDashboard() {
               <div className="capital-deep-panel" aria-label="Capital Assurance Deep Details">
                 <div className="signing-assurance-strip" aria-label="Signing Assurance Strip">
                   <span className="sign-assurance-title">SIGNING GATE:</span>
-                  <span className="sign-gate-item">GATE <b>{cap.signingGate?.gateReady ? 'READY' : 'WAIT'}</b></span>
-                  <span className="sign-gate-item">RESERVE <b>{cap.signingGate?.reservationPass ? 'PASS' : 'FAIL'}</b></span>
-                  <span className="sign-gate-item">STATE <b>{cap.signingGate?.stateCurrent ? 'CURRENT' : 'STALE'}</b></span>
-                  <span className="sign-gate-item">PROOF <b>{cap.signingGate?.proofCurrent ? 'CURRENT' : 'EXPIRED'}</b></span>
+                  <span className="sign-gate-item">GATE <b>{cap.signingGate?.gateReady == null ? 'UNKNOWN' : cap.signingGate.gateReady ? 'READY' : 'WAIT'}</b></span>
+                  <span className="sign-gate-item">RESERVE <b>{cap.signingGate?.reservationPass == null ? 'UNKNOWN' : cap.signingGate.reservationPass ? 'PASS' : 'FAIL'}</b></span>
+                  <span className="sign-gate-item">STATE <b>{cap.signingGate?.stateCurrent == null ? 'UNKNOWN' : cap.signingGate.stateCurrent ? 'CURRENT' : 'STALE'}</b></span>
+                  <span className="sign-gate-item">PROOF <b>{cap.signingGate?.proofCurrent == null ? 'UNKNOWN' : cap.signingGate.proofCurrent ? 'CURRENT' : 'EXPIRED'}</b></span>
                   <span className="sign-gate-item">EPOCH <b>{cap.signingGate?.controlEpoch ?? '—'}</b></span>
                   <span className="sign-gate-item">REVOKE <b>{cap.signingGate?.revocationEpoch ?? '—'}</b></span>
-                  <span className="sign-gate-item">VAULT <b className="cap-good">{cap.signingGate?.vaultStatus || 'LOCKED'}</b></span>
+                  <span className="sign-gate-item">VAULT <b className={cap.signingGate?.vaultStatus ? 'cap-good' : 'cap-warn'}>{cap.signingGate?.vaultStatus || 'UNKNOWN'}</b></span>
                 </div>
 
                 <div className="capital-assurance-grid">
@@ -507,7 +507,7 @@ export default React.memo(function LiveDashboard() {
                   </div>
                   <div className="cap-metric-card">
                     <small>Emergency Reserve (Zone 0)</small>
-                    <b className="cap-good">{cap.assuranceDeep?.emergencyReserveSol ?? '—'} SOL (unverified)</b>
+                    <b className="cap-cyan">{cap.assuranceDeep?.emergencyReserveSol ?? '—'}{cap.assuranceDeep?.emergencyReserveSol != null ? ' SOL' : ''} (projection)</b>
                   </div>
                   <div className="cap-metric-card">
                     <small>Max Blast Radius / Max Compromise</small>
@@ -719,32 +719,32 @@ export default React.memo(function LiveDashboard() {
                                 {statusVal}
                               </span>
                               <div className="blueprint-telemetry-micro">
-                                <span className="micro-tag tag-attn" title={`Bohr Attention Tier: ${token.attn || 'A0'}`}>
-                                  {token.attn || 'A0'}
+                                <span className="micro-tag tag-attn" title={`Bohr Attention Tier: ${token.attn || 'UNKNOWN'}`}>
+                                  {token.attn || 'UNKNOWN'}
                                 </span>
-                                <span className="micro-tag tag-path" title={`Kepler Trajectory: ${token.path || 'ACCUM'}`}>
-                                  {token.path || 'ACCUM'}
-                                </span>
-                                <span
-                                  className={`micro-tag tag-stab ${(token.stab || 'STABLE').toLowerCase().includes('frag') || (token.stab || 'STABLE').toLowerCase().includes('casc') ? 'stab-fragile' : ''}`}
-                                  title={`Chandrasekhar Stability: ${token.stab || 'STABLE'}`}
-                                >
-                                  {token.stab || 'STABLE'}
-                                </span>
-                                <span className="micro-tag tag-belief" title={`Laplace Dominant Belief: ${token.belief || 'ORGANIC'}`}>
-                                  {token.belief || 'ORGANIC'}
+                                <span className="micro-tag tag-path" title={`Kepler Trajectory: ${token.path || 'UNKNOWN'}`}>
+                                  {token.path || 'UNKNOWN'}
                                 </span>
                                 <span
-                                  className={`micro-tag tag-unc ${(token.unc || 'MED') === 'HIGH' ? 'unc-high' : ''}`}
-                                  title={`Curie Uncertainty: ${token.unc || 'MED'}`}
+                                  className={`micro-tag tag-stab ${(token.stab || '').toLowerCase().includes('frag') || (token.stab || '').toLowerCase().includes('casc') ? 'stab-fragile' : ''}`}
+                                  title={`Chandrasekhar Stability: ${token.stab || 'UNKNOWN'}`}
                                 >
-                                  {token.unc || 'MED'}
+                                  {token.stab || 'UNKNOWN'}
                                 </span>
-                                <span className="micro-tag tag-edge-state" title={`Shannon Information State: ${token.edgeState || 'EARLY'}`}>
-                                  {token.edgeState || 'EARLY'}
+                                <span className="micro-tag tag-belief" title={`Laplace Dominant Belief: ${token.belief || 'UNKNOWN'}`}>
+                                  {token.belief || 'UNKNOWN'}
                                 </span>
-                                <span className="micro-tag tag-intel" title={`Intel Indicator: ${token.intel || 'STRONG'}`}>
-                                  {token.intel === 'STRONG' ? 'INTEL ↑' : token.intel === 'CONFLICT' ? 'INTEL !' : `INTEL ${token.intel || '✓'}`}
+                                <span
+                                  className={`micro-tag tag-unc ${token.unc === 'HIGH' ? 'unc-high' : ''}`}
+                                  title={`Curie Uncertainty: ${token.unc || 'UNKNOWN'}`}
+                                >
+                                  {token.unc || 'UNKNOWN'}
+                                </span>
+                                <span className="micro-tag tag-edge-state" title={`Shannon Information State: ${token.edgeState || 'UNKNOWN'}`}>
+                                  {token.edgeState || 'UNKNOWN'}
+                                </span>
+                                <span className="micro-tag tag-intel" title={`Intel Indicator: ${token.intel || 'UNKNOWN'}`}>
+                                  {token.intel === 'STRONG' ? 'INTEL ↑' : token.intel === 'CONFLICT' ? 'INTEL !' : `INTEL ${token.intel || 'UNKNOWN'}`}
                                 </span>
                                 <span
                                   className={`micro-tag tag-risk risk-${String(token.risk || 'UNKNOWN').toLowerCase()}`}
@@ -835,7 +835,7 @@ export default React.memo(function LiveDashboard() {
                 </button>
               </div>
               <RiskDetails risk={risk} busy={busy} />
-              <TokenIntelligenceInspector mint={chosen.mint} initialData={chosen} />
+              <TokenIntelligenceInspector mint={chosen.mint} initialData={chosen} riskReport={risk} riskLoading={busy} />
               <div className="research-dock">
                 <div className="eyebrow">TOKEN RESEARCH</div>
                 <div>

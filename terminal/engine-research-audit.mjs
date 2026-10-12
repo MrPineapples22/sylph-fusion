@@ -60,6 +60,7 @@ const FIELD_NAMES = Object.freeze([
   'marketSnapshotAgeMs',
   'abandonedAtMs', 'reason', 'settledAtMs', 'simulatedLamportDelta', 'executionAuthority',
   'outcomeEvidenceClass', 'endedAtMs', 'lastObservedSlot', 'outcomeStatus',
+  'routeEvidence',
 ]);
 const MAX_EVENTS = 250;
 const MAX_FIELD_STRING = 256;
@@ -69,6 +70,31 @@ const LAMPORT_STRING_FIELDS = new Set([
   'estimatedSellSlippageLamports',
 ]);
 const SIGNED_LAMPORT_STRING_FIELDS = new Set(['simulatedLamportDelta']);
+
+function projectRouteEvidence(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || value.router !== 'JUPITER' ||
+      value.orderMode !== 'ExactIn' || !Array.isArray(value.routePlan) || value.routePlan.length < 1 || value.routePlan.length > 32 ||
+      !Number.isSafeInteger(value.quoteTimestampMs) || value.quoteTimestampMs < 0 ||
+      !Number.isSafeInteger(value.lastValidBlockHeight) || value.lastValidBlockHeight < 1 ||
+      value.transactionVersion !== null || value.transactionState !== 'INSTRUCTIONS_ONLY') return null;
+  const mint = item => typeof item === 'string' && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(item);
+  const amount = item => typeof item === 'string' && /^(?:0|[1-9][0-9]{0,63})$/.test(item);
+  const routePlan = [];
+  for (const hop of value.routePlan) {
+    if (!hop || typeof hop !== 'object' || Array.isArray(hop) ||
+        !(hop.ammKey === null || (typeof hop.ammKey === 'string' && hop.ammKey.length <= 128)) ||
+        !(hop.label === null || (typeof hop.label === 'string' && hop.label.length <= 80)) ||
+        !mint(hop.inputMint) || !mint(hop.outputMint) || !amount(hop.inputAmount) || !amount(hop.outputAmount) ||
+        !Number.isSafeInteger(hop.percent) || hop.percent < 1 || hop.percent > 100 ||
+        !(hop.feeAmount === null || amount(hop.feeAmount)) || !(hop.feeMint === null || mint(hop.feeMint))) return null;
+    routePlan.push(Object.freeze({ ammKey: hop.ammKey, label: hop.label, inputMint: hop.inputMint,
+      outputMint: hop.outputMint, inputAmount: hop.inputAmount, outputAmount: hop.outputAmount,
+      percent: hop.percent, feeAmount: hop.feeAmount, feeMint: hop.feeMint }));
+  }
+  return Object.freeze({ router: 'JUPITER', orderMode: 'ExactIn', routePlan: Object.freeze(routePlan),
+    quoteTimestampMs: value.quoteTimestampMs, lastValidBlockHeight: value.lastValidBlockHeight,
+    transactionVersion: null, transactionState: 'INSTRUCTIONS_ONLY' });
+}
 
 function safeCounter(value) {
   if (typeof value === 'bigint') return value >= 0n && value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : null;
@@ -98,6 +124,13 @@ function safeFields(body, eventType) {
   for (const key of FIELD_NAMES) {
     if (!Object.hasOwn(body, key)) continue;
     const value = body[key];
+    if (key === 'routeEvidence') {
+      if (eventType !== 'candidate_order_built_v1' || !Object.hasOwn(body, 'costEvidenceClass') || body.costEvidenceClass !== 'PAPER_BUILD_ESTIMATE') return null;
+      const projected = projectRouteEvidence(value);
+      if (!projected) return null;
+      fields[key] = projected;
+      continue;
+    }
     if (typeof value === 'string' && value.length <= MAX_FIELD_STRING) {
       if (LAMPORT_STRING_FIELDS.has(key) && !/^(?:0|[1-9][0-9]*)$/.test(value)) return null;
       if (SIGNED_LAMPORT_STRING_FIELDS.has(key) && !/^(?:0|-?[1-9][0-9]*)$/.test(value)) return null;

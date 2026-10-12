@@ -1,7 +1,7 @@
 import React from 'react';
 import { Clock, ShieldCheck, ShieldAlert, AlertTriangle, ArrowRight } from 'lucide-react';
 
-export function DecisionTimeline({ events = [], currentStage = 'OBSERVED', evaluatedAt = Date.now() }) {
+export function DecisionTimeline({ events = [], currentStage = null, evaluatedAt = null }) {
   const stages = [
     { id: 'OBSERVED', label: 'Observed', desc: 'Market discovery & ingestion' },
     { id: 'SCREENED', label: 'Screened', desc: 'Pre-trade safety & filters' },
@@ -14,7 +14,7 @@ export function DecisionTimeline({ events = [], currentStage = 'OBSERVED', evalu
 
   return (
     <div className="decision-timeline-component" role="region" aria-label="Decision Timeline">
-      <div className="timeline-stages flex items-center justify-between mb-4">
+      <div className="timeline-stages flex items-center justify-between mb-4" aria-label={currentIdx < 0 ? 'Reference stages; current stage unavailable' : `Current stage: ${currentStage}`}>
         {stages.map((stage, idx) => {
           const isPassed = currentIdx > idx;
           const isCurrent = currentIdx === idx;
@@ -29,12 +29,16 @@ export function DecisionTimeline({ events = [], currentStage = 'OBSERVED', evalu
         })}
       </div>
 
+      {currentIdx < 0 && events.length === 0 && (
+        <p className="text-[10px] text-muted" role="status">No lifecycle stage or transition events were supplied. The stages above are reference labels only.</p>
+      )}
+
       {events.length > 0 && (
         <div className="timeline-event-list font-mono text-xs border-t border-[#1f2937] pt-3">
           <span className="eyebrow text-muted block mb-2">TRANSITION LOG</span>
           {events.map((evt, i) => (
             <div key={evt.id || i} className="timeline-event-row flex items-center justify-between py-1">
-              <span className="text-[#38bdf8]">{new Date(evt.timestamp || evaluatedAt).toLocaleTimeString()}</span>
+              <span className="text-[#38bdf8]">{(evt.timestamp ?? evaluatedAt) != null && Number.isFinite(new Date(evt.timestamp ?? evaluatedAt).getTime()) ? new Date(evt.timestamp ?? evaluatedAt).toLocaleTimeString() : 'Time unknown'}</span>
               <span className="text-foreground">{evt.message || evt.text}</span>
               <span className={`status-badge text-[10px] ${evt.status === 'ERROR' ? 'text-danger' : 'text-good'}`}>{evt.status || 'OK'}</span>
             </div>

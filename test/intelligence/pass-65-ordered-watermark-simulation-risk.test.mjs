@@ -327,6 +327,20 @@ describe('Pass 65: Ordered Observation Staging, Geyser Watermark Tracker & Simul
       poolOpsPerSec: 12,
     };
 
+    const dualPathInstructionEvidence = {
+      protocol: 'PUMP_FUN', programId: '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P',
+      instructionIndex: 0, tokenMint: mint, userPubkey: 'UserWallet111111111111111111111111111111111',
+      discriminator: 'buy', rawAmountIn: 1_000n, rawAmountOut: 2_000n,
+      slot: baseEvent.slot, signature: 'pass65-dual-path-signature', isSuccess: true,
+    };
+    const dualPathLogEvidence = {
+      protocol: 'PUMP_FUN', programId: dualPathInstructionEvidence.programId,
+      logIndex: 0, tokenMint: mint, userPubkey: dualPathInstructionEvidence.userPubkey,
+      logDiscriminator: 'buy', rawAmountIn: 1_000n, rawAmountOut: 2_000n,
+      logMessage: 'Program log: buy', slot: baseEvent.slot,
+      signature: dualPathInstructionEvidence.signature, isSuccess: true,
+    };
+
     // Subtest 5A: Decision Kernel gating on Watermark Gap
     const gapBlockedResult = await master.processEvent(baseEvent, {
       ...baseContext,
@@ -364,6 +378,8 @@ describe('Pass 65: Ordered Observation Staging, Geyser Watermark Tracker & Simul
         expectedTokenOut: 10_000,
         expectedSlippageBps: 100,
       },
+      dualPathInstructionEvidence,
+      dualPathLogEvidence,
     });
     assert.equal(simBlockedResult.decision, 'CHALLENGED_ABSTAIN');
     assert.match(simBlockedResult.whyExecutionBlocked || '', /SIMULATION RISK FENCE BREACH/);
@@ -373,10 +389,14 @@ describe('Pass 65: Ordered Observation Staging, Geyser Watermark Tracker & Simul
     assert.ok(gapBlockedResult.viewModel.simulationRiskCertificate);
     assert.ok(gapBlockedResult.observationWatermarkReport);
     assert.ok(gapBlockedResult.simulationRiskCertificate);
+    assert.equal(simBlockedResult.viewModel.dualPathReconciliation.status, 'UNIFIED_MATCH');
+    assert.equal(simBlockedResult.viewModel.dualPathCertificate.hasDualPathAgreement, true);
+    assert.equal(simBlockedResult.viewModel.dualPathCertificate.evidenceSource, 'CALLER_SUPPLIED_UNAUTHENTICATED');
 
     // Subtest 5D: Public helper methods
     assert.ok(master.getOrderedObservationBuffer() instanceof OrderedObservationStagingEngine);
     assert.ok(master.getSimulationRiskEnvelope() instanceof SimulationRiskEnvelopeEngine);
+    assert.equal(master.getDualPathReconciliationEngine().constructor.name, 'DualPathReconciliationEngine');
 
     const stagedReport = master.stageObservation({
       slot: 448300500,

@@ -102,8 +102,9 @@ export function VetoProofInspectorDrawer({
   };
 
   const decision = proofData?.decision || 'UNKNOWN';
-  const isVeto = decision === 'FAIL' || decision === 'VETO';
-  const isPass = decision === 'PASS';
+  const isSynthetic = proofData?.evidenceQuality?.classification === 'SYNTHETIC_PLACEHOLDER';
+  const isVeto = !isSynthetic && (decision === 'FAIL' || decision === 'VETO');
+  const isPass = !isSynthetic && decision === 'PASS';
   const isPending = decision === 'UNKNOWN' || decision === 'CONFLICTED' || decision === 'PENDING';
 
   const badgeBg = isPass ? 'rgba(20,241,149,0.15)' : isVeto ? 'rgba(255,59,105,0.15)' : 'rgba(245,158,11,0.15)';
@@ -126,20 +127,20 @@ export function VetoProofInspectorDrawer({
           <div className="flex items-center gap-3">
             <div
               className="p-2 rounded-lg border"
-              style={{ background: isVeto ? 'rgba(255,59,105,0.1)' : 'rgba(20,241,149,0.1)', borderColor: badgeBorder }}
+              style={{ background: isSynthetic ? 'rgba(245,158,11,0.12)' : isVeto ? 'rgba(255,59,105,0.1)' : 'rgba(20,241,149,0.1)', borderColor: badgeBorder }}
             >
-              {isVeto ? <ShieldAlert size={20} className="text-[#FF3B69]" /> : <ShieldCheck size={20} className="text-[#14F195]" />}
+              {isSynthetic ? <AlertTriangle size={20} className="text-amber-400" /> : isVeto ? <ShieldAlert size={20} className="text-[#FF3B69]" /> : <ShieldCheck size={20} className="text-[#14F195]" />}
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h2 id="veto-inspector-title" className="text-base font-bold text-white tracking-wide">
-                  Cryptographic Veto &amp; Safety Proof
+                  Rule Evaluation Preview
                 </h2>
                 <span
                   className="px-2 py-0.5 rounded text-[11px] font-mono font-bold tracking-wider uppercase border"
                   style={{ background: badgeBg, borderColor: badgeBorder, color: badgeText }}
                 >
-                  {decision}
+                  {isSynthetic ? `SYNTHETIC · ${decision}` : decision}
                 </span>
               </div>
               <p className="text-xs font-mono text-slate-400 truncate max-w-md">
@@ -160,21 +161,29 @@ export function VetoProofInspectorDrawer({
         {/* Epistemic Doctrine Banner */}
         <div className="px-4 py-2 bg-[#121824] border-b border-[#1A2335] flex items-center justify-between text-[11px] font-mono">
           <div className="flex items-center gap-1.5 text-slate-300">
-            <Fingerprint size={13} className="text-[#14F195]" />
+            {isSynthetic ? <AlertTriangle size={13} className="text-amber-400" /> : <Fingerprint size={13} className="text-[#14F195]" />}
             <span className="font-semibold text-white">EPISTEMIC DOCTRINE:</span>
-            <span>VETO MEANS PROVEN VETO</span>
+            <span>{isSynthetic ? 'PREVIEW RESULT · NO CHAIN AUTHORITY' : 'VETO MEANS PROVEN VETO'}</span>
           </div>
-          <span className="text-slate-400">VETO !== UNKNOWN · VETO !== BLOCKED</span>
+          <span className="text-slate-400">{isSynthetic ? 'Generated context is not observed chain evidence' : 'VETO !== UNKNOWN · VETO !== BLOCKED'}</span>
         </div>
+
+        {isSynthetic && (
+          <div role="alert" className="px-4 py-3 border-b border-amber-700/60 bg-amber-950/40 text-amber-100">
+            <div className="text-xs font-bold uppercase tracking-wide">Synthetic inputs · no safety conclusion</div>
+            <p className="mt-1 text-xs leading-relaxed">This preview uses generated bank identity and evidence metadata. A displayed PASS or VETO is only a rule-engine output over these inputs; it does not establish current on-chain state, cryptographic provenance, or permission to trade.</p>
+            {proofData.evidenceQuality.reasons?.length > 0 && <ul className="mt-2 list-disc list-inside text-[11px] text-amber-200/90">{proofData.evidenceQuality.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>}
+          </div>
+        )}
 
         {/* Tab Navigation */}
         <div className="flex border-b border-[#1A2335] bg-[#0C1018] px-4">
           {[
             { id: 'overview', label: 'Overview & Locks', icon: Lock },
-            { id: 'rules', label: 'Evaluated Rules (4)', icon: CheckCircle2 },
-            { id: 'genome', label: 'Witness Roots', icon: GitBranch },
-            { id: 'proofvoice', label: 'ProofVoice™', icon: Activity },
-            { id: 'raw', label: 'Raw Audit JSON', icon: FileCode },
+            { id: 'rules', label: `Evaluated Rules (${proofData?.evaluations?.length ?? '?'})`, icon: CheckCircle2 },
+            { id: 'genome', label: isSynthetic ? 'Generated Inputs' : 'Witness Roots', icon: GitBranch },
+            { id: 'proofvoice', label: isSynthetic ? 'Explanation' : 'ProofVoice™', icon: Activity },
+            { id: 'raw', label: 'Response JSON', icon: FileCode },
           ].map((tab) => {
             const Icon = tab.icon;
             const active = activeTab === tab.id;
@@ -201,7 +210,7 @@ export function VetoProofInspectorDrawer({
           {loading && (
             <div className="p-8 text-center text-slate-400 font-mono text-xs flex flex-col items-center gap-3">
               <RefreshCw size={24} className="animate-spin text-[#14F195]" />
-              <span>Synthesizing cryptographic proof from canonical chain bank...</span>
+              <span>Loading rule evaluation preview...</span>
             </div>
           )}
 
@@ -223,11 +232,11 @@ export function VetoProofInspectorDrawer({
                   <div className="grid grid-cols-2 gap-3">
                     <div className="p-3 rounded-lg bg-[#111722] border border-[#1A2335]">
                       <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block mb-1">
-                        Dual Monotonicity
+                        {isSynthetic ? 'Rule Engine Invariant' : 'Dual Monotonicity'}
                       </span>
                       <div className="flex items-center gap-2">
-                        <CheckCircle2 size={16} className="text-[#14F195]" />
-                        <span className="text-xs font-mono font-bold text-white">ENFORCED</span>
+                        {isSynthetic ? <AlertTriangle size={16} className="text-amber-400" /> : <CheckCircle2 size={16} className="text-[#14F195]" />}
+                        <span className="text-xs font-mono font-bold text-white">{isSynthetic ? 'NOT CHAIN EVIDENCE' : 'ENFORCED'}</span>
                       </div>
                       <p className="text-[10px] text-slate-400 mt-1">
                         FAIL(r) strictly forces system FAIL. Higher layers cannot waive.
@@ -236,16 +245,16 @@ export function VetoProofInspectorDrawer({
 
                     <div className="p-3 rounded-lg bg-[#111722] border border-[#1A2335]">
                       <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block mb-1">
-                        Coverage Totality
+                        {isSynthetic ? 'Preview Rule Coverage' : 'Coverage Totality'}
                       </span>
                       <div className="flex items-center gap-2">
-                        <CheckCircle2 size={16} className="text-[#14F195]" />
+                        {isSynthetic ? <AlertTriangle size={16} className="text-amber-400" /> : <CheckCircle2 size={16} className="text-[#14F195]" />}
                         <span className="text-xs font-mono font-bold text-white">
-                          {proofData.coverage?.coverageState || 'UNKNOWN'}
+                          {isSynthetic ? 'INPUTS UNVERIFIED' : proofData.coverage?.coverageState || 'UNKNOWN'}
                         </span>
                       </div>
                       <p className="text-[10px] text-slate-400 mt-1">
-                        PASS requires all applicable rules evaluated with 0 gaps.
+                        {isSynthetic ? 'Coverage counts describe generated preview inputs only.' : 'PASS requires all applicable rules evaluated with 0 gaps.'}
                       </p>
                     </div>
                   </div>
@@ -254,7 +263,7 @@ export function VetoProofInspectorDrawer({
                   <div className="p-3 rounded-lg bg-[#0E131C] border border-[#1A2335] space-y-2">
                     <h3 className="text-xs font-bold text-white flex items-center gap-2">
                       <Lock size={14} className="text-[#14F195]" />
-                      <span>Cryptographic Locks &amp; Context</span>
+                      <span>{isSynthetic ? 'Evaluation Context · Unverified' : 'Cryptographic Locks &amp; Context'}</span>
                     </h3>
 
                     {/* SUBJECTLOCK */}
@@ -276,11 +285,11 @@ export function VetoProofInspectorDrawer({
                     {/* BANKLOCK */}
                     <div className="p-2.5 rounded bg-[#111722] border border-[#1A2335] text-xs font-mono">
                       <div className="flex justify-between items-center text-slate-400 text-[10px] mb-1">
-                        <span>BANKLOCK (CANONICAL CHAIN CONTEXT)</span>
-                        <span className="text-amber-400">{proofData.bank?.canonicality || 'UNAVAILABLE'}</span>
+                        <span>{isSynthetic ? 'GENERATED BANK PLACEHOLDER' : 'BANK CONTEXT'}</span>
+                        <span className="text-amber-400">{isSynthetic ? 'NOT OBSERVED' : proofData.bank?.canonicality || 'UNAVAILABLE'}</span>
                       </div>
                       <div className="text-white">
-                        <span className="text-slate-400">Finalized Slot: </span>
+                        <span className="text-slate-400">{isSynthetic ? 'Generated slot: ' : 'Finalized slot: '}</span>
                         {proofData.bank?.slot ?? 'Unavailable'}
                       </div>
                       <div className="text-slate-400 text-[11px] truncate mt-0.5">
@@ -293,10 +302,10 @@ export function VetoProofInspectorDrawer({
                     <div className="p-2.5 rounded bg-[#111722] border border-[#1A2335] text-xs font-mono">
                       <div className="flex justify-between items-center text-slate-400 text-[10px] mb-1">
                         <span>PARSER-ZERO (DUAL-REFERENCE DECODING)</span>
-                        <span className="text-[#14F195]">EXACT MATCH</span>
+                        <span className="text-amber-400">{proofData.dualDecoderComparison?.status || 'UNKNOWN'}</span>
                       </div>
                       <div className="text-slate-300 text-[11px]">
-                        ProductionMintDecoder ⟷ IndepRefDecoder: Zero TLV corruption, exact field alignment
+                        {proofData.dualDecoderComparison?.summary || 'No independent decoder comparison was supplied.'}
                       </div>
                     </div>
                   </div>
@@ -332,12 +341,12 @@ export function VetoProofInspectorDrawer({
               {activeTab === 'rules' && (
                 <div className="space-y-3">
                   <div className="text-xs text-slate-400 font-mono mb-2">
-                    Signed Hard-Rule Registry: <span className="text-white">{proofData.registry?.epoch || 'Unavailable'}</span>
+                    Rule registry: <span className="text-white">{proofData.registry?.epoch || 'Unavailable'}</span> · signature {proofData.registry?.signatureStatus || 'unknown'}
                   </div>
 
                   {(proofData.evaluations || []).map((evalItem, idx) => {
-                    const pass = evalItem.status === 'PASS';
-                    const fail = evalItem.status === 'FAIL';
+                    const pass = !isSynthetic && evalItem.status === 'PASS';
+                    const fail = !isSynthetic && evalItem.status === 'FAIL';
                     const color = pass ? '#14F195' : fail ? '#FF3B69' : '#F59E0B';
                     const bg = pass ? 'rgba(20,241,149,0.1)' : fail ? 'rgba(255,59,105,0.1)' : 'rgba(245,158,11,0.1)';
 
@@ -353,7 +362,7 @@ export function VetoProofInspectorDrawer({
                             className="px-2 py-0.5 rounded text-[10px] font-bold"
                             style={{ background: bg, color }}
                           >
-                            {evalItem.status}
+                            {isSynthetic ? `PREVIEW · ${evalItem.status}` : evalItem.status}
                           </span>
                         </div>
                         <div className="text-slate-300 text-[11px]">{evalItem.reason}</div>
@@ -367,7 +376,7 @@ export function VetoProofInspectorDrawer({
               {activeTab === 'genome' && (
                 <div className="space-y-3">
                   <div className="text-xs text-slate-400 font-mono mb-2">
-                    EvidenceGenome DAG: Acyclops verification passed (0 cycles detected).
+                    {isSynthetic ? 'Generated evidence summary; graph verification was not supplied.' : 'Evidence roots supplied by the inspection endpoint.'}
                   </div>
 
                   {(proofData.evidenceRootsSummary || []).map((root, idx) => (
@@ -392,12 +401,12 @@ export function VetoProofInspectorDrawer({
                 <div className="space-y-4">
                   <div className="p-3 rounded-lg bg-[#0E131C] border border-[#1A2335] text-xs font-mono space-y-2">
                     <span className="text-[10px] text-slate-400 uppercase tracking-wider block">
-                      Authoritative Explanation Claim
+                      {isSynthetic ? 'Non-authoritative Preview Explanation' : 'Explanation'}
                     </span>
                     <p className="text-sm font-sans font-medium text-white leading-relaxed">
                       {proofData.proofBundle?.voice?.authoritativeReason ||
                         proofData.proofBundle?.voice?.whyVeto?.[0]?.sentence ||
-                        'Authoritative explanation unavailable.'}
+                        'Explanation unavailable.'}
                     </p>
                     <p className="text-xs text-slate-400">
                       {proofData.proofBundle?.voice?.disclaimer ||
@@ -407,12 +416,18 @@ export function VetoProofInspectorDrawer({
 
                   <div className="p-3 rounded-lg bg-[#111722] border border-[#1A2335] text-xs font-mono space-y-2">
                     <span className="text-[10px] text-slate-400 uppercase tracking-wider block">
-                      What Would Invalidate This Evaluation?
+                      {isSynthetic ? 'Evidence Needed for a Real Evaluation' : 'What Would Invalidate This Evaluation?'}
                     </span>
                     <ul className="list-disc list-inside space-y-1 text-slate-300 text-[11px]">
-                      <li>Canonical chain reorganization or orphaning of the evaluated bank blockhash</li>
-                      <li>Verified newer on-chain transaction revoking or mutating authority</li>
-                      <li>Protocol Epoch upgrade invalidating decoder hash or schema seal</li>
+                      {isSynthetic ? <>
+                        <li>RPC-sourced account bytes with slot, blockhash, commitment, and provider provenance</li>
+                        <li>Verified decoder artifact and schema hashes bound to those account bytes</li>
+                        <li>Independent decoder comparison and complete, fresh rule inputs</li>
+                      </> : <>
+                        <li>Canonical chain reorganization or orphaning of the evaluated bank blockhash</li>
+                        <li>Verified newer on-chain transaction revoking or mutating authority</li>
+                        <li>Protocol Epoch upgrade invalidating decoder hash or schema seal</li>
+                      </>}
                       <li>Independent auditor attestation surfacing an active defeater</li>
                     </ul>
                   </div>

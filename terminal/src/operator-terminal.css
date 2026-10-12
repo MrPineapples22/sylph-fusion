@@ -295,7 +295,16 @@
 .op-evidence-columns{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--space-6)}
 .op-market-evidence{font-size:11px;font-family:var(--font-mono,monospace);margin-top:8px}
 .op-market-evidence-patterns{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 6px}
-.op-market-evidence-patterns span{padding:3px 7px;border:1px solid rgba(56,189,248,.22);border-radius:999px;background:rgba(56,189,248,.06);color:rgba(210,230,245,.9);font-size:10px;line-height:1.35}
+.op-market-evidence-summary{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;padding:8px 10px;border:1px solid rgba(148,163,184,.2);border-radius:6px;background:rgba(148,163,184,.05);color:rgba(226,232,240,.78);font:11px/1.4 var(--font-sans,system-ui,sans-serif)}
+.op-market-evidence-summary strong{color:rgba(241,245,249,.96)}
+.op-market-evidence-patterns span{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid rgba(148,163,184,.22);border-radius:999px;background:rgba(148,163,184,.06);color:rgba(210,230,245,.9);font-size:10px;line-height:1.35}
+.op-market-evidence-patterns b{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.025em;color:rgba(203,213,225,.8)}
+.op-market-evidence-patterns .is-recorded,.op-market-evidence-patterns .is-counts-match{border-color:rgba(20,241,149,.25);background:rgba(20,241,149,.06)}
+.op-market-evidence-patterns .is-recorded b,.op-market-evidence-patterns .is-counts-match b{color:#14F195}
+.op-market-evidence-patterns .is-gap{border-color:rgba(255,59,105,.32);background:rgba(255,59,105,.08)}
+.op-market-evidence-patterns .is-gap b{color:#FF6B8C}
+.op-market-evidence-patterns .is-partial{border-color:rgba(245,158,11,.3);background:rgba(245,158,11,.06)}
+.op-market-evidence-patterns .is-partial b,.op-market-evidence-patterns .is-none-recorded b{color:#FBBF24}
 .op-market-evidence-row{display:grid;grid-template-columns:minmax(125px,.7fr) minmax(0,1.3fr);gap:12px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.05)}
 .op-market-evidence-row b{text-align:right;overflow-wrap:anywhere;font-weight:600}
 .op-market-evidence p{line-height:1.5}

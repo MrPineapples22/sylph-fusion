@@ -27,123 +27,18 @@ export function SystemIntelligenceDrawer({ data, onClose }) {
       <p>{data?.reason || 'A complete, current, independently verifiable system receipt has not been supplied.'}</p>
     </aside>;
   }
-  const omega = data || {
-    systemHealth: {
-      marketFeed: 'HEALTHY',
-      rpc: { primary: 'HEALTHY', backup: 'HEALTHY', independentPaths: 2 },
-      wss: 'CONNECTED',
-      nexus: 'CURRENT',
-      execution: 'HEALTHY',
-      reconciliation: 'CURRENT',
-      capitalTruth: 'VERIFIED',
-      safeCore: 'READY',
-      currentMode: 'NORMAL',
-    },
-    marketTruth: {
-      feedAgeSec: 0.8,
-      slotLag: 1,
-      queueAgeMs: 40,
-      primaryRpc: 'HEALTHY',
-      backupRpc: 'HEALTHY',
-      independentPaths: 2,
-      backfillStatus: 'IDLE',
-      causalGaps: 'NONE',
-      entryInformation: 'SUFFICIENT',
-      protectiveExit: 'AVAILABLE',
-    },
-    informationSufficiency: {
-      marketTruth: 'HEALTHY',
-      chainTruth: 'HEALTHY',
-      liquidity: 'CURRENT',
-      executionTruth: 'HEALTHY',
-      capitalTruth: 'VERIFIED',
-      positionTruth: 'VERIFIED',
-      capabilities: {
-        enter: 'ALLOWED',
-        add: 'ALLOWED',
-        reduce: 'AVAILABLE',
-        exit: 'AVAILABLE',
-        reconcile: 'AVAILABLE',
-      },
-    },
-    reasoning: {
-      mode: 'FAST',
-      primaryExpert: 'Wallet Graph',
-      independentChallenger: 'Funding Graph',
-      expertIndependence: 'HEALTHY',
-      activeWorldsCount: 2,
-      commonGround: ['Flow increasing', 'Liquidity present'],
-      criticalDisagreement: 'Buyer independence',
-      actionCommonGround: 'WATCH',
-    },
-    modelDynamics: {
-      marketDynamics: 'VALID',
-      liquidityDynamics: 'DRIFTING',
-      executionDynamics: 'DEGRADED',
-      walletDynamics: 'VALID',
-      recoveryDynamics: 'VALID',
-      largestResidual: 'EXIT CAPACITY',
-      bias: 'OPTIMISTIC',
-      affectedCapability: 'LARGE ENTRY',
-    },
-    controlAuthority: {
-      protectiveBasis: 'INTACT',
-      exitAuthority: 'STRONG',
-      rpcReserve: 'HEALTHY',
-      signerReserve: 'HEALTHY',
-      computeReserve: 'TIGHT',
-      nearestCorrectiveDeadlineSec: 15,
-      correctiveMode: 'NORMAL',
-    },
-    systemProgress: {
-      marketFeed: 'HEALTHY',
-      parser: 'HEALTHY',
-      nexus: 'HEALTHY',
-      execution: 'WAITING',
-      reconciliation: 'ACTIVE',
-      deadlock: 'NONE',
-      livelock: 'NONE',
-      starvation: 'NONE',
-      orphanTasksCount: 0,
-      economicProgress: 'VERIFIED',
-    },
-    distributedState: {
-      authorityEpoch: 813,
-      nexus: 'CURRENT',
-      treasury: 'CURRENT',
-      janus: 'CURRENT',
-      hermes: 'CURRENT',
-      vault: 'CURRENT',
-      causalGaps: 'NONE',
-      truthConflicts: 'NONE',
-      staleWritersFenced: 0,
-      splitBrain: 'NONE',
-      economicConvergence: 'VERIFIED',
-    },
-    policyHealth: {
-      policyEpoch: 'P42',
-      proxyIntegrity: 'HEALTHY',
-      metricGamingRisksCount: 1,
-      hsiPolicy: 'RESPONSE SHIFT DETECTED',
-      observationPolicy: 'PERFORMATIVE RISK: MODERATE',
-      policyValidity: 'LIMITED',
-      activeCommitmentsCount: 7,
-      timeConsistency: 'VERIFIED',
-      renegotiationsCount: 0,
-    },
-    auditStatus: {
-      lastFullAudit: new Date().toISOString(),
-      currentAuditPass: 3,
-      testsPassed: 376,
-      testsFailed: 0,
-      warningsCount: 0,
-      uiControlsTested: 24,
-      backgroundTasksHealthy: 6,
-      stateInvariants: 'PASS',
-      replayTest: 'PASS',
-      criticalUnresolvedIssues: 0,
-    },
-  };
+  const requiredSections = [
+    'systemHealth', 'marketTruth', 'informationSufficiency', 'reasoning', 'modelDynamics',
+    'controlAuthority', 'systemProgress', 'distributedState', 'policyHealth', 'auditStatus',
+  ];
+  if (requiredSections.some((key) => !data[key] || typeof data[key] !== 'object' || Array.isArray(data[key]))) {
+    return <aside className="system-intelligence-drawer" aria-label="System evidence">
+      <button type="button" onClick={onClose} aria-label="Close system evidence">Close</button>
+      <h3>System summary unavailable</h3>
+      <p>The receipt is current, but it does not include every section required by this panel. Missing sections remain unknown.</p>
+    </aside>;
+  }
+  const omega = data;
 
   const tabs = [
     { id: 'health', label: 'System Health', icon: Activity },

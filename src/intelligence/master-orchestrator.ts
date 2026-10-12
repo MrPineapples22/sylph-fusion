@@ -101,6 +101,14 @@ import {
   type SimulationEvidence,
   type SimulationRiskVerdict,
 } from '../platform/execution/simulation-risk-envelope.js';
+import {
+  DualPathReconciliationEngine,
+  type InstructionEvidence,
+  type LogEvidence,
+  type DualPathReconciliationReport,
+  type DualPathReconciliationCertificate,
+  type DualPathReconciliationStatus,
+} from '../platform/ingestion/dual-path-reconciler.js';
 import { TemporalEvidenceGraph } from './graph/temporal-evidence-graph.js';
 import { FundingAncestryEngine } from './graph/funding-ancestry.js';
 import { FirstPassageEngine, type ProbabilisticForecastReport } from './science/first-passage.js';
@@ -761,6 +769,8 @@ export interface AetherFluxViewModel {
   readonly landingBenchmark?: LandingBenchmarkCertificate;
   readonly observationWatermarkReport?: WatermarkGapReport;
   readonly simulationRiskCertificate?: SimulationRiskCertificate;
+  readonly dualPathReconciliation?: DualPathReconciliationReport;
+  readonly dualPathCertificate?: DualPathReconciliationCertificate;
 }
 
 export interface MasterPipelineResult {
@@ -856,6 +866,8 @@ export interface MasterPipelineResult {
   readonly landingBenchmark?: LandingBenchmarkCertificate;
   readonly observationWatermarkReport?: WatermarkGapReport;
   readonly simulationRiskCertificate?: SimulationRiskCertificate;
+  readonly dualPathReconciliation?: DualPathReconciliationReport;
+  readonly dualPathCertificate?: DualPathReconciliationCertificate;
   readonly whyExecutionBlocked?: string;
 }
 
@@ -977,6 +989,11 @@ export type {
   SimulationRiskCertificate,
   SimulationEvidence,
   SimulationRiskVerdict,
+  DualPathReconciliationReport,
+  DualPathReconciliationCertificate,
+  DualPathReconciliationStatus,
+  InstructionEvidence,
+  LogEvidence,
 };
 
 export class MasterIntelligenceEngine {
@@ -1138,6 +1155,7 @@ export class MasterIntelligenceEngine {
   public readonly landingBenchmarkEngine: LandingBenchmarkEngine;
   public readonly orderedObservationBuffer: OrderedObservationStagingEngine;
   public readonly simulationRiskEnvelope: SimulationRiskEnvelopeEngine;
+  public readonly dualPathReconciliationEngine: DualPathReconciliationEngine;
 
   constructor() {
     this.kernel = new IntegrationKernel();
@@ -1335,6 +1353,7 @@ export class MasterIntelligenceEngine {
     this.landingBenchmarkEngine = new LandingBenchmarkEngine();
     this.orderedObservationBuffer = new OrderedObservationStagingEngine();
     this.simulationRiskEnvelope = new SimulationRiskEnvelopeEngine();
+    this.dualPathReconciliationEngine = new DualPathReconciliationEngine();
 
     this.setupConnectionAuditor();
     this.registerComponents();
@@ -3527,6 +3546,16 @@ export class MasterIntelligenceEngine {
           })
         : missingSimulationRiskCertificate({ mint: event.mint, slot: event.slot, evaluatedAtMs: event.receivedTimestampMs }));
 
+    const dualPathInstructionEvidence = (context as any).dualPathInstructionEvidence ?? null;
+    const dualPathLogEvidence = (context as any).dualPathLogEvidence ?? null;
+    const hasDualPathInput = dualPathInstructionEvidence !== null || dualPathLogEvidence !== null;
+    const dualPathReconciliation: DualPathReconciliationReport | undefined = hasDualPathInput
+      ? this.dualPathReconciliationEngine.reconcile(dualPathInstructionEvidence, dualPathLogEvidence)
+      : undefined;
+    const dualPathCertificate: DualPathReconciliationCertificate | undefined = dualPathReconciliation
+      ? this.dualPathReconciliationEngine.certify(dualPathReconciliation)
+      : undefined;
+
     // ==========================================
     // ALPHA HALF-LIFE, QUOTE DECAY & EXECUTION SHORTFALL (Sections XV, XVI & XX)
     // ==========================================
@@ -3991,6 +4020,12 @@ export class MasterIntelligenceEngine {
     ) {
       decision = 'CHALLENGED_ABSTAIN';
       whyExecutionBlocked = `BLOCKED — SIMULATION RISK FENCE BREACH (${simulationRiskCertificate.verdict}: ${simulationRiskCertificate.rejectionReason || 'UNAPPROVED'})`;
+    } else if (
+      ((context as any).enforceDualPathReconciliationGating ?? false) &&
+      (!dualPathCertificate || !dualPathCertificate.isApproved || dualPathReconciliation?.isConflicted || dualPathReconciliation?.status === 'DISCREPANCY_CONFLICT')
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      whyExecutionBlocked = `BLOCKED — PARSER DUAL-PATH DISCREPANCY CONFLICT DETECTED (${dualPathReconciliation?.status ?? 'MISSING_EVIDENCE'}: ${dualPathReconciliation?.conflictReason || 'DISCREPANCY_UNRESOLVED'})`;
     } else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
       decision = 'AUTHORIZED_SELL';
       const exitResult = this.executeExit({
@@ -5211,6 +5246,8 @@ export class MasterIntelligenceEngine {
       landingBenchmark,
       observationWatermarkReport,
       simulationRiskCertificate,
+      dualPathReconciliation,
+      dualPathCertificate,
       links: {
         solscan: `https://solscan.io/token/${event.mint}`,
         pump: `https://pump.fun/${event.mint}`,
@@ -5507,6 +5544,8 @@ export class MasterIntelligenceEngine {
       landingBenchmark,
       observationWatermarkReport,
       simulationRiskCertificate,
+      dualPathReconciliation,
+      dualPathCertificate,
       whyExecutionBlocked: decision !== 'AUTHORIZED_BUY' ? whyExecutionBlocked : undefined,
     };
   }
@@ -6724,6 +6763,18 @@ export class MasterIntelligenceEngine {
     context?: { nowMs?: number; tradeNotionalSol?: number; dailyDrawdownSol?: number }
   ): SimulationRiskCertificate {
     return this.simulationRiskEnvelope.evaluateSimulation(evidence, context);
+  }
+
+  public getDualPathReconciliationEngine(): DualPathReconciliationEngine {
+    return this.dualPathReconciliationEngine;
+  }
+
+  public reconcileDualPathEvidence(
+    instruction: InstructionEvidence | null,
+    log: LogEvidence | null
+  ): { report: DualPathReconciliationReport; certificate: DualPathReconciliationCertificate } {
+    const report = this.dualPathReconciliationEngine.reconcile(instruction, log);
+    return { report, certificate: this.dualPathReconciliationEngine.certify(report) };
   }
 
   /**

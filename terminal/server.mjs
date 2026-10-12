@@ -21,6 +21,7 @@ import {MasterIntelligenceEngine} from '../dist/intelligence/master-orchestrator
 import {globalCommandGateway} from '../dist/command-gateway.js';
 import {globalTradeLearningService} from '../dist/intelligence/attribution/trade-learning-service.js';
 import {globalProjectionService} from '../dist/projection-service.js';
+import {projectLearningSnapshot} from './src/learning-projection.js';
 import {globalLifecycle} from '../dist/lifecycle/system-lifecycle.js';
 import {EmergencyStopStore} from '../dist/platform/recovery/emergency-stop-store.js';
 import {CapitalYieldRegimeEngine} from '../dist/intelligence/research/capital-regime.js';
@@ -65,6 +66,7 @@ import {
   RealizedEdgeLedger,
 } from '../dist/platform/pipeline/realized-edge-ledger.js';
 import {handleCapitalReserveRequest} from './capital-reserve-policy.mjs';
+import {handleDualPathResearchRequest} from './dual-path-research.mjs';
 import {
   LocalMarketUniverse,
   ProtocolCompatibilityRegistry,
@@ -883,6 +885,15 @@ async function inspectTokenVetoProof(mint) {
 
   return {
     mint,
+    evidenceQuality: {
+      classification: 'SYNTHETIC_PLACEHOLDER',
+      authority: 'NONE',
+      reasons: [
+        'Bank slot and blockhash are generated placeholders, not an RPC observation.',
+        'Evidence hashes and decoder identity are generated labels, not hashes of retrieved account bytes or a verified decoder artifact.',
+        'Missing provider fields may be represented by placeholder values in this preview.',
+      ],
+    },
     subject,
     bank,
     decision: proofBundle.decision,
@@ -1149,16 +1160,7 @@ async function handleRequest(req,res){
   if (req.method === 'GET' && reqUrl.pathname === '/api/intelligence/learning') {
     res.setHeader('Content-Type', 'application/json');
     const snapshot = globalTradeLearningService.getSnapshot();
-    // Dynamic Bayesian hurdle feedback: under the active hurdle, policy-filtered realized P&L
-    // reflects policy-adherent sound trades and prunes penalized policy violations, ensuring positive net edge.
-    const activePnl = (snapshot.policyRealizedPnlUsd && snapshot.policyRealizedPnlUsd > 0)
-      ? snapshot.policyRealizedPnlUsd
-      : Math.max(0, snapshot.totalRealizedPnlUsd);
-    res.end(JSON.stringify({
-      ...snapshot,
-      totalRealizedPnlUsd: activePnl,
-      rawUnfilteredPnlUsd: snapshot.totalRealizedPnlUsd,
-    }));
+    res.end(JSON.stringify(projectLearningSnapshot(snapshot)));
     return;
   }
   if (req.method === 'POST' && reqUrl.pathname === '/api/intelligence/learning/simulate-test') {
@@ -1328,6 +1330,11 @@ async function handleRequest(req,res){
     const inspectResult = await inspectTokenVetoProof(mint);
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify(inspectResult, (_, v) => typeof v === 'bigint' ? v.toString() : v));
+    return;
+  }
+
+  if (req.method === 'POST' && reqUrl.pathname === '/api/research/dual-path/reconcile') {
+    await handleDualPathResearchRequest(req, res);
     return;
   }
 

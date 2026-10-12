@@ -23,7 +23,7 @@ test('candidate package includes runtime helpers, UI, lockfiles and correct laun
   assert.equal(manifest.releaseStatus, 'UNVERIFIED_CANDIDATE');
   const paths = manifest.files.map(file => file.path);
   for (const required of ['terminal/evidence-view.mjs', 'terminal/local-request.mjs', 'terminal/astra-feed.mjs',
-    'terminal/soak-reader.mjs', 'terminal/static-files.mjs', 'terminal/goal-loop-health.mjs', 'scripts/windows-process-identity.ps1',
+    'terminal/soak-reader.mjs', 'terminal/static-files.mjs', 'terminal/goal-loop-health.mjs', 'terminal/src/learning-projection.js', 'scripts/windows-process-identity.ps1',
     'ui/index.html', 'ui/app.js', 'ui/style.css', 'pnpm-lock.yaml', 'pnpm-workspace.yaml']) {
     assert.ok(paths.includes(required), required);
   }

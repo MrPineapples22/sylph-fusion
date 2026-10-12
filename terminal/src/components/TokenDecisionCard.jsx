@@ -35,7 +35,7 @@ export function TokenDecisionCard({
   asset,
   candidate = null,
   driftTelemetry = null,
-  solPriceUsd = 150,
+  solPriceUsd = null,
   rejectionReason = null,
   isEligible = false,
   eligibilityNotes = '',
@@ -108,22 +108,20 @@ export function TokenDecisionCard({
     eligibilityNotes,
   });
 
-  const currentMultiple = Number(asset.currentMultiple || candidate?.currentMultiple || 1.0);
-  const runnerHazard = calculateRunnerHazardState({
-    elapsedSeconds: typeof ageSeconds === 'number' ? ageSeconds : 60,
-    currentMultiple,
-    walletEntropy: candidate?.walletEntropy ?? asset?.walletEntropy ?? 1.0,
-    independentCapitalAcceleration: candidate?.independentCapitalAcceleration ?? asset?.independentCapitalAcceleration ?? 0.0,
-    realSolReserve: realSolReserve ?? 30,
-    currentSellPressureRatio: candidate?.sellPressureRatio ?? asset?.sellPressureRatio ?? 0.1,
-    recentPriceVelocityBps: candidate?.recentPriceVelocityBps ?? asset?.recentPriceVelocityBps ?? 0,
-  });
+  const hazardInputs = {
+    elapsedSeconds: typeof ageSeconds === 'number' ? ageSeconds : null,
+    currentMultiple: candidate?.currentMultiple ?? asset?.currentMultiple ?? null,
+    walletEntropy: candidate?.walletEntropy ?? asset?.walletEntropy ?? null,
+    independentCapitalAcceleration: candidate?.independentCapitalAcceleration ?? asset?.independentCapitalAcceleration ?? null,
+    realSolReserve,
+    currentSellPressureRatio: candidate?.sellPressureRatio ?? asset?.sellPressureRatio ?? null,
+    recentPriceVelocityBps: candidate?.recentPriceVelocityBps ?? asset?.recentPriceVelocityBps ?? null,
+  };
+  const hasRunnerHazardInputs = Object.values(hazardInputs).every(value => Number.isFinite(value));
+  const runnerHazard = hasRunnerHazardInputs ? calculateRunnerHazardState(hazardInputs) : null;
 
-  const rawStatus = (
-    asset.crossValidationStatus ||
-    candidate?.crossValidationStatus ||
-    (isRaydiumActive ? 'VERIFIED' : realSolReserve != null ? 'PARTIALLY_VERIFIED' : 'SINGLE_SOURCE')
-  ).toUpperCase();
+  const reportedCrossValidationStatus = asset.crossValidationStatus || candidate?.crossValidationStatus;
+  const rawStatus = typeof reportedCrossValidationStatus === 'string' ? reportedCrossValidationStatus.toUpperCase() : 'UNKNOWN';
 
   const crossValLookup = {
     VERIFIED: {
@@ -131,176 +129,72 @@ export function TokenDecisionCard({
       shortLabel: 'VERIFIED',
       tone: 'crossval-verified',
       color: '#14F195',
-      desc: 'DexScreener + PumpPortal + Solana RPC multi-source concordant (≤8% tolerance).',
+      desc: 'The source reports a verified cross-validation state. Provider identity and comparison details are not included here.',
     },
     PARTIALLY_VERIFIED: {
       label: 'PARTIAL CROSS-CHECK',
       shortLabel: 'PARTIAL',
       tone: 'crossval-partial',
       color: '#38bdf8',
-      desc: 'DexScreener corroborated by on-chain pool telemetry (1 secondary source).',
+      desc: 'The source reports partial cross-validation. Provider identity and comparison details are not included here.',
     },
     SINGLE_SOURCE: {
       label: 'SINGLE SOURCE',
       shortLabel: 'SINGLE',
       tone: 'crossval-single',
       color: '#eab308',
-      desc: 'Single provider observation. Awaiting secondary independent corroboration.',
+      desc: 'The source reports one provider observation.',
     },
     STALE: {
       label: 'STALE TELEMETRY',
       shortLabel: 'STALE',
       tone: 'crossval-stale',
       color: '#f97316',
-      desc: 'Telemetry exceeds freshness threshold (>45s). New entries gated.',
+      desc: 'The source reports stale telemetry. The originating freshness threshold is unavailable here.',
     },
     CONFLICTING: {
       label: 'SOURCE CONFLICT',
       shortLabel: 'CONFLICT',
       tone: 'crossval-conflict',
       color: '#ef4444',
-      desc: 'Discrepancy detected between independent providers (>15% divergence).',
+      desc: 'The source reports a conflict. Underlying provider observations are not included here.',
     },
     UNKNOWN: {
       label: 'AWAITING FEEDS',
       shortLabel: 'UNKNOWN',
       tone: 'crossval-unknown',
       color: '#94a3b8',
-      desc: 'Awaiting multi-source provider ingestion.',
+      desc: 'No cross-validation status was supplied.',
     },
   };
-  const crossVal = crossValLookup[rawStatus] || crossValLookup.PARTIALLY_VERIFIED;
+  const crossVal = crossValLookup[rawStatus] || crossValLookup.UNKNOWN;
 
   const canonicalMint = asset.id || candidate?.mint || '';
-  const provenanceDigest = asset.provenanceDigest || candidate?.provenanceDigest || `0x${(
-    Math.abs(
-      (canonicalMint + (asset.price || 0))
-        .split('')
-        .reduce((a, c) => ((a << 5) - a) + c.charCodeAt(0) | 0, 0)
-    )
-  ).toString(16).padStart(8, '0')}`;
+  const hasCanonicalMint = typeof canonicalMint === 'string' && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(canonicalMint);
+  const suppliedDigest = asset.provenanceDigest || candidate?.provenanceDigest || null;
+  const provenanceDigest = typeof suppliedDigest === 'string' && /^[a-f0-9]{64}$/i.test(suppliedDigest) ? suppliedDigest : null;
 
-  const quality = asset.quality || candidate?.quality || (blocked ? 'FAIL' : 'PASS');
-  const opportunity = asset.opportunity || candidate?.opportunity || (blocked ? 'INELIGIBLE' : isTelemetryPending ? 'PENDING' : 'ELIGIBLE');
-  const execution = asset.execution || candidate?.execution || 'BLOCKED';
+  const quality = asset.quality || candidate?.quality || 'UNKNOWN';
+  const opportunity = asset.opportunity || candidate?.opportunity || 'UNKNOWN';
+  const execution = asset.execution || candidate?.execution || 'UNKNOWN';
   const qualityVetoes = asset.qualityVetoes || candidate?.qualityVetoes || (blocked && !isTelemetryPending ? [blockedExplanation] : []);
 
-  const traceSteps = asset.decisionTrace || asset.decision?.trace || candidate?.decisionTrace || [
-    {
-      stage: 'Discovery',
-      label: '1. Discovery Stream',
-      status: 'PASS',
-      observed: isRaydiumActive ? 'RAYDIUM_AMM' : 'PUMP_CURVE',
-      meaning: 'Token discovered via authoritative WebSocket / stream',
-    },
-    {
-      stage: 'Canonical State',
-      label: '2. Canonical State',
-      status: canonicalMint ? 'PASS' : 'UNKNOWN',
-      observed: canonicalMint ? `${canonicalMint.slice(0, 4)}…${canonicalMint.slice(-4)}` : 'UNKNOWN',
-      meaning: canonicalMint ? 'Canonical Solana mint address verified' : 'Awaiting address',
-    },
-    {
-      stage: 'Freshness',
-      label: '3. Freshness',
-      status: rawStatus === 'STALE' ? 'STALE' : 'PASS',
-      observed: ageDisplay,
-      meaning: rawStatus === 'STALE' ? 'Telemetry exceeds freshness threshold (>45s)' : 'Feed freshness verified',
-    },
-    {
-      stage: 'Liquidity Floor',
-      label: '4. Liquidity Floor',
-      status: realSolReserve != null ? (realSolReserve >= 1.0 ? 'PASS' : 'FAIL') : asset.liquidity ? (asset.liquidity >= 1000 ? 'PASS' : 'FAIL') : 'PENDING',
-      observed: realSolReserve != null ? `${realSolReserve.toFixed(2)} SOL` : asset.liquidity ? `$${Math.round(asset.liquidity)}` : 'Awaiting snapshot',
-      meaning: realSolReserve != null
-        ? (realSolReserve >= 1.0 ? `Liquidity floor satisfied (${realSolReserve.toFixed(2)} SOL >= 1.0 SOL)` : `Below liquidity floor (${realSolReserve.toFixed(2)} SOL < 1.0 SOL)`)
-        : asset.liquidity
-          ? (asset.liquidity >= 1000 ? `Liquidity floor satisfied ($${Math.round(asset.liquidity)} >= $1,000)` : `Below liquidity floor ($${Math.round(asset.liquidity)} < $1,000)`)
-          : 'Awaiting verified pool liquidity snapshot',
-    },
-    {
-      stage: 'Market Cap Floor',
-      label: '5. Market Cap Floor',
-      status: (asset.cap || asset.mcap) ? ((asset.cap || asset.mcap) >= 5000 ? 'PASS' : 'FAIL') : 'PENDING',
-      observed: (asset.cap || asset.mcap) ? `$${Math.round(asset.cap || asset.mcap)}` : 'Awaiting mcap',
-      meaning: (asset.cap || asset.mcap)
-        ? ((asset.cap || asset.mcap) >= 5000 ? `Market cap floor satisfied ($${Math.round(asset.cap || asset.mcap)})` : `Below market cap floor ($${Math.round(asset.cap || asset.mcap)} < $5,000)`)
-        : 'Awaiting market capitalization data',
-    },
-    {
-      stage: 'Min Transactions',
-      label: '6. Min Transactions',
-      status: (asset.txs ?? asset.txCount ?? actualBuyers) != null ? ((asset.txs ?? asset.txCount ?? actualBuyers) >= 5 ? 'PASS' : 'PENDING') : 'PENDING',
-      observed: (asset.txs ?? asset.txCount ?? actualBuyers) != null ? `${asset.txs ?? asset.txCount ?? actualBuyers} txs` : 'Awaiting trade count',
-      meaning: (asset.txs ?? asset.txCount ?? actualBuyers) != null
-        ? ((asset.txs ?? asset.txCount ?? actualBuyers) >= 5 ? `Observed trade flow active (${asset.txs ?? asset.txCount ?? actualBuyers} txs)` : `Low trade activity (${asset.txs ?? asset.txCount ?? actualBuyers} < 5 txs)`)
-        : 'Awaiting observed transaction history',
-    },
-    {
-      stage: 'Rug Risk',
-      label: '7. Rug Risk',
-      status: isDevSold ? 'FAIL' : (isMintRevoked === false || isFreezeRevoked === false) ? 'FAIL' : (isMintRevoked && isFreezeRevoked) ? 'PASS' : 'PENDING',
-      observed: isDevSold ? 'DEV_DUMP' : (isMintRevoked && isFreezeRevoked) ? '0 high-risk hazards' : 'Pending contract audit',
-      meaning: isDevSold ? 'Creator sell detected on active curve' : (isMintRevoked && isFreezeRevoked) ? 'Authorities revoked; contract hazards clean' : 'Contract risk, mint/freeze authorities pending',
-    },
-    {
-      stage: 'HSI Integrity',
-      label: '8. HSI Integrity',
-      status: asset.hsi != null ? (asset.hsi >= 0.5 ? 'PASS' : 'FAIL') : 'PENDING',
-      observed: asset.hsi != null ? asset.hsi.toFixed(2) : 'Awaiting holder scan',
-      meaning: asset.hsi != null
-        ? (asset.hsi >= 0.5 ? `Holder suspicion index healthy (HSI ${asset.hsi.toFixed(2)})` : `Suspicious holder concentration (HSI ${asset.hsi.toFixed(2)} < 0.50)`)
-        : 'Awaiting holder distribution analysis',
-    },
-    {
-      stage: 'Curve Lifecycle',
-      label: '9. Curve Lifecycle',
-      status: isRaydiumActive ? 'PASS' : isCurveComplete ? 'PASS' : isCurveActive ? 'PASS' : 'PENDING',
-      observed: isRaydiumActive ? 'RAYDIUM_ACTIVE' : isCurveComplete ? 'CURVE_COMPLETED' : isCurveActive ? 'CURVE_PROGRESSING' : 'PENDING',
-      meaning: isCurveComplete && !isRaydiumActive ? 'Bonding complete; awaiting AMM transition' : 'Curve state verified',
-    },
-    {
-      stage: 'DEX Transition',
-      label: '10. DEX Transition',
-      status: isRaydiumActive ? 'PASS' : isCurveComplete ? 'PENDING' : 'PASS',
-      observed: isRaydiumActive ? 'RAYDIUM_CPMM' : isCurveComplete ? 'PENDING_MIGRATION' : 'ON_CURVE',
-      meaning: isCurveComplete && !isRaydiumActive ? 'Awaiting Raydium AMM pool creation' : 'DEX transition verified or not yet due',
-    },
-    {
-      stage: 'Market Evidence',
-      label: '11. Market Evidence',
-      status: (asset.price || realSolReserve != null) ? 'PASS' : 'UNKNOWN',
-      observed: asset.price ? `$${Number(asset.price).toFixed(6)}` : 'Awaiting quote',
-      meaning: 'Corroborated market price & pool depth',
-    },
-    {
-      stage: 'Opportunity Cert',
-      label: '12. Opportunity Cert',
-      status: !blocked && !isTelemetryPending ? 'PASS' : 'PENDING',
-      observed: asset.spieNetEv || asset.netEdge || 'WATCH',
-      meaning: 'Expected value & net edge certificate',
-    },
-    {
-      stage: 'Execution Authority',
-      label: '13. Execution Authority',
-      status: 'BLOCKED',
-      observed: 'PAPER_MODE',
-      meaning: 'Execution authority locked: paper mode / safety firewall active',
-    },
-  ];
+  const suppliedTraceSteps = asset.decisionTrace || asset.decision?.trace || candidate?.decisionTrace;
+  const traceSteps = Array.isArray(suppliedTraceSteps) ? suppliedTraceSteps : [];
+  const devDisposition = typeof candidate?.devSold === 'boolean' ? candidate.devSold : typeof asset.devSold === 'boolean' ? asset.devSold : null;
 
-  const safeExternalLinks = [
+  const safeExternalLinks = hasCanonicalMint ? [
     {
       name: 'DexScreener',
       url: `https://dexscreener.com/solana/${canonicalMint}`,
       category: 'Market & Liquidity',
-      tag: 'Primary DEX',
+      tag: 'Market lookup',
     },
     {
       name: 'RugCheck',
       url: `https://rugcheck.xyz/tokens/${canonicalMint}`,
       category: 'Security & Contracts',
-      tag: 'Risk Audit',
+      tag: 'Risk lookup',
     },
     {
       name: 'Jupiter Swap',
@@ -320,7 +214,7 @@ export function TokenDecisionCard({
       category: 'Launch Platform',
       tag: 'Bonding Curve',
     },
-  ];
+  ] : [];
 
   return (
     <article className="token-decision-card" aria-label={`Candidate forensics for ${asset.symbol}`}>
@@ -357,9 +251,9 @@ export function TokenDecisionCard({
           {/* Multi-Source Cross-Validation Badge (Section 13) */}
           <span
             className={`crossval-badge font-mono ${crossVal.tone}`}
-            title={`Multi-Source Cross-Validation: ${crossVal.desc}`}
+            title={`Source-reported cross-validation: ${crossVal.desc}`}
           >
-            <ShieldCheck size={12} />
+            {rawStatus === 'VERIFIED' || rawStatus === 'PARTIALLY_VERIFIED' ? <ShieldCheck size={12} /> : rawStatus === 'CONFLICTING' ? <ShieldAlert size={12} /> : <HelpCircle size={12} />}
             <span>{crossVal.shortLabel}</span>
           </span>
 
@@ -369,7 +263,7 @@ export function TokenDecisionCard({
           >
             {executionRoute || 'UNKNOWN'}
           </span>
-          {onInspectProvenance && (
+          {onInspectProvenance && hasCanonicalMint && (
             <button
               type="button"
               className="btn-provenance-trigger font-mono text-xs flex items-center gap-1"
@@ -415,7 +309,7 @@ export function TokenDecisionCard({
             {quality}
           </b>
           <span style={{ display: 'block', fontSize: '9px', color: '#64748B', marginTop: '2px' }}>
-            {quality === 'PASS' ? 'Security clean' : quality === 'FAIL' ? (qualityVetoes[0] || 'VETOED') : 'Telemetry incomplete'}
+          {quality === 'PASS' ? 'Source reports pass' : quality === 'FAIL' ? (qualityVetoes[0] || 'Source reports fail') : 'Quality evidence unknown'}
           </span>
         </div>
         <div style={{
@@ -433,7 +327,7 @@ export function TokenDecisionCard({
             {opportunity}
           </b>
           <span style={{ display: 'block', fontSize: '9px', color: '#64748B', marginTop: '2px' }}>
-            {opportunity === 'ELIGIBLE' ? 'Gates passed' : opportunity === 'PENDING' ? (isMigrationPending ? 'DEX transition' : 'Awaiting data') : 'Filter breached'}
+            {opportunity === 'ELIGIBLE' ? 'Source reports eligible' : opportunity === 'PENDING' ? (isMigrationPending ? 'DEX transition' : 'Awaiting data') : opportunity === 'INELIGIBLE' || opportunity === 'BLOCKED' ? 'Source reports blocked' : 'Eligibility unknown'}
           </span>
         </div>
         <div style={{
@@ -451,7 +345,7 @@ export function TokenDecisionCard({
             {execution}
           </b>
           <span style={{ display: 'block', fontSize: '9px', color: '#64748B', marginTop: '2px' }}>
-            {execution === 'AVAILABLE' ? 'Permit granted' : 'Paper mode / locked'}
+            {execution === 'AVAILABLE' ? 'Source reports available' : execution === 'BLOCKED' ? 'Source reports blocked' : 'Authority unknown'}
           </span>
         </div>
       </div>
@@ -460,7 +354,7 @@ export function TokenDecisionCard({
       <div className={`decision-reason-banner ${blocked ? 'reason-blocked' : isTelemetryPending ? 'reason-pending' : 'reason-eligible'}`}>
         {blocked ? <AlertTriangle size={15} /> : isTelemetryPending ? <Clock size={15} /> : <ShieldCheck size={15} />}
         <div>
-          <b>{quality === 'FAIL' ? 'Token Quality Defect / Security Veto' : blocked ? 'Execution Blocked (Token Quality Clean)' : isTelemetryPending ? 'Candidate Telemetry Pending Verification' : 'Pre-Trade Safety Filters Passed'}</b>
+          <b>{quality === 'FAIL' ? 'Source-reported quality failure' : blocked ? 'Local token check blocked' : isTelemetryPending ? 'Candidate telemetry pending' : 'Configured local checks passed'}</b>
           <p>{blockedExplanation}</p>
         </div>
       </div>
@@ -477,7 +371,6 @@ export function TokenDecisionCard({
             <Activity size={13} />
             <span className="text-muted text-[10px]">FRICTION:</span>
             <b>{Number.isFinite(asset.frictionRatio) ? `${(asset.frictionRatio * 100).toFixed(1)}%` : 'UNKNOWN'}</b>
-            <small className="text-muted text-[9px]">(≤45% cap)</small>
           </div>
           <div className="flex items-center gap-1 text-[#f59e0b]">
             <TrendingUp size={13} />
@@ -513,13 +406,13 @@ export function TokenDecisionCard({
             )}
           </div>
           <span className={`curve-status-tag font-mono ${isRaydiumActive ? 'status-active' : isSniperCooldown ? 'status-pending' : isCurveComplete ? 'status-migrated' : isCurveKnown ? 'status-active' : 'status-pending'}`}>
-            {isRaydiumActive ? 'RAYDIUM CPMM/CLMM (AMM BRIDGE)' : isSniperCooldown ? 'AMM SNIPER COOLDOWN (30s)' : isCurveComplete ? 'CURVE COMPLETED / MIGRATED' : isCurveKnown ? 'ACTIVE BONDING CURVE' : 'AWAITING CURVE TELEMETRY'}
+            {isRaydiumActive ? `${String(candidate?.dex || asset.dex || 'AMM').toUpperCase()} POOL OBSERVED` : isSniperCooldown ? 'AMM SNIPER COOLDOWN (30s)' : isCurveComplete ? 'CURVE COMPLETED / MIGRATED' : isCurveKnown ? 'ACTIVE BONDING CURVE' : 'AWAITING CURVE TELEMETRY'}
           </span>
           <span className="forensic-subtext font-mono">
             {virtualTokenReserve != null
               ? `Virtual tokens: ${virtualTokenReserve.toLocaleString()}`
               : isRaydiumActive
-              ? 'AMM Pool Active: Routing Jupiter V6'
+              ? 'AMM pool reported; route quote unavailable'
               : isCurveComplete
               ? 'Virtual tokens: Migrated to AMM'
               : 'Virtual tokens: Awaiting snapshot'}
@@ -583,7 +476,7 @@ export function TokenDecisionCard({
             ) : asset.velocity != null ? (
               `Velocity: ${asset.velocity > 0 ? '+' : ''}${asset.velocity.toFixed(2)}% / s`
             ) : (
-              'Dev activity: No sell recorded'
+              devDisposition === false ? 'Source reports no creator sale' : 'Creator disposition unknown'
             )}
           </span>
         </div>
@@ -610,7 +503,7 @@ export function TokenDecisionCard({
         <div className="checklist-items">
           <span className={`check-chip ${isRaydiumActive ? 'chip-pass' : isCurveActive ? 'chip-pass' : isCurveActive === false ? 'chip-fail' : 'chip-pending'}`}>
             {isRaydiumActive ? <CheckCircle2 size={12} /> : isCurveActive ? <CheckCircle2 size={12} /> : isCurveActive === false ? <XCircle size={12} /> : <Clock size={12} />}
-            {isRaydiumActive ? 'Raydium AMM Active' : isCurveActive ? 'Curve Active' : isCurveActive === false ? (isSniperCooldown ? 'Sniper Cooldown (30s)' : 'Curve Complete (Blocked)') : 'Curve Telemetry Pending'}
+            {isRaydiumActive ? 'Reported AMM pool active' : isCurveActive ? 'Curve Active' : isCurveActive === false ? (isSniperCooldown ? 'Sniper Cooldown (30s)' : 'Curve Complete; venue pending') : 'Curve Telemetry Pending'}
           </span>
           <span className={`check-chip ${isMintRevoked === null ? 'chip-pending' : isMintRevoked ? 'chip-pass' : 'chip-fail'}`}>
             {isMintRevoked === null ? <Clock size={12} /> : isMintRevoked ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
@@ -633,16 +526,16 @@ export function TokenDecisionCard({
             {medianObsGapSec != null ? (isHighVelocity ? `Flow Gap ≤ 1.0s (${medianObsGapSec.toFixed(2)}s)` : `Low Velocity (${medianObsGapSec.toFixed(2)}s > 1.0s)`) : 'Flow Gap Pending (≤1.0s)'}
           </span>
         </div>
-        {/* Empirical Exit Contract Ribbon (Derived from 523k pump.fun backtest & Section XXVIII) */}
+        {/* Source-supplied exit policy and fully-inputted research hazard estimate */}
         <div className="empirical-exit-contract font-mono text-[10px] text-muted flex items-center justify-between mt-2 pt-2 border-t border-[#1e293b] flex-wrap gap-2">
           <span className="text-[#38bdf8] flex items-center gap-1 font-semibold">
-            <Zap size={11} /> PRE-COMMITTED EXIT: 8-Tier Ratchets (1.15x→100x) + Hazard Defense
+            <Zap size={11} /> EXIT POLICY: {empiricalExitPolicy?.id || 'UNKNOWN'}
           </span>
           <span className="text-[#94a3b8] flex items-center gap-2">
-            <span>BE: +8% | Trail: -30%</span>
-            <span style={{ color: runnerHazard.netConvexHazardRatio >= 1.5 ? '#14F195' : runnerHazard.netConvexHazardRatio >= 0.5 ? '#38BDF8' : '#FF3B69', fontWeight: 600 }}>
-              Hazard Ratio: {runnerHazard.netConvexHazardRatio.toFixed(2)}x ({runnerHazard.recommendedAction})
-            </span>
+            <span>Break-even: {Number.isFinite(empiricalExitPolicy?.breakevenGainThresholdPct) ? `${empiricalExitPolicy.breakevenGainThresholdPct}%` : 'Unknown'} · Trail: {Number.isFinite(empiricalExitPolicy?.trailStopBps) ? `${(empiricalExitPolicy.trailStopBps / 100).toFixed(1)}%` : 'Unknown'}</span>
+            {runnerHazard ? <span style={{ color: runnerHazard.netConvexHazardRatio >= 1.5 ? '#14F195' : runnerHazard.netConvexHazardRatio >= 0.5 ? '#38BDF8' : '#FF3B69', fontWeight: 600 }}>
+              Research hazard ratio: {runnerHazard.netConvexHazardRatio.toFixed(2)}x ({runnerHazard.recommendedAction})
+            </span> : <span>Research hazard: Unknown · required inputs unavailable</span>}
           </span>
         </div>
       </div>
@@ -668,12 +561,12 @@ export function TokenDecisionCard({
 
         {showWhyPanel && (
           <div className="why-investigation-panel">
-            {/* Section 0: Deterministic Decision & Veto Trace (13 Stages) */}
+            {/* Section 0: Source-reported decision trace */}
             <div className="why-section">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                <span className="why-section-title">
+                  <span className="why-section-title">
                   <Sliders size={13} className="text-[#14F195]" />
-                  <span>DETERMINISTIC DECISION &amp; VETO TRACE (13 STAGES)</span>
+                    <span>SOURCE-REPORTED DECISION TRACE</span>
                 </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span className="font-mono text-[10px]" style={{ color: '#64748B' }}>
@@ -682,6 +575,7 @@ export function TokenDecisionCard({
                   <button
                     type="button"
                     onClick={() => setShowProofInspector(true)}
+                    disabled={!hasCanonicalMint}
                     style={{
                       background: 'rgba(20, 241, 149, 0.1)',
                       border: '1px solid rgba(20, 241, 149, 0.3)',
@@ -708,6 +602,7 @@ export function TokenDecisionCard({
                     </tr>
                   </thead>
                   <tbody>
+                    {traceSteps.length === 0 && <tr><td colSpan={4} style={{padding:'10px 8px', color:'#94A3B8'}}>No decision trace was supplied for this observation.</td></tr>}
                     {traceSteps.map((step, idx) => {
                       const isPass = step.status === 'PASS';
                       const isFail = step.status === 'FAIL';
@@ -742,19 +637,19 @@ export function TokenDecisionCard({
                 <div className="why-reason-item">
                   <span className="reason-tag tag-discovered">WHY DISCOVERED</span>
                   <p>
-                    {isRaydiumActive
-                      ? 'Discovered via Raydium CPMM/CLMM AMM pool migration stream with on-chain liquidity creation.'
-                      : 'Discovered via PumpPortal real-time token creation WebSocket feed.'}
+                    {asset.source || candidate?.sourceObservation?.provider || candidate?.source || 'Discovery source was not supplied with this record.'}
                   </p>
                 </div>
                 <div className="why-reason-item">
                   <span className={`reason-tag ${blocked ? 'tag-blocked' : 'tag-qualified'}`}>
-                    {blocked ? 'WHY BLOCKED' : 'WHY QUALIFIED'}
+                    {blocked ? 'WHY BLOCKED' : isTelemetryPending ? 'EVIDENCE PENDING' : 'SOURCE EXPLANATION'}
                   </span>
                   <p>
                     {blocked
                       ? `BLOCKED: ${blockedExplanation}`
-                      : 'QUALIFIED: Passed reserve floor (≥1.0 SOL), dual-drift bounds (≤200 BPS), mint/freeze authorities revoked, and zero dev dump.'}
+                      : isTelemetryPending
+                        ? `PENDING: ${blockedExplanation}`
+                        : eligibilityNotes || 'No source-provided qualification explanation is available.'}
                   </p>
                 </div>
                 <div className="why-reason-item">
@@ -778,57 +673,40 @@ export function TokenDecisionCard({
 
             {/* Section 2: Multi-Source Cross-Validation Matrix (Sections 12 & 13) */}
             <div className="why-section">
-              <span className="why-section-title">
+                  <span className="why-section-title">
                 <Database size={13} className="text-[#14F195]" />
-                <span>MULTI-SOURCE CROSS-VALIDATION MATRIX (SECTIONS 12 &amp; 13)</span>
+                <span>AVAILABLE SOURCE DETAILS</span>
               </span>
               <div className="crossval-matrix font-mono">
                 <div className="matrix-row header">
-                  <span>PROVIDER</span>
-                  <span>ROLE</span>
-                  <span>STATUS</span>
-                  <span>OBSERVED VALUE</span>
-                  <span>LATENCY</span>
+                  <span>FIELD</span>
+                  <span>REPORTED VALUE</span>
+                  <span>FIELD</span>
+                  <span>REPORTED VALUE</span>
                 </div>
                 <div className="matrix-row">
-                  <span className="provider-name">DexScreener API</span>
-                  <span className="text-muted">Primary Market &amp; Liq</span>
-                  <span className="text-[#14F195]">ACTIVE</span>
-                  <span>{asset.price ? `$${Number(asset.price).toFixed(6)}` : 'Awaiting snapshot'}</span>
-                  <span>18 ms</span>
+                  <span className="provider-name">Input source</span>
+                  <span>{asset.source || asset.provider || candidate?.sourceObservation?.provider || candidate?.source || 'Unknown'}</span>
+                  <span className="provider-name">Cross-validation</span>
+                  <span>{reportedCrossValidationStatus || 'Unknown'}</span>
                 </div>
                 <div className="matrix-row">
-                  <span className="provider-name">PumpPortal WS</span>
-                  <span className="text-muted">Discovery &amp; Trade Stream</span>
-                  <span className="text-[#14F195]">STREAMING</span>
-                  <span>{isCurveComplete ? 'Curve Migrated' : 'Active Bonding Curve'}</span>
-                  <span>5 ms</span>
+                  <span className="provider-name">Market price</span>
+                  <span>{Number.isFinite(asset.price) ? `$${asset.price}` : 'Unknown'}</span>
+                  <span className="provider-name">Candidate slot</span>
+                  <span>{Number.isSafeInteger(candidate?.slot) ? candidate.slot : 'Unknown'}</span>
                 </div>
                 <div className="matrix-row">
-                  <span className="provider-name">Solana RPC (WSS)</span>
-                  <span className="text-muted">Authoritative On-Chain</span>
-                  <span className="text-[#14F195]">CONFIRMED</span>
-                  <span>Commitment: confirmed</span>
-                  <span>120 ms</span>
-                </div>
-                <div className="matrix-row">
-                  <span className="provider-name">RugCheck API</span>
-                  <span className="text-muted">Security &amp; Contract Audit</span>
-                  <span className="text-[#14F195]">VERIFIED</span>
-                  <span>{isMintRevoked && isFreezeRevoked ? '0 High-Risk Hazards' : 'Pending'}</span>
-                  <span>340 ms</span>
-                </div>
-                <div className="matrix-row">
-                  <span className="provider-name">Jupiter / Jito Router</span>
-                  <span className="text-muted">Execution &amp; Pricing Route</span>
-                  <span className="text-[#14F195]">{executionRoute || 'UNKNOWN'}</span>
-                  <span>Slippage Cap: ≤ 2.0%</span>
-                  <span>45 ms</span>
+                  <span className="provider-name">Transaction identity</span>
+                  <span>{candidate?.eventSignature || candidate?.signature || 'Unknown'}</span>
+                  <span className="provider-name">Recorded route</span>
+                  <span>{executionRoute || 'Unknown'}</span>
                 </div>
               </div>
+              <p className="text-muted text-[10px] mt-2">Provider health, comparison latency, contract-scan results, and route quotes are not attached to this token record unless shown above.</p>
               <div className="provenance-digest-row font-mono text-[11px] text-muted flex items-center justify-between mt-2 pt-2 border-t border-[#1f2937]">
-                <span>Cryptographic Provenance SHA Digest: <code className="text-[#38bdf8]">{provenanceDigest}</code></span>
-                <span className="text-[#14F195]">Status: {crossVal.label}</span>
+                <span>Supplied provenance digest: <code className="text-[#38bdf8]">{provenanceDigest || 'Unknown'}</code></span>
+                <span>Status: {crossVal.label}</span>
               </div>
             </div>
 
@@ -840,19 +718,19 @@ export function TokenDecisionCard({
               </span>
               <div className="threat-grid font-mono">
                 <div className="threat-item">
-                  <span className="threat-label">Bundler Detection:</span>
-                  <span className="threat-val text-[#14F195]">CLEAN (0 bundled mint events in 500ms window)</span>
+                  <span className="threat-label">Bundler evidence:</span>
+                  <span className="threat-val">{asset.bundlerStatus || candidate?.bundlerStatus || 'Unknown'}</span>
                 </div>
                 <div className="threat-item">
                   <span className="threat-label">Wash-Trading / Velocity:</span>
                   <span className="threat-val text-[#38bdf8]">
-                    {asset.velocity ? `${asset.velocity.toFixed(2)}% / s` : '0.00% / s'} · {actualBuyers || 12} unique buyers
+                    {Number.isFinite(asset.velocity) ? `${asset.velocity.toFixed(2)}% / s` : 'Velocity unknown'} · {actualBuyers ?? 'Unknown'} reported buyers
                   </span>
                 </div>
                 <div className="threat-item">
                   <span className="threat-label">Dev Concentration:</span>
                   <span className={`threat-val ${isDevSold ? 'text-[#FF3B69]' : 'text-[#14F195]'}`}>
-                    {isDevSold ? 'DEV DUMP DETECTED' : 'Zero dev sell recorded, top-10 holders < 28%'}
+                    {devDisposition === true ? 'Creator sale reported' : devDisposition === false ? 'Source reports no creator sale' : 'Creator disposition unknown'} · holder concentration {typeof (candidate?.holderConcentrationSuspect ?? asset?.holderConcentrationSuspect) === 'boolean' ? (candidate?.holderConcentrationSuspect ?? asset?.holderConcentrationSuspect) ? 'flagged' : 'not flagged by source' : 'unknown'}
                   </span>
                 </div>
                 <div className="threat-item">
@@ -866,12 +744,12 @@ export function TokenDecisionCard({
 
             {/* Section 4: Safe External Intelligence Links (Section 27) */}
             <div className="why-section">
-              <span className="why-section-title">
+                <span className="why-section-title">
                 <Globe size={13} className="text-[#38bdf8]" />
-                <span>VERIFIED EXTERNAL RESEARCH &amp; FORENSIC LINKS (SECTION 27)</span>
+                <span>EXTERNAL TOKEN RESEARCH LINKS</span>
               </span>
               <p className="text-muted text-[11px] mb-2">
-                Sanitized canonical endpoints generated strictly from validated token address <code>{canonicalMint}</code>:
+                {safeExternalLinks.length ? <>Open these services for mint <code>{canonicalMint}</code>; their contents are external and are not verified by this panel.</> : 'A valid mint address is required before external lookup links can be shown.'}
               </p>
               <div className="safe-links-grid font-mono">
                 {safeExternalLinks.map(link => (
