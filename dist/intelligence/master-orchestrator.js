@@ -3916,7 +3916,7 @@ export class MasterIntelligenceEngine {
             executionSuccessRatePct: executionAttemptStats.executionSuccessRatePct,
             executionTotalAttempts: executionAttemptStats.totalAttempts,
             executionTransport: executionActionVector.transport,
-            lastExecutionOutcome: context.lastExecutionOutcome ?? (executionAttemptStats.totalAttempts > 0 ? (this.executionAttemptLedger.getAllAttempts().slice(-1)[0]?.outcome ?? 'FINALIZED_SUCCESS') : 'FINALIZED_SUCCESS'),
+            lastExecutionOutcome: context.lastExecutionOutcome ?? (executionAttemptStats.totalAttempts > 0 ? this.executionAttemptLedger.getAllAttempts().slice(-1)[0]?.outcome : undefined),
             liquidityDepthProfile,
             liquidityDepthResilienceScore: liquidityDepthProfile.depthResilienceScore,
             liquidityMaxSafePositionSol: liquidityDepthProfile.maxSafePositionSol,
