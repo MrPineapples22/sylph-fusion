@@ -120,6 +120,8 @@ import { RunnerHoldManager } from './executable-alpha/exit/runner-hold.js';
 import { PrincipalRecoveryEngine } from './executable-alpha/exit/principal-recovery.js';
 import { InformationFrontierEngine } from './executable-alpha/information/information-frontier.js';
 import { SensorValueEngine } from './executable-alpha/information/sensor-value.js';
+import { ObservabilityGapEngine } from './executable-alpha/observation/observability-gap.js';
+import { CensoringModelEngine } from './executable-alpha/observation/censoring-model.js';
 import { AlphaHalfLifeEngine, AlphaBurnLedger, } from './timing/alpha-half-life.js';
 import { QuoteDecayEngine } from './executable-alpha/execution/quote-decay.js';
 import { ExecutionUrgencyEngine } from './executable-alpha/execution/execution-urgency.js';
@@ -1891,6 +1893,21 @@ export class MasterIntelligenceEngine {
             projectedExitCostsUsd,
         });
         // ==========================================
+        // OBSERVABILITY GAP & INFORMATIVE CENSORING (Section VIII & Studies OBSERVABILITY-GAP-X, INFORMATIVE-CENSORING-X, MNAR-WORST-CASE-X)
+        // ==========================================
+        const defaultObsTimestamps = [
+            event.receivedTimestampMs - Math.max(1000, ((context.tokenAgeSec ?? 30) * 1000)),
+            event.receivedTimestampMs - Math.max(500, (((context.tokenAgeSec ?? 30) * 1000) / 2)),
+            event.receivedTimestampMs,
+        ];
+        const observationTimestamps = context.observationTimestamps ?? defaultObsTimestamps;
+        const observabilityGap = context.observabilityGap ?? ObservabilityGapEngine.evaluateGaps(observationTimestamps);
+        const initialPriceSol = context.initialPriceSol ?? (event.payload?.priceSol ?? 0.00005);
+        const lastObservedPriceSol = context.lastObservedPriceSol ?? (event.payload?.priceSol ?? initialPriceSol);
+        const finalTimestampMs = context.finalObservationTimestampMs ?? event.receivedTimestampMs;
+        const poolActive = context.isPoolActive ?? true;
+        const censoringAnalysis = context.censoringAnalysis ?? CensoringModelEngine.evaluateCensoring(lastObservedPriceSol, initialPriceSol, finalTimestampMs, event.receivedTimestampMs, poolActive);
+        // ==========================================
         // ALPHA HALF-LIFE, QUOTE DECAY & EXECUTION SHORTFALL (Sections XV, XVI & XX)
         // ==========================================
         const alphaHalfLife = AlphaHalfLifeEngine.estimateHalfLife({
@@ -2170,6 +2187,17 @@ export class MasterIntelligenceEngine {
             !principalRecovery.isPrincipalRecoverable) {
             decision = 'CHALLENGED_ABSTAIN';
             whyExecutionBlocked = `BLOCKED — PRINCIPAL UNRECOVERABLE UNDER STRESSED EXIT (Deficit: $${Math.max(0, principalRecovery.requiredProceedsUsd - principalRecovery.executableNetValueUsd).toFixed(2)})`;
+        }
+        else if ((context.enforceObservabilityGapGating ?? false) &&
+            !observabilityGap.exitObservabilityAvailable) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — OBSERVABILITY GAP DETECTED (${observabilityGap.reason || 'UNAVAILABLE_EXIT_OBSERVABILITY'})`;
+        }
+        else if ((context.enforceCensoringGating ?? false) &&
+            censoringAnalysis.isCensored &&
+            censoringAnalysis.attributedLossPct >= 90.0) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — INFORMATIVE CENSORING DETECTED (${censoringAnalysis.censoringType}, loss: ${censoringAnalysis.attributedLossPct.toFixed(1)}%)`;
         }
         else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
             decision = 'AUTHORIZED_SELL';
@@ -3212,6 +3240,12 @@ export class MasterIntelligenceEngine {
             isInformationFrontierSufficient: informationFrontier.isSufficient,
             earliestDecisionTimeSeconds: informationFrontier.earliestDecisionTimeSeconds,
             recommendedSensorTier: sensorDecision.recommendedTier,
+            observabilityGap,
+            censoringAnalysis,
+            exitObservabilityAvailable: observabilityGap.exitObservabilityAvailable,
+            maxObservationGapSeconds: observabilityGap.maxGapSeconds,
+            isHistoryCensored: censoringAnalysis.isCensored,
+            conservativeReturnMultiple: censoringAnalysis.conservativeReturnMultiple,
             links: {
                 solscan: `https://solscan.io/token/${event.mint}`,
                 pump: `https://pump.fun/${event.mint}`,
@@ -3478,6 +3512,8 @@ export class MasterIntelligenceEngine {
             principalRecovery,
             informationFrontier,
             sensorDecision,
+            observabilityGap,
+            censoringAnalysis,
             whyExecutionBlocked: decision !== 'AUTHORIZED_BUY' ? whyExecutionBlocked : undefined,
         };
     }
@@ -3929,6 +3965,20 @@ export class MasterIntelligenceEngine {
      */
     evaluateSensorEscalation(params) {
         return SensorValueEngine.evaluateTier(params.currentInformationNats, params.requiredInformationNats, params.tradeSizeUsd);
+    }
+    /**
+     * Section VIII & Study OBSERVABILITY-GAP-X: Observability Gap Detector
+     * Evaluates observation gaps across token history and verifies exit quote availability.
+     */
+    evaluateObservabilityGaps(timestampsMs) {
+        return ObservabilityGapEngine.evaluateGaps(timestampsMs);
+    }
+    /**
+     * Section VIII & Studies INFORMATIVE-CENSORING-X, MNAR-WORST-CASE-X: Informative Censoring & MNAR Engine
+     * Attributes worst-case stress loss for unobserved exits to eliminate survivor bias.
+     */
+    evaluateCensoringModel(params) {
+        return CensoringModelEngine.evaluateCensoring(params.lastObservedPriceSol, params.initialPriceSol, params.finalTimestampMs, params.currentTimeMs, params.poolActive);
     }
     /**
      * System Intelligence & Omega Telemetry

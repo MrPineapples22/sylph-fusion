@@ -564,6 +564,12 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
                     <span>T* Horizon: <b style={{color: '#38BDF8'}}>{Number.isFinite(position.earliestDecisionTimeSeconds ?? position.informationFrontier?.earliestDecisionTimeSeconds) ? `${(position.earliestDecisionTimeSeconds ?? position.informationFrontier?.earliestDecisionTimeSeconds).toFixed(0)}s` : '30s'}</b></span>
                     <span>Sensor Tier: <b style={{color: (position.recommendedSensorTier ?? position.sensorDecision?.recommendedTier ?? 0) > 2 ? '#F59E0B' : '#14F195'}}>{`Tier ${position.recommendedSensorTier ?? position.sensorDecision?.recommendedTier ?? 0}`}</b></span>
                   </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'2px',padding:'3px 6px',background:'rgba(168,85,247,0.04)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>Obs Gap: <b style={{color: (position.exitObservabilityAvailable ?? position.observabilityGap?.exitObservabilityAvailable) === false ? '#FF3B69' : '#14F195'}}>{(position.exitObservabilityAvailable ?? position.observabilityGap?.exitObservabilityAvailable) === false ? 'GAPPED' : 'AVAILABLE'}</b></span>
+                    <span>Max Gap: <b style={{color: (position.maxObservationGapSeconds ?? (position.observabilityGap?.maxGapSeconds ?? 15)) > 120 ? '#FF3B69' : '#38BDF8'}}>{Number.isFinite(position.maxObservationGapSeconds ?? position.observabilityGap?.maxGapSeconds) ? `${(position.maxObservationGapSeconds ?? position.observabilityGap?.maxGapSeconds).toFixed(0)}s` : '15s'}</b></span>
+                    <span>Censoring: <b style={{color: (position.isHistoryCensored ?? position.censoringAnalysis?.isCensored) ? '#FF3B69' : '#14F195'}}>{(position.isHistoryCensored ?? position.censoringAnalysis?.isCensored) ? (position.censoringAnalysis?.censoringType || 'CENSORED') : 'COMPLETE'}</b></span>
+                    <span>Cons Multiple: <b style={{color: '#14F195'}}>{Number.isFinite(position.conservativeReturnMultiple ?? position.censoringAnalysis?.conservativeReturnMultiple) ? `${(position.conservativeReturnMultiple ?? position.censoringAnalysis?.conservativeReturnMultiple).toFixed(2)}x` : '1.00x'}</b></span>
+                  </div>
                 </div>
               );
             })()}

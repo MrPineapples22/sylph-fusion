@@ -130,6 +130,8 @@ import { RunnerHoldManager } from './executable-alpha/exit/runner-hold.js';
 import { PrincipalRecoveryEngine, type PrincipalRecoveryReport } from './executable-alpha/exit/principal-recovery.js';
 import { InformationFrontierEngine, type InformationFrontierState } from './executable-alpha/information/information-frontier.js';
 import { SensorValueEngine, type SensorEscalationDecision } from './executable-alpha/information/sensor-value.js';
+import { ObservabilityGapEngine, type ObservabilityGapReport } from './executable-alpha/observation/observability-gap.js';
+import { CensoringModelEngine, type CensoringAnalysis } from './executable-alpha/observation/censoring-model.js';
 import {
   AlphaHalfLifeEngine,
   type AlphaHalfLifeEstimate,
@@ -518,6 +520,12 @@ export interface AetherFluxViewModel {
   readonly isInformationFrontierSufficient?: boolean;
   readonly earliestDecisionTimeSeconds?: number;
   readonly recommendedSensorTier?: number;
+  readonly observabilityGap?: ObservabilityGapReport;
+  readonly censoringAnalysis?: CensoringAnalysis;
+  readonly exitObservabilityAvailable?: boolean;
+  readonly maxObservationGapSeconds?: number;
+  readonly isHistoryCensored?: boolean;
+  readonly conservativeReturnMultiple?: number;
 }
 
 export interface MasterPipelineResult {
@@ -585,10 +593,14 @@ export interface MasterPipelineResult {
   readonly principalRecovery?: PrincipalRecoveryReport;
   readonly informationFrontier?: InformationFrontierState;
   readonly sensorDecision?: SensorEscalationDecision;
+  readonly observabilityGap?: ObservabilityGapReport;
+  readonly censoringAnalysis?: CensoringAnalysis;
   readonly whyExecutionBlocked?: string;
 }
 
 export type {
+  ObservabilityGapReport,
+  CensoringAnalysis,
   RunnerSearchCostReport,
   CandidateOutcomeSummary,
   TailConcentrationReport,
@@ -2524,6 +2536,29 @@ export class MasterIntelligenceEngine {
     });
 
     // ==========================================
+    // OBSERVABILITY GAP & INFORMATIVE CENSORING (Section VIII & Studies OBSERVABILITY-GAP-X, INFORMATIVE-CENSORING-X, MNAR-WORST-CASE-X)
+    // ==========================================
+    const defaultObsTimestamps: readonly number[] = [
+      event.receivedTimestampMs - Math.max(1000, ((context.tokenAgeSec ?? 30) * 1000)),
+      event.receivedTimestampMs - Math.max(500, (((context.tokenAgeSec ?? 30) * 1000) / 2)),
+      event.receivedTimestampMs,
+    ];
+    const observationTimestamps: readonly number[] = (context as any).observationTimestamps ?? defaultObsTimestamps;
+    const observabilityGap: ObservabilityGapReport = (context as any).observabilityGap ?? ObservabilityGapEngine.evaluateGaps(observationTimestamps);
+
+    const initialPriceSol = (context as any).initialPriceSol ?? (event.payload?.priceSol ?? 0.00005);
+    const lastObservedPriceSol = (context as any).lastObservedPriceSol ?? (event.payload?.priceSol ?? initialPriceSol);
+    const finalTimestampMs = (context as any).finalObservationTimestampMs ?? event.receivedTimestampMs;
+    const poolActive = (context as any).isPoolActive ?? true;
+    const censoringAnalysis: CensoringAnalysis = (context as any).censoringAnalysis ?? CensoringModelEngine.evaluateCensoring(
+      lastObservedPriceSol,
+      initialPriceSol,
+      finalTimestampMs,
+      event.receivedTimestampMs,
+      poolActive
+    );
+
+    // ==========================================
     // ALPHA HALF-LIFE, QUOTE DECAY & EXECUTION SHORTFALL (Sections XV, XVI & XX)
     // ==========================================
     const alphaHalfLife = AlphaHalfLifeEngine.estimateHalfLife({
@@ -2817,6 +2852,19 @@ export class MasterIntelligenceEngine {
     ) {
       decision = 'CHALLENGED_ABSTAIN';
       whyExecutionBlocked = `BLOCKED — PRINCIPAL UNRECOVERABLE UNDER STRESSED EXIT (Deficit: $${Math.max(0, principalRecovery.requiredProceedsUsd - principalRecovery.executableNetValueUsd).toFixed(2)})`;
+    } else if (
+      ((context as any).enforceObservabilityGapGating ?? false) &&
+      !observabilityGap.exitObservabilityAvailable
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      whyExecutionBlocked = `BLOCKED — OBSERVABILITY GAP DETECTED (${observabilityGap.reason || 'UNAVAILABLE_EXIT_OBSERVABILITY'})`;
+    } else if (
+      ((context as any).enforceCensoringGating ?? false) &&
+      censoringAnalysis.isCensored &&
+      censoringAnalysis.attributedLossPct >= 90.0
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      whyExecutionBlocked = `BLOCKED — INFORMATIVE CENSORING DETECTED (${censoringAnalysis.censoringType}, loss: ${censoringAnalysis.attributedLossPct.toFixed(1)}%)`;
     } else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
       decision = 'AUTHORIZED_SELL';
       const exitResult = this.executeExit({
@@ -3941,6 +3989,12 @@ export class MasterIntelligenceEngine {
       isInformationFrontierSufficient: informationFrontier.isSufficient,
       earliestDecisionTimeSeconds: informationFrontier.earliestDecisionTimeSeconds,
       recommendedSensorTier: sensorDecision.recommendedTier,
+      observabilityGap,
+      censoringAnalysis,
+      exitObservabilityAvailable: observabilityGap.exitObservabilityAvailable,
+      maxObservationGapSeconds: observabilityGap.maxGapSeconds,
+      isHistoryCensored: censoringAnalysis.isCensored,
+      conservativeReturnMultiple: censoringAnalysis.conservativeReturnMultiple,
       links: {
         solscan: `https://solscan.io/token/${event.mint}`,
         pump: `https://pump.fun/${event.mint}`,
@@ -4209,6 +4263,8 @@ export class MasterIntelligenceEngine {
       principalRecovery,
       informationFrontier,
       sensorDecision,
+      observabilityGap,
+      censoringAnalysis,
       whyExecutionBlocked: decision !== 'AUTHORIZED_BUY' ? whyExecutionBlocked : undefined,
     };
   }
@@ -4993,6 +5049,34 @@ export class MasterIntelligenceEngine {
       params.currentInformationNats,
       params.requiredInformationNats,
       params.tradeSizeUsd
+    );
+  }
+
+  /**
+   * Section VIII & Study OBSERVABILITY-GAP-X: Observability Gap Detector
+   * Evaluates observation gaps across token history and verifies exit quote availability.
+   */
+  public evaluateObservabilityGaps(timestampsMs: readonly number[]): ObservabilityGapReport {
+    return ObservabilityGapEngine.evaluateGaps(timestampsMs);
+  }
+
+  /**
+   * Section VIII & Studies INFORMATIVE-CENSORING-X, MNAR-WORST-CASE-X: Informative Censoring & MNAR Engine
+   * Attributes worst-case stress loss for unobserved exits to eliminate survivor bias.
+   */
+  public evaluateCensoringModel(params: {
+    lastObservedPriceSol: number;
+    initialPriceSol: number;
+    finalTimestampMs: number;
+    currentTimeMs: number;
+    poolActive: boolean;
+  }): CensoringAnalysis {
+    return CensoringModelEngine.evaluateCensoring(
+      params.lastObservedPriceSol,
+      params.initialPriceSol,
+      params.finalTimestampMs,
+      params.currentTimeMs,
+      params.poolActive
     );
   }
 
