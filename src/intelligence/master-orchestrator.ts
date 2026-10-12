@@ -70,6 +70,24 @@ import {
   type HierarchicalPriorContext,
   type CalibrationReport,
 } from './bayes/index.js';
+import {
+  StreamMultiplexer,
+  shouldBlockStreamMultiplexer,
+  type MultiplexerReport,
+  type StreamProviderId,
+} from '../platform/ingestion/stream-multiplexer.js';
+import {
+  DEXStreamParser,
+  type DecodedDEXTradeEvent,
+  type DEXProtocol,
+  type DEXTradeType,
+} from '../platform/ingestion/dex-stream-parser.js';
+import {
+  LandingBenchmarkEngine,
+  shouldBlockLandingBenchmark,
+  type LandingBenchmarkCertificate,
+  type ExecutionLaneType,
+} from '../platform/execution/landing-benchmark.js';
 import { TemporalEvidenceGraph } from './graph/temporal-evidence-graph.js';
 import { FundingAncestryEngine } from './graph/funding-ancestry.js';
 import { FirstPassageEngine, type ProbabilisticForecastReport } from './science/first-passage.js';
@@ -725,6 +743,9 @@ export interface AetherFluxViewModel {
   readonly bayesPriorProb?: number;
   readonly bayesEffectiveEvidenceCount?: number;
   readonly bayesUnknownMass?: number;
+  readonly multiplexerReport?: MultiplexerReport;
+  readonly decodedDexTrade?: DecodedDEXTradeEvent;
+  readonly landingBenchmark?: LandingBenchmarkCertificate;
 }
 
 export interface MasterPipelineResult {
@@ -815,6 +836,9 @@ export interface MasterPipelineResult {
   readonly executionAttemptStats?: ExecutionAttemptStats;
   readonly liquidityDepthProfile?: LiquidityDepthProfile;
   readonly bayesBeliefUpdate?: BayesBeliefUpdate;
+  readonly multiplexerReport?: MultiplexerReport;
+  readonly decodedDexTrade?: DecodedDEXTradeEvent;
+  readonly landingBenchmark?: LandingBenchmarkCertificate;
   readonly whyExecutionBlocked?: string;
 }
 
@@ -924,6 +948,13 @@ export type {
   HierarchicalPriorContext,
   CalibrationReport,
   MissingnessState,
+  MultiplexerReport,
+  StreamProviderId,
+  DecodedDEXTradeEvent,
+  DEXProtocol,
+  DEXTradeType,
+  LandingBenchmarkCertificate,
+  ExecutionLaneType,
 };
 
 export class MasterIntelligenceEngine {
@@ -1080,6 +1111,9 @@ export class MasterIntelligenceEngine {
   private activeExecutionPolicy: ExecutionPolicyArtifact;
   public readonly executionAttemptLedger: ExecutionAttemptLedger;
   public readonly liquidityDepthEngine: LiquidityDepthEngine;
+  public readonly streamMultiplexer: StreamMultiplexer;
+  public readonly dexStreamParser: DEXStreamParser;
+  public readonly landingBenchmarkEngine: LandingBenchmarkEngine;
 
   constructor() {
     this.kernel = new IntegrationKernel();
@@ -1272,6 +1306,9 @@ export class MasterIntelligenceEngine {
     });
     this.executionAttemptLedger = new ExecutionAttemptLedger();
     this.liquidityDepthEngine = new LiquidityDepthEngine();
+    this.streamMultiplexer = new StreamMultiplexer();
+    this.dexStreamParser = new DEXStreamParser();
+    this.landingBenchmarkEngine = new LandingBenchmarkEngine();
 
     this.setupConnectionAuditor();
     this.registerComponents();
@@ -3408,6 +3445,25 @@ export class MasterIntelligenceEngine {
       });
 
     // ==========================================
+    // MULTI-SOURCE STREAM MULTIPLEXER, ZERO-COPY DEX PARSER & LANDING BENCHMARK (Richat, Yellowstone, Sol Parser, Netticode)
+    // ==========================================
+    const multiplexerReport: MultiplexerReport = this.streamMultiplexer.getReport();
+
+    const decodedDexTrade: DecodedDEXTradeEvent = this.dexStreamParser.parseTransaction({
+      slot: event.slot,
+      ...(event.signature ? { signature: event.signature } : {}),
+      programId: (event.payload as any)?.programId,
+      accounts: (event.payload as any)?.accounts,
+      data: (event.payload as any)?.data,
+      logs: (event.payload as any)?.logs ?? [],
+      ...(Object.hasOwn(event.payload ?? {}, 'err') ? { err: (event.payload as any).err } : {}),
+    });
+
+    const landingBenchmark: LandingBenchmarkCertificate = this.landingBenchmarkEngine.evaluateBenchmark(
+      String((context as any).landingBenchmarkId ?? event.eventId ?? event.slot),
+    );
+
+    // ==========================================
     // ALPHA HALF-LIFE, QUOTE DECAY & EXECUTION SHORTFALL (Sections XV, XVI & XX)
     // ==========================================
     const alphaHalfLife = AlphaHalfLifeEngine.estimateHalfLife({
@@ -3840,6 +3896,20 @@ export class MasterIntelligenceEngine {
     ) {
       decision = 'CHALLENGED_ABSTAIN';
       whyExecutionBlocked = `BLOCKED — INSUFFICIENT BAYESIAN POSTERIOR BELIEF (Posterior: ${(bayesBeliefUpdate.posterior_probability * 100).toFixed(1)}%, Effective Count: ${bayesBeliefUpdate.effective_evidence_count.toFixed(1)})`;
+    } else if (
+      ((context as any).enforceStreamMultiplexerGating ?? false) &&
+      shouldBlockStreamMultiplexer(multiplexerReport, (context as any).maxAllowedStreamLatencyMs ?? 200)
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      const observedLatency = multiplexerReport.meanLatencyMs === null ? 'unknown' : `${multiplexerReport.meanLatencyMs.toFixed(1)}ms`;
+      whyExecutionBlocked = `BLOCKED — STREAM MULTIPLEXER DEGRADED (Quorum: ${multiplexerReport.quorumMet}, Mean Latency: ${observedLatency}, Slot: ${multiplexerReport.observedSlot ?? 'unknown'}, Active: ${multiplexerReport.activeProvider ?? 'unknown'})`;
+    } else if (
+      ((context as any).enforceLandingBenchmarkGating ?? false) &&
+      shouldBlockLandingBenchmark(landingBenchmark, (context as any).minLandingBenchmarkRatePct ?? 70.0)
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      const observedRate = landingBenchmark.overallLandingRatePct === null ? 'unknown' : `${landingBenchmark.overallLandingRatePct.toFixed(1)}%`;
+      whyExecutionBlocked = `BLOCKED — INSUFFICIENT LANDING BENCHMARK (${observedRate}; ${landingBenchmark.pairedTrialCount}/${landingBenchmark.requiredPairedTrialCount} complete paired trials; observation leader for review: ${landingBenchmark.observationLeaderForReview ?? 'unknown'})`;
     } else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
       decision = 'AUTHORIZED_SELL';
       const exitResult = this.executeExit({
@@ -5055,6 +5125,9 @@ export class MasterIntelligenceEngine {
       bayesPriorProb: bayesUpdate.prior_probability,
       bayesEffectiveEvidenceCount: bayesUpdate.effective_evidence_count,
       bayesUnknownMass: bayesUpdate.unknown_probability_mass,
+      multiplexerReport,
+      decodedDexTrade,
+      landingBenchmark,
       links: {
         solscan: `https://solscan.io/token/${event.mint}`,
         pump: `https://pump.fun/${event.mint}`,
@@ -5346,6 +5419,9 @@ export class MasterIntelligenceEngine {
       executionAttemptStats,
       liquidityDepthProfile,
       bayesBeliefUpdate: bayesUpdate,
+      multiplexerReport,
+      decodedDexTrade,
+      landingBenchmark,
       whyExecutionBlocked: decision !== 'AUTHORIZED_BUY' ? whyExecutionBlocked : undefined,
     };
   }
@@ -6511,6 +6587,39 @@ export class MasterIntelligenceEngine {
     predictions: readonly { predicted_prob: number; actual_outcome: 0 | 1 }[]
   ): CalibrationReport {
     return this.bayes.evaluateCalibration(predictions);
+  }
+
+  /** Metrics-only registry. It does not establish a live provider connection. */
+  public getStreamMultiplexer(): StreamMultiplexer {
+    return this.streamMultiplexer;
+  }
+
+  /** Research envelope inspector; protocol event decoding is not implemented. */
+  public getDexStreamParser(): DEXStreamParser {
+    return this.dexStreamParser;
+  }
+
+  /** Stores observed paired transport attempts; does not submit transactions. */
+  public getLandingBenchmarkEngine(): LandingBenchmarkEngine {
+    return this.landingBenchmarkEngine;
+  }
+
+  /** Inspect a transaction envelope without inferring trade details. */
+  public parseDexTransaction(raw: {
+    slot: number;
+    signature?: string;
+    programId?: string;
+    accounts?: readonly string[];
+    data?: string | Uint8Array;
+    logs?: readonly string[];
+    err?: unknown;
+  }): DecodedDEXTradeEvent {
+    return this.dexStreamParser.parseTransaction(raw);
+  }
+
+  /** Evaluate recorded paired observations. The legacy contention argument is ignored. */
+  public evaluateLandingBenchmark(benchmarkId: string | number, legacyContentionRatio?: number): LandingBenchmarkCertificate {
+    return this.landingBenchmarkEngine.evaluateBenchmark(benchmarkId, legacyContentionRatio);
   }
 
   /**

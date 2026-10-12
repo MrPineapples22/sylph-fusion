@@ -51,6 +51,41 @@ function readSavedSignatures(path) {
   return signatures;
 }
 
+function readUnresolved(path, programId) {
+  const unresolved = new Map();
+  if (!existsSync(path)) return unresolved;
+  for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
+    if (!line) continue;
+    const record = JSON.parse(line);
+    if (record?.programId !== programId || typeof record.signature !== 'string' ||
+        !Number.isSafeInteger(record.slot) || typeof record.reason !== 'string' ||
+        typeof record.sha256 !== 'string') throw new Error('INVALID_UNRESOLVED_RECORD');
+    const { sha256: recordedHash, ...payload } = record;
+    if (sha256(JSON.stringify(payload)) !== recordedHash) throw new Error('UNRESOLVED_HASH_MISMATCH');
+    unresolved.set(record.signature, record);
+  }
+  return unresolved;
+}
+
+function makeUnresolved(payload) {
+  const record = { ...payload };
+  record.sha256 = sha256(JSON.stringify(record));
+  return record;
+}
+
+function makeEvidence({ programId, signature, slot, blockTime, transaction }) {
+  const record = { schemaVersion: 1, programId, signature, slot, blockTime, transaction };
+  record.sha256 = sha256(JSON.stringify(record));
+  return record;
+}
+
+function writeUnresolved(path, unresolved) {
+  const temporary = `${path}.tmp`;
+  const contents = [...unresolved.values()].map(record => JSON.stringify(record)).join('\n');
+  writeFileSync(temporary, contents ? `${contents}\n` : '', { flag: 'w' });
+  renameSync(temporary, path);
+}
+
 function writeCheckpoint(path, state) {
   const temporary = `${path}.tmp`;
   writeFileSync(temporary, `${JSON.stringify(state, null, 2)}\n`, { flag: 'w' });
@@ -99,7 +134,50 @@ export async function ingest(config, { fetcher = fetch } = {}) {
     const unresolvedPath = `${stem}.unresolved.jsonl`;
     const checkpoint = readCheckpoint(checkpointPath);
     const seen = readSavedSignatures(evidencePath);
+    const unresolved = readUnresolved(unresolvedPath, programId);
     let pagesThisRun = 0;
+
+    // Retry prior misses before resuming the exclusive signature cursor. Limit
+    // retries per run so a large unavailable archive window cannot starve paging.
+    const retryBudget = Math.min(limits.maxTransactions, 100);
+    let retriedSignaturesThisRun = 0;
+    for (const [signature, prior] of unresolved) {
+      if (retriedSignaturesThisRun >= retryBudget || fetchedThisRun >= limits.maxTransactions) break;
+      if (seen.has(signature)) { unresolved.delete(signature); continue; }
+      retriedSignaturesThisRun += 1;
+
+      let blockTime = prior.blockTime;
+      if (prior.reason === 'BLOCK_TIME_UNAVAILABLE') {
+        const recoveredBlockTime = await rpc(config.rpcUrl, 'getBlockTime', [prior.slot], fetcher);
+        await delay(limits.requestDelayMs);
+        if (!Number.isSafeInteger(recoveredBlockTime)) continue;
+        blockTime = recoveredBlockTime;
+        const observedAt = blockTime * 1000;
+        if (observedAt < limits.startMs || observedAt >= limits.endMs) {
+          unresolved.delete(signature);
+          continue;
+        }
+      } else if (prior.reason !== 'TRANSACTION_UNAVAILABLE') {
+        throw new Error('INVALID_UNRESOLVED_REASON');
+      }
+
+      const transaction = await rpc(config.rpcUrl, 'getTransaction', [signature, {
+        encoding: 'jsonParsed', commitment: 'finalized', maxSupportedTransactionVersion: 0,
+      }], fetcher);
+      await delay(limits.requestDelayMs);
+      if (transaction === null) {
+        unresolved.set(signature, makeUnresolved({
+          programId, signature, slot: prior.slot,
+          ...(blockTime === undefined ? {} : { blockTime }),
+          reason: 'TRANSACTION_UNAVAILABLE',
+        }));
+        continue;
+      }
+      appendFileSync(evidencePath, `${JSON.stringify(makeEvidence({ programId, signature, slot: prior.slot, blockTime, transaction }))}\n`, { flag: 'a' });
+      seen.add(signature);
+      fetchedThisRun += 1;
+      unresolved.delete(signature);
+    }
 
     while (!checkpoint.completed && pagesThisRun < limits.maxPagesPerProgram && fetchedThisRun < limits.maxTransactions) {
       const options = { limit: limits.pageSize, commitment: 'finalized' };
@@ -115,9 +193,7 @@ export async function ingest(config, { fetcher = fetch } = {}) {
           const item = page[index];
           if (typeof item?.signature !== 'string' || !Number.isSafeInteger(item.slot)) throw new Error('INVALID_SIGNATURE_ENTRY');
           if (!Number.isSafeInteger(item.blockTime)) {
-            const unresolved = { programId, signature: item.signature, slot: item.slot, reason: 'BLOCK_TIME_UNAVAILABLE' };
-            unresolved.sha256 = sha256(JSON.stringify(unresolved));
-            appendFileSync(unresolvedPath, `${JSON.stringify(unresolved)}\n`, { flag: 'a' });
+            unresolved.set(item.signature, makeUnresolved({ programId, signature: item.signature, slot: item.slot, reason: 'BLOCK_TIME_UNAVAILABLE' }));
             continue;
           }
           const observedAt = item.blockTime * 1000;
@@ -134,20 +210,10 @@ export async function ingest(config, { fetcher = fetch } = {}) {
             encoding: 'jsonParsed', commitment: 'finalized', maxSupportedTransactionVersion: 0,
           }], fetcher);
           if (transaction === null) {
-            const unresolved = { programId, signature: item.signature, slot: item.slot, blockTime: item.blockTime, reason: 'TRANSACTION_UNAVAILABLE' };
-            unresolved.sha256 = sha256(JSON.stringify(unresolved));
-            appendFileSync(unresolvedPath, `${JSON.stringify(unresolved)}\n`, { flag: 'a' });
+            unresolved.set(item.signature, makeUnresolved({ programId, signature: item.signature, slot: item.slot, blockTime: item.blockTime, reason: 'TRANSACTION_UNAVAILABLE' }));
             continue;
           }
-          const record = {
-            schemaVersion: 1,
-            programId,
-            signature: item.signature,
-            slot: item.slot,
-            blockTime: item.blockTime,
-            transaction,
-          };
-          record.sha256 = sha256(JSON.stringify(record));
+          const record = makeEvidence({ programId, signature: item.signature, slot: item.slot, blockTime: item.blockTime, transaction });
           appendFileSync(evidencePath, `${JSON.stringify(record)}\n`, { flag: 'a' });
           seen.add(item.signature);
           fetchedThisRun += 1;
@@ -160,6 +226,8 @@ export async function ingest(config, { fetcher = fetch } = {}) {
         pagesThisRun += 1;
         if (!stoppedAtLimit && (olderThanWindow || page.length < limits.pageSize)) checkpoint.completed = true;
       }
+      // Persist unresolved state before advancing the cursor past this page.
+      writeUnresolved(unresolvedPath, unresolved);
       writeCheckpoint(checkpointPath, checkpoint);
       await delay(limits.requestDelayMs);
     }
@@ -173,6 +241,7 @@ export async function ingest(config, { fetcher = fetch } = {}) {
       evidenceFile: evidencePath,
       unresolvedFile: unresolvedPath,
     };
+    writeUnresolved(unresolvedPath, unresolved);
   }
 
   manifest.fetchedThisRun = fetchedThisRun;

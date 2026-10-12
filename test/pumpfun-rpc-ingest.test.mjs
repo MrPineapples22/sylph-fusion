@@ -53,6 +53,69 @@ test('captures hashed raw evidence and resumes without duplicate records', async
   assert.equal(readFileSync(first.programs[programId].evidenceFile, 'utf8').trim().split('\n').length, 1);
 });
 
+test('retries unresolved transactions on later runs without duplicating signatures', async () => {
+  const outputDir = mkdtempSync(join(tmpdir(), 'sylph-pump-retry-'));
+  let transactionAvailable = false;
+  let transactionCalls = 0;
+  const fetcher = async (_url, options) => {
+    const request = JSON.parse(options.body);
+    if (request.method === 'getSignaturesForAddress') {
+      return { ok: true, json: async () => ({ result: [
+        { signature: 'sig-late-archive', slot: 42, blockTime: 1760000000 },
+      ] }) };
+    }
+    transactionCalls += 1;
+    return { ok: true, json: async () => ({ result: transactionAvailable
+      ? { slot: 42, meta: { err: null }, transaction: { signatures: ['sig-late-archive'] } }
+      : null }) };
+  };
+
+  const config = configFor(outputDir);
+  const first = await ingest(config, { fetcher });
+  assert.equal(first.programs[programId].completed, true);
+  assert.equal(JSON.parse(readFileSync(first.programs[programId].unresolvedFile, 'utf8').trim()).reason, 'TRANSACTION_UNAVAILABLE');
+  assert.equal((await verifyEvidence(outputDir)).unresolvedCount, 1);
+
+  transactionAvailable = true;
+  const second = await ingest(config, { fetcher });
+  const evidence = readFileSync(second.programs[programId].evidenceFile, 'utf8').trim().split('\n');
+  assert.equal(evidence.length, 1);
+  assert.equal(JSON.parse(evidence[0]).signature, 'sig-late-archive');
+  assert.equal(second.programs[programId].storedTransactions, 1);
+  assert.equal((await verifyEvidence(outputDir)).unresolvedCount, 0);
+  assert.equal(transactionCalls, 2);
+});
+
+test('bounds unresolved retry budget by signatures even when a retry needs two RPC methods', async () => {
+  const outputDir = mkdtempSync(join(tmpdir(), 'sylph-pump-retry-budget-'));
+  let firstPass = true;
+  const blockTimeSlots = [];
+  const fetcher = async (_url, options) => {
+    const request = JSON.parse(options.body);
+    if (request.method === 'getSignaturesForAddress') {
+      return { ok: true, json: async () => ({ result: firstPass ? [
+        { signature: 'sig-blocktime-a', slot: 42 },
+        { signature: 'sig-blocktime-b', slot: 41 },
+      ] : [] }) };
+    }
+    if (request.method === 'getBlockTime') {
+      blockTimeSlots.push(request.params[0]);
+      return { ok: true, json: async () => ({ result: 1760000000 }) };
+    }
+    if (request.method === 'getTransaction') return { ok: true, json: async () => ({ result: null }) };
+    throw new Error(`Unexpected method: ${request.method}`);
+  };
+
+  await ingest(configFor(outputDir, { maxTransactions: 2, pageSize: 2 }), { fetcher });
+  firstPass = false;
+  const retry = await ingest(configFor(outputDir, { maxTransactions: 1, pageSize: 2 }), { fetcher });
+  const unresolved = readFileSync(retry.programs[programId].unresolvedFile, 'utf8').trim().split('\n').map(JSON.parse);
+  assert.deepEqual(blockTimeSlots, [42]);
+  assert.equal(unresolved.length, 2);
+  assert.equal(unresolved.find((row) => row.signature === 'sig-blocktime-a').reason, 'TRANSACTION_UNAVAILABLE');
+  assert.equal(unresolved.find((row) => row.signature === 'sig-blocktime-b').reason, 'BLOCK_TIME_UNAVAILABLE');
+});
+
 test('retries transient RPC failures and rejects malformed checkpoints', async () => {
   let attempts = 0;
   const result = await rpc('https://rpc.example', 'getHealth', [], async () => {

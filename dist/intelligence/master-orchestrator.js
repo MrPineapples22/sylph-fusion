@@ -53,6 +53,9 @@ import { AdaptivePolicyRouter } from './policies/adaptive-router.js';
 import { OODSentinel } from './safety/ood-sentinel.js';
 import { PositionDefenseEngine } from './execution/position-defense.js';
 import { BayesBeliefEngine, } from './bayes/index.js';
+import { StreamMultiplexer, shouldBlockStreamMultiplexer, } from '../platform/ingestion/stream-multiplexer.js';
+import { DEXStreamParser, } from '../platform/ingestion/dex-stream-parser.js';
+import { LandingBenchmarkEngine, shouldBlockLandingBenchmark, } from '../platform/execution/landing-benchmark.js';
 import { TemporalEvidenceGraph } from './graph/temporal-evidence-graph.js';
 import { FundingAncestryEngine } from './graph/funding-ancestry.js';
 import { FirstPassageEngine } from './science/first-passage.js';
@@ -390,6 +393,9 @@ export class MasterIntelligenceEngine {
     activeExecutionPolicy;
     executionAttemptLedger;
     liquidityDepthEngine;
+    streamMultiplexer;
+    dexStreamParser;
+    landingBenchmarkEngine;
     constructor() {
         this.kernel = new IntegrationKernel();
         this.chainTruth = new ChainTruthEngine();
@@ -574,6 +580,9 @@ export class MasterIntelligenceEngine {
         });
         this.executionAttemptLedger = new ExecutionAttemptLedger();
         this.liquidityDepthEngine = new LiquidityDepthEngine();
+        this.streamMultiplexer = new StreamMultiplexer();
+        this.dexStreamParser = new DEXStreamParser();
+        this.landingBenchmarkEngine = new LandingBenchmarkEngine();
         this.setupConnectionAuditor();
         this.registerComponents();
     }
@@ -2418,6 +2427,20 @@ export class MasterIntelligenceEngine {
                 missing_fields: context.bayesMissingFields,
             });
         // ==========================================
+        // MULTI-SOURCE STREAM MULTIPLEXER, ZERO-COPY DEX PARSER & LANDING BENCHMARK (Richat, Yellowstone, Sol Parser, Netticode)
+        // ==========================================
+        const multiplexerReport = this.streamMultiplexer.getReport();
+        const decodedDexTrade = this.dexStreamParser.parseTransaction({
+            slot: event.slot,
+            ...(event.signature ? { signature: event.signature } : {}),
+            programId: event.payload?.programId,
+            accounts: event.payload?.accounts,
+            data: event.payload?.data,
+            logs: event.payload?.logs ?? [],
+            ...(Object.hasOwn(event.payload ?? {}, 'err') ? { err: event.payload.err } : {}),
+        });
+        const landingBenchmark = this.landingBenchmarkEngine.evaluateBenchmark(String(context.landingBenchmarkId ?? event.eventId ?? event.slot));
+        // ==========================================
         // ALPHA HALF-LIFE, QUOTE DECAY & EXECUTION SHORTFALL (Sections XV, XVI & XX)
         // ==========================================
         const alphaHalfLife = AlphaHalfLifeEngine.estimateHalfLife({
@@ -2814,6 +2837,18 @@ export class MasterIntelligenceEngine {
                 bayesBeliefUpdate.effective_evidence_count < (context.minBayesEvidenceCount ?? 1.0))) {
             decision = 'CHALLENGED_ABSTAIN';
             whyExecutionBlocked = `BLOCKED — INSUFFICIENT BAYESIAN POSTERIOR BELIEF (Posterior: ${(bayesBeliefUpdate.posterior_probability * 100).toFixed(1)}%, Effective Count: ${bayesBeliefUpdate.effective_evidence_count.toFixed(1)})`;
+        }
+        else if ((context.enforceStreamMultiplexerGating ?? false) &&
+            shouldBlockStreamMultiplexer(multiplexerReport, context.maxAllowedStreamLatencyMs ?? 200)) {
+            decision = 'CHALLENGED_ABSTAIN';
+            const observedLatency = multiplexerReport.meanLatencyMs === null ? 'unknown' : `${multiplexerReport.meanLatencyMs.toFixed(1)}ms`;
+            whyExecutionBlocked = `BLOCKED — STREAM MULTIPLEXER DEGRADED (Quorum: ${multiplexerReport.quorumMet}, Mean Latency: ${observedLatency}, Slot: ${multiplexerReport.observedSlot ?? 'unknown'}, Active: ${multiplexerReport.activeProvider ?? 'unknown'})`;
+        }
+        else if ((context.enforceLandingBenchmarkGating ?? false) &&
+            shouldBlockLandingBenchmark(landingBenchmark, context.minLandingBenchmarkRatePct ?? 70.0)) {
+            decision = 'CHALLENGED_ABSTAIN';
+            const observedRate = landingBenchmark.overallLandingRatePct === null ? 'unknown' : `${landingBenchmark.overallLandingRatePct.toFixed(1)}%`;
+            whyExecutionBlocked = `BLOCKED — INSUFFICIENT LANDING BENCHMARK (${observedRate}; ${landingBenchmark.pairedTrialCount}/${landingBenchmark.requiredPairedTrialCount} complete paired trials; observation leader for review: ${landingBenchmark.observationLeaderForReview ?? 'unknown'})`;
         }
         else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
             decision = 'AUTHORIZED_SELL';
@@ -3941,6 +3976,9 @@ export class MasterIntelligenceEngine {
             bayesPriorProb: bayesUpdate.prior_probability,
             bayesEffectiveEvidenceCount: bayesUpdate.effective_evidence_count,
             bayesUnknownMass: bayesUpdate.unknown_probability_mass,
+            multiplexerReport,
+            decodedDexTrade,
+            landingBenchmark,
             links: {
                 solscan: `https://solscan.io/token/${event.mint}`,
                 pump: `https://pump.fun/${event.mint}`,
@@ -4230,6 +4268,9 @@ export class MasterIntelligenceEngine {
             executionAttemptStats,
             liquidityDepthProfile,
             bayesBeliefUpdate: bayesUpdate,
+            multiplexerReport,
+            decodedDexTrade,
+            landingBenchmark,
             whyExecutionBlocked: decision !== 'AUTHORIZED_BUY' ? whyExecutionBlocked : undefined,
         };
     }
@@ -4909,6 +4950,36 @@ export class MasterIntelligenceEngine {
      */
     evaluateBayesCalibration(predictions) {
         return this.bayes.evaluateCalibration(predictions);
+    }
+    /**
+     * Institutional Stream Multiplexer (Richat & Yellowstone gRPC)
+     */
+    getStreamMultiplexer() {
+        return this.streamMultiplexer;
+    }
+    /**
+     * Institutional Zero-Copy DEX Stream Parser (Sol Parser SDK & Solana Streamer)
+     */
+    getDexStreamParser() {
+        return this.dexStreamParser;
+    }
+    /**
+     * Institutional Landing Benchmark & Dynamic Tip Optimizer (Netticode & MOBIUS Searcher)
+     */
+    getLandingBenchmarkEngine() {
+        return this.landingBenchmarkEngine;
+    }
+    /**
+     * Parse raw transaction payload into normalized DEX trade event
+     */
+    parseDexTransaction(raw) {
+        return this.dexStreamParser.parseTransaction(raw);
+    }
+    /**
+     * Evaluate multi-lane landing benchmark and compute dynamic tip schedule
+     */
+    evaluateLandingBenchmark(benchmarkId, legacyContentionRatio) {
+        return this.landingBenchmarkEngine.evaluateBenchmark(benchmarkId, legacyContentionRatio);
     }
     /**
      * System Intelligence & Omega Telemetry

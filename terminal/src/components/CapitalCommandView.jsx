@@ -62,6 +62,7 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
   const calibration = learning?.adaptiveCalibration;
   const researchPnl = Number.isFinite(learning?.rawUnfilteredPnlUsd) ? learning.rawUnfilteredPnlUsd : null;
   const learningMoney = (value) => `${value >= 0 ? '+' : '−'}${formatMoney(Math.abs(value))}`;
+  const learningEmpty = learningData ? 'No closed trades' : learningStatus === 'loading' ? 'Loading snapshot…' : 'Snapshot unavailable';
 
   const records = Array.isArray(positions) ? positions.filter(Boolean) : [];
   const closeState = current ? capabilities?.close?.state || 'UNKNOWN' : 'UNKNOWN';
@@ -319,12 +320,13 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
                 const observedMs = typeof observedAt === 'number' ? observedAt : observedAt ? Date.parse(observedAt) : NaN;
                 const ageMs = Number.isFinite(observedMs) ? Math.max(0, Date.now() - observedMs) : null;
                 const gap = position.gapStatus || position.gapCertificate?.status || position.observabilityGap?.status;
-                const attemptCount = position.executionTotalAttempts ?? position.executionAttemptStats?.totalAttempts ?? position.executionAttemptStats?.totalAttemptsObserved ?? 0;
                 const attempts = position.executionAttempts || position.executionAttemptStats?.attempts || position.executionAttemptStats?.recentAttempts;
+                const reportedAttemptCount = position.executionTotalAttempts ?? position.executionAttemptStats?.totalAttempts ?? position.executionAttemptStats?.totalAttemptsObserved;
+                const attemptCount = Number.isFinite(Number(reportedAttemptCount)) ? Number(reportedAttemptCount) : Array.isArray(attempts) ? attempts.length : null;
                 const gapReceived = position.replay?.received ?? position.replayReceived ?? position.observedCount;
                 const gapExpected = position.replay?.expected ?? position.replayExpected ?? position.expectedCount;
                 const replayState = position.replay?.state || position.replayState || position.recoveryState;
-                const outcome = Number(attemptCount) > 0 ? (position.lastExecutionOutcome || position.executionOutcome) : null;
+                const outcome = attemptCount > 0 ? (position.lastExecutionOutcome || position.executionOutcome) : null;
                 const attemptId = position.lastExecutionAttemptId || position.executionAttemptId;
                 const signature = position.lastExecutionSignature || position.signature;
                 const transport = position.executionTransport || position.executionActionVector?.transport;
@@ -345,13 +347,13 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
                   : null;
                 return <div className="op-market-evidence">
                   <div className="op-market-evidence-patterns" aria-label="Evidence checks">
-                    {['Provenance & freshness', 'Fork identity', 'Replay completeness', 'All execution attempts', 'Settled costs'].map((pattern) => <span key={pattern}>{pattern}</span>)}
+                    {['Provenance & freshness', 'Fork identity', 'Replay completeness', 'Recorded execution attempts', 'Settled costs'].map((pattern) => <span key={pattern}>{pattern}</span>)}
                   </div>
                   {row('Source / provenance', value(source))}
                   {row('Freshness / gap', `${ageMs == null ? 'Unknown age' : `${Math.round(ageMs / 1000)}s old`} · ${value(gap)}`)}
                   {row('Fork identity', [position.slot != null ? `slot ${position.slot}` : null, value(position.blockhash) !== 'Unknown' ? `block ${position.blockhash}` : null, position.commitment || null].filter(Boolean).join(' · ') || 'Unknown')}
                   {row('Replay coverage', `${replayCoverage} · ${value(replayState)}`)}
-                  {row('Execution attempts', Number(attemptCount) > 0 ? `${attemptCount} recorded · ${attemptOutcomes ? `outcomes: ${attemptOutcomes}` : 'per-attempt outcomes unavailable'} · latest: ${[value(outcome), attemptId ? `attempt ${attemptId}` : null, signature ? `sig ${signature}` : null, transport || null].filter(Boolean).join(' · ')}` : '0 recorded · outcome unknown')}
+                  {row('Execution attempts', attemptCount == null ? 'Unknown · attempt count unavailable' : attemptCount > 0 ? `${attemptCount} recorded · ${attemptOutcomes ? `outcomes: ${attemptOutcomes}` : 'per-attempt outcomes unavailable'} · latest: ${[value(outcome), attemptId ? `attempt ${attemptId}` : null, signature ? `sig ${signature}` : null, transport || null].filter(Boolean).join(' · ')}` : '0 recorded · outcome unknown')}
                   {row('Settled net outcome', settled ? netPnl : 'Unknown · not confirmed settled')}
                   {row('Measured execution costs', actualCosts.length ? actualCosts.map(([name, amount]) => `${name}: ${amount} lamports`).join(' · ') : 'Unknown')}
                   {row('Liquidity depth', depth ? `Heuristic · ${value(depth.calibratedRoute)} · resilience ${Number.isFinite(depth.depthResilienceScore) ? `${(depth.depthResilienceScore * 100).toFixed(0)}%` : 'Unknown'} · max size ${Number.isFinite(depth.maxSafePositionSol) ? `${depth.maxSafePositionSol} SOL` : 'Unknown'} · ${depth.isDepthCollapsed === true ? 'collapsed' : depth.isDepthCollapsed === false ? 'not flagged collapsed' : 'collapse status unknown'}` : 'Heuristic profile unavailable')}
@@ -416,10 +418,10 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
               <h3 style={{margin:'4px 0 2px'}}>Adaptive Trade Learning &amp; Pavlov Attribution</h3>
               <div style={{display:'flex',alignItems:'center',gap:'8px',margin:'4px 0 6px',flexWrap:'wrap'}}>
                 <span style={{fontSize:'11px',fontFamily:'var(--font-mono, monospace)',background:'rgba(255,255,255,0.04)',color:'rgba(255,255,255,0.8)',padding:'2px 8px',borderRadius:'4px',border:'1px solid rgba(255,255,255,0.12)'}}>
-                  Source: {learning.dataSource || 'Unknown'} · {learningTrades} evaluated · {learning.dataQuality?.rejectedRows ?? 'Unknown'} rejected
+                  {learningStatus === 'current' ? 'Current snapshot' : learningData ? 'Last known snapshot' : 'Snapshot unavailable'} · Source: {learning.dataSource || 'Unknown'} · {learningTrades} evaluated · {learning.dataQuality?.rejectedRows ?? 'Unknown'} rejected
                 </span>
-                <span style={{fontSize:'11px',color:'rgba(255,255,255,0.5)',fontFamily:'var(--font-mono, monospace)'}}>
-                  {learningStatus === 'current' ? `Updated ${learningUpdatedAt ? `${Math.max(0, Math.round((Date.now() - learningUpdatedAt) / 1000))}s ago` : 'just now'}` : learningStatus === 'loading' ? 'Loading research snapshot…' : 'Snapshot unavailable · retrying'}
+                <span aria-live="polite" style={{fontSize:'11px',color:'rgba(255,255,255,0.5)',fontFamily:'var(--font-mono, monospace)'}}>
+                  {learningStatus === 'current' ? `Updated ${learningUpdatedAt ? `${Math.max(0, Math.round((Date.now() - learningUpdatedAt) / 1000))}s ago` : 'just now'}` : learningStatus === 'loading' ? 'Loading research snapshot…' : learningData ? `Refresh failed · last snapshot ${learningUpdatedAt ? `${Math.max(0, Math.round((Date.now() - learningUpdatedAt) / 1000))}s old` : 'age unknown'}` : 'Snapshot unavailable · retrying'}
                 </span>
               </div>
               <p className="op-muted" style={{margin:0,fontSize:'12px'}}>
@@ -474,23 +476,23 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
             />
             <MetricCard
               label="Recorded win rate"
-              value={learningTrades > 0 ? `${learning.winRatePct}%` : 'No closed trades'}
-              detail={learningTrades > 0 ? `${learning.winCount} wins / ${learning.lossCount} losses · ${learningTrades} total` : 'No outcome sample'}
+              value={learningTrades > 0 && Number.isFinite(learning.winRatePct) ? `${learning.winRatePct}%` : learningTrades > 0 ? 'Unknown' : learningEmpty}
+              detail={learningTrades > 0 ? `${learning.winCount} wins / ${learning.lossCount} losses · ${learningTrades} total` : learningData ? 'No outcome sample' : 'Research outcome data is unavailable'}
             />
             <MetricCard
-              label="Realized P&L · USD"
-              value={learningTrades > 0 && researchPnl != null ? learningMoney(researchPnl) : 'No closed trades'}
-              detail={learningTrades > 0 ? 'Observed sample total · reported as recorded' : 'No outcome sample'}
+              label="Recorded net P&L · USD"
+              value={learningTrades > 0 ? researchPnl != null ? learningMoney(researchPnl) : 'Unknown' : learningEmpty}
+              detail={learningTrades > 0 ? 'Observed sample total · reported as recorded' : learningData ? 'No outcome sample' : 'Research outcome data is unavailable'}
               emphasis
             />
             <MetricCard
               label="Profit Capture Ratio (PCR)"
-              value={learningTrades > 0 ? `${((learning.averageProfitCaptureRatio ?? 0) * 100).toFixed(1)}%` : 'Unknown'}
+              value={learningTrades > 0 && Number.isFinite(learning.averageProfitCaptureRatio) ? `${(learning.averageProfitCaptureRatio * 100).toFixed(1)}%` : learningTrades > 0 ? 'Unknown' : learningEmpty}
               detail="MFE realization efficiency across closed trades"
             />
             <MetricCard
               label="Exit Efficiency (EE)"
-              value={learningTrades > 0 ? `${((learning.averageExitEfficiency ?? 0) * 100).toFixed(1)}%` : 'Unknown'}
+              value={learningTrades > 0 && Number.isFinite(learning.averageExitEfficiency) ? `${(learning.averageExitEfficiency * 100).toFixed(1)}%` : learningTrades > 0 ? 'Unknown' : learningEmpty}
               detail="Excursion score (MFE vs MAE spread captured)"
             />
             <MetricCard
@@ -518,7 +520,7 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
                   1. Reinforce Alpha
                 </span>
                 <span className="op-mono" style={{fontSize:'16px',fontWeight:700,color:'#14F195'}}>
-                  {learning.attributionSummary.reinforceAlpha}
+                  {learningData ? learning.attributionSummary.reinforceAlpha : 'Unknown'}
                 </span>
               </div>
               <div style={{fontSize:'10px',fontWeight:600,color:'rgba(255,255,255,0.7)',marginBottom:'4px'}}>GOOD DECISION · GOOD OUTCOME</div>
@@ -538,7 +540,7 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
                   2. Neutral Variance
                 </span>
                 <span className="op-mono" style={{fontSize:'16px',fontWeight:700,color:'#38BDF8'}}>
-                  {learning.attributionSummary.neutralVariance}
+                  {learningData ? learning.attributionSummary.neutralVariance : 'Unknown'}
                 </span>
               </div>
               <div style={{fontSize:'10px',fontWeight:600,color:'rgba(255,255,255,0.7)',marginBottom:'4px'}}>GOOD DECISION · BAD OUTCOME</div>
@@ -558,7 +560,7 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
                   3. Filter Lucky Gamble
                 </span>
                 <span className="op-mono" style={{fontSize:'16px',fontWeight:700,color:'#F59E0B'}}>
-                  {learning.attributionSummary.doNotReinforceLuck}
+                  {learningData ? learning.attributionSummary.doNotReinforceLuck : 'Unknown'}
                 </span>
               </div>
               <div style={{fontSize:'10px',fontWeight:600,color:'rgba(255,255,255,0.7)',marginBottom:'4px'}}>BAD DECISION · GOOD OUTCOME</div>
@@ -578,7 +580,7 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
                   4. Penalize Policy
                 </span>
                 <span className="op-mono" style={{fontSize:'16px',fontWeight:700,color:'#FF3B69'}}>
-                  {learning.attributionSummary.penalizePolicy}
+                  {learningData ? learning.attributionSummary.penalizePolicy : 'Unknown'}
                 </span>
               </div>
               <div style={{fontSize:'10px',fontWeight:600,color:'rgba(255,255,255,0.7)',marginBottom:'4px'}}>BAD DECISION · BAD OUTCOME</div>
@@ -590,7 +592,7 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
 
           {/* Autopsies List */}
           <div>
-            <h4 style={{margin:'0 0 8px',fontSize:'0.95rem'}}>Recent Trade Autopsies ({learning.recentAutopsies.length})</h4>
+            <h4 style={{margin:'0 0 8px',fontSize:'0.95rem'}}>Recent Trade Autopsies ({learningData ? learning.recentAutopsies.length : 'unknown'})</h4>
             {learning.recentAutopsies.length > 0 ? (
               <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
                 {learning.recentAutopsies.map((autopsy) => {
@@ -696,7 +698,7 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
                 textAlign:'center'
               }}>
                 <p className="op-muted" style={{margin:'0 0 6px',fontSize:'12px'}}>
-                  No closed trades recorded in this session. Close an open position or click &quot;Simulate Test Trade&quot; above to inspect live Pavlov decision attribution.
+                  {learningData ? 'No closed trades are present in this research snapshot. Close a paper position or simulate a test trade to inspect sample attribution.' : learningStatus === 'loading' ? 'Loading research autopsies…' : 'Research autopsy data is unavailable. Refresh the snapshot or simulate a test trade to inspect sample attribution.'}
                 </p>
                 <button
                   type="button"
