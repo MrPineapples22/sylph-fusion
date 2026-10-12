@@ -117,6 +117,9 @@ import { FixedReferenceShiftEngine } from './executable-alpha/distribution/fixed
 import { SelectivePredictionEngine } from './executable-alpha/information/selective-prediction.js';
 import { InformationVelocityEngine } from './executable-alpha/information/information-velocity.js';
 import { RunnerHoldManager } from './executable-alpha/exit/runner-hold.js';
+import { PrincipalRecoveryEngine } from './executable-alpha/exit/principal-recovery.js';
+import { InformationFrontierEngine } from './executable-alpha/information/information-frontier.js';
+import { SensorValueEngine } from './executable-alpha/information/sensor-value.js';
 import { AlphaHalfLifeEngine, AlphaBurnLedger, } from './timing/alpha-half-life.js';
 import { QuoteDecayEngine } from './executable-alpha/execution/quote-decay.js';
 import { ExecutionUrgencyEngine } from './executable-alpha/execution/execution-urgency.js';
@@ -1858,6 +1861,36 @@ export class MasterIntelligenceEngine {
             authenticityStillValid: authenticityScore >= 0.60,
         });
         // ==========================================
+        // INFORMATION FRONTIER & EARLIEST DECISION TIME (Section IX & Study EARLIEST-INFORMATION-TIME-X)
+        // ==========================================
+        const elapsedObservationSeconds = context.elapsedObservationSeconds ?? Math.max(1, context.tokenAgeSec);
+        const observationsCount = context.observationsCount ?? Math.max(1, context.txCount || 10);
+        const featureCount = context.featureCount ?? 15;
+        const targetMultiple = context.targetMultiple ?? (currentMultiple >= 2.0 ? 10.0 : 2.0);
+        const informationFrontier = context.informationFrontier ?? InformationFrontierEngine.evaluate(elapsedObservationSeconds, observationsCount, featureCount, targetMultiple);
+        // ==========================================
+        // VALUE OF SENSOR & ESCALATION TIER ARBITRATION (Section IX & Study VALUE-OF-SENSOR-X)
+        // ==========================================
+        const currentInfoNats = context.currentInfoNats ?? informationFrontier.mutualInformationNats;
+        const requiredInfoNats = context.requiredInfoNats ?? informationFrontier.minRequiredNats;
+        const tradeStakeUsd = context.tradeStakeUsd ?? (context.positionValueUsd ?? 250.0);
+        const sensorDecision = context.sensorDecision ?? SensorValueEngine.evaluateTier(currentInfoNats, requiredInfoNats, tradeStakeUsd);
+        // ==========================================
+        // PRINCIPAL RECOVERY & STRESSED EXIT PROCEEDS (Section XXXVIII & Study 41: RUNNER-HOLD-vs-RECOVERY-X)
+        // ==========================================
+        const principalInvestedUsd = context.principalInvestedUsd ?? (context.positionValueUsd ?? 250.0);
+        const entryFeesPaidUsd = context.entryFeesPaidUsd ?? 2.50;
+        const desiredLockedProfitUsd = context.desiredLockedProfitUsd ?? 0.0;
+        const executablePositionValueUsd = context.executablePositionValueUsd ?? liquidationSurface.stressedExitCapacityUsd;
+        const projectedExitCostsUsd = context.projectedExitCostsUsd ?? (liquidationSurface.liquidityHaircutUsd + (liquidationSurface.stressedExitCapacityUsd * 0.01));
+        const principalRecovery = context.principalRecovery ?? PrincipalRecoveryEngine.calculateRecoveryFraction({
+            principalInvestedUsd,
+            entryFeesPaidUsd,
+            desiredLockedProfitUsd,
+            executablePositionValueUsd,
+            projectedExitCostsUsd,
+        });
+        // ==========================================
         // ALPHA HALF-LIFE, QUOTE DECAY & EXECUTION SHORTFALL (Sections XV, XVI & XX)
         // ==========================================
         const alphaHalfLife = AlphaHalfLifeEngine.estimateHalfLife({
@@ -2120,6 +2153,23 @@ export class MasterIntelligenceEngine {
             informationVelocity.recommendedAction === 'STAGNANT_ABSTAIN') {
             decision = 'CHALLENGED_ABSTAIN';
             whyExecutionBlocked = `BLOCKED — STAGNANT INFORMATION VELOCITY (Velocity: ${informationVelocity.velocityNatsPerSec.toFixed(5)} nats/s, Info: ${informationVelocity.currentInformationNats.toFixed(2)} nats)`;
+        }
+        else if ((context.enforceInformationFrontierGating ?? false) &&
+            !informationFrontier.isSufficient) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — INSUFFICIENT INFORMATION FRONTIER (${informationFrontier.reason})`;
+        }
+        else if ((context.enforceSensorEscalationGating ?? false) &&
+            sensorDecision.escalate &&
+            !sensorDecision.rationale.includes('Escalate to Tier')) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — SENSOR ESCALATION REJECTED (${sensorDecision.rationale})`;
+        }
+        else if ((context.enforcePrincipalRecoveryGating ?? false) &&
+            currentMultiple >= 2.0 &&
+            !principalRecovery.isPrincipalRecoverable) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — PRINCIPAL UNRECOVERABLE UNDER STRESSED EXIT (Deficit: $${Math.max(0, principalRecovery.requiredProceedsUsd - principalRecovery.executableNetValueUsd).toFixed(2)})`;
         }
         else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
             decision = 'AUTHORIZED_SELL';
@@ -3154,6 +3204,14 @@ export class MasterIntelligenceEngine {
             isInformationStagnant: informationVelocity.isStagnant,
             runnerHoldAuthorized: runnerHoldCertificate.holdAuthorized,
             currentRunnerState: runnerHoldCertificate.runnerState,
+            principalRecovery,
+            informationFrontier,
+            sensorDecision,
+            isPrincipalRecoverable: principalRecovery.isPrincipalRecoverable,
+            optimalRecoveryFraction: principalRecovery.optimalRecoveryFraction,
+            isInformationFrontierSufficient: informationFrontier.isSufficient,
+            earliestDecisionTimeSeconds: informationFrontier.earliestDecisionTimeSeconds,
+            recommendedSensorTier: sensorDecision.recommendedTier,
             links: {
                 solscan: `https://solscan.io/token/${event.mint}`,
                 pump: `https://pump.fun/${event.mint}`,
@@ -3417,6 +3475,9 @@ export class MasterIntelligenceEngine {
             selectivePrediction,
             informationVelocity,
             runnerHoldCertificate,
+            principalRecovery,
+            informationFrontier,
+            sensorDecision,
             whyExecutionBlocked: decision !== 'AUTHORIZED_BUY' ? whyExecutionBlocked : undefined,
         };
     }
@@ -3847,6 +3908,27 @@ export class MasterIntelligenceEngine {
      */
     issueRunnerHoldCertificate(params) {
         return RunnerHoldManager.issueCertificate(params);
+    }
+    /**
+     * Section XXXVIII & Study 41: Principal Recovery & Stressed Exit Proceeds
+     * Computes optimal token recovery fraction without blunt 50% assumption.
+     */
+    calculatePrincipalRecovery(params) {
+        return PrincipalRecoveryEngine.calculateRecoveryFraction(params);
+    }
+    /**
+     * Section IX & Study EARLIEST-INFORMATION-TIME-X: Information Frontier Engine
+     * Evaluates mutual information accumulation and earliest decision time T*.
+     */
+    evaluateInformationFrontier(params) {
+        return InformationFrontierEngine.evaluate(params.elapsedSeconds, params.observationsCount, params.featureCount, params.targetMultiple);
+    }
+    /**
+     * Section IX & Study VALUE-OF-SENSOR-X: Value of Sensor Engine
+     * Evaluates sensor escalation tier and information return on investment (IPC).
+     */
+    evaluateSensorEscalation(params) {
+        return SensorValueEngine.evaluateTier(params.currentInformationNats, params.requiredInformationNats, params.tradeSizeUsd);
     }
     /**
      * System Intelligence & Omega Telemetry

@@ -558,6 +558,12 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
                     <span>Info Vel: <b style={{color: position.isInformationStagnant ? '#FF3B69' : '#14F195'}}>{Number.isFinite(position.informationVelocityNatsPerSec ?? position.informationVelocity?.velocityNatsPerSec) ? `${(position.informationVelocityNatsPerSec ?? position.informationVelocity?.velocityNatsPerSec).toFixed(3)} n/s` : '0.045 n/s'}</b></span>
                     <span>Hold State: <b style={{color: (position.runnerHoldAuthorized ?? position.runnerHoldCertificate?.holdAuthorized) ? '#14F195' : '#38BDF8'}}>{position.currentRunnerState || position.runnerHoldCertificate?.runnerState || 'PROTECTED'}</b></span>
                   </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'2px',padding:'3px 6px',background:'rgba(20,241,149,0.04)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>Recovery: <b style={{color: (position.isPrincipalRecoverable ?? position.principalRecovery?.isPrincipalRecoverable) === false ? '#FF3B69' : '#14F195'}}>{(position.isPrincipalRecoverable ?? position.principalRecovery?.isPrincipalRecoverable) ? `${((position.optimalRecoveryFraction ?? position.principalRecovery?.optimalRecoveryFraction ?? 0.5) * 100).toFixed(0)}% Recov` : 'UNRECOVERABLE'}</b></span>
+                    <span>Info Frontier: <b style={{color: (position.isInformationFrontierSufficient ?? position.informationFrontier?.isSufficient) === false ? '#FF3B69' : '#14F195'}}>{(position.isInformationFrontierSufficient ?? position.informationFrontier?.isSufficient) ? 'SUFFICIENT' : 'INSUFFICIENT'}</b></span>
+                    <span>T* Horizon: <b style={{color: '#38BDF8'}}>{Number.isFinite(position.earliestDecisionTimeSeconds ?? position.informationFrontier?.earliestDecisionTimeSeconds) ? `${(position.earliestDecisionTimeSeconds ?? position.informationFrontier?.earliestDecisionTimeSeconds).toFixed(0)}s` : '30s'}</b></span>
+                    <span>Sensor Tier: <b style={{color: (position.recommendedSensorTier ?? position.sensorDecision?.recommendedTier ?? 0) > 2 ? '#F59E0B' : '#14F195'}}>{`Tier ${position.recommendedSensorTier ?? position.sensorDecision?.recommendedTier ?? 0}`}</b></span>
+                  </div>
                 </div>
               );
             })()}

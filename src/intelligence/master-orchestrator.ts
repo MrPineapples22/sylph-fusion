@@ -127,6 +127,9 @@ import { FixedReferenceShiftEngine, type BaselineReferenceAnalysis } from './exe
 import { SelectivePredictionEngine, type SelectivePredictionResult } from './executable-alpha/information/selective-prediction.js';
 import { InformationVelocityEngine, type InformationVelocityProfile } from './executable-alpha/information/information-velocity.js';
 import { RunnerHoldManager } from './executable-alpha/exit/runner-hold.js';
+import { PrincipalRecoveryEngine, type PrincipalRecoveryReport } from './executable-alpha/exit/principal-recovery.js';
+import { InformationFrontierEngine, type InformationFrontierState } from './executable-alpha/information/information-frontier.js';
+import { SensorValueEngine, type SensorEscalationDecision } from './executable-alpha/information/sensor-value.js';
 import {
   AlphaHalfLifeEngine,
   type AlphaHalfLifeEstimate,
@@ -507,6 +510,14 @@ export interface AetherFluxViewModel {
   readonly isInformationStagnant?: boolean;
   readonly runnerHoldAuthorized?: boolean;
   readonly currentRunnerState?: RunnerState;
+  readonly principalRecovery?: PrincipalRecoveryReport;
+  readonly informationFrontier?: InformationFrontierState;
+  readonly sensorDecision?: SensorEscalationDecision;
+  readonly isPrincipalRecoverable?: boolean;
+  readonly optimalRecoveryFraction?: number;
+  readonly isInformationFrontierSufficient?: boolean;
+  readonly earliestDecisionTimeSeconds?: number;
+  readonly recommendedSensorTier?: number;
 }
 
 export interface MasterPipelineResult {
@@ -571,6 +582,9 @@ export interface MasterPipelineResult {
   readonly selectivePrediction?: SelectivePredictionResult;
   readonly informationVelocity?: InformationVelocityProfile;
   readonly runnerHoldCertificate?: RunnerHoldCertificate;
+  readonly principalRecovery?: PrincipalRecoveryReport;
+  readonly informationFrontier?: InformationFrontierState;
+  readonly sensorDecision?: SensorEscalationDecision;
   readonly whyExecutionBlocked?: string;
 }
 
@@ -629,6 +643,9 @@ export type {
   InformationVelocityProfile,
   RunnerHoldCertificate,
   RunnerState,
+  PrincipalRecoveryReport,
+  InformationFrontierState,
+  SensorEscalationDecision,
 };
 
 export class MasterIntelligenceEngine {
@@ -2465,6 +2482,48 @@ export class MasterIntelligenceEngine {
     });
 
     // ==========================================
+    // INFORMATION FRONTIER & EARLIEST DECISION TIME (Section IX & Study EARLIEST-INFORMATION-TIME-X)
+    // ==========================================
+    const elapsedObservationSeconds = (context as any).elapsedObservationSeconds ?? Math.max(1, context.tokenAgeSec);
+    const observationsCount = (context as any).observationsCount ?? Math.max(1, context.txCount || 10);
+    const featureCount = (context as any).featureCount ?? 15;
+    const targetMultiple = (context as any).targetMultiple ?? (currentMultiple >= 2.0 ? 10.0 : 2.0);
+    const informationFrontier: InformationFrontierState = (context as any).informationFrontier ?? InformationFrontierEngine.evaluate(
+      elapsedObservationSeconds,
+      observationsCount,
+      featureCount,
+      targetMultiple
+    );
+
+    // ==========================================
+    // VALUE OF SENSOR & ESCALATION TIER ARBITRATION (Section IX & Study VALUE-OF-SENSOR-X)
+    // ==========================================
+    const currentInfoNats = (context as any).currentInfoNats ?? informationFrontier.mutualInformationNats;
+    const requiredInfoNats = (context as any).requiredInfoNats ?? informationFrontier.minRequiredNats;
+    const tradeStakeUsd = (context as any).tradeStakeUsd ?? ((context as any).positionValueUsd ?? 250.0);
+    const sensorDecision: SensorEscalationDecision = (context as any).sensorDecision ?? SensorValueEngine.evaluateTier(
+      currentInfoNats,
+      requiredInfoNats,
+      tradeStakeUsd
+    );
+
+    // ==========================================
+    // PRINCIPAL RECOVERY & STRESSED EXIT PROCEEDS (Section XXXVIII & Study 41: RUNNER-HOLD-vs-RECOVERY-X)
+    // ==========================================
+    const principalInvestedUsd = (context as any).principalInvestedUsd ?? ((context as any).positionValueUsd ?? 250.0);
+    const entryFeesPaidUsd = (context as any).entryFeesPaidUsd ?? 2.50;
+    const desiredLockedProfitUsd = (context as any).desiredLockedProfitUsd ?? 0.0;
+    const executablePositionValueUsd = (context as any).executablePositionValueUsd ?? liquidationSurface.stressedExitCapacityUsd;
+    const projectedExitCostsUsd = (context as any).projectedExitCostsUsd ?? (liquidationSurface.liquidityHaircutUsd + (liquidationSurface.stressedExitCapacityUsd * 0.01));
+    const principalRecovery: PrincipalRecoveryReport = (context as any).principalRecovery ?? PrincipalRecoveryEngine.calculateRecoveryFraction({
+      principalInvestedUsd,
+      entryFeesPaidUsd,
+      desiredLockedProfitUsd,
+      executablePositionValueUsd,
+      projectedExitCostsUsd,
+    });
+
+    // ==========================================
     // ALPHA HALF-LIFE, QUOTE DECAY & EXECUTION SHORTFALL (Sections XV, XVI & XX)
     // ==========================================
     const alphaHalfLife = AlphaHalfLifeEngine.estimateHalfLife({
@@ -2738,6 +2797,26 @@ export class MasterIntelligenceEngine {
     ) {
       decision = 'CHALLENGED_ABSTAIN';
       whyExecutionBlocked = `BLOCKED — STAGNANT INFORMATION VELOCITY (Velocity: ${informationVelocity.velocityNatsPerSec.toFixed(5)} nats/s, Info: ${informationVelocity.currentInformationNats.toFixed(2)} nats)`;
+    } else if (
+      ((context as any).enforceInformationFrontierGating ?? false) &&
+      !informationFrontier.isSufficient
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      whyExecutionBlocked = `BLOCKED — INSUFFICIENT INFORMATION FRONTIER (${informationFrontier.reason})`;
+    } else if (
+      ((context as any).enforceSensorEscalationGating ?? false) &&
+      sensorDecision.escalate &&
+      !sensorDecision.rationale.includes('Escalate to Tier')
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      whyExecutionBlocked = `BLOCKED — SENSOR ESCALATION REJECTED (${sensorDecision.rationale})`;
+    } else if (
+      ((context as any).enforcePrincipalRecoveryGating ?? false) &&
+      currentMultiple >= 2.0 &&
+      !principalRecovery.isPrincipalRecoverable
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      whyExecutionBlocked = `BLOCKED — PRINCIPAL UNRECOVERABLE UNDER STRESSED EXIT (Deficit: $${Math.max(0, principalRecovery.requiredProceedsUsd - principalRecovery.executableNetValueUsd).toFixed(2)})`;
     } else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
       decision = 'AUTHORIZED_SELL';
       const exitResult = this.executeExit({
@@ -3854,6 +3933,14 @@ export class MasterIntelligenceEngine {
       isInformationStagnant: informationVelocity.isStagnant,
       runnerHoldAuthorized: runnerHoldCertificate.holdAuthorized,
       currentRunnerState: runnerHoldCertificate.runnerState,
+      principalRecovery,
+      informationFrontier,
+      sensorDecision,
+      isPrincipalRecoverable: principalRecovery.isPrincipalRecoverable,
+      optimalRecoveryFraction: principalRecovery.optimalRecoveryFraction,
+      isInformationFrontierSufficient: informationFrontier.isSufficient,
+      earliestDecisionTimeSeconds: informationFrontier.earliestDecisionTimeSeconds,
+      recommendedSensorTier: sensorDecision.recommendedTier,
       links: {
         solscan: `https://solscan.io/token/${event.mint}`,
         pump: `https://pump.fun/${event.mint}`,
@@ -4119,6 +4206,9 @@ export class MasterIntelligenceEngine {
       selectivePrediction,
       informationVelocity,
       runnerHoldCertificate,
+      principalRecovery,
+      informationFrontier,
+      sensorDecision,
       whyExecutionBlocked: decision !== 'AUTHORIZED_BUY' ? whyExecutionBlocked : undefined,
     };
   }
@@ -4856,6 +4946,54 @@ export class MasterIntelligenceEngine {
     authenticityStillValid: boolean;
   }): RunnerHoldCertificate {
     return RunnerHoldManager.issueCertificate(params);
+  }
+
+  /**
+   * Section XXXVIII & Study 41: Principal Recovery & Stressed Exit Proceeds
+   * Computes optimal token recovery fraction without blunt 50% assumption.
+   */
+  public calculatePrincipalRecovery(params: {
+    principalInvestedUsd: number;
+    entryFeesPaidUsd: number;
+    desiredLockedProfitUsd?: number;
+    executablePositionValueUsd: number;
+    projectedExitCostsUsd: number;
+  }): PrincipalRecoveryReport {
+    return PrincipalRecoveryEngine.calculateRecoveryFraction(params);
+  }
+
+  /**
+   * Section IX & Study EARLIEST-INFORMATION-TIME-X: Information Frontier Engine
+   * Evaluates mutual information accumulation and earliest decision time T*.
+   */
+  public evaluateInformationFrontier(params: {
+    elapsedSeconds: number;
+    observationsCount: number;
+    featureCount: number;
+    targetMultiple?: number;
+  }): InformationFrontierState {
+    return InformationFrontierEngine.evaluate(
+      params.elapsedSeconds,
+      params.observationsCount,
+      params.featureCount,
+      params.targetMultiple
+    );
+  }
+
+  /**
+   * Section IX & Study VALUE-OF-SENSOR-X: Value of Sensor Engine
+   * Evaluates sensor escalation tier and information return on investment (IPC).
+   */
+  public evaluateSensorEscalation(params: {
+    currentInformationNats: number;
+    requiredInformationNats: number;
+    tradeSizeUsd?: number;
+  }): SensorEscalationDecision {
+    return SensorValueEngine.evaluateTier(
+      params.currentInformationNats,
+      params.requiredInformationNats,
+      params.tradeSizeUsd
+    );
   }
 
   /**
