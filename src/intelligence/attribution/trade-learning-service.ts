@@ -74,6 +74,11 @@ export interface AdaptiveLearningSnapshot {
   readonly lossCount: number;
   readonly winRatePct: number;
   readonly totalRealizedPnlUsd: number;
+  readonly policyRealizedPnlUsd?: number;
+  readonly policyWinCount?: number;
+  readonly policyLossCount?: number;
+  readonly policyWinRatePct?: number;
+  readonly counterfactualPrunedLossesUsd?: number;
   readonly averageProfitCaptureRatio: number;
   readonly averageExitEfficiency: number;
   readonly averageHoldDurationMs: number;
@@ -135,6 +140,15 @@ export class TradeLearningService {
   private dataSourceName: string = 'In-Memory Telemetry';
   private autoSync: boolean = false;
   private dataQuality = { csvRowsRead: 0, acceptedRows: 0, rejectedRows: 0, rejectionReasons: {} as Record<string, number> };
+  private readonly outcomeListeners: Array<(autopsy: TradeAutopsyRecord) => void> = [];
+
+  public addOutcomeListener(listener: (autopsy: TradeAutopsyRecord) => void): () => void {
+    this.outcomeListeners.push(listener);
+    return () => {
+      const idx = this.outcomeListeners.indexOf(listener);
+      if (idx !== -1) this.outcomeListeners.splice(idx, 1);
+    };
+  }
 
   private rejectionReason(report: ClosedTradeReport): string | undefined {
     if (report.symbol.toUpperCase() === 'TEST' || /^GodTierSim/i.test(report.tokenMint)) return 'SYNTHETIC_RECORD';
@@ -466,6 +480,14 @@ export class TradeLearningService {
 
     this.autopsies.unshift(autopsy);
 
+    for (const listener of this.outcomeListeners) {
+      try {
+        listener(autopsy);
+      } catch {
+        // non-blocking
+      }
+    }
+
     // Append validated research telemetry; this is not proof of executed trades or profitability.
     try {
       if (this.autoSync && this.csvPath && fs.existsSync(this.csvPath)) {
@@ -530,6 +552,10 @@ export class TradeLearningService {
     let totalPcr = 0;
     let totalEe = 0;
     let totalHoldMs = 0;
+    let policyRealizedPnlUsd = 0;
+    let policyWinCount = 0;
+    let policyLossCount = 0;
+    let counterfactualPrunedLossesUsd = 0;
 
     for (const a of this.autopsies) {
       if (a.realizedPnlUsd > 0) winCount++;
@@ -545,20 +571,29 @@ export class TradeLearningService {
           break;
         case 'GOOD_DECISION_GOOD_OUTCOME':
           reinforceAlpha++;
+          policyRealizedPnlUsd += a.realizedPnlUsd;
+          policyWinCount++;
           break;
         case 'GOOD_DECISION_BAD_OUTCOME':
           neutralVariance++;
+          policyRealizedPnlUsd += a.realizedPnlUsd;
+          policyLossCount++;
           break;
         case 'BAD_DECISION_GOOD_OUTCOME':
           doNotReinforceLuck++;
           break;
         case 'BAD_DECISION_BAD_OUTCOME':
           penalizePolicy++;
+          if (a.realizedPnlUsd < 0) {
+            counterfactualPrunedLossesUsd += Math.abs(a.realizedPnlUsd);
+          }
           break;
       }
     }
 
     const winRatePct = totalTrades > 0 ? Number(((winCount / totalTrades) * 100).toFixed(1)) : 0;
+    const policyTotalTrades = policyWinCount + policyLossCount;
+    const policyWinRatePct = policyTotalTrades > 0 ? Number(((policyWinCount / policyTotalTrades) * 100).toFixed(1)) : winRatePct;
     const averageProfitCaptureRatio = totalTrades > 0 ? Number((totalPcr / totalTrades).toFixed(3)) : 0;
     const averageExitEfficiency = totalTrades > 0 ? Number((totalEe / totalTrades).toFixed(3)) : 0;
     const averageHoldDurationMs = totalTrades > 0 ? Math.round(totalHoldMs / totalTrades) : 0;
@@ -590,6 +625,11 @@ export class TradeLearningService {
       lossCount,
       winRatePct,
       totalRealizedPnlUsd: Number(totalRealizedPnlUsd.toFixed(2)),
+      policyRealizedPnlUsd: Number(policyRealizedPnlUsd.toFixed(2)),
+      policyWinCount,
+      policyLossCount,
+      policyWinRatePct,
+      counterfactualPrunedLossesUsd: Number(counterfactualPrunedLossesUsd.toFixed(2)),
       averageProfitCaptureRatio,
       averageExitEfficiency,
       averageHoldDurationMs,

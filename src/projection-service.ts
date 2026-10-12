@@ -118,6 +118,9 @@ export interface PositionRowViewModel {
   readonly maePriceUsd?: number | null;
   readonly maePnlPct?: number | null;
   readonly trailingStopUsd?: number | null;
+  readonly convictionMultiplier?: number;
+  readonly confidenceGrade?: string;
+  readonly stage?: number;
 }
 
 export class ProjectionService {
@@ -228,7 +231,7 @@ export class ProjectionService {
 
       let protectionState: 'NORMAL' | 'TRAILING_ACTIVE' | 'EMERGENCY_UNWIND' | 'UNKNOWN' = 'UNKNOWN';
       if (markPriceUsd !== null) {
-        if (unrealizedPnlPct !== null && unrealizedPnlPct <= -12) protectionState = 'EMERGENCY_UNWIND';
+        if (unrealizedPnlPct !== null && (unrealizedPnlPct <= -8 || (unrealizedPnlPct <= -3.0 && (peakPnlPct == null || peakPnlPct <= 1.5)))) protectionState = 'EMERGENCY_UNWIND';
         else if ((peakPnlPct !== null && peakPnlPct >= 4) || (unrealizedPnlPct !== null && unrealizedPnlPct >= 6)) protectionState = 'TRAILING_ACTIVE';
         else protectionState = 'NORMAL';
       }
@@ -253,6 +256,9 @@ export class ProjectionService {
         maePriceUsd,
         maePnlPct,
         trailingStopUsd: pos.stop ?? null,
+        convictionMultiplier: pos.convictionMultiplier,
+        confidenceGrade: pos.confidenceGrade,
+        stage: pos.stage,
       };
     });
   }

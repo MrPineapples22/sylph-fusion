@@ -3,6 +3,7 @@ import WebSocket from 'ws';
 import { setTimeout as delay } from 'node:timers/promises';
 import { BoundedSet, log } from './core.js';
 import { IngestionGapReconciler } from './platform/ingestion/gap-reconciler.js';
+import { CensusRJournalAuthority } from './platform/ingestion/census-r.js';
 import { capturedTransactionObservation, createCapturedSubscribeClient, yellowstoneBackoffAfterSession } from './platform/ingestion/yellowstone-captured-client.js';
 import { createUnvalidatedObservation } from './platform/ingress/observation-factory.js';
 function providerLabel(endpoint) {
@@ -34,16 +35,18 @@ export class Feed {
     stopped = false;
     shutdown = new AbortController();
     gapReconciler = new IngestionGapReconciler();
+    censusJournal;
     last = 0;
     slot = 0;
     readySince = 0;
-    constructor(cfg, _connection, ingress, yellowstoneClientFactory = createCapturedSubscribeClient) {
+    constructor(cfg, _connection, ingress, yellowstoneClientFactory = createCapturedSubscribeClient, censusJournal) {
         this.cfg = cfg;
         this.yellowstoneClientFactory = yellowstoneClientFactory;
         if (typeof ingress === 'function' || !ingress || typeof ingress.submit !== 'function') {
             throw new Error('FEED_CALLBACK_BYPASS_FORBIDDEN: Feed requires an ObservationIngressPort instance. Arbitrary callback functions are strictly prohibited.');
         }
         this.#ingress = ingress;
+        this.censusJournal = censusJournal ?? new CensusRJournalAuthority();
     }
     isIngressBound(port) {
         return this.#ingress === port;
@@ -154,6 +157,41 @@ export class Feed {
             return receipt;
         if (this.stopped)
             return receipt;
+        // Durably journal accepted observation in Census-R canonical event journal
+        try {
+            const bankHash = `bank-slot-${slot}`;
+            const providerTimestamp = source.observedAt ?? now;
+            if (isHistoricalRepair || source.allowLate) {
+                this.censusJournal.ingestLateEvent({
+                    slot,
+                    bankHash,
+                    txHash: signature,
+                    eventIndex: 0,
+                    providerId: source.providerId,
+                    providerTimestampMs: providerTimestamp,
+                    eventType: 'SOLANA_TRANSACTION_OBSERVATION',
+                    payload: { logsCount: logs.length, signature, transport: source.transport },
+                });
+            }
+            else {
+                this.censusJournal.commitTransactionBatch({
+                    slot,
+                    bankHash,
+                    txHash: signature,
+                    providerId: source.providerId,
+                    providerTimestampMs: providerTimestamp,
+                    events: [
+                        {
+                            eventType: 'SOLANA_TRANSACTION_OBSERVATION',
+                            payload: { logsCount: logs.length, signature, transport: source.transport },
+                        },
+                    ],
+                });
+            }
+        }
+        catch (journalErr) {
+            log('feed_census_journal_commit_failed', { error: String(journalErr) });
+        }
         this.gapReconciler.registerSlot(slot, 1, false);
         const isLate = this.slot > 0 && slot < this.slot;
         if (!isLate) {

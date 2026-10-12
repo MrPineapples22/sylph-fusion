@@ -6,6 +6,7 @@ import {
   evaluateFilterAlpha,
   groupOutcomesIntoEpisodes,
 } from '../src/paper-baseline-eval.js';
+import { DecisionTrace } from '../../dist/intelligence/kernel/decision-trace.js';
 
 test('aggregateSessionStats correctly calculates net P&L after friction, win rate, and drawdown', () => {
   const outcomes = [
@@ -240,4 +241,76 @@ test('groupOutcomesIntoEpisodes eliminates pseudoreplication across multi-stage 
   assert.equal(episodeStats.frictionTotalSol, 0.003); // 3M = 0.003 SOL
   assert.equal(Number(episodeStats.netReturnSol.toFixed(5)), 0.017); // 17M lamports
 });
+
+test('REQ-030: Combined sealed trace root and episode lineage replay proof across multi-stage fills', () => {
+  const dt1 = new DecisionTrace({ positionId: 'pos_omega', decisionId: 'dec_stage_1' });
+  dt1.recordStep({
+    stepName: 'ALPHA_EVAL',
+    componentId: 'SPIE',
+    durationMs: 4,
+    inputs: { target: 'alpha' },
+    outputs: { approved: true },
+    status: 'PASS',
+  });
+  const sealed1 = dt1.finalize();
+
+  const dt2 = new DecisionTrace({ positionId: 'pos_omega', decisionId: 'dec_stage_2' });
+  dt2.recordStep({
+    stepName: 'TRAIL_STOP_TRIGGER',
+    componentId: 'SPIE',
+    durationMs: 3,
+    inputs: { trailBps: 150 },
+    outputs: { exitApproved: true },
+    status: 'PASS',
+  });
+  const sealed2 = dt2.finalize();
+
+  const outcomes = [
+    {
+      positionId: 'pos_omega',
+      candidateId: 'cand_123',
+      costBasisLamports: '50000000',
+      grossProceedsLamports: '60000000',
+      frictionTotalLamports: '1000000',
+      netReturnLamports: '9000000',
+      exitStage: 1,
+      decisionTraceHash: sealed1.traceHash,
+    },
+    {
+      positionId: 'pos_omega',
+      candidateId: 'cand_123',
+      costBasisLamports: '50000000',
+      grossProceedsLamports: '70000000',
+      frictionTotalLamports: '1000000',
+      netReturnLamports: '19000000',
+      exitStage: 2,
+      decisionTrace: dt2,
+    },
+  ];
+
+  const episodes = groupOutcomesIntoEpisodes(outcomes);
+  assert.equal(episodes.length, 1);
+  const ep = episodes[0];
+
+  assert.equal(ep.positionId, 'pos_omega');
+  assert.equal(ep.subOutcomesCount, 2);
+  assert.equal(ep.costBasisLamports, 100000000n);
+  assert.equal(ep.grossProceedsLamports, 130000000n);
+  assert.equal(ep.netReturnLamports, 28000000n);
+  assert.equal(ep.decisionTraceHashes.length, 2);
+  assert.ok(ep.sealedTraceRoot && ep.sealedTraceRoot.length === 64);
+
+  // Deterministic replay: exact same outcomes produce identical sealedTraceRoot
+  const replayEpisodes = groupOutcomesIntoEpisodes(outcomes);
+  assert.equal(replayEpisodes[0].sealedTraceRoot, ep.sealedTraceRoot);
+
+  // Tampering with trace hash alters the sealedTraceRoot
+  const tamperedOutcomes = [
+    { ...outcomes[0], decisionTraceHash: 'tampered_hash_00000000000000000000000000000000000000000000000000000000' },
+    outcomes[1],
+  ];
+  const tamperedEpisodes = groupOutcomesIntoEpisodes(tamperedOutcomes);
+  assert.notEqual(tamperedEpisodes[0].sealedTraceRoot, ep.sealedTraceRoot);
+});
+
 

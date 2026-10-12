@@ -132,11 +132,21 @@ export class SpieEngine {
             // Eligible opportunity! Determine stage and action
             if (netExpectedEvBps >= 400 && compositeZ >= 0.80) {
                 opportunityStage = 'READY';
-                actionRecommendation = factors.timing >= 0.75 ? 'FAST_BUY' : 'PULLBACK_WAIT';
+                if (candidate.entryTimingMode === 'BREAKOUT_EXPANSION') {
+                    actionRecommendation = 'BREAKOUT_ENTER';
+                }
+                else {
+                    actionRecommendation = factors.timing >= 0.75 ? 'FAST_BUY' : 'PULLBACK_WAIT';
+                }
             }
             else if (netExpectedEvBps >= 250 && compositeZ >= 0.70) {
                 opportunityStage = 'HIGH_CONFIDENCE';
-                actionRecommendation = factors.timing >= 0.70 ? 'SLOW_BUY' : 'PULLBACK_WAIT';
+                if (candidate.entryTimingMode === 'BREAKOUT_EXPANSION') {
+                    actionRecommendation = 'BREAKOUT_ENTER';
+                }
+                else {
+                    actionRecommendation = factors.timing >= 0.70 ? 'SLOW_BUY' : 'PULLBACK_WAIT';
+                }
             }
             else if (netExpectedEvBps >= 100) {
                 opportunityStage = 'QUALIFIED';

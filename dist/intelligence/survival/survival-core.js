@@ -68,6 +68,16 @@ export class PositionSurvivalCore {
         else if (level === 'E1_SEMANTICALLY_TRANSFERABLE' || level === 'E2_ROUTE_EXISTS') {
             health = 'CRITICAL';
         }
+        const effectiveTranches = tranches.length > 0
+            ? tranches
+            : [25, 50, 75, 100].map((pct) => ({
+                tranche_pct: pct,
+                expected_output_sol: 0,
+                price_impact_pct: 100,
+                fee_sol: 0,
+                route,
+                is_executable: false,
+            }));
         // 5. Survival State Root hash (Part XXIX) - binding verified tranche outputs
         const survivalStateRoot = createHash('sha256')
             .update(JSON.stringify({
@@ -78,7 +88,7 @@ export class PositionSurvivalCore {
             health,
             generation: this.evidenceGeneration,
             slot: params.current_slot,
-            tranches: tranches.map(t => ({ p: t.tranche_pct, out: t.expected_output_sol, imp: t.price_impact_pct })),
+            tranches: effectiveTranches.map(t => ({ p: t.tranche_pct, out: t.expected_output_sol, imp: t.price_impact_pct })),
         }))
             .digest('hex');
         const isValid = (level === 'E3_SIMULATION_PASSES' || level === 'E4_EXECUTABLE_QUOTE_VERIFIED' || level === 'E5_MULTIPLE_INDEPENDENT_ROUTES')
@@ -93,14 +103,7 @@ export class PositionSurvivalCore {
             executable_exit_capacity_sol: Number(executableCapacitySol.toFixed(3)),
             stressed_exit_capacity_sol: Number(stressedCapacitySol.toFixed(3)),
             emergency_fee_reserve_sol: 0.05,
-            partial_exit_proofs: [25, 50, 75, 100].map((pct) => ({
-                tranche_pct: pct,
-                expected_output_sol: (params.position_size_sol * pct) / 100,
-                price_impact_pct: 1.5,
-                fee_sol: 0.0001,
-                route,
-                is_executable: true,
-            })),
+            partial_exit_proofs: effectiveTranches,
             verified_slot: params.current_slot,
             survival_state_root: survivalStateRoot,
             evidence_generation: this.evidenceGeneration,

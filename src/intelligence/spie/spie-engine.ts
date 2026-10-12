@@ -10,6 +10,8 @@
  * Non-negotiable: If friction > 45% of gross alpha, the trade MUST ABSTAIN.
  */
 
+import type { EntryTimingMode } from './entry-timing.js';
+
 export type OpportunityStage =
   | 'WATCH'
   | 'DEVELOPING'
@@ -46,6 +48,7 @@ export interface SpieInputCandidate {
   readonly symbol?: string;
   readonly realSolReserve: number;
   readonly factors: Partial<SpieFactors>;
+  readonly entryTimingMode?: EntryTimingMode;
   readonly targetUpsidePct?: number;      // e.g. 0.40 (+40%)
   readonly structuralStopPct?: number;    // e.g. 0.12 (-12%)
   readonly modeledSlippageBps?: number;
@@ -214,10 +217,18 @@ export class SpieEngine {
       // Eligible opportunity! Determine stage and action
       if (netExpectedEvBps >= 400 && compositeZ >= 0.80) {
         opportunityStage = 'READY';
-        actionRecommendation = factors.timing >= 0.75 ? 'FAST_BUY' : 'PULLBACK_WAIT';
+        if (candidate.entryTimingMode === 'BREAKOUT_EXPANSION') {
+          actionRecommendation = 'BREAKOUT_ENTER';
+        } else {
+          actionRecommendation = factors.timing >= 0.75 ? 'FAST_BUY' : 'PULLBACK_WAIT';
+        }
       } else if (netExpectedEvBps >= 250 && compositeZ >= 0.70) {
         opportunityStage = 'HIGH_CONFIDENCE';
-        actionRecommendation = factors.timing >= 0.70 ? 'SLOW_BUY' : 'PULLBACK_WAIT';
+        if (candidate.entryTimingMode === 'BREAKOUT_EXPANSION') {
+          actionRecommendation = 'BREAKOUT_ENTER';
+        } else {
+          actionRecommendation = factors.timing >= 0.70 ? 'SLOW_BUY' : 'PULLBACK_WAIT';
+        }
       } else if (netExpectedEvBps >= 100) {
         opportunityStage = 'QUALIFIED';
         actionRecommendation = 'SLOW_BUY';

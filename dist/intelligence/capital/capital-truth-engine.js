@@ -141,6 +141,10 @@ export class CapitalTruthEngine {
         });
         return { success: true, reservation_id: params.reservation_id };
     }
+    hasActiveReservation(reservationId) {
+        const reservation = this.activeReservations.get(reservationId);
+        return Boolean(reservation && reservation.status === 'RESERVED');
+    }
     /**
      * Writes an atomic Commit Certificate prior to signing (Parts VII & XII).
      * "NO DURABLE CAPITAL COMMIT = NO NEW CAPITAL SIGNATURE"

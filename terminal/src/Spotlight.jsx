@@ -43,6 +43,7 @@ function badgeClass(conv, tier) {
 
 export default function Spotlight(){
  const [snapshot,setSnapshot]=useState(null),[error,setError]=useState(''),[filter,setFilter]=useState('All'),[selected,setSelected]=useState(null),[view,setView]=useState('Opportunities'),[now,setNow]=useState(Date.now()),[busy,setBusy]=useState(false),[notice,setNotice]=useState(''),[armed,setArmed]=useState(false),[slide,setSlide]=useState(0);
+ const [searchQuery,setSearchQuery]=useState(''),[copiedMint,setCopiedMint]=useState(false);
  const pending=useRef(false), mobile=location.pathname==='/mobile';
  useEffect(()=>{const stop=startDiscoveryConnection({onSnapshot:data=>{setSnapshot(data);setNow(Date.now());setError('');},onError:()=>setError('Connection interrupted. Retrying automatically. Capital remains locked.')});const tick=setInterval(()=>setNow(Date.now()),1000);return()=>{stop();clearInterval(tick);};},[]);
  const disconnected=!snapshot||!!error||now-snapshot.at>5000||now<snapshot.at;
@@ -50,18 +51,31 @@ export default function Spotlight(){
 
  const rows = useMemo(() => {
    const all = snapshot?.rows || [];
-   return all.filter(r =>
-     filter === 'All' ||
-     (filter === 'Prime Opportunity' && r.tier === 'PRIME') ||
-     (filter === 'High Momentum' && r.pod === 'UP') ||
-     (filter === 'Vetoed' && (r.tier === 'VETOED' || stale))
-   );
- }, [snapshot?.rows, filter, stale]);
+   return all.filter(r => {
+     const matchesTab = filter === 'All' ||
+       (filter === 'Prime Opportunity' && r.tier === 'PRIME') ||
+       (filter === 'High Momentum' && r.pod === 'UP') ||
+       (filter === 'Vetoed' && (r.tier === 'VETOED' || stale));
+     if (!matchesTab) return false;
+     if (!searchQuery.trim()) return true;
+     const q = searchQuery.toLowerCase().trim();
+     return (r.symbol && r.symbol.toLowerCase().includes(q)) || (r.mint && r.mint.toLowerCase().includes(q));
+   });
+ }, [snapshot?.rows, filter, stale, searchQuery]);
 
  const chosen = useMemo(() =>
    (snapshot?.rows || []).find(r => r.mint === selected) || rows[0],
    [snapshot?.rows, selected, rows]
  );
+
+ const copyMint = useCallback((mint) => {
+   if (mint && typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+     navigator.clipboard.writeText(mint).then(() => {
+       setCopiedMint(true);
+       setTimeout(() => setCopiedMint(false), 1500);
+     }).catch(() => {});
+   }
+ }, []);
 
  const scan = useCallback(async () => {
    if (!chosen || pending.current) return;
@@ -117,7 +131,7 @@ export default function Spotlight(){
        <p style={{fontSize: 11, color: 'var(--s-muted)', margin: '4px 0 0'}}>Fail-closed safety active. No capital-moving transaction may execute without verified DCVE certification and live signer authority.</p>
      </div>
    </section>
-   <section className={`spot-panel spot-discovery ${view==='Opportunities'||view==='Overview'?'mobile-active':''}`} aria-label="Token discovery"><div className="spot-panel-title"><h2>Spotlight grid</h2><span>{counts.PRIME||0} prime · {counts.DEVELOPING||0} developing · {counts.VETOED||0} vetoed</span></div><div className="spot-filters" role="tablist" aria-label="Discovery filter">{tabs.map(t=><button key={t} role="tab" aria-selected={filter===t} onClick={()=>setFilter(t)}>{t}</button>)}</div><div className="spot-cards">{!snapshot?<p role="status">Connecting to authoritative snapshot…</p>:rows.length===0?<div className="spot-empty"><h3>No matching opportunities</h3><p>Prime requires fresh signal evidence, verified liquidity protection, positive direction, and passing safety checks. Missing evidence stays pending.</p></div>:rows.map(r=>{
+   <section className={`spot-panel spot-discovery ${view==='Opportunities'||view==='Overview'?'mobile-active':''}`} aria-label="Token discovery"><div className="spot-panel-title"><h2>Spotlight grid</h2><span>{counts.PRIME||0} prime · {counts.DEVELOPING||0} developing · {counts.VETOED||0} vetoed</span></div><div className="spot-filter-bar"><div className="spot-filters" role="tablist" aria-label="Discovery filter">{tabs.map(t=><button key={t} role="tab" aria-selected={filter===t} onClick={()=>setFilter(t)}>{t}</button>)}</div><div className="spot-search-wrap"><input type="search" value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} placeholder="Search symbol or mint…" className="spot-search-input" aria-label="Filter tokens by symbol or mint" />{searchQuery&&<button type="button" className="spot-search-clear" onClick={()=>setSearchQuery('')} aria-label="Clear filter">×</button>}</div></div><div className="spot-cards">{!snapshot?<p role="status">Connecting to authoritative snapshot…</p>:rows.length===0?<div className="spot-empty"><h3>No matching opportunities</h3><p>Prime requires fresh signal evidence, verified liquidity protection, positive direction, and passing safety checks. Missing evidence stays pending.</p></div>:rows.map(r=>{
      const isExecutionBlockedOnly = r.tier === 'VETOED' && r.quality !== 'FAIL';
      const tier = r.tier;
      const conv = conviction(r, stale);
@@ -152,13 +166,25 @@ export default function Spotlight(){
    <section className={`spot-panel spot-analysis ${view==='Market'?'mobile-active':''}`} aria-label="Selected token analysis">
      <div className="spot-panel-title"><h2>{chosen?.symbol||'Token intelligence'}</h2><span>Evidence inspector</span></div>
      {chosen ? <>
-       <p className="spot-mint">{chosen.mint}</p>
+       <div className="spot-mint-row">
+         <p className="spot-mint">{chosen.mint}</p>
+         <button
+           type="button"
+           className="spot-copy-btn"
+           onClick={() => copyMint(chosen.mint)}
+           title={copiedMint ? 'Copied mint address' : 'Copy canonical mint address'}
+           aria-label="Copy mint address"
+         >
+           {copiedMint ? '✓ Copied' : 'Copy'}
+         </button>
+       </div>
        <div className="spot-price">{money(chosen.price)}<small>Observed market price · not an executable quote</small></div>
        <div className="spot-chart-empty"><span>↗</span><strong>Price history unavailable</strong><p>A time-series adapter is required before a chart can claim live price action.</p></div>
        <dl className="spot-stats">
          <div><dt>Liquidity</dt><dd>{money(chosen.liquidity)}</dd></div>
          <div><dt>Market cap</dt><dd>{money(chosen.cap)}</dd></div>
          <div><dt>24h volume</dt><dd>{money(chosen.volume)}</dd></div>
+         <div><dt>Evidence coverage</dt><dd>{chosen.evidenceCoverage ? <span style={{color: chosen.evidenceCoverage.current === chosen.evidenceCoverage.total ? 'var(--s-verified)' : 'var(--s-caution)'}}>{`${chosen.evidenceCoverage.current}/${chosen.evidenceCoverage.total} CURRENT`}</span> : 'UNAVAILABLE'}</dd></div>
          <div><dt>Einstein confidence</dt><dd>{chosen.confidence==null?'UNAVAILABLE':<><span style={{color: chosen.confidence >= .8 ? 'var(--s-verified)' : chosen.confidence >= .5 ? 'var(--s-caution)' : 'var(--s-danger)'}}>{`${Math.round(chosen.confidence*100)}%`}</span><div className="spot-confidence-bar" style={{marginTop: 4}}><div className={`spot-confidence-fill ${chosen.confidence >= .8 ? 'high' : chosen.confidence >= .5 ? 'med' : 'low'}`} style={{width: `${Math.round(chosen.confidence*100)}%`}}/></div></>}</dd></div>
        </dl>
 

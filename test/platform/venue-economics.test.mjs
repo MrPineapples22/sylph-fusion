@@ -4,6 +4,9 @@ import {
   VenueEconomicsAuthority,
   PortfolioExitNet
 } from '../../dist/platform/execution/venue-economics.js';
+import { Market } from '../../dist/market.js';
+import { PublicKey } from '@solana/web3.js';
+import BN from 'bn.js';
 
 describe('VENUE ECONOMICS & PORTFOLIO EXITNET (Sections 55, 56)', () => {
   it('selects venue optimizing net round-trip executable EV and rejects trapping risks', () => {
@@ -157,5 +160,112 @@ describe('VENUE ECONOMICS & PORTFOLIO EXITNET (Sections 55, 56)', () => {
     assert.equal(certWithAlpha.expectedNetRoundTripEVLamports, 30000n); // 50000 - 20000
     assert.equal(certWithAlpha.estimatedNetTerminalCapitalLamports, 100000000n + 30000n);
   });
+
+  it('decomposes pure curve price impact, exact fee deductions, and total execution friction (REQ-028)', () => {
+    const authority = new VenueEconomicsAuthority();
+
+    // 1. Exact fee and net input decomposition
+    const grossInput = 1_000_000_000n; // 1 SOL
+    const feeBps = 100; // 1% fee (100 bps)
+    const virtualQuoteReserves = 30_000_000_000n; // 30 SOL
+    const virtualTokenReserves = 1_000_000_000_000_000n; // 1B tokens
+    // Spot output = (netInput * virtualTokenReserves) / virtualQuoteReserves
+    // netInput = 1_000_000_000 - 10_000_000 = 990_000_000
+    // spotOutput = (990_000_000 * 1_000_000_000_000_000) / 30_000_000_000 = 33_000_000_000_000 tokens
+    // Actual output with 2% curve impact: 32_340_000_000_000 tokens (diff: 660_000_000_000)
+    const actualOutput = 32_340_000_000_000n;
+
+    const decomposed = authority.decomposeExecutionEconomics({
+      grossInputLamports: grossInput,
+      feeBps,
+      virtualQuoteReserves,
+      virtualTokenReserves,
+      actualOutputTokens: actualOutput,
+      slippageBps: 50 // 0.5% max slippage tolerance
+    });
+
+    assert.equal(decomposed.grossInputLamports, 1_000_000_000n);
+    assert.equal(decomposed.feeLamports, 10_000_000n); // Exact 1% = 0.01 SOL
+    assert.equal(decomposed.netInputLamports, 990_000_000n);
+    assert.equal(decomposed.feeBps, 100);
+    assert.equal(decomposed.spotOutputTokens, 33_000_000_000_000n);
+    assert.equal(decomposed.actualOutputTokens, actualOutput);
+    assert.equal(decomposed.pureImpactBps, 200); // Exactly 2.0% (200 bps) pure curve impact
+    assert.equal(decomposed.slippageBps, 50);
+    assert.equal(decomposed.totalExecutionFrictionBps, 350); // 100 fee + 200 impact + 50 slippage = 350 bps
+
+    // Static call equivalence
+    const staticDecomp = VenueEconomicsAuthority.decomposeExecutionEconomics({
+      inputLamports: grossInput,
+      totalFeeBps: feeBps,
+      virtualQuoteReserves,
+      virtualTokenReserves,
+      actualOutputTokens: actualOutput,
+      slippageBps: 50
+    });
+    assert.deepEqual(decomposed, staticDecomp);
+
+    // 2. Fails closed on invalid zero/negative inputs
+    assert.throws(() => {
+      authority.decomposeExecutionEconomics({
+        grossInputLamports: 0n,
+        feeBps: 100,
+        virtualQuoteReserves,
+        virtualTokenReserves,
+        actualOutputTokens: actualOutput
+      });
+    }, /INVALID_ECONOMICS_INPUTS/);
+
+    assert.throws(() => {
+      authority.decomposeExecutionEconomics({
+        grossInputLamports: grossInput,
+        feeBps: 100,
+        virtualQuoteReserves: 0n,
+        virtualTokenReserves,
+        actualOutputTokens: actualOutput
+      });
+    }, /INVALID_ECONOMICS_INPUTS/);
+  });
+
+  it('Market.prototype.decomposeBuyEconomics computes pure curve impact and friction end-to-end (REQ-028)', () => {
+    const mockSnapshot = {
+      mint: new PublicKey('11111111111111111111111111111111'),
+      tokenProgram: new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'),
+      supply: 1_000_000_000_000_000n,
+      curve: {
+        virtualQuoteReserves: new BN('30000000000'),
+        virtualTokenReserves: new BN('1000000000000000'),
+        quoteMint: PublicKey.default,
+        creatorFeeBps: new BN(0)
+      },
+      global: { feeBasisPoints: new BN(100), creatorFeeBasisPoints: new BN(0) },
+      fee: {
+        feeTiers: [
+          {
+            marketCapLamportsThreshold: new BN(0),
+            fees: { protocolFeeBps: new BN(100), creatorFeeBps: new BN(0) }
+          }
+        ]
+      },
+      entrySafe: true
+    };
+
+    const mockMarket = Object.create(Market.prototype);
+    mockMarket.buyQuote = () => 32_340_000_000_000n;
+
+    const decomp = mockMarket.decomposeBuyEconomics(mockSnapshot, 1_000_000_000n, 50);
+    assert.equal(decomp.grossInputLamports, 1_000_000_000n);
+    assert.equal(decomp.actualOutputTokens, 32_340_000_000_000n);
+    assert.equal(decomp.feeBps, 100);
+    assert.equal(decomp.pureImpactBps, 200);
+    assert.equal(decomp.slippageBps, 50);
+    assert.equal(decomp.totalExecutionFrictionBps, 350);
+
+    // Negative/zero input throws
+    assert.throws(() => {
+      mockMarket.decomposeBuyEconomics(mockSnapshot, 0n);
+    }, /invalid buy economics inputs/);
+  });
 });
+
 

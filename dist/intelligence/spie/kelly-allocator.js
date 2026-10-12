@@ -106,6 +106,43 @@ export class KellyAllocator {
             rationale,
         };
     }
+    /**
+     * Growth-optimal position sizing under discrete multi-barrier power-law tails
+     * (2x, 5x, 10x, 20x, 50x, 100x / +10,000% PnL) with convex hazard adjustment.
+     */
+    calculateConvexMultiTargetKelly(input) {
+        if (!input.multiplierDistribution) {
+            return this.calculateAllocation(input);
+        }
+        const dist = input.multiplierDistribution;
+        // Expected tail return expansion across barriers:
+        // 2x -> +100% (1.0), 5x -> +400% (4.0), 10x -> +900% (9.0), 20x -> +1900% (19.0), 50x -> +4900% (49.0), 100x -> +9900% (99.0)
+        const p100 = dist.p100x;
+        const p50 = Math.max(0, dist.p50x - dist.p100x);
+        const p20 = Math.max(0, dist.p20x - dist.p50x);
+        const p10 = Math.max(0, dist.p10x - dist.p20x);
+        const p5 = Math.max(0, dist.p5x - dist.p10x);
+        const p2 = Math.max(0, dist.p2x - dist.p5x);
+        const expectedUpsideMultiple = (p2 * 1.0 +
+            p5 * 4.0 +
+            p10 * 9.0 +
+            p20 * 19.0 +
+            p50 * 49.0 +
+            p100 * 99.0);
+        // Dynamic upside BPS derived from power-law tail distribution
+        const derivedUpsideBps = Math.max(input.targetUpsideBps, Math.round(expectedUpsideMultiple * 10_000));
+        // Convex hazard boost: if upside hazard dominates failure (ratio > 2.0), scale win probability confidence
+        let adjustedP = input.pTarget;
+        if (input.convexHazardRatio && input.convexHazardRatio > 2.0) {
+            const hazardFactor = Math.min(1.25, 1 + (input.convexHazardRatio - 2.0) * 0.1);
+            adjustedP = Math.min(0.95, adjustedP * hazardFactor);
+        }
+        return this.calculateAllocation({
+            ...input,
+            pTarget: adjustedP,
+            targetUpsideBps: derivedUpsideBps,
+        });
+    }
     zeroResult(input, constraint, rationale) {
         return {
             recommendedAllocationSol: 0,

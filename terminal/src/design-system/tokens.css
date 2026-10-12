@@ -114,6 +114,11 @@
   --glass-blur: 16px;
   --glass-border: rgba(255,255,255,.08);
   --glass-highlight: rgba(255,255,255,.04);
+  --glow-accent: 0 0 16px rgba(155,203,255,.2);
+  --glow-success: 0 0 16px rgba(139,214,174,.2);
+  --glow-danger: 0 0 16px rgba(255,172,182,.2);
+  --glow-warning: 0 0 16px rgba(241,203,134,.2);
+  --glow-card-hover: 0 8px 32px rgba(0,0,0,.4), 0 0 12px rgba(155,203,255,.08);
   --opacity-backdrop: .56;
   --opacity-content: 1;
   --border-width: 1px;
@@ -274,6 +279,15 @@
   0%, 100% { opacity: 1; }
   50% { opacity: .65; }
 }
+.sylph .sylph-pulse-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+  animation: sylph-breathe 2s ease-in-out infinite;
+}
 
 /* Chips / Toggles */
 .sylph .sylph-chip-wrap {
@@ -298,6 +312,8 @@
   font-size: var(--type-metadata);
   font-weight: var(--weight-medium);
   cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   transition: all var(--duration-fast) var(--ease-standard);
   user-select: none;
 }
@@ -305,6 +321,8 @@
   background: var(--surface-elevated);
   border-color: var(--border-emphasis);
   color: var(--text-primary);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0,0,0,.25);
 }
 .sylph .sylph-chip-active {
   background: var(--information-surface);
@@ -377,20 +395,28 @@
   background: var(--surface-primary);
   color: var(--text-primary);
   border: 1px solid var(--border-emphasis);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 .sylph .sylph-button-secondary:hover:not(:disabled) {
   background: var(--surface-elevated);
   border-color: var(--accent-primary);
   color: var(--text-primary);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0,0,0,.25);
 }
 .sylph .sylph-button-danger {
   background: var(--danger-surface);
   color: var(--danger);
   border: 1px solid rgba(255,172,182,.3);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 .sylph .sylph-button-danger:hover:not(:disabled) {
   background: rgba(255,172,182,.2);
   border-color: var(--danger);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(255,172,182,.2);
 }
 .sylph .sylph-button-ghost {
   background: transparent;
@@ -445,6 +471,8 @@
   border-radius: var(--radius-card);
   padding: var(--card-padding);
   box-shadow: var(--elevation-1);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   transition: border-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard);
 }
 .sylph .sylph-card::before {
@@ -466,9 +494,17 @@
   -webkit-backdrop-filter: blur(var(--glass-blur));
   border-color: var(--glass-border);
 }
+.sylph .sylph-card-interactive {
+  cursor: pointer;
+  transition: transform var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard);
+}
 .sylph .sylph-card-interactive:hover {
   border-color: var(--border-emphasis);
-  box-shadow: var(--elevation-2);
+  box-shadow: var(--elevation-2), var(--glow-card-hover);
+  transform: translateY(-1px);
+}
+.sylph .sylph-card-interactive:active {
+  transform: translateY(0);
 }
 .sylph .sylph-card-header {
   display: flex;
@@ -507,6 +543,15 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: var(--elevation-1);
+  transition: transform var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard);
+}
+.sylph .sylph-data-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(155,203,255,.3);
+  box-shadow: var(--elevation-2), 0 0 12px rgba(155,203,255,.08);
 }
 .sylph .sylph-data-card-primary {
   border-color: var(--accent-primary);
@@ -608,3 +653,47 @@
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+/* Status Badge Pills */
+.sylph .sylph-badge-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: var(--type-metadata);
+  font-weight: var(--weight-semibold);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-primary);
+  color: var(--text-secondary);
+  letter-spacing: 0.03em;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  transition: all var(--duration-fast) var(--ease-standard);
+}
+.sylph .sylph-badge-pill:hover {
+  transform: translateY(-1px);
+}
+.sylph .sylph-badge-pill.is-live {
+  border-color: rgba(155,203,255,0.4);
+  background: rgba(155,203,255,0.08);
+  color: var(--accent-primary);
+  box-shadow: 0 0 8px rgba(155,203,255,0.15);
+}
+.sylph .sylph-badge-pill.is-verified {
+  border-color: rgba(139,214,174,0.4);
+  background: rgba(139,214,174,0.08);
+  color: var(--success);
+}
+.sylph .sylph-badge-pill.is-stale {
+  border-color: rgba(241,203,134,0.4);
+  background: rgba(241,203,134,0.08);
+  color: var(--warning);
+}
+.sylph .sylph-badge-pill.is-halted {
+  border-color: rgba(255,172,182,0.4);
+  background: rgba(255,172,182,0.08);
+  color: var(--danger);
+}
+

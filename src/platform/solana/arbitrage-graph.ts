@@ -43,6 +43,8 @@ export interface ArbitrageCycle {
   readonly robustArbProfitLamports: bigint;
   readonly profitBps: number;
   readonly cycleHash: string;
+  readonly minLegCapacityLamports: bigint;
+  readonly optimalNotionalLamports: bigint;
 }
 
 export class SolanaArbitrageGraph {
@@ -76,13 +78,16 @@ export class SolanaArbitrageGraph {
     notionalLamports: bigint;
     estimatedTipFeeLamports?: bigint;
     minProfitBps?: number;
+    maxLegs?: number;
   }): readonly ArbitrageCycle[] {
     const tipFee = params.estimatedTipFeeLamports ?? 250_000n;
     const minBps = params.minProfitBps ?? 10; // Minimum 10 bps profit
+    const maxLegs = params.maxLegs ?? 4;
     const cycles: ArbitrageCycle[] = [];
+    const seenHashes = new Set<string>();
 
     const root = params.rootToken;
-    const notional = Number(params.notionalLamports);
+    const notional = params.notionalLamports;
 
     // 1. Search 2-Leg Cycles: root -> B -> root
     const rootEdges = this.edges.get(root) || [];
@@ -90,8 +95,9 @@ export class SolanaArbitrageGraph {
       const bEdges = this.edges.get(e1.quoteToken) || [];
       for (const e2 of bEdges) {
         if (e2.quoteToken === root && e2.poolId !== e1.poolId) {
-          const cycle = this.evaluateCycle([e1, e2], params.notionalLamports, tipFee);
-          if (cycle.profitBps >= minBps) {
+          const cycle = this.evaluateCycle([e1, e2], notional, tipFee);
+          if (cycle.profitBps >= minBps && cycle.robustArbProfitLamports > 0n && !seenHashes.has(cycle.cycleHash)) {
+            seenHashes.add(cycle.cycleHash);
             cycles.push(cycle);
           }
         }
@@ -99,16 +105,59 @@ export class SolanaArbitrageGraph {
     }
 
     // 2. Search 3-Leg Cycles: root -> B -> C -> root
-    for (const e1 of rootEdges) {
-      const bEdges = this.edges.get(e1.quoteToken) || [];
-      for (const e2 of bEdges) {
-        if (e2.quoteToken !== root) {
-          const cEdges = this.edges.get(e2.quoteToken) || [];
-          for (const e3 of cEdges) {
-            if (e3.quoteToken === root) {
-              const cycle = this.evaluateCycle([e1, e2, e3], params.notionalLamports, tipFee);
-              if (cycle.profitBps >= minBps) {
-                cycles.push(cycle);
+    if (maxLegs >= 3) {
+      for (const e1 of rootEdges) {
+        const bEdges = this.edges.get(e1.quoteToken) || [];
+        for (const e2 of bEdges) {
+          if (e2.quoteToken !== root && e2.poolId !== e1.poolId) {
+            const cEdges = this.edges.get(e2.quoteToken) || [];
+            for (const e3 of cEdges) {
+              if (
+                e3.quoteToken === root &&
+                e3.poolId !== e1.poolId &&
+                e3.poolId !== e2.poolId
+              ) {
+                const cycle = this.evaluateCycle([e1, e2, e3], notional, tipFee);
+                if (cycle.profitBps >= minBps && cycle.robustArbProfitLamports > 0n && !seenHashes.has(cycle.cycleHash)) {
+                  seenHashes.add(cycle.cycleHash);
+                  cycles.push(cycle);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // 3. Search 4-Leg Cycles: root -> B -> C -> D -> root
+    if (maxLegs >= 4) {
+      for (const e1 of rootEdges) {
+        const bEdges = this.edges.get(e1.quoteToken) || [];
+        for (const e2 of bEdges) {
+          if (e2.quoteToken !== root && e2.poolId !== e1.poolId) {
+            const cEdges = this.edges.get(e2.quoteToken) || [];
+            for (const e3 of cEdges) {
+              if (
+                e3.quoteToken !== root &&
+                e3.quoteToken !== e1.quoteToken &&
+                e3.poolId !== e1.poolId &&
+                e3.poolId !== e2.poolId
+              ) {
+                const dEdges = this.edges.get(e3.quoteToken) || [];
+                for (const e4 of dEdges) {
+                  if (
+                    e4.quoteToken === root &&
+                    e4.poolId !== e1.poolId &&
+                    e4.poolId !== e2.poolId &&
+                    e4.poolId !== e3.poolId
+                  ) {
+                    const cycle = this.evaluateCycle([e1, e2, e3, e4], notional, tipFee);
+                    if (cycle.profitBps >= minBps && cycle.robustArbProfitLamports > 0n && !seenHashes.has(cycle.cycleHash)) {
+                      seenHashes.add(cycle.cycleHash);
+                      cycles.push(cycle);
+                    }
+                  }
+                }
               }
             }
           }
@@ -121,7 +170,7 @@ export class SolanaArbitrageGraph {
   }
 
   /**
-   * Section 20: Completion-Risk Arbitrage Evaluation
+   * Section 20: Completion-Risk Arbitrage Evaluation & Exact Profit Math
    */
   private evaluateCycle(
     legs: readonly ArbGraphEdge[],
@@ -142,21 +191,33 @@ export class SolanaArbitrageGraph {
     }
 
     const notionalNum = Number(notionalInputLamports);
-    const grossSpreadBps = (currentMultiplier - 1.0) * 10_000;
-    const grossSpreadLamports = BigInt(Math.max(0, Math.floor(notionalNum * (currentMultiplier - 1.0))));
+    const grossSpreadRatio = currentMultiplier - 1.0;
+    const grossSpreadLamports = BigInt(Math.floor(notionalNum * grossSpreadRatio));
 
     const totalFeesLamports = BigInt(Math.floor(notionalNum * (totalFeeBps / 10_000)));
     const slippageAndImpactLamports = BigInt(Math.floor(notionalNum * (totalImpactBps / 10_000)));
     const completionRiskLamports = BigInt(Math.floor(notionalNum * (totalCompletionRiskBps / 10_000)));
 
-    // On Solana, multi-instruction transactions within a single atomic payload carry an AtomicityPremium
+    // On Solana, multi-instruction transactions within a single atomic payload carry an AtomicityPremium.
+    // Invariant: Atomicity premium is an execution risk bonus only awarded when the cycle has an intrinsically
+    // positive gross spread; negative spread cycles can never be made artificially profitable by an atomicity bonus.
     const isSingleAtomicTransaction = legs.length <= 4;
-    const atomicityPremiumLamports = isSingleAtomicTransaction ? BigInt(Math.floor(notionalNum * 0.0015)) : 0n; // 15 bps premium
+    const atomicityPremiumLamports = (isSingleAtomicTransaction && grossSpreadRatio > 0)
+      ? BigInt(Math.floor(notionalNum * 0.0015)) // 15 bps premium
+      : 0n;
 
     // RobustArbProfit = grossSpread - fees - priorityTip - impact - slippage - completionRisk + atomicityPremium
     const totalDeductions = totalFeesLamports + tipFeeLamports + slippageAndImpactLamports + completionRiskLamports;
     const robustArbProfitLamports = grossSpreadLamports + atomicityPremiumLamports - totalDeductions;
     const profitBps = notionalNum > 0 ? (Number(robustArbProfitLamports) / notionalNum) * 10_000 : 0;
+
+    const minLegCapacityLamports = legs.reduce(
+      (min, leg) => leg.availableCapacityLamports < min ? leg.availableCapacityLamports : min,
+      legs[0]?.availableCapacityLamports ?? notionalInputLamports
+    );
+    const optimalNotionalLamports = notionalInputLamports < minLegCapacityLamports
+      ? notionalInputLamports
+      : minLegCapacityLamports;
 
     const payload = {
       legs: legs.map(l => l.edgeId),
@@ -184,6 +245,8 @@ export class SolanaArbitrageGraph {
       robustArbProfitLamports,
       profitBps,
       cycleHash,
+      minLegCapacityLamports,
+      optimalNotionalLamports,
     });
   }
 }

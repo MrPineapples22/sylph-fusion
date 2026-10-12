@@ -130,6 +130,10 @@ export class TokenAdmissionGateway {
     } else if (input.top10HoldersBps > 2500) {
       flags.push(`moderate_holder_concentration_${input.top10HoldersBps}bps`);
       score += 15;
+    } else if (input.top10HoldersBps <= 1500 && input.creatorTokensHeldPct <= 2.5) {
+      // Organic Dispersion Alpha: highly decentralized community distribution reduces dump tail risk
+      flags.push('organic_holder_dispersion');
+      score = Math.max(0, score - 15);
     }
 
     if (input.creatorTokensHeldPct > 10.0) { // Creator holds > 10%
@@ -169,13 +173,17 @@ export class TokenAdmissionGateway {
         domainDispositions: { tokenSafety: 'PASS', policy: 'QUARANTINE' },
       };
     } else if (score >= 20) {
-      // LIMIT: Allowed but position size capped to 0.5 SOL
+      // LIMIT: Allowed with dynamic liquidity fracture protection
+      // Caps position size to min(0.5 SOL, 10% of real quote reserve) to prevent severe exit slippage
+      const baseLimit = 500_000_000n;
+      const reserveCap = input.realQuoteReserveLamports > 0n ? input.realQuoteReserveLamports / 10n : baseLimit;
+      const allowedMaxPositionSizeLamports = reserveCap < baseLimit ? reserveCap : baseLimit;
       return {
         verdict: 'LIMIT',
-        allowedMaxPositionSizeLamports: 500_000_000n,
+        allowedMaxPositionSizeLamports,
         riskScore: score,
         flags,
-        reason: 'Authorized with limited position size due to elevated metrics',
+        reason: 'Authorized with limited position size due to elevated metrics and reserve depth',
         evaluatedAt: Date.now(),
         isStructuralFailure: false,
         domainDispositions: { tokenSafety: 'PASS', policy: 'LIMIT' },

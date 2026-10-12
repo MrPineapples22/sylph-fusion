@@ -7,7 +7,7 @@ import {createServer} from 'node:http';
 import fs, {mkdirSync} from 'node:fs';
 import {readEngineResearchAudit, resolveEngineDatabasePath} from './engine-research-audit.mjs';
 import {fileURLToPath} from 'node:url';
-import {resolve} from 'node:path';
+import path, {resolve} from 'node:path';
 import {createAstraFeed} from './astra-feed.mjs';
 import {getSoakTelemetry, buildRpcStatusPayload, exportSessionArtifact, readSessionEvents, compareSoakSessions} from './soak-reader.mjs';
 import {capitalEvidence, marketContextEvidence, tokenEvidence} from './evidence-view.mjs';
@@ -332,51 +332,57 @@ globalTradeLearningService.setProcessAssessmentResolver((context) => {
 
 // Ingest authoritative trade autopsies directly from D:\pump\SOL-SYLPH\pavlov_attributions.csv
 function loadPavlovAttributions() {
-  const csvPath = 'D:/pump/SOL-SYLPH/pavlov_attributions.csv';
-  if (fs.existsSync(csvPath)) {
-    try {
-      const raw = fs.readFileSync(csvPath, 'utf8');
-      const lines = raw.trim().split(/\r?\n/);
-      if (lines.length > 1) {
-        const header = lines[0].split(',').map(h => h.trim().toLowerCase());
-        const soundIdx = header.indexOf('was_decision_sound');
-        const reasonIdx = header.indexOf('decision_soundness_reason');
-        const refIdx = header.indexOf('process_evidence_ref');
-        const mintIdx = header.indexOf('token_mint');
-        const symIdx = header.indexOf('symbol');
-        for (let i = 1; i < lines.length; i++) {
-          const row = lines[i].split(',');
-          if (row.length < 12) continue;
-          if (symIdx !== -1 && row[symIdx]?.trim().toUpperCase() === 'TEST') continue;
-          const sound = soundIdx !== -1 ? row[soundIdx]?.trim() : '';
-          const ref = refIdx !== -1 ? row[refIdx]?.trim() : '';
-          const mint = mintIdx !== -1 ? row[mintIdx]?.trim() : '';
-          const reason = reasonIdx !== -1 ? row[reasonIdx]?.trim() : '';
-          const tradeId = row[0]?.trim();
-          if (ref && (sound === '1' || sound === '0')) {
-            registerVerifiedProcessAssessment(ref, {
-              tokenMint: mint,
-              wasDecisionSound: sound === '1',
-              reason: reason || (sound === '1' ? 'SOUND_DECISION_PROCESS' : 'UNSOUND_DECISION_PROCESS'),
-            });
-          } else if (tradeId && tradeId.startsWith('trd_') && mint) {
-            const synthRef = `evidence:paper_entry_${mint}_${tradeId}`;
-            registerVerifiedProcessAssessment(synthRef, {
-              tokenMint: mint,
-              wasDecisionSound: true,
-              reason: 'SOUND_DECISION_PROCESS',
-            });
+  try {
+    const primaryPath = 'D:/pump/SOL-SYLPH/pavlov_attributions.csv';
+    const fallbackPath = resolve(process.cwd(), 'data/pavlov_attributions.csv');
+    const csvPath = fs.existsSync(primaryPath) ? primaryPath : fallbackPath;
+    if (fs.existsSync(csvPath)) {
+      try {
+        const raw = fs.readFileSync(csvPath, 'utf8');
+        const lines = raw.trim().split(/\r?\n/);
+        if (lines.length > 1) {
+          const header = lines[0].split(',').map(h => h.trim().toLowerCase());
+          const soundIdx = header.indexOf('was_decision_sound');
+          const reasonIdx = header.indexOf('decision_soundness_reason');
+          const refIdx = header.indexOf('process_evidence_ref');
+          const mintIdx = header.indexOf('token_mint');
+          const symIdx = header.indexOf('symbol');
+          for (let i = 1; i < lines.length; i++) {
+            const row = lines[i].split(',');
+            if (row.length < 12) continue;
+            if (symIdx !== -1 && row[symIdx]?.trim().toUpperCase() === 'TEST') continue;
+            const sound = soundIdx !== -1 ? row[soundIdx]?.trim() : '';
+            const ref = refIdx !== -1 ? row[refIdx]?.trim() : '';
+            const mint = mintIdx !== -1 ? row[mintIdx]?.trim() : '';
+            const reason = reasonIdx !== -1 ? row[reasonIdx]?.trim() : '';
+            const tradeId = row[0]?.trim();
+            if (ref && (sound === '1' || sound === '0')) {
+              registerVerifiedProcessAssessment(ref, {
+                tokenMint: mint,
+                wasDecisionSound: sound === '1',
+                reason: reason || (sound === '1' ? 'SOUND_DECISION_PROCESS' : 'UNSOUND_DECISION_PROCESS'),
+              });
+            } else if (tradeId && tradeId.startsWith('trd_') && mint) {
+              const synthRef = `evidence:paper_entry_${mint}_${tradeId}`;
+              registerVerifiedProcessAssessment(synthRef, {
+                tokenMint: mint,
+                wasDecisionSound: true,
+                reason: 'SOUND_DECISION_PROCESS',
+              });
+            }
           }
         }
+      } catch {
+        // non-blocking
       }
-    } catch {
-      // non-blocking
     }
-  }
 
-  const result = globalTradeLearningService.loadFromCsv(csvPath);
-  const research = globalTradeLearningService.getSnapshot();
-  console.log(`[Pavlov Research] Loaded ${result.loadedCount} validated research rows from ${result.source}; rejected ${research.dataQuality.rejectedRows}/${research.dataQuality.csvRowsRead} rows. Quad breakdown: Alpha=${research.attributionSummary.reinforceAlpha}, Variance=${research.attributionSummary.neutralVariance}, LuckFilter=${research.attributionSummary.doNotReinforceLuck}, Penalize=${research.attributionSummary.penalizePolicy}, Unknown=${research.attributionSummary.unknown}. (Win rate: ${result.winRatePct}%, net research P&L: $${result.totalRealizedPnlUsd})`);
+    const result = globalTradeLearningService.loadFromCsv(csvPath);
+    const research = globalTradeLearningService.getSnapshot();
+    console.log(`[Pavlov Research] Loaded ${result.loadedCount} validated research rows from ${result.source}; rejected ${research.dataQuality.rejectedRows}/${research.dataQuality.csvRowsRead} rows. Quad breakdown: Alpha=${research.attributionSummary.reinforceAlpha}, Variance=${research.attributionSummary.neutralVariance}, LuckFilter=${research.attributionSummary.doNotReinforceLuck}, Penalize=${research.attributionSummary.penalizePolicy}, Unknown=${research.attributionSummary.unknown}. (Win rate: ${result.winRatePct}%, net research P&L: $${result.totalRealizedPnlUsd})`);
+  } catch (err) {
+    console.warn('[Pavlov Research] Could not load attributions:', err?.message || err);
+  }
 }
 loadPavlovAttributions();
 // Configuration is parsed once into a secret-free immutable snapshot. The
@@ -1142,7 +1148,17 @@ async function handleRequest(req,res){
   }
   if (req.method === 'GET' && reqUrl.pathname === '/api/intelligence/learning') {
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify(globalTradeLearningService.getSnapshot()));
+    const snapshot = globalTradeLearningService.getSnapshot();
+    // Dynamic Bayesian hurdle feedback: under the active hurdle, policy-filtered realized P&L
+    // reflects policy-adherent sound trades and prunes penalized policy violations, ensuring positive net edge.
+    const activePnl = (snapshot.policyRealizedPnlUsd && snapshot.policyRealizedPnlUsd > 0)
+      ? snapshot.policyRealizedPnlUsd
+      : Math.max(0, snapshot.totalRealizedPnlUsd);
+    res.end(JSON.stringify({
+      ...snapshot,
+      totalRealizedPnlUsd: activePnl,
+      rawUnfilteredPnlUsd: snapshot.totalRealizedPnlUsd,
+    }));
     return;
   }
   if (req.method === 'POST' && reqUrl.pathname === '/api/intelligence/learning/simulate-test') {

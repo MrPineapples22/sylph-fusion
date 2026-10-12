@@ -23,6 +23,12 @@ export class SolanaMarketMakingEngine {
         this.maxInventoryCapacityLamports = maxInventoryCapacityLamports;
     }
     /**
+     * Set current market-maker inventory balance to modulate inventory skew & asymmetric sizing.
+     */
+    recordInventory(currentInventoryLamports) {
+        this.currentInventoryLamports = currentInventoryLamports;
+    }
+    /**
      * Section 21: Compute optimal quote spread based on volatility, inventory skew, and adverse selection.
      */
     calculateQuote(params) {
@@ -35,11 +41,43 @@ export class SolanaMarketMakingEngine {
         const totalSpreadBps = baseSpread + params.volatilityBps + toxicityWideningBps;
         const halfSpread = (params.fairMidPriceSol * (totalSpreadBps / 10_000)) / 2;
         const skewAdjustment = params.fairMidPriceSol * (skewBps / 10_000);
-        const bidPriceSol = Math.max(0.000001, params.fairMidPriceSol - halfSpread - skewAdjustment);
-        const askPriceSol = params.fairMidPriceSol + halfSpread - skewAdjustment;
+        // Orderbook queue depth imbalance micro-adjustment:
+        // If bids dominate asks, buy pressure is strong; shift center price up slightly to capture edge on ask
+        const totalQueueDepth = params.bidQueueDepth + params.askQueueDepth;
+        const orderbookImbalanceRatio = totalQueueDepth > 0
+            ? (params.bidQueueDepth - params.askQueueDepth) / (totalQueueDepth + 1)
+            : 0;
+        const imbalanceMicroShiftSol = params.fairMidPriceSol * (orderbookImbalanceRatio * 0.0002); // up to 2 bps micro-shift
+        const bidPriceSol = Math.max(0.000001, params.fairMidPriceSol - halfSpread - skewAdjustment + imbalanceMicroShiftSol);
+        const askPriceSol = params.fairMidPriceSol + halfSpread - skewAdjustment + imbalanceMicroShiftSol;
+        // Expected net spread yield after 10 bps estimated round-trip exchange/priority fees
+        const expectedNetSpreadYieldBps = Math.max(0, totalSpreadBps - 10);
         const quoteStatus = this.adverseSelectionScore >= 80 ? 'HALTED'
             : this.adverseSelectionScore >= 40 ? 'WIDENED_ADVERSE'
                 : 'ACTIVE';
+        // Asymmetric inventory-skewed sizing:
+        // When long inventory, taper bid size and expand ask size to offload inventory at favorable prices
+        let bidSizeLamports = 500000000n; // 0.5 SOL base
+        let askSizeLamports = 500000000n;
+        if (quoteStatus === 'HALTED') {
+            bidSizeLamports = 0n;
+            askSizeLamports = 0n;
+        }
+        else if (inventoryRatio > 0) {
+            // Long inventory: scale down bid, scale up ask
+            const bidScale = Math.max(0.1, 1 - inventoryRatio);
+            const askScale = Math.min(2.0, 1 + inventoryRatio);
+            bidSizeLamports = BigInt(Math.max(50_000_000, Math.floor(500_000_000 * bidScale)));
+            askSizeLamports = BigInt(Math.min(1_000_000_000, Math.floor(500_000_000 * askScale)));
+        }
+        else if (inventoryRatio < 0) {
+            // Short inventory: scale up bid, scale down ask
+            const absRatio = Math.abs(inventoryRatio);
+            const bidScale = Math.min(2.0, 1 + absRatio);
+            const askScale = Math.max(0.1, 1 - absRatio);
+            bidSizeLamports = BigInt(Math.min(1_000_000_000, Math.floor(500_000_000 * bidScale)));
+            askSizeLamports = BigInt(Math.max(50_000_000, Math.floor(500_000_000 * askScale)));
+        }
         const payload = {
             poolId: params.poolId,
             bidPriceSol,
@@ -53,13 +91,15 @@ export class SolanaMarketMakingEngine {
             poolId: params.poolId,
             bidPriceSol,
             askPriceSol,
-            bidSizeLamports: quoteStatus === 'HALTED' ? 0n : 500000000n, // 0.5 SOL
-            askSizeLamports: quoteStatus === 'HALTED' ? 0n : 500000000n,
+            bidSizeLamports,
+            askSizeLamports,
             spreadBps: totalSpreadBps,
             inventorySkewPct: inventoryRatio * 100,
             queuePositionBid: params.bidQueueDepth + 1,
             queuePositionAsk: params.askQueueDepth + 1,
             quoteStatus,
+            expectedNetSpreadYieldBps,
+            orderbookImbalanceRatio,
         });
     }
     /**

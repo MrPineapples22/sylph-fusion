@@ -1,4 +1,5 @@
 import { calculateOptimalBuyPositionValue } from './position-sizer.js';
+import { calculateRunnerHazardState } from './token-decision-eval.js';
 import React,{useEffect,useMemo,useReducer,useRef,useState} from 'react';
 import {TokenClassification} from './components/TokenClassification.jsx';
 import {OperationsSearch} from './components/OperationsSearch.jsx';
@@ -94,7 +95,7 @@ export default function OperatorTerminal(){
  }, [autoTradePrime]);
  useEffect(() => {
   try { localStorage.setItem('sylph_auto_exit_guardian', String(autoExitGuardian)); } catch {}
-  if (autoExitGuardian) setNotice('🛡️ Auto-Exit Guardian ARMED: Trailing Profit Lock (+8% peak trailing), Take-Profit (+15%), and Stop-Loss (-10%) active.');
+  if (autoExitGuardian) setNotice('🛡️ Auto-Exit Guardian ARMED: Competing Hazard Defense, Moonshot Ratchets (1.15x→100x), Breakeven Lock, False-Breakout Fast Cut, and Hard Stop (-8.0%) active.');
  }, [autoExitGuardian]);
  const renderTime=Date.now();
  const current=isProjectionCurrent(projection,connection,renderTime);
@@ -291,51 +292,99 @@ export default function OperatorTerminal(){
    const ageMs = now - (pos.openedAt || now);
    const ageSec = ageMs / 1000;
 
+   // 0. Point-in-time Competing Risk Hazard Defense (Blueprint Section XXVIII):
+   const tok = byMint.get(pos.mint);
+   const currentMultiple = pnlPct != null ? 1 + (pnlPct / 100) : 1.0;
+   const hazard = calculateRunnerHazardState({
+     elapsedSeconds: ageSec,
+     currentMultiple,
+     walletEntropy: tok?.walletEntropy ?? pos.walletEntropy ?? 1.0,
+     independentCapitalAcceleration: tok?.independentCapitalAcceleration ?? 0.0,
+     realSolReserve: tok?.realReserveSol ?? pos.realSolReserve ?? 30,
+     currentSellPressureRatio: tok?.sellPressureRatio ?? 0.1,
+     recentPriceVelocityBps: tok?.recentPriceVelocityBps ?? 0,
+   });
+   const isHazardFullExit = hazard.recommendedAction === 'FULL_EXIT_HAZARD';
+
    // 1. False-Breakout Fast Cut (Control 44):
    // Cut immediately at -3.0% within 15s-45s if peak never exceeded +1.2% (avoids deep -12% to -30% drags)
-   const isFalseBreakout = ageSec >= 15 && ageSec <= 45 && (peakPnl == null || peakPnl <= 1.2) && pnlPct != null && pnlPct <= -3.0;
+   const isFalseBreakout = ageSec >= 15 && (peakPnl == null || peakPnl <= 1.5) && pnlPct != null && pnlPct <= -3.0;
 
    // 2. Breakeven Lock (+1.0% floor once peak >= +8.0%):
    // Protect accumulated gains from round-tripping to negative
    const isBreakevenStop = peakPnl != null && peakPnl >= 8.0 && pnlPct != null && pnlPct <= 1.0;
 
-   // 3. Dynamic Staged Trailing Stops (AGENTS.md Moonshot Standard):
-   // Tier 1 (+15% to +35% peak): Trail by 5.0% from peak
-   // Tier 2 (+35% to +100% peak): Trail by 10.0% from peak (letting winners surge)
-   // Tier 3 (> +100% peak): Trail by 20.0% structural cushion (ride 1500% runners)
-   let isTrailingStop = false;
-   if (peakPnl != null && pnlPct != null) {
-     if (peakPnl >= 100.0) {
-       isTrailingStop = (peakPnl - pnlPct) >= 20.0;
-     } else if (peakPnl >= 35.0) {
-       isTrailingStop = (peakPnl - pnlPct) >= 10.0;
-     } else if (peakPnl >= 15.0) {
-       isTrailingStop = (peakPnl - pnlPct) >= 5.0;
-     }
+   // 3. Dynamic Institutional Moonshot Ratchet Ladder (EE-12, EE-30, up to +10,000% PnL):
+   // Rather than capping runners prematurely at +150%, lock progressive multi-bagger floors:
+   // - Peak >= 100x (+9,900%): Floor locked at 70.0x (+6,900%), 30% structural trail
+   // - Peak >= 50x (+4,900%): Floor locked at 35.0x (+3,400%), 30% structural trail
+   // - Peak >= 20x (+1,900%): Floor locked at 15.0x (+1,400%), 30% structural trail
+   // - Peak >= 10x (+900%): Floor locked at 7.5x (+650%), 30% structural trail
+   // - Peak >= 5x (+400%): Floor locked at 3.5x (+250%), 30% structural trail
+   // - Peak >= 2x (+100%): Floor locked at 1.5x (+50%), 30% structural trail
+   // - Peak >= +35%: Floor locked at +25%, 10% trail
+   // - Peak >= +15%: Floor locked at +5%, 5% trail
+   const peakMultiple = peakPnl != null ? 1 + (peakPnl / 100) : 1.0;
+   let floorMultiple = 1.0;
+   let trailPct = 0.15;
+   let ratchetTierName = '';
+
+   if (peakMultiple >= 100.0) {
+     floorMultiple = 70.0;
+     trailPct = 0.30;
+     ratchetTierName = '100x Moonshot (+10,000%) Ratchet (70x Floor)';
+   } else if (peakMultiple >= 50.0) {
+     floorMultiple = 35.0;
+     trailPct = 0.30;
+     ratchetTierName = '50x Moonshot Ratchet (35x Floor)';
+   } else if (peakMultiple >= 20.0) {
+     floorMultiple = 15.0;
+     trailPct = 0.30;
+     ratchetTierName = '20x Moonshot Ratchet (15x Floor)';
+   } else if (peakMultiple >= 10.0) {
+     floorMultiple = 7.5;
+     trailPct = 0.30;
+     ratchetTierName = '10x Moonshot Ratchet (7.5x Floor)';
+   } else if (peakMultiple >= 5.0) {
+     floorMultiple = 3.5;
+     trailPct = 0.30;
+     ratchetTierName = '5x Moonshot Ratchet (3.5x Floor)';
+   } else if (peakMultiple >= 2.0) {
+     floorMultiple = 1.5;
+     trailPct = 0.30;
+     ratchetTierName = '2x Double Ratchet (1.5x Floor)';
+   } else if (peakMultiple >= 1.35) {
+     floorMultiple = 1.25;
+     trailPct = 0.10;
+     ratchetTierName = 'Stage 2 Profit Lock (+25% Floor)';
+   } else if (peakMultiple >= 1.15) {
+     floorMultiple = 1.05;
+     trailPct = 0.05;
+     ratchetTierName = 'Stage 1 Profit Lock (+5% Floor)';
    }
 
-   // 4. Parabolic Climax Take-Profit: Lock profits at +150% or higher
-   const isParabolicTarget = pnlPct != null && pnlPct >= 150.0;
+   const effectiveTrailingMultiple = Math.max(floorMultiple, peakMultiple * (1 - trailPct));
+   const isMoonshotRatchetStop = peakMultiple >= 1.15 && currentMultiple <= effectiveTrailingMultiple;
 
-   // 5. Hard Stop-Loss (-8.0% or protectionState EMERGENCY_UNWIND):
+   // 4. Hard Stop-Loss (-8.0% or protectionState EMERGENCY_UNWIND):
    const isHardStop = pos.protectionState === 'EMERGENCY_UNWIND' || (pnlPct != null && pnlPct <= -8.0);
 
-   // 6. Stagnation Decay (rotate dead capital after 3m if flat):
-   const isStagnant = ageMs > 3 * 60 * 1000 && pnlPct != null && Math.abs(pnlPct) < 2.0;
+   // 5. Stagnation Decay (rotate dead capital after 3m if flat):
+   const isStagnant = (ageSec >= 90 && (peakPnl == null || peakPnl <= 1.5) && pnlPct != null && pnlPct <= -1.0) || (ageMs > 3 * 60 * 1000 && pnlPct != null && Math.abs(pnlPct) < 2.0);
 
-   if (isFalseBreakout || isBreakevenStop || isTrailingStop || isParabolicTarget || isHardStop || isStagnant) {
+   if (isHazardFullExit || isFalseBreakout || isBreakevenStop || isMoonshotRatchetStop || isHardStop || isStagnant) {
     const lastExit = autoExitCooldowns.current.get(pos.mint) || 0;
     if (Date.now() - lastExit < 15_000) continue;
     autoExitCooldowns.current.set(pos.mint, Date.now());
-    const triggerLabel = isParabolicTarget ? `Parabolic Climax (+${pnlPct?.toFixed(1)}%)`
-      : isTrailingStop ? `Trailing profit secured (+${pnlPct?.toFixed(1)}% / Peak +${peakPnl?.toFixed(1)}%)`
+    const triggerLabel = isHazardFullExit ? `Competing Hazard Defense (Collapse: ${hazard.hLiquidityCollapse}, Rug: ${hazard.hRug}, Unexit: ${hazard.hUnexitability})`
+      : isMoonshotRatchetStop ? `Moonshot Ratchet secured (+${pnlPct?.toFixed(1)}% / Peak ${peakMultiple.toFixed(1)}x - ${ratchetTierName})`
       : isBreakevenStop ? `Breakeven profit lock (+${pnlPct?.toFixed(1)}%)`
       : isFalseBreakout ? `False-breakout quick cut (${pnlPct?.toFixed(1)}%)`
       : isStagnant ? 'Stagnant rotation (free capacity)'
       : `Stop-loss (${pnlPct?.toFixed(1)}%)`;
     setNotice(`🛡️ Auto-Exit: Liquidating ${pos.symbol || pos.mint.slice(0, 6)} (${triggerLabel}).`);
-    const triggerType = isParabolicTarget ? 'PARABOLIC_CLIMAX'
-      : isTrailingStop ? 'TRAILING_PROFIT_STAGED'
+    const triggerType = isHazardFullExit ? 'COMPETING_HAZARD_FULL_EXIT'
+      : isMoonshotRatchetStop ? 'MOONSHOT_RATCHET_LOCK'
       : isBreakevenStop ? 'BREAKEVEN_LOCK'
       : isFalseBreakout ? 'FALSE_BREAKOUT_FAST_CUT'
       : isStagnant ? 'STAGNANT_ROTATION'
@@ -344,7 +393,7 @@ export default function OperatorTerminal(){
     break;
    }
   }
- }, [autoExitGuardian, current, projection]);
+ }, [autoExitGuardian, current, projection, byMint]);
  const paperReady=current&&projection?.environment?.mode==='SIMULATION'&&projection?.capabilities?.open?.state==='READY';
  const showEnvelope=action=><section className="op-section"><h2>{action.toUpperCase()} operating envelope</h2><Status value={current?projection?.envelopes[action]?.state:'UNKNOWN'}/><p>{projection?.envelopes[action]?.dominantConstraint||'Waiting for authoritative constraints.'}</p><div className="op-table-scroll" role="region" aria-label={`${action} operating constraints`} tabIndex={0}><table><thead><tr>{['Constraint','Current','Boundary','Margin','State'].map(x=><th scope="col" key={x}>{x}</th>)}</tr></thead><tbody>{(Array.isArray(projection?.envelopes?.[action]?.constraints)?projection.envelopes[action].constraints:[]).filter(Boolean).map(c=><tr key={c.id}><td>{c.label}<small>{c.source}</small></td><td>{number(c.current)} {c.unit}</td><td>{number(c.boundary)} {c.unit}</td><td>{number(c.margin)} {c.unit}</td><td><Status value={current?c.state:'UNKNOWN'}/></td></tr>)}</tbody></table></div><p className="op-muted">{current && projection?.envelopes?.[action]?.state === 'SAFE' ? 'All paper operating constraints satisfied for simulation.' : 'Unknown review, risk or reserve evidence prevents a complete operating envelope.'}</p></section>;
  return <div ref={root} className="op-terminal sylph">

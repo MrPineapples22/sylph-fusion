@@ -24,9 +24,11 @@ import {
   Radio,
   Globe,
   Search,
+  Copy,
+  Check,
 } from 'lucide-react';
 
-import { evaluateTokenDecision, MAX_PRICE_DRIFT_BPS, MAX_LIQUIDITY_DROP_BPS } from '../token-decision-eval.js';
+import { evaluateTokenDecision, calculateRunnerHazardState, MAX_PRICE_DRIFT_BPS, MAX_LIQUIDITY_DROP_BPS } from '../token-decision-eval.js';
 import { VetoProofInspectorDrawer } from './VetoProofInspectorDrawer.jsx';
 
 export function TokenDecisionCard({
@@ -41,6 +43,18 @@ export function TokenDecisionCard({
 }) {
   const [showWhyPanel, setShowWhyPanel] = useState(false);
   const [showProofInspector, setShowProofInspector] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyMint = (e) => {
+    e.stopPropagation();
+    const mintToCopy = asset?.id || candidate?.mint || '';
+    if (mintToCopy && typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(mintToCopy).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }).catch(() => {});
+    }
+  };
 
   if (!asset || asset.id === 'loading') {
     return (
@@ -65,6 +79,7 @@ export function TokenDecisionCard({
     isExcessiveLiquidityDrop,
     actualBuyers,
     isDevSold,
+    ageSeconds,
     ageDisplay,
     isMintRevoked,
     isFreezeRevoked,
@@ -91,6 +106,17 @@ export function TokenDecisionCard({
     rejectionReason,
     isEligible,
     eligibilityNotes,
+  });
+
+  const currentMultiple = Number(asset.currentMultiple || candidate?.currentMultiple || 1.0);
+  const runnerHazard = calculateRunnerHazardState({
+    elapsedSeconds: typeof ageSeconds === 'number' ? ageSeconds : 60,
+    currentMultiple,
+    walletEntropy: candidate?.walletEntropy ?? asset?.walletEntropy ?? 1.0,
+    independentCapitalAcceleration: candidate?.independentCapitalAcceleration ?? asset?.independentCapitalAcceleration ?? 0.0,
+    realSolReserve: realSolReserve ?? 30,
+    currentSellPressureRatio: candidate?.sellPressureRatio ?? asset?.sellPressureRatio ?? 0.1,
+    recentPriceVelocityBps: candidate?.recentPriceVelocityBps ?? asset?.recentPriceVelocityBps ?? 0,
   });
 
   const rawStatus = (
@@ -186,35 +212,45 @@ export function TokenDecisionCard({
       label: '4. Liquidity Floor',
       status: realSolReserve != null ? (realSolReserve >= 1.0 ? 'PASS' : 'FAIL') : asset.liquidity ? (asset.liquidity >= 1000 ? 'PASS' : 'FAIL') : 'PENDING',
       observed: realSolReserve != null ? `${realSolReserve.toFixed(2)} SOL` : asset.liquidity ? `$${Math.round(asset.liquidity)}` : 'Awaiting snapshot',
-      meaning: 'Liquidity threshold (≥1.0 SOL or $1,000 floor)',
+      meaning: realSolReserve != null
+        ? (realSolReserve >= 1.0 ? `Liquidity floor satisfied (${realSolReserve.toFixed(2)} SOL >= 1.0 SOL)` : `Below liquidity floor (${realSolReserve.toFixed(2)} SOL < 1.0 SOL)`)
+        : asset.liquidity
+          ? (asset.liquidity >= 1000 ? `Liquidity floor satisfied ($${Math.round(asset.liquidity)} >= $1,000)` : `Below liquidity floor ($${Math.round(asset.liquidity)} < $1,000)`)
+          : 'Awaiting verified pool liquidity snapshot',
     },
     {
       stage: 'Market Cap Floor',
       label: '5. Market Cap Floor',
       status: (asset.cap || asset.mcap) ? ((asset.cap || asset.mcap) >= 5000 ? 'PASS' : 'FAIL') : 'PENDING',
       observed: (asset.cap || asset.mcap) ? `$${Math.round(asset.cap || asset.mcap)}` : 'Awaiting mcap',
-      meaning: 'Minimum market capitalization (≥$5,000)',
+      meaning: (asset.cap || asset.mcap)
+        ? ((asset.cap || asset.mcap) >= 5000 ? `Market cap floor satisfied ($${Math.round(asset.cap || asset.mcap)})` : `Below market cap floor ($${Math.round(asset.cap || asset.mcap)} < $5,000)`)
+        : 'Awaiting market capitalization data',
     },
     {
       stage: 'Min Transactions',
       label: '6. Min Transactions',
       status: (asset.txs ?? asset.txCount ?? actualBuyers) != null ? ((asset.txs ?? asset.txCount ?? actualBuyers) >= 5 ? 'PASS' : 'PENDING') : 'PENDING',
       observed: (asset.txs ?? asset.txCount ?? actualBuyers) != null ? `${asset.txs ?? asset.txCount ?? actualBuyers} txs` : 'Awaiting trade count',
-      meaning: 'Activity verification (≥5 observed transactions)',
+      meaning: (asset.txs ?? asset.txCount ?? actualBuyers) != null
+        ? ((asset.txs ?? asset.txCount ?? actualBuyers) >= 5 ? `Observed trade flow active (${asset.txs ?? asset.txCount ?? actualBuyers} txs)` : `Low trade activity (${asset.txs ?? asset.txCount ?? actualBuyers} < 5 txs)`)
+        : 'Awaiting observed transaction history',
     },
     {
       stage: 'Rug Risk',
       label: '7. Rug Risk',
       status: isDevSold ? 'FAIL' : (isMintRevoked === false || isFreezeRevoked === false) ? 'FAIL' : (isMintRevoked && isFreezeRevoked) ? 'PASS' : 'PENDING',
       observed: isDevSold ? 'DEV_DUMP' : (isMintRevoked && isFreezeRevoked) ? '0 high-risk hazards' : 'Pending contract audit',
-      meaning: isDevSold ? 'Creator sell detected on active curve' : 'Contract risk, mint/freeze authorities',
+      meaning: isDevSold ? 'Creator sell detected on active curve' : (isMintRevoked && isFreezeRevoked) ? 'Authorities revoked; contract hazards clean' : 'Contract risk, mint/freeze authorities pending',
     },
     {
       stage: 'HSI Integrity',
       label: '8. HSI Integrity',
       status: asset.hsi != null ? (asset.hsi >= 0.5 ? 'PASS' : 'FAIL') : 'PENDING',
       observed: asset.hsi != null ? asset.hsi.toFixed(2) : 'Awaiting holder scan',
-      meaning: 'Holder Suspicion Index (HSI ≥ 0.50)',
+      meaning: asset.hsi != null
+        ? (asset.hsi >= 0.5 ? `Holder suspicion index healthy (HSI ${asset.hsi.toFixed(2)})` : `Suspicious holder concentration (HSI ${asset.hsi.toFixed(2)} < 0.50)`)
+        : 'Awaiting holder distribution analysis',
     },
     {
       stage: 'Curve Lifecycle',
@@ -298,9 +334,21 @@ export function TokenDecisionCard({
             <h3>
               {asset.symbol} <small>/ USDC</small>
             </h3>
-            <span className="token-address font-mono" title={asset.id}>
-              {asset.id?.slice(0, 8)}…{asset.id?.slice(-6)}
-            </span>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span className="token-address font-mono" title={asset.id}>
+                {asset.id?.slice(0, 8)}…{asset.id?.slice(-6)}
+              </span>
+              <button
+                type="button"
+                className="btn-copy-mint p-0.5 rounded text-muted hover:text-white transition-colors"
+                onClick={handleCopyMint}
+                title={copied ? 'Copied mint address' : 'Copy canonical mint address'}
+                aria-label="Copy mint address"
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', padding: '1px 3px' }}
+              >
+                {copied ? <Check size={11} className="text-[#14F195]" /> : <Copy size={11} />}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -315,7 +363,10 @@ export function TokenDecisionCard({
             <span>{crossVal.shortLabel}</span>
           </span>
 
-          <span className="route-badge font-mono" style={{ background: '#1c2430', color: executionRoute?.includes('JITO') ? '#14F195' : '#83c5e6', padding: '3px 8px', borderRadius: '4px', fontSize: '11px', border: '1px solid #2d3848' }} title={`SOLARIS execution route: ${executionRoute}`}>
+          <span
+            className={`route-badge font-mono ${executionRoute?.includes('JITO') ? 'route-jito' : ''}`}
+            title={`SOLARIS execution route: ${executionRoute}`}
+          >
             {executionRoute || 'UNKNOWN'}
           </span>
           {onInspectProvenance && (
@@ -349,7 +400,13 @@ export function TokenDecisionCard({
         margin: '2px 0 6px',
         textAlign: 'center',
       }}>
-        <div style={{ background: 'rgba(255,255,255,0.02)', padding: '6px 4px', borderRadius: '6px' }}>
+        <div style={{
+          background: quality === 'PASS' ? 'rgba(20,241,149,0.06)' : quality === 'FAIL' ? 'rgba(255,59,105,0.06)' : 'rgba(245,158,11,0.06)',
+          border: `1px solid ${quality === 'PASS' ? 'rgba(20,241,149,0.25)' : quality === 'FAIL' ? 'rgba(255,59,105,0.25)' : 'rgba(245,158,11,0.25)'}`,
+          padding: '6px 4px',
+          borderRadius: '6px',
+          transition: 'all 0.2s ease',
+        }}>
           <small style={{ display: 'block', fontSize: '9px', color: '#94A3B8', letterSpacing: '0.5px' }}>TOKEN QUALITY</small>
           <b style={{
             fontSize: '12px',
@@ -361,7 +418,13 @@ export function TokenDecisionCard({
             {quality === 'PASS' ? 'Security clean' : quality === 'FAIL' ? (qualityVetoes[0] || 'VETOED') : 'Telemetry incomplete'}
           </span>
         </div>
-        <div style={{ background: 'rgba(255,255,255,0.02)', padding: '6px 4px', borderRadius: '6px' }}>
+        <div style={{
+          background: opportunity === 'ELIGIBLE' ? 'rgba(20,241,149,0.06)' : opportunity === 'INELIGIBLE' ? 'rgba(255,59,105,0.06)' : 'rgba(245,158,11,0.06)',
+          border: `1px solid ${opportunity === 'ELIGIBLE' ? 'rgba(20,241,149,0.25)' : opportunity === 'INELIGIBLE' ? 'rgba(255,59,105,0.25)' : 'rgba(245,158,11,0.25)'}`,
+          padding: '6px 4px',
+          borderRadius: '6px',
+          transition: 'all 0.2s ease',
+        }}>
           <small style={{ display: 'block', fontSize: '9px', color: '#94A3B8', letterSpacing: '0.5px' }}>ENTRY ELIGIBILITY</small>
           <b style={{
             fontSize: '12px',
@@ -373,7 +436,13 @@ export function TokenDecisionCard({
             {opportunity === 'ELIGIBLE' ? 'Gates passed' : opportunity === 'PENDING' ? (isMigrationPending ? 'DEX transition' : 'Awaiting data') : 'Filter breached'}
           </span>
         </div>
-        <div style={{ background: 'rgba(255,255,255,0.02)', padding: '6px 4px', borderRadius: '6px' }}>
+        <div style={{
+          background: execution === 'AVAILABLE' ? 'rgba(20,241,149,0.06)' : 'rgba(245,158,11,0.06)',
+          border: `1px solid ${execution === 'AVAILABLE' ? 'rgba(20,241,149,0.25)' : 'rgba(245,158,11,0.25)'}`,
+          padding: '6px 4px',
+          borderRadius: '6px',
+          transition: 'all 0.2s ease',
+        }}>
           <small style={{ display: 'block', fontSize: '9px', color: '#94A3B8', letterSpacing: '0.5px' }}>EXECUTION AUTHORITY</small>
           <b style={{
             fontSize: '12px',
@@ -564,13 +633,16 @@ export function TokenDecisionCard({
             {medianObsGapSec != null ? (isHighVelocity ? `Flow Gap ≤ 1.0s (${medianObsGapSec.toFixed(2)}s)` : `Low Velocity (${medianObsGapSec.toFixed(2)}s > 1.0s)`) : 'Flow Gap Pending (≤1.0s)'}
           </span>
         </div>
-        {/* Empirical Exit Contract Ribbon (Derived from 523k pump.fun backtest) */}
-        <div className="empirical-exit-contract font-mono text-[10px] text-muted flex items-center justify-between mt-2 pt-2 border-t border-[#1e293b]">
+        {/* Empirical Exit Contract Ribbon (Derived from 523k pump.fun backtest & Section XXVIII) */}
+        <div className="empirical-exit-contract font-mono text-[10px] text-muted flex items-center justify-between mt-2 pt-2 border-t border-[#1e293b] flex-wrap gap-2">
           <span className="text-[#38bdf8] flex items-center gap-1 font-semibold">
-            <Zap size={11} /> PRE-COMMITTED EXIT: {empiricalExitPolicy?.name || 'STAGED_DERISK_2X_TRAIL'}
+            <Zap size={11} /> PRE-COMMITTED EXIT: 8-Tier Ratchets (1.15x→100x) + Hazard Defense
           </span>
-          <span className="text-[#94a3b8]">
-            TP: 50% @ 2.0x | Stop: -25% | Trail: -30% | Max Hold: 180s
+          <span className="text-[#94a3b8] flex items-center gap-2">
+            <span>BE: +8% | Trail: -30%</span>
+            <span style={{ color: runnerHazard.netConvexHazardRatio >= 1.5 ? '#14F195' : runnerHazard.netConvexHazardRatio >= 0.5 ? '#38BDF8' : '#FF3B69', fontWeight: 600 }}>
+              Hazard Ratio: {runnerHazard.netConvexHazardRatio.toFixed(2)}x ({runnerHazard.recommendedAction})
+            </span>
           </span>
         </div>
       </div>
@@ -625,14 +697,14 @@ export function TokenDecisionCard({
                   </button>
                 </div>
               </div>
-              <div style={{ overflowX: 'auto', borderRadius: '6px', border: '1px solid #1A2335' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left', background: '#0C1018' }}>
+              <div className="why-trace-table-wrap">
+                <table className="why-trace-table">
                   <thead>
-                    <tr style={{ background: '#111722', borderBottom: '1px solid #1A2335', color: '#64748B' }}>
-                      <th style={{ padding: '6px 8px' }}>Stage</th>
-                      <th style={{ padding: '6px 8px' }}>Status</th>
-                      <th style={{ padding: '6px 8px' }}>Observed</th>
-                      <th style={{ padding: '6px 8px' }}>Meaning</th>
+                    <tr>
+                      <th>Stage</th>
+                      <th>Status</th>
+                      <th>Observed</th>
+                      <th>Meaning</th>
                     </tr>
                   </thead>
                   <tbody>

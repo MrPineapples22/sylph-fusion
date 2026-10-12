@@ -43,7 +43,18 @@ export function AetherFlux({
   const tokenButton = token => <button type="button" className="op-token-link" data-token={token.mint} onClick={event => onInvestigate(token, event)}>{identity(token)}</button>;
   const pending = token => token.isNativeAsset ? 'Native asset' : Array.isArray(token.pending) ? `${token.pending.length} pending` : 'Unknown';
   const hsi = token => token.isNativeAsset ? 'N/A' : formatNumber(token.highSignalIndex);
-  const flow = token => token.isNativeAsset ? 'N/A' : token.pod || 'Unknown';
+  const flow = token => {
+    if (token.isNativeAsset) return 'N/A';
+    const rBuy = Number.isFinite(token.rBuy) ? `R_b ${token.rBuy.toFixed(2)}` : null;
+    const qUp = Number.isFinite(token.qUp) ? `q↑ ${(token.qUp * 100).toFixed(1)}%` : null;
+    const flowDetail = [rBuy, qUp].filter(Boolean).join(' · ');
+    return (
+      <div>
+        <span>{token.pod || 'Unknown'}</span>
+        {flowDetail && <small className="op-cell-detail op-mono" title={`Order Flow R_buy: ${token.rBuy ?? 'N/A'} · Forward Committor q_up: ${token.qUp ?? 'N/A'}`}>{flowDetail}</small>}
+      </div>
+    );
+  };
   const tierStatus = token => {
     const tier = token.tier || 'UNKNOWN';
     return <Status value={current ? tier : 'UNKNOWN'} label={current ? undefined : tier === 'UNKNOWN' ? 'Historical tier unavailable' : `Historical tier: ${tier.replaceAll('_', ' ').toLowerCase()}`} />;
@@ -97,7 +108,7 @@ export function AetherFlux({
               <td className="op-grid-number">{formatPrice(token.price)}<small className="op-cell-detail">Liq {formatMoney(token.liquidity)}</small><small className="op-cell-detail">Cap {formatMoney(token.cap)}</small></td>
               <td>{flow(token)}</td><td className="op-grid-number">{hsi(token)}</td>
               <td><Status value={current ? token.safety || 'UNKNOWN' : 'UNKNOWN'} label={!current?'Historical safety':undefined} /></td><td>{pending(token)}</td>
-              <td>{tierStatus(token)}</td>
+              <td>{tierStatus(token)}{Number.isFinite(token.decisionSlackMs) && <small className="op-cell-detail op-mono" title={`Decision Slack: ${(token.decisionSlackMs / 1000).toFixed(1)}s · Crowding Horizon: ${(token.crowdingHorizonMs / 1000).toFixed(1)}s`}>Slack {(token.decisionSlackMs / 1000).toFixed(1)}s</small>}</td>
               <td className="op-grid-number" title="Row observation age; current provider evidence is required to verify freshness.">{observedAge(token, current, marketState, generatedAt)}</td>
               <td>{compareButton(token)}</td>
             </tr>)}</tbody>
@@ -115,6 +126,11 @@ export function AetherFlux({
               <div><dt>Market cap</dt><dd>{formatMoney(token.cap)}</dd></div><div><dt>Flow</dt><dd>{flow(token)}</dd></div>
               <div><dt>HSI</dt><dd>{hsi(token)}</dd></div><div><dt>Safety</dt><dd><Status value={current ? token.safety || 'UNKNOWN' : 'UNKNOWN'} label={!current?'Historical safety':undefined} /></dd></div>
               <div><dt>Decision triad</dt><dd className="op-mono">{token.quality || 'UNKNOWN'} · {token.opportunity || (token.tier === 'PRIME' ? 'ELIGIBLE' : 'PENDING')} · {token.execution || 'BLOCKED'}</dd></div>
+              <div><dt>Decision slack</dt><dd className="op-mono">{Number.isFinite(token.decisionSlackMs) ? `${(token.decisionSlackMs / 1000).toFixed(1)}s` : 'N/A'}</dd></div>
+              <div><dt>Crowding horizon</dt><dd className="op-mono">{Number.isFinite(token.crowdingHorizonMs) ? `${(token.crowdingHorizonMs / 1000).toFixed(1)}s` : 'N/A'}</dd></div>
+              <div><dt>Executable ATH</dt><dd className="op-mono">{Number.isFinite(token.executableAthMultiple) ? `${token.executableAthMultiple.toFixed(2)}×` : 'N/A'}</dd></div>
+              <div><dt>Forward committor (q↑)</dt><dd className="op-mono">{Number.isFinite(token.qUp) ? `${(token.qUp * 100).toFixed(1)}%` : 'N/A'}</dd></div>
+              <div><dt>Flow reproduction (R_b)</dt><dd className="op-mono">{Number.isFinite(token.rBuy) ? `${token.rBuy.toFixed(2)} ${token.isSuperCriticalFlow ? '⚡' : ''}` : 'N/A'}</dd></div>
             </dl></details>
             <div className="op-card-actions"><button type="button" className="btn-secondary" data-token={token.mint} onClick={event => onInvestigate(token, event)}>Investigate {identity(token)}</button>{compareButton(token)}</div>
           </article>)}
@@ -136,6 +152,10 @@ export function AetherFlux({
               <div><dt>Liquidity</dt><dd>{formatMoney(token.liquidity)}</dd></div><div><dt>HSI</dt><dd>{hsi(token)}</dd></div>
               <div><dt>Flow</dt><dd>{flow(token)}</dd></div><div><dt>Intel</dt><dd>{pending(token)}</dd></div>
               <div><dt>Safety</dt><dd><Status value={current ? token.safety || 'UNKNOWN' : 'UNKNOWN'} label={!current?'Historical safety':undefined} /></dd></div><div><dt>State</dt><dd>{tierStatus(token)}</dd></div>
+              <div><dt>Decision slack</dt><dd className="op-mono">{Number.isFinite(token.decisionSlackMs) ? `${(token.decisionSlackMs / 1000).toFixed(1)}s` : 'N/A'}</dd></div>
+              <div><dt>Executable ATH</dt><dd className="op-mono">{Number.isFinite(token.executableAthMultiple) ? `${token.executableAthMultiple.toFixed(2)}×` : 'N/A'}</dd></div>
+              <div><dt>Forward committor (q↑)</dt><dd className="op-mono">{Number.isFinite(token.qUp) ? `${(token.qUp * 100).toFixed(1)}%` : 'N/A'}</dd></div>
+              <div><dt>Flow reproduction (R_b)</dt><dd className="op-mono">{Number.isFinite(token.rBuy) ? `${token.rBuy.toFixed(2)}` : 'N/A'}</dd></div>
               <div><dt>Observed age</dt><dd>{observedAge(token, current, marketState, generatedAt)}</dd></div>
             </dl> : <p className="op-muted">This token is no longer in the displayed observation feed. Its evidence is unknown.</p>}
           </article>;

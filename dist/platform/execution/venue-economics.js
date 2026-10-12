@@ -84,6 +84,133 @@ export class VenueEconomicsAuthority {
             digest
         };
     }
+    /**
+     * Optimizes multi-venue split-routing allocation across viable venues to minimize
+     * convex AMM price impact and maximize net terminal execution capital.
+     */
+    evaluateOptimalSplitRoute(params) {
+        const minLanding = params.minLandingProbability ?? 0.85;
+        const maxTrapping = params.maxCapitalTrappingBps ?? 800;
+        const viable = params.venueCandidates.filter((v) => v.isViable && v.landingProbability >= minLanding && v.capitalTrappingRiskBps <= maxTrapping);
+        if (viable.length === 0 || params.totalAmountLamports <= 0n) {
+            const digest = createHash('sha256').update(`${params.mint}:${params.slot}:EMPTY_SPLIT`).digest('hex');
+            return {
+                certificateId: `SPLIT-${digest.slice(0, 16)}`,
+                mint: params.mint,
+                totalEvaluatedAmountLamports: params.totalAmountLamports,
+                legs: [],
+                aggregateImpactBps: 0,
+                singleVenueBestImpactBps: 0,
+                slippageSavingsLamports: 0n,
+                slippageSavingsBps: 0,
+                isSplitAdvantageous: false,
+                issuedAtSlot: params.slot,
+                digest,
+            };
+        }
+        const singleVenueBestImpactBps = Math.min(...viable.map((v) => v.entryImpactBps));
+        if (viable.length === 1) {
+            const v = viable[0];
+            const digest = createHash('sha256').update(`${params.mint}:${params.slot}:SINGLE_LEG`).digest('hex');
+            return {
+                certificateId: `SPLIT-${digest.slice(0, 16)}`,
+                mint: params.mint,
+                totalEvaluatedAmountLamports: params.totalAmountLamports,
+                legs: [{
+                        venue: v.venue,
+                        allocatedAmountLamports: params.totalAmountLamports,
+                        allocationFractionPct: 100,
+                        expectedImpactBps: v.entryImpactBps,
+                        feeLamports: v.entryFeeLamports,
+                    }],
+                aggregateImpactBps: v.entryImpactBps,
+                singleVenueBestImpactBps,
+                slippageSavingsLamports: 0n,
+                slippageSavingsBps: 0,
+                isSplitAdvantageous: false,
+                issuedAtSlot: params.slot,
+                digest,
+            };
+        }
+        // Multi-venue convex impact optimization:
+        // Optimal split weighting is inversely proportional to venue impact coefficient: w_i = (1 / impact_i) / sum(1 / impact_j)
+        const weights = viable.map((v) => 1 / Math.max(1, v.entryImpactBps));
+        const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+        let allocatedLamportsSum = 0n;
+        const legs = viable.map((v, idx) => {
+            const fraction = weights[idx] / totalWeight;
+            let allocated = (params.totalAmountLamports * BigInt(Math.floor(fraction * 10_000))) / 10000n;
+            if (idx === viable.length - 1) {
+                allocated = params.totalAmountLamports - allocatedLamportsSum;
+            }
+            else {
+                allocatedLamportsSum += allocated;
+            }
+            // Price impact scales down proportionally with the reduced notional allocated to this venue
+            const scaledImpactBps = Math.max(1, Math.round(v.entryImpactBps * fraction));
+            return {
+                venue: v.venue,
+                allocatedAmountLamports: allocated,
+                allocationFractionPct: Number((fraction * 100).toFixed(2)),
+                expectedImpactBps: scaledImpactBps,
+                feeLamports: (v.entryFeeLamports * allocated) / (params.totalAmountLamports || 1n),
+            };
+        });
+        const aggregateImpactBps = Math.round(legs.reduce((acc, leg) => acc + (leg.expectedImpactBps * leg.allocationFractionPct) / 100, 0));
+        const slippageSavingsBps = Math.max(0, singleVenueBestImpactBps - aggregateImpactBps);
+        const slippageSavingsLamports = (params.totalAmountLamports * BigInt(slippageSavingsBps)) / 10000n;
+        const isSplitAdvantageous = slippageSavingsBps >= 5;
+        const payload = `${params.mint}:${params.slot}:${aggregateImpactBps}:${slippageSavingsLamports}:${isSplitAdvantageous}`;
+        const digest = createHash('sha256').update(payload).digest('hex');
+        return {
+            certificateId: `SPLIT-${digest.slice(0, 16)}`,
+            mint: params.mint,
+            totalEvaluatedAmountLamports: params.totalAmountLamports,
+            legs: Object.freeze(legs),
+            aggregateImpactBps,
+            singleVenueBestImpactBps,
+            slippageSavingsLamports,
+            slippageSavingsBps,
+            isSplitAdvantageous,
+            issuedAtSlot: params.slot,
+            digest,
+        };
+    }
+    /**
+     * Decomposes gross execution input into net input, protocol/creator fee, spot output,
+     * pure curve price impact, and total execution friction. (BP §25, §27)
+     */
+    static decomposeExecutionEconomics(params) {
+        const grossInput = params.grossInputLamports ?? params.inputLamports ?? 0n;
+        if (grossInput <= 0n || params.virtualQuoteReserves <= 0n || params.virtualTokenReserves <= 0n) {
+            throw new Error('INVALID_ECONOMICS_INPUTS');
+        }
+        const feeBps = params.feeBps ?? params.totalFeeBps ?? 0;
+        const feeLamports = (grossInput * BigInt(feeBps)) / 10000n;
+        const netInput = grossInput - feeLamports;
+        const spotOutput = params.virtualQuoteReserves > 0n
+            ? (netInput * params.virtualTokenReserves) / params.virtualQuoteReserves
+            : 0n;
+        const actualOutput = params.actualOutputTokens;
+        const pureImpactTokens = spotOutput > actualOutput ? spotOutput - actualOutput : 0n;
+        const pureImpactBps = spotOutput > 0n ? Number((pureImpactTokens * 10000n) / spotOutput) : 0;
+        const slippageBps = params.slippageBps ?? 0;
+        const totalExecutionFrictionBps = pureImpactBps + feeBps + slippageBps;
+        return {
+            grossInputLamports: grossInput,
+            netInputLamports: netInput,
+            feeLamports,
+            feeBps,
+            spotOutputTokens: spotOutput,
+            actualOutputTokens: actualOutput,
+            pureImpactBps,
+            slippageBps,
+            totalExecutionFrictionBps,
+        };
+    }
+    decomposeExecutionEconomics(params) {
+        return VenueEconomicsAuthority.decomposeExecutionEconomics(params);
+    }
 }
 export class PortfolioExitNet {
     existingPositions = new Map();

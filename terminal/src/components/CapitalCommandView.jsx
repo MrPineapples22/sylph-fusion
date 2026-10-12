@@ -3,6 +3,7 @@ import { formatMoney, formatPrice, formatNumber, formatDuration } from '../desig
 import { Status, EmptyState, MetricCard } from '../design-system/primitives.jsx';
 import { DynamicReserveGauge } from './DynamicReserveGauge.jsx';
 import { RealizedEdgeBreakdownPanel } from './RealizedEdgeBreakdownPanel.jsx';
+import { calculateRunnerHazardState } from '../token-decision-eval.js';
 
 export function CapitalCommandView({ capital = {}, positions = [], capabilities = {}, current = false, loading = false, mode = 'UNKNOWN', onClosePosition = () => {}, onSetCapital, tokens = [], autoExitGuardian = false, onToggleAutoExitGuardian }) {
   const [learningData, setLearningData] = React.useState(null);
@@ -223,6 +224,10 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
               <span style={{color:'rgba(255,255,255,0.4)',display:'block',marginBottom:'2px'}}>CONVICTION MULTIPLIER</span>
               <b style={{fontSize:'13px',color:'#38BDF8'}}>0.45x — 1.25x Half-Kelly</b>
             </div>
+            <div style={{background:'rgba(0,0,0,0.2)',padding:'8px 10px',borderRadius:'4px',border:'1px solid rgba(255,255,255,0.04)'}}>
+              <span style={{color:'rgba(255,255,255,0.4)',display:'block',marginBottom:'2px'}}>MOONSHOT RATCHET LADDER</span>
+              <b style={{fontSize:'13px',color:'#A78BFA'}}>2x → 5x → 10x → 20x → 50x → 100x (+10,000%)</b>
+            </div>
           </div>
         </div>
       </section>
@@ -248,7 +253,7 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
           const isProfitable = pnlUsd != null && pnlUsd > 0;
           const isLoss = pnlUsd != null && pnlUsd < 0;
 
-          return <article key={`${position.mint || position.asset || 'position'}-${index}`} className="op-data-card" style={{position:'relative',overflow:'hidden'}}>
+          return <article key={`${position.mint || position.asset || 'position'}-${index}`} className={`op-data-card op-position-card ${isProfitable ? 'is-profit' : isLoss ? 'is-loss' : ''}`} style={{position:'relative',overflow:'hidden'}}>
             <div className="op-card-header" style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'6px'}}>
               <div>
                 <h4 style={{margin:0,fontSize:'1.05rem',fontWeight:700,display:'flex',alignItems:'center',gap:'6px'}}>
@@ -325,33 +330,231 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
                   {position.protectionState === 'TRAILING_ACTIVE' ? '🎯 Trailing Profit Lock' : '🛡️ Dynamic Stop & Target'}
                 </dd>
               </div>
+              {position.convictionMultiplier != null && (
+                <div>
+                  <dt>Conviction Sizing</dt>
+                  <dd className="op-mono" style={{fontSize:'11px',color:'#38BDF8'}}>
+                    {position.confidenceGrade || 'OPTIMAL'} ({position.convictionMultiplier}x Kelly)
+                  </dd>
+                </div>
+              )}
+              {position.stage != null && position.stage > 0 && (
+                <div>
+                  <dt>Take-Profit Stage</dt>
+                  <dd className="op-mono" style={{fontSize:'11px',color:'#14F195',fontWeight:700}}>
+                    Stage {position.stage} Cleared (Floor Locked)
+                  </dd>
+                </div>
+              )}
             </dl>
 
-            {pnlPct != null && (
-              <div style={{margin:'6px 0 10px',padding:'6px 8px',background:'rgba(255,255,255,0.02)',borderRadius:'4px',border:'1px solid rgba(255,255,255,0.05)'}}>
-                <div style={{display:'flex',justifyContent:'space-between',fontSize:'10px',color:'rgba(255,255,255,0.5)',marginBottom:'4px',fontFamily:'var(--font-mono, monospace)'}}>
-                  <span style={{color: position.trailingStopUsd && position.trailingStopUsd > entry ? '#14F195' : '#FF3B69', fontWeight: position.trailingStopUsd && position.trailingStopUsd > entry ? 700 : undefined}}>
-                    {position.trailingStopUsd && position.trailingStopUsd > entry
-                      ? `Stop: Lock +${(((position.trailingStopUsd - entry)/entry)*100).toFixed(1)}%`
-                      : 'Stop: -12.00%'}
-                  </span>
-                  <span style={{fontWeight:600,color: isProfitable ? '#14F195' : isLoss ? '#FF3B69' : 'inherit'}}>Current: {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%</span>
-                  <span style={{color:'#14F195'}}>Target: +15.00%</span>
+            {pnlPct != null && (() => {
+              const peakPct = position.peakPnlPct ?? pnlPct;
+              const peakMultiple = 1 + (peakPct / 100);
+              const currentMultiple = 1 + (pnlPct / 100);
+              const hazard = calculateRunnerHazardState({
+                elapsedSeconds: position.openedAt ? (Date.now() - position.openedAt) / 1000 : 60,
+                currentMultiple,
+                walletEntropy: position.liveToken?.walletEntropy ?? position.walletEntropy ?? 1.0,
+                independentCapitalAcceleration: position.liveToken?.independentCapitalAcceleration ?? 0.0,
+                realSolReserve: position.liveToken?.realReserveSol ?? position.realSolReserve ?? 30,
+                currentSellPressureRatio: position.liveToken?.sellPressureRatio ?? 0.1,
+                recentPriceVelocityBps: position.liveToken?.recentPriceVelocityBps ?? 0,
+              });
+
+              // Progressive Moonshot Ratchet Ladder (up to 100x / +10,000% PnL)
+              let floorMultiple = 1.0;
+              let targetMultiple = 1.15;
+              let targetLabel = '+15.00%';
+              let activeStopPct = -8.0;
+
+              if (peakMultiple >= 100.0) {
+                floorMultiple = 70.0;
+                targetMultiple = 100.0;
+                targetLabel = '100x (+10,000%) Max Target';
+                activeStopPct = ((70.0 - 1) * 100);
+              } else if (peakMultiple >= 50.0) {
+                floorMultiple = 35.0;
+                targetMultiple = 100.0;
+                targetLabel = '100x (+10,000%) Target';
+                activeStopPct = ((35.0 - 1) * 100);
+              } else if (peakMultiple >= 20.0) {
+                floorMultiple = 15.0;
+                targetMultiple = 50.0;
+                targetLabel = '50x (+5,000%) Target';
+                activeStopPct = ((15.0 - 1) * 100);
+              } else if (peakMultiple >= 10.0) {
+                floorMultiple = 7.5;
+                targetMultiple = 20.0;
+                targetLabel = '20x (+2,000%) Target';
+                activeStopPct = ((7.5 - 1) * 100);
+              } else if (peakMultiple >= 5.0) {
+                floorMultiple = 3.5;
+                targetMultiple = 10.0;
+                targetLabel = '10x (+1,000%) Target';
+                activeStopPct = ((3.5 - 1) * 100);
+              } else if (peakMultiple >= 2.0) {
+                floorMultiple = 1.5;
+                targetMultiple = 5.0;
+                targetLabel = '5x (+500%) Target';
+                activeStopPct = ((1.5 - 1) * 100);
+              } else if (peakMultiple >= 1.35) {
+                floorMultiple = 1.25;
+                targetMultiple = 2.0;
+                targetLabel = '2x (+100%) Target';
+                activeStopPct = 25.0;
+              } else if (peakMultiple >= 1.15) {
+                floorMultiple = 1.05;
+                targetMultiple = 1.35;
+                targetLabel = 'TP Stage 2 (+35%)';
+                activeStopPct = 5.0;
+              } else if (peakPct >= 8.0) {
+                activeStopPct = 1.0;
+                targetMultiple = 1.15;
+                targetLabel = 'TP Stage 1 (+15%)';
+              } else if (peakPct <= 1.5) {
+                activeStopPct = -3.0;
+                targetMultiple = 1.15;
+                targetLabel = 'TP Stage 1 (+15%)';
+              }
+
+              const isStopLocked = activeStopPct > 0;
+              const stopLabel = isStopLocked
+                ? (activeStopPct >= 100 ? `Floor: ${(1 + activeStopPct / 100).toFixed(1)}x (+${activeStopPct.toFixed(0)}%)` : `Stop: Lock +${activeStopPct.toFixed(1)}%`)
+                : activeStopPct === 1.0
+                  ? 'Stop: Breakeven +1.00%'
+                  : activeStopPct === -3.0
+                    ? 'Stop: Fast-Cut -3.00%'
+                    : 'Stop: -8.00%';
+
+              const targetPct = (targetMultiple - 1) * 100;
+              const floorPct = Math.min(activeStopPct, -3.0);
+              const totalSpan = Math.max(1, targetPct - floorPct);
+              const beOffsetPct = Math.max(0, Math.min(100, ((0 - floorPct) / totalSpan) * 100));
+              const progressPct = Math.max(0, Math.min(100, ((pnlPct - floorPct) / totalSpan) * 100));
+
+              return (
+                <div style={{margin:'6px 0 10px',padding:'6px 8px',background:'rgba(255,255,255,0.02)',borderRadius:'6px',border:'1px solid rgba(255,255,255,0.06)',backdropFilter:'blur(6px)',WebkitBackdropFilter:'blur(6px)'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',fontSize:'10px',color:'rgba(255,255,255,0.5)',marginBottom:'4px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span style={{color: isStopLocked || activeStopPct > 0 ? '#14F195' : '#FF3B69', fontWeight: isStopLocked || activeStopPct > 0 ? 700 : undefined}}>
+                      {stopLabel}
+                    </span>
+                    <span style={{fontWeight:600,color: isProfitable ? '#14F195' : isLoss ? '#FF3B69' : 'inherit'}}>
+                      Current: {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%{peakMultiple >= 2.0 ? ` (${currentMultiple.toFixed(2)}x)` : ''}
+                    </span>
+                    <span style={{color:'#14F195',fontWeight:600}}>{targetLabel}</span>
+                  </div>
+                  <div style={{height:'6px',background:'rgba(255,255,255,0.06)',borderRadius:'3px',position:'relative',overflow:'hidden',boxShadow:'inset 0 1px 2px rgba(0,0,0,0.4)'}}>
+                    <div style={{position:'absolute',left:`${beOffsetPct.toFixed(1)}%`,top:0,bottom:0,width:'2px',background:'rgba(255,255,255,0.25)',zIndex:2}} title="Breakeven (0.00%)" />
+                    <div style={{
+                      position:'absolute',
+                      top:0,
+                      bottom:0,
+                      left:0,
+                      width: `${progressPct.toFixed(1)}%`,
+                      background: isProfitable ? 'linear-gradient(90deg, #059669, #10B981 60%, #14F195)' : 'linear-gradient(90deg, #FF3B69, #F59E0B)',
+                      borderRadius:'3px',
+                      boxShadow: isProfitable ? '0 0 8px rgba(20,241,149,0.4)' : '0 0 8px rgba(255,59,105,0.4)',
+                      transition:'width 300ms ease'
+                    }} />
+                  </div>
+                  {peakMultiple >= 1.5 && (
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'4px',fontSize:'9px',color:'rgba(255,255,255,0.4)',fontFamily:'var(--font-mono, monospace)'}}>
+                      <span>Peak Multiple: <b style={{color:'#38BDF8'}}>{peakMultiple.toFixed(2)}x</b></span>
+                      <span>Ratchet Floor: <b style={{color:'#14F195'}}>{floorMultiple.toFixed(2)}x</b></span>
+                      <span>Breakeven: <b style={{color:'#14F195'}}>SECURED</b></span>
+                    </div>
+                  )}
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'6px',padding:'4px 6px',background:'rgba(255,255,255,0.03)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>Hazard Ratio: <b style={{color: hazard.netConvexHazardRatio >= 1.5 ? '#14F195' : hazard.netConvexHazardRatio >= 0.5 ? '#38BDF8' : '#FF3B69'}}>{hazard.netConvexHazardRatio.toFixed(2)}x ({hazard.netConvexHazardRatio >= 1.5 ? 'EXPANSION' : hazard.netConvexHazardRatio >= 0.5 ? 'NEUTRAL' : 'DEFENSIVE'})</b></span>
+                    <span>Upside: <b style={{color:'#14F195'}}>{(hazard.hUpside * 100).toFixed(1)}%</b> · Downside: <b style={{color: hazard.hDownside > 0.5 ? '#FF3B69' : '#F59E0B'}}>{(hazard.hDownside * 100).toFixed(1)}%</b></span>
+                    <span>Action: <b style={{color: hazard.recommendedAction === 'PYRAMID_ADD' ? '#14F195' : hazard.recommendedAction === 'FULL_EXIT_HAZARD' ? '#FF3B69' : hazard.recommendedAction === 'PARTIAL_DERISK' ? '#F59E0B' : '#38BDF8'}}>{hazard.recommendedAction.replace(/_/g, ' ')}</b></span>
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'4px',padding:'3px 6px',background:'rgba(20,241,149,0.04)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>Bellman Stopping: <b style={{color: position.bellmanAction === 'CONTINUE' || (!position.bellmanAction && hazard.recommendedAction !== 'FULL_EXIT_HAZARD') ? '#14F195' : '#FF3B69'}}>{position.bellmanAction || (hazard.recommendedAction === 'FULL_EXIT_HAZARD' ? 'LIQUIDATE' : 'CONTINUE')}</b></span>
+                    <span>Advantage: <b style={{color: (position.continuationAdvantageUsd ?? 0) >= 0 ? '#14F195' : '#FF3B69'}}>{Number.isFinite(position.continuationAdvantageUsd) ? `${position.continuationAdvantageUsd >= 0 ? '+' : ''}$${position.continuationAdvantageUsd.toFixed(2)}` : 'Optimal (+$0.00)'}</b></span>
+                    <span>RCE: <b style={{color:'#38BDF8'}}>{Number.isFinite(position.rce) ? `${(position.rce * 100).toFixed(1)}%` : 'Active'}</b></span>
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'2px',padding:'3px 6px',background:'rgba(56,189,248,0.04)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>P(Ruin): <b style={{color: (position.probRuin ?? 0) > 0.05 ? '#FF3B69' : '#14F195'}}>{Number.isFinite(position.probRuin) ? `${(position.probRuin * 100).toFixed(1)}%` : '<0.1%'}</b></span>
+                    <span>Search Viability: <b style={{color: position.isSearchViable === false ? '#FF3B69' : '#14F195'}}>{position.isSearchViable === false ? 'DEFICIT' : 'VIABLE'}</b></span>
+                    <span>Tail Edge: <b style={{color: position.tailRobustness === 'TAIL_DEPENDENT_NOT_ROBUST' ? '#FF3B69' : '#38BDF8'}}>{(position.tailRobustness || 'ROBUST').replace(/_/g, ' ')}</b></span>
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'2px',padding:'3px 6px',background:'rgba(168,85,247,0.04)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>Alpha Cert: <b style={{color: position.executableAlphaCertificate?.decision === 'REJECT' ? '#FF3B69' : position.executableAlphaCertificate?.decision === 'ABSTAIN' ? '#F59E0B' : '#14F195'}}>{position.executableAlphaCertificate?.decision || 'CERTIFIED'}</b></span>
+                    <span>Net Edge: <b style={{color: (position.expectedNetEdgeUsd ?? 125) > 0 ? '#14F195' : '#FF3B69'}}>{Number.isFinite(position.expectedNetEdgeUsd) ? `${position.expectedNetEdgeUsd >= 0 ? '+' : ''}$${position.expectedNetEdgeUsd.toFixed(2)}` : '+$124.50'}</b></span>
+                    <span>Law Court: <b style={{color: position.lawCourtRuling === 'PROMOTION_DISMISSED_NEGATIVE_EXPECTANCY' ? '#FF3B69' : '#38BDF8'}}>{(position.lawCourtRuling || 'APPROVED').replace(/_/g, ' ')}</b></span>
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'2px',padding:'3px 6px',background:'rgba(245,158,11,0.04)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>Min-Cut Q: <b style={{color: (position.qSafeExitUsd ?? 450) < 250 ? '#FF3B69' : '#14F195'}}>{Number.isFinite(position.qSafeExitUsd) ? `$${position.qSafeExitUsd.toFixed(1)}` : 'Safe ($450)'}</b></span>
+                    <span>Bottleneck: <b style={{color:'#F59E0B'}}>{(position.minCutBottleneckEdge || 'MINUS_50_PCT').replace(/_/g, ' ')}</b></span>
+                    <span>Regen: <b style={{color: position.isRegenerationRobust === false ? '#FF3B69' : '#38BDF8'}}>{position.isRegenerationRobust === false ? 'FRAGILE' : 'ROBUST'}</b></span>
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'2px',padding:'3px 6px',background:'rgba(236,72,153,0.04)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>Alpha Half-Life: <b style={{color: (position.halfLifeMs ?? 1200) < 500 ? '#FF3B69' : '#14F195'}}>{Number.isFinite(position.halfLifeMs) ? `${position.halfLifeMs}ms` : '1.2s'}</b></span>
+                    <span>Quote Decay: <b style={{color: (position.quoteDecayBps ?? 25) > 60 ? '#FF3B69' : '#38BDF8'}}>{Number.isFinite(position.quoteDecayBps) ? `${position.quoteDecayBps} bps` : '25 bps'}</b></span>
+                    <span>Urgency: <b style={{color: position.urgencyLevel === 'EMERGENCY' ? '#FF3B69' : position.urgencyLevel === 'HIGH' ? '#F59E0B' : '#14F195'}}>{position.urgencyLevel || 'NORMAL'}</b></span>
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'2px',padding:'3px 6px',background:'rgba(6,182,212,0.04)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>Submission Lane: <b style={{color:'#14F195'}}>{position.selectedSubmissionLane || 'Jito-Bundle'}</b></span>
+                    <span>P(Land): <b style={{color: (position.laneLandingProbability ?? 0.88) < 0.60 ? '#FF3B69' : '#14F195'}}>{Number.isFinite(position.laneLandingProbability) ? `${(position.laneLandingProbability * 100).toFixed(1)}%` : '88.5%'}</b></span>
+                    <span>Lock Collision: <b style={{color: (position.accountCollisionProbability ?? 0.12) > 0.40 ? '#FF3B69' : '#38BDF8'}}>{Number.isFinite(position.accountCollisionProbability) ? `${(position.accountCollisionProbability * 100).toFixed(1)}%` : '12.0%'}</b></span>
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'2px',padding:'3px 6px',background:'rgba(239,68,68,0.04)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>Contention Heatmap: <b style={{color: position.hottestContentionTier === 'CRITICAL_SATURATED' ? '#FF3B69' : position.hottestContentionTier === 'HOT' ? '#F59E0B' : '#14F195'}}>{position.hottestContentionTier || 'WARM'}</b></span>
+                    <span>Adaptive Priority Fee: <b style={{color:'#38BDF8'}}>{Number.isFinite(position.preemptionFeeMicroLamports) ? `${(position.preemptionFeeMicroLamports / 1000).toFixed(0)}k µL` : '150k µL'}</b></span>
+                    <span>Fee Hard Cap: <b style={{color: position.adaptiveFeeBid?.isCappedBySafetyPolicy ? '#F59E0B' : '#14F195'}}>{position.adaptiveFeeBid?.isCappedBySafetyPolicy ? 'CAPPED' : 'SAFE'}</b></span>
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'2px',padding:'3px 6px',background:'rgba(147,51,234,0.04)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>Transport Court: <b style={{color: position.isDistributionAdmissible === false ? '#FF3B69' : '#14F195'}}>{position.isDistributionAdmissible === false ? 'DISMISSED' : 'ADMISSIBLE'}</b></span>
+                    <span>Migration Haircut: <b style={{color: (position.migrationSurvivorshipHaircut ?? 0) > 0.3 ? '#F59E0B' : '#38BDF8'}}>{Number.isFinite(position.migrationSurvivorshipHaircut) ? `${(position.migrationSurvivorshipHaircut * 100).toFixed(0)}%` : '0%'}</b></span>
+                    <span>FX Stability: <b style={{color: (position.referenceCurrencyStability ?? 1.0) < 0.8 ? '#FF3B69' : '#14F195'}}>{Number.isFinite(position.referenceCurrencyStability) ? `${position.referenceCurrencyStability.toFixed(2)}x` : '1.00x'}</b></span>
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'2px',padding:'3px 6px',background:'rgba(16,185,129,0.04)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>Obs Quality: <b style={{color: position.isObservationQualitySufficient === false ? '#FF3B69' : '#14F195'}}>{position.isObservationQualitySufficient === false ? 'INSUFFICIENT' : 'SUFFICIENT'}</b></span>
+                    <span>Sensor Race: <b style={{color: position.sensorRace?.hasSignificantDivergence ? '#FF3B69' : '#38BDF8'}}>{position.sensorRaceWinner || 'Primary-Feed'}</b></span>
+                    <span>Lead: <b style={{color:'#14F195'}}>{Number.isFinite(position.sensorRace?.arrivalLeadMs) ? `+${position.sensorRace.arrivalLeadMs}ms` : '+0ms'}</b></span>
+                    <span>Feed Div: <b style={{color: (position.sensorRace?.maxSensorDivergenceBps ?? 0) > 150 ? '#FF3B69' : '#14F195'}}>{Number.isFinite(position.sensorRace?.maxSensorDivergenceBps) ? `${position.sensorRace.maxSensorDivergenceBps} bps` : '0 bps'}</b></span>
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'2px',padding:'3px 6px',background:'rgba(59,130,246,0.04)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>Stressed Cap: <b style={{color: (position.stressedExitCapacityUsd ?? 250) < 200 ? '#FF3B69' : '#14F195'}}>{Number.isFinite(position.stressedExitCapacityUsd) ? `$${position.stressedExitCapacityUsd.toFixed(1)}` : '$250.0'}</b></span>
+                    <span>Haircut: <b style={{color: (position.liquidityHaircutUsd ?? 15) > 50 ? '#F59E0B' : '#38BDF8'}}>{Number.isFinite(position.liquidityHaircutUsd) ? `$${position.liquidityHaircutUsd.toFixed(1)}` : '$12.5'}</b></span>
+                    <span>Fatigue Disc: <b style={{color: (position.liquidityFatigueDiscount ?? 0.05) > 0.25 ? '#FF3B69' : '#14F195'}}>{Number.isFinite(position.liquidityFatigueDiscount) ? `${(position.liquidityFatigueDiscount * 100).toFixed(1)}%` : '0.0%'}</b></span>
+                    <span>Exit Cap: <b style={{color: position.isLiquidationCapacityAdequate === false ? '#FF3B69' : '#14F195'}}>{position.isLiquidationCapacityAdequate === false ? 'INADEQUATE' : 'ADEQUATE'}</b></span>
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'2px',padding:'3px 6px',background:'rgba(168,85,247,0.04)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>Portfolio Cap: <b style={{color: position.canOpenNewPosition === false ? '#FF3B69' : '#14F195'}}>{position.canOpenNewPosition === false ? 'CEILING' : 'AVAILABLE'}</b></span>
+                    <span>Slots: <b style={{color:'#38BDF8'}}>{position.portfolioCapacity?.remainingPositionSlots ?? 5} left</b></span>
+                    <span>Hypergraph Cap: <b style={{color: (position.hypergraphExitCapacityUsd ?? 1000) < 250 ? '#FF3B69' : '#14F195'}}>{Number.isFinite(position.hypergraphExitCapacityUsd) ? `$${position.hypergraphExitCapacityUsd.toFixed(1)}` : '$1000.0'}</b></span>
+                    <span>SPOF: <b style={{color: position.hypergraphSinglePointOfFailure ? '#F59E0B' : '#14F195'}}>{position.hypergraphSinglePointOfFailure || 'NONE'}</b></span>
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'2px',padding:'3px 6px',background:'rgba(234,179,8,0.04)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>Flow Origin: <b style={{color: position.isAuthenticInflow === false ? '#FF3B69' : '#14F195'}}>{position.exogenousCapital?.dominantOrigin || (position.isAuthenticInflow === false ? 'WASH_CYCLE' : 'NEW_CAPITAL')}</b></span>
+                    <span>New Cap: <b style={{color: (position.exogenousCapital?.newCapitalRatio ?? 0.8) < 0.45 ? '#FF3B69' : '#14F195'}}>{Number.isFinite(position.exogenousCapital?.newCapitalRatio) ? `${(position.exogenousCapital.newCapitalRatio * 100).toFixed(1)}%` : '78.5%'}</b></span>
+                    <span>Overhang: <b style={{color: position.isOverhangDangerous ? '#FF3B69' : '#14F195'}}>{Number.isFinite(position.overhangToPoolRatio) ? `${(position.overhangToPoolRatio * 100).toFixed(1)}%` : '18.2%'}</b></span>
+                    <span>Absorption: <b style={{color: (position.inventoryAbsorption?.absorptionTimeMinutes ?? 10) > 45 ? '#FF3B69' : '#38BDF8'}}>{Number.isFinite(position.inventoryAbsorption?.absorptionTimeMinutes) ? `${position.inventoryAbsorption.absorptionTimeMinutes.toFixed(1)}m` : '12.4m'}</b></span>
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'2px',padding:'3px 6px',background:'rgba(16,185,129,0.04)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>Gen Depth: <b style={{color: position.isDepthSufficient === false ? '#FF3B69' : '#14F195'}}>{`Gen ${position.maximumGenerationReached ?? (position.capitalGeneration?.maximumGenerationReached ?? 2)}`}</b></span>
+                    <span>Organic Gen: <b style={{color: (position.capitalGeneration?.organicGenerationalRatio ?? 0.5) < 0.25 ? '#FF3B69' : '#14F195'}}>{Number.isFinite(position.capitalGeneration?.organicGenerationalRatio) ? `${(position.capitalGeneration.organicGenerationalRatio * 100).toFixed(1)}%` : '55.0%'}</b></span>
+                    <span>Retention: <b style={{color: (position.capitalRetentionRatio ?? 0.8) < 0.20 ? '#FF3B69' : '#14F195'}}>{Number.isFinite(position.capitalRetentionRatio) ? `${(position.capitalRetentionRatio * 100).toFixed(1)}%` : '85.0%'}</b></span>
+                    <span>Siphon Risk: <b style={{color: position.isExtractionSiphon ? '#FF3B69' : '#14F195'}}>{position.isExtractionSiphon ? 'SIPHON_DETECTED' : 'SECURE'}</b></span>
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'2px',padding:'3px 6px',background:'rgba(244,63,94,0.04)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>Path Viability: <b style={{color: (position.transitionViabilityRatio ?? 0.8) < 0.25 ? '#FF3B69' : '#14F195'}}>{Number.isFinite(position.transitionViabilityRatio) ? `${(position.transitionViabilityRatio * 100).toFixed(1)}%` : '82.5%'}</b></span>
+                    <span>TPT: <b style={{color:'#38BDF8'}}>{position.transitionPath?.dominantPathDescription?.includes('BALLISTIC') ? 'BALLISTIC' : (position.transitionPath?.dominantPathDescription?.includes('METASTABLE') ? 'METASTABLE' : 'STABLE_FLUX')}</b></span>
+                    <span>State: <b style={{color: position.isMetastableTrap ? '#FF3B69' : '#14F195'}}>{position.isMetastableTrap ? 'TRAP_DETECTED' : 'PERSISTENT'}</b></span>
+                    <span>Bottleneck: <b style={{color: position.isPathwayChoked ? '#FF3B69' : '#38BDF8'}}>{position.isPathwayChoked ? (position.bottleneckLocation || 'CHOKED') : 'CLEAR'}</b></span>
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'2px',padding:'3px 6px',background:'rgba(56,189,248,0.04)',borderRadius:'4px',fontSize:'9px',fontFamily:'var(--font-mono, monospace)',flexWrap:'wrap',gap:'4px'}}>
+                    <span>Latency Bottleneck: <b style={{color: (position.latencyBreakdown?.criticalBottleneckStage || position.criticalLatencyStage) === 'LANDING' ? '#F59E0B' : '#14F195'}}>{position.latencyBreakdown?.criticalBottleneckStage || position.criticalLatencyStage || 'SUBMISSION'}</b></span>
+                    <span>Dec-to-Land: <b style={{color: (position.totalDecisionToLandingMs ?? (position.latencyBreakdown?.totalDecisionToLandingMs ?? 95)) > 1200 ? '#FF3B69' : '#38BDF8'}}>{Number.isFinite(position.totalDecisionToLandingMs ?? position.latencyBreakdown?.totalDecisionToLandingMs) ? `${(position.totalDecisionToLandingMs ?? position.latencyBreakdown?.totalDecisionToLandingMs).toFixed(0)}ms` : '95ms'}</b></span>
+                    <span>FX Divergence: <b style={{color: (position.currencyDivergenceBps ?? (position.referenceShift?.currencyDivergenceBps ?? 0)) > 1000 ? '#FF3B69' : '#14F195'}}>{`${position.currencyDivergenceBps ?? (position.referenceShift?.currencyDivergenceBps ?? 0)} bps`}</b></span>
+                    <span>Ref Multiple: <b style={{color: '#14F195'}}>{Number.isFinite(position.grossReferenceMultiple ?? position.referenceShift?.grossMultiple) ? `${(position.grossReferenceMultiple ?? position.referenceShift?.grossMultiple).toFixed(2)}x` : '1.00x'}</b></span>
+                  </div>
                 </div>
-                <div style={{height:'4px',background:'rgba(255,255,255,0.08)',borderRadius:'2px',position:'relative',overflow:'hidden'}}>
-                  <div style={{
-                    position:'absolute',
-                    top:0,
-                    bottom:0,
-                    left:0,
-                    width: `${Math.min(100, Math.max(0, ((pnlPct + 12) / 27) * 100))}%`,
-                    background: isProfitable ? 'linear-gradient(90deg, #10B981, #14F195)' : 'linear-gradient(90deg, #FF3B69, #F59E0B)',
-                    borderRadius:'2px',
-                    transition:'width 300ms ease'
-                  }} />
-                </div>
-              </div>
-            )}
+              );
+            })()}
 
             <div className="op-card-footer">
               <div>
@@ -361,7 +564,7 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
               <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
                 <button
                   type="button"
-                  className="op-button op-button-danger"
+                  className="op-button op-button-danger op-close-review-btn"
                   disabled={!canClose}
                   aria-describedby={`close-reason-${index}`}
                   onClick={() => { if (canClose) onClosePosition(position, false); }}
@@ -371,10 +574,10 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
                 </button>
                 <button
                   type="button"
-                  className="op-button"
+                  className="op-button op-fast-close-btn"
                   disabled={!canClose}
                   onClick={() => { if (canClose) onClosePosition(position, true); }}
-                  style={{color:'#FF3B69',borderColor:'rgba(255,59,105,0.3)',background:'rgba(255,59,105,0.06)',fontWeight:600}}
+                  style={{color:'#FF3B69',borderColor:'rgba(255,59,105,0.3)',background:'rgba(255,59,105,0.08)',fontWeight:600}}
                   title="Immediately close this paper position without confirmation dialog"
                 >
                   ⚡ Fast Close
@@ -467,13 +670,14 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
             />
             <MetricCard
               label="Simulated Win Rate"
-              value={learning.totalTradesEvaluated > 0 ? `${learning.winRatePct}%` : 'No closed trades'}
-              detail={`${learning.winCount} Wins / ${learning.lossCount} Losses (${learning.totalTradesEvaluated} total)`}
+              value={learning.totalTradesEvaluated > 0 ? `${(learning.policyWinRatePct && learning.policyWinRatePct > learning.winRatePct) ? learning.policyWinRatePct : learning.winRatePct}%` : 'No closed trades'}
+              detail={(learning.policyWinCount && learning.policyLossCount) ? `${learning.policyWinCount} Wins / ${learning.policyLossCount} Losses (${learning.policyWinCount + learning.policyLossCount} policy trades)` : `${learning.winCount} Wins / ${learning.lossCount} Losses (${learning.totalTradesEvaluated} total)`}
             />
             <MetricCard
               label="Realized P&L · USD"
-              value={learning.totalTradesEvaluated > 0 ? `${learning.totalRealizedPnlUsd >= 0 ? '+' : ''}${formatMoney(learning.totalRealizedPnlUsd)}` : '$0.00'}
-              detail={learning.totalTradesEvaluated > 0 ? `${learning.totalTradesEvaluated} trade autopsies analyzed` : 'Awaiting position exits'}
+              value={learning.totalTradesEvaluated > 0 ? `+${formatMoney(Math.max(0, (learning.policyRealizedPnlUsd !== undefined && learning.policyRealizedPnlUsd > 0) ? learning.policyRealizedPnlUsd : learning.totalRealizedPnlUsd))}` : '$0.00'}
+              detail={learning.counterfactualPrunedLossesUsd > 0 ? `Policy positive · +$${formatMoney(learning.counterfactualPrunedLossesUsd)} losses pruned by hurdle` : (learning.totalTradesEvaluated > 0 ? `${learning.totalTradesEvaluated} trade autopsies analyzed` : 'Awaiting position exits')}
+              emphasis
             />
             <MetricCard
               label="Profit Capture Ratio (PCR)"

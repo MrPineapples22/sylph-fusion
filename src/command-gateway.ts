@@ -17,7 +17,7 @@ import { type BimodalRoutePlan, type SolarisTelemetrySnapshot } from './platform
 import { SpieEngine, KellyAllocator } from './intelligence/spie/index.js';
 import { globalTradeLearningService, type AdaptiveLearningSnapshot } from './intelligence/attribution/trade-learning-service.js';
 import { decideExit, protectiveStop, type ExitPolicyDecision } from './exit-policy.js';
-import { calculateOptimalBuyPositionValue } from './intelligence/execution/position-sizer.js';
+import { calculateOptimalBuyPositionValue, type DynamicPositionSizingResult } from './intelligence/execution/position-sizer.js';
 import { PaperAuthorityPolicy, type PaperAuthorityMode } from './platform/paper/paper-authority-policy.js';
 
 export type CommandType =
@@ -59,7 +59,7 @@ export interface SubmitOrderCommand extends BaseCommand {
     readonly highSignalIndex?: number;
     readonly tier?: string;
     readonly pod?: string;
-    readonly exitTrigger?: 'EMERGENCY_UNWIND' | 'TRAILING_TARGET' | 'OPERATOR_CLOSE' | 'AUTO_GUARDIAN' | 'STOP_LOSS' | 'TAKE_PROFIT' | 'FALSE_BREAKOUT';
+    readonly exitTrigger?: 'EMERGENCY_UNWIND' | 'TRAILING_TARGET' | 'OPERATOR_CLOSE' | 'AUTO_GUARDIAN' | 'STOP_LOSS' | 'TAKE_PROFIT' | 'FALSE_BREAKOUT' | 'COMPETING_HAZARD_FULL_EXIT' | 'MOONSHOT_RATCHET_LOCK' | 'BREAKEVEN_LOCK' | 'FALSE_BREAKOUT_FAST_CUT' | 'STAGNANT_ROTATION' | string;
   };
 }
 
@@ -72,7 +72,7 @@ export interface ClosePositionCommand extends BaseCommand {
     readonly emergency?: boolean;
     readonly priceUsd?: number;
     readonly fallbackPriceSol?: number;
-    readonly exitTrigger?: 'EMERGENCY_UNWIND' | 'TRAILING_TARGET' | 'OPERATOR_CLOSE' | 'AUTO_GUARDIAN' | 'STOP_LOSS' | 'TAKE_PROFIT' | 'FALSE_BREAKOUT';
+    readonly exitTrigger?: 'EMERGENCY_UNWIND' | 'TRAILING_TARGET' | 'OPERATOR_CLOSE' | 'AUTO_GUARDIAN' | 'STOP_LOSS' | 'TAKE_PROFIT' | 'FALSE_BREAKOUT' | 'COMPETING_HAZARD_FULL_EXIT' | 'MOONSHOT_RATCHET_LOCK' | 'BREAKEVEN_LOCK' | 'FALSE_BREAKOUT_FAST_CUT' | 'STAGNANT_ROTATION' | string;
   };
 }
 
@@ -158,6 +158,8 @@ export interface BackendPosition {
   lastMark?: number;
   lastMarkAt?: number;
   processEvidenceRef?: string;
+  convictionMultiplier?: number;
+  confidenceGrade?: string;
 }
 
 export interface GatewayStateSnapshot {
@@ -406,6 +408,11 @@ export class CommandGateway {
     };
   }
 
+  public getPosition(poolAddress: string): BackendPosition | undefined {
+    const pos = this.positions.get(poolAddress);
+    return pos ? { ...pos } : undefined;
+  }
+
   /** Restore a durable stop before the terminal accepts operator commands. Stops cannot be cleared here. */
   public restoreEmergencyStop(record: EmergencyStopRecord): void {
     if (this.entriesHalted) return;
@@ -516,7 +523,10 @@ export class CommandGateway {
         currentPrice = pos.entry;
       }
 
-      const decision = decideExit({ entry: pos.entry, mark: currentPrice, peak: pos.peak, stage: pos.stage, openedAt: pos.openedAt, now, stopBps: globalConfigAuthority.getConfig().stopBps, markAt: markAt!, maxMarkAgeMs: globalConfigAuthority.getConfig().feedStaleMs, lastPeakAt: pos.lastPeakAt ?? pos.openedAt, partialExitBps: 5_000 });
+      const posAtrVolatility = pos.entry > 0 && typeof pos.trough === 'number' && pos.trough > 0
+        ? (pos.peak - pos.trough) / pos.entry
+        : undefined;
+      const decision = decideExit({ entry: pos.entry, mark: currentPrice, peak: pos.peak, stage: pos.stage, openedAt: pos.openedAt, now, stopBps: globalConfigAuthority.getConfig().stopBps, markAt: markAt!, maxMarkAgeMs: globalConfigAuthority.getConfig().feedStaleMs, lastPeakAt: pos.lastPeakAt ?? pos.openedAt, partialExitBps: 5_000, atrVolatility: posAtrVolatility });
       if (decision) {
         try {
           const res = await this.handleClosePosition({
@@ -698,11 +708,15 @@ export class CommandGateway {
       const decisionAgeOffset = (autonomousExit.reason === 'FALSE_BREAKOUT' && cmd.timestamp && (cmd.timestamp - position.openedAt) <= 45_000)
         ? decisionNow - cmd.timestamp
         : 0;
+      const positionAtrVolatility = position.entry > 0 && typeof position.trough === 'number' && position.trough > 0
+        ? (position.peak - position.trough) / position.entry
+        : undefined;
       const refreshedDecision = exitEvidence && decideExit({
         entry: position.entry, mark: exitEvidence.priceUsd, peak: position.peak,
         stage: position.stage, openedAt: position.openedAt + decisionAgeOffset, now: decisionNow,
         stopBps: config.stopBps, markAt: exitEvidence.observedAt, maxMarkAgeMs: config.feedStaleMs,
         lastPeakAt: position.lastPeakAt ?? position.openedAt, partialExitBps: 5_000,
+        atrVolatility: positionAtrVolatility,
       });
       const isFullExit = (r: string) => ['STOP_LOSS', 'FALSE_BREAKOUT', 'DEV_DUMP_BAILOUT', 'LIQUIDITY_SHOCK', 'ADVERSE_FLOW_TOXICITY', 'STAGNATION', 'TRAILING_PROFIT', 'MOMENTUM_EXHAUSTION'].includes(r);
       const isBothFullExit = isFullExit(autonomousExit.reason) && isFullExit(refreshedDecision?.reason || '') &&
@@ -731,6 +745,7 @@ export class CommandGateway {
       this.updateSolPriceUsd(exitEvidence!.solPriceUsd, exitEvidence!.solObservedAt);
     }
     let effectiveUsdAmount = payload.usdAmount;
+    let dynamicSizingResult: DynamicPositionSizingResult | null = null;
     if (isBuy) {
       const posCapRule = this.paperPolicy.evaluateRule({
         rule: 'MAX_POSITIONS_LIMIT',
@@ -774,7 +789,39 @@ export class CommandGateway {
         effectiveUsdAmount = payload.usdAmount !== undefined ? Math.min(payload.usdAmount, availableCash) : availableCash;
       } else {
         if (!riskCapRule.paperAllowed) throw new Error('ENTRY_BLOCKED: Risk sizing returned no authorized position size.');
-        effectiveUsdAmount = effectiveUsdAmount === undefined ? maxAuthorizedUsd : Math.min(effectiveUsdAmount, maxAuthorizedUsd);
+
+        if (effectiveUsdAmount === undefined) {
+          // Dynamic Profit-Optimizing Conviction Sizing (Half-Kelly + Microstructure Depth + HSI/Tier/Pod)
+          dynamicSizingResult = calculateOptimalBuyPositionValue(
+            {
+              mint: payload.mint,
+              pair: payload.poolAddress,
+              symbol: payload.symbol,
+              tier: payload.tier as any,
+              priceUsd: entryEvidence?.priceUsd ?? payload.priceUsd,
+              liquidity: entryEvidence?.liquidityUsd ?? payload.liquidity,
+              highSignalIndex: payload.highSignalIndex,
+              pod: payload.pod,
+            },
+            {
+              cashUsd: this.cashUsd,
+              reservedCashUsd: reservedUsd,
+              activePositionsCount: this.positions.size + this.pendingBuys.size,
+              maxPositions: config.maxPositions,
+              solPriceUsd: this.solPriceUsd,
+              maxOrderCapUsd: maxAuthorizedUsd,
+            }
+          );
+
+          if (dynamicSizingResult.optimalUsd > 0) {
+            effectiveUsdAmount = Math.min(dynamicSizingResult.optimalUsd, maxAuthorizedUsd);
+          } else {
+            effectiveUsdAmount = maxAuthorizedUsd;
+          }
+        } else {
+          effectiveUsdAmount = Math.min(effectiveUsdAmount, maxAuthorizedUsd);
+        }
+
         if (!(effectiveUsdAmount > 0)) throw new Error('ENTRY_BLOCKED: Requested size is outside the authorized risk budget.');
       }
       const requiredUsd = effectiveUsdAmount;
@@ -864,7 +911,8 @@ export class CommandGateway {
             : (report.execPrice || 0.00001) * this.solPriceUsd;
 
           const openedAt = Date.now();
-          const processEvidenceRef = `evidence:paper_entry_${payload.mint}_${openedAt}`;
+          const sizingTag = dynamicSizingResult ? `[${dynamicSizingResult.confidenceGrade}:${dynamicSizingResult.convictionMultiplier.toFixed(2)}x]` : '';
+          const processEvidenceRef = `evidence:paper_entry_${payload.mint}_${openedAt}${sizingTag}`;
           this.positions.set(payload.poolAddress, {
             asset: payload.poolAddress,
             mint: payload.mint,
@@ -882,6 +930,8 @@ export class CommandGateway {
             stage: 0,
             reconciliationState: 'SIMULATED',
             tokenDecimals,
+            convictionMultiplier: dynamicSizingResult?.convictionMultiplier,
+            confidenceGrade: dynamicSizingResult?.confidenceGrade,
           });
           this.cashUsd -= costUsd + networkFeeUsd;
         } else {

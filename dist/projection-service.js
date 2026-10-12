@@ -111,7 +111,7 @@ export class ProjectionService {
                 : unrealizedPnlPct;
             let protectionState = 'UNKNOWN';
             if (markPriceUsd !== null) {
-                if (unrealizedPnlPct !== null && unrealizedPnlPct <= -12)
+                if (unrealizedPnlPct !== null && (unrealizedPnlPct <= -8 || (unrealizedPnlPct <= -3.0 && (peakPnlPct == null || peakPnlPct <= 1.5))))
                     protectionState = 'EMERGENCY_UNWIND';
                 else if ((peakPnlPct !== null && peakPnlPct >= 4) || (unrealizedPnlPct !== null && unrealizedPnlPct >= 6))
                     protectionState = 'TRAILING_ACTIVE';
@@ -138,6 +138,9 @@ export class ProjectionService {
                 maePriceUsd,
                 maePnlPct,
                 trailingStopUsd: pos.stop ?? null,
+                convictionMultiplier: pos.convictionMultiplier,
+                confidenceGrade: pos.confidenceGrade,
+                stage: pos.stage,
             };
         });
     }

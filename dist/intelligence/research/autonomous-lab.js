@@ -83,5 +83,17 @@ export class AutonomousResearchLab {
             generatedAtMs: Date.now(),
         };
     }
+    /**
+     * Ingests validated closed trade autopsy telemetry to calibrate hypothesis conviction.
+     * Tracks positive empirical trials without mutating live capital authority.
+     */
+    ingestTradeAutopsyFeedback(feedback) {
+        const trials = Math.max(1, feedback.sampleCount);
+        const estimatedSharpe = Math.max(0.0, Number(((feedback.realizedMultiple - 1.0) * Math.sqrt(trials) * 0.5).toFixed(2)));
+        return {
+            calibratedSharpeEstimate: estimatedSharpe,
+            trialsRecorded: trials,
+        };
+    }
 }
 //# sourceMappingURL=autonomous-lab.js.map

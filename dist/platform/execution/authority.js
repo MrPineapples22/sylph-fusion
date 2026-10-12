@@ -54,10 +54,19 @@ export class SimulationExecutionAuthority {
         const slippage = panic ? this.cfg.PANIC_SLIPPAGE_BPS : this.cfg.SLIPPAGE_BPS;
         let output;
         if (s.curve.complete) {
-            // A completed bonding curve has no executable curve quote. Until the
-            // simulator has an authoritative graduated-venue quote, fail closed for
-            // both sides instead of manufacturing SOL proceeds from token quantity.
-            throw new Error('Graduated-curve execution quote unavailable in simulation');
+            const mintStr = s.mint.toBase58();
+            const graduatedState = this.market.ammBridge?.getGraduatedState(mintStr);
+            const lifecycleCert = this.market.lifecycle?.getCertificate(mintStr);
+            const isAmmActive = (graduatedState?.status === 'RAYDIUM_ACTIVE' ||
+                graduatedState?.status === 'AMM_STABILIZED' ||
+                lifecycleCert?.valuationStatus === 'PRICED_AMM') &&
+                Boolean(graduatedState?.currentPoolSolLamports && graduatedState.currentPoolSolLamports > 0n);
+            if (isAmmActive && side === 'sell' && typeof this.market.ammExitQuote === 'function') {
+                output = this.market.ammExitQuote(mintStr, amount);
+            }
+            else {
+                throw new Error('Graduated-curve execution quote unavailable in simulation');
+            }
         }
         else {
             output = side === 'buy' ? this.market.buyQuote(s, amount) : this.market.sellQuote(s, amount);

@@ -9,6 +9,8 @@
  * 4. Staged Profit Taking: 33% at +35%, 33% at +75%, 34% moonbag trailing
  */
 
+import { CompetingRiskRunner, type RunnerHazardState } from '../moonshot/hazard-engine.js';
+
 export type ExitActionType =
   | 'HOLD'
   | 'REDUCE_50'
@@ -18,7 +20,9 @@ export type ExitActionType =
   | 'EXIT_100_STOP'
   | 'EXIT_100_TOXICITY'
   | 'EXIT_100_LIQUIDITY_SHOCK'
-  | 'EXIT_100_INVALIDATION';
+  | 'EXIT_100_INVALIDATION'
+  | 'BREAKEVEN_PROTECT'
+  | 'PYRAMID_ADD';
 
 export interface PositionStateSnapshot {
   readonly mint: string;
@@ -43,6 +47,13 @@ export interface ExitEvaluationResult {
   readonly effectiveStopPriceUsd: number;
   readonly isUrgent: boolean;
   readonly notes: string;
+}
+
+export interface GodTierExitEvaluation {
+  readonly action: ExitActionType;
+  readonly reason: string;
+  readonly protectiveStopUsd: number;
+  readonly fractionPct: number;
 }
 
 export class DynamicExitEngine {
@@ -179,7 +190,19 @@ export class DynamicExitEngine {
     const { entryPriceUsd, currentPriceUsd, highestPriceUsd, unrealizedPnlPct } = position;
     const peakRatio = highestPriceUsd / entryPriceUsd;
 
-    // 1. Dynamic 50/50 Rule: Scale out 50% at >= +20% gain to de-risk
+    // 0. Breakeven Protection Guard (EE-11):
+    // If trade reached >= +8% gain (peakRatio >= 1.08), and current price pulls back to <= entry * 1.008,
+    // lock in breakeven floor at entry * 1.005 immediately to prevent profitable trades from turning negative.
+    if (peakRatio >= 1.08 && currentPriceUsd <= entryPriceUsd * 1.008) {
+      return {
+        action: 'BREAKEVEN_PROTECT',
+        reason: 'BREAKEVEN_PROTECT: Peak >= +8% pulled back to near-entry; locking capital at breakeven floor',
+        protectiveStopUsd: entryPriceUsd * 1.005,
+        fractionPct: 1.0,
+      };
+    }
+
+    // 1. Dynamic 50/50 Rule: Scale out 50% at >= +20% gain to de-risk (EE-20)
     if (unrealizedPnlPct >= 0.20 && unrealizedPnlPct < 0.35 && position.realSolReserve > 0) {
       return {
         action: 'REDUCE_50',
@@ -189,20 +212,36 @@ export class DynamicExitEngine {
       };
     }
 
-    // 2. Dynamic Staged Trailing Stops
+    // 2. Dynamic Staged Trailing Stops (EE-12, EE-30):
     let trailPct = 0.15;
     let floorMultiplier = 1.01;
 
-    if (peakRatio >= 6.0) {
-      // 500%+ Moonshot: 40% structural trail
+    if (peakRatio >= 101.0) {
+      // 100x Moonshot (+10,000% PnL): 30% structural trail, 70.0x floor
+      trailPct = 0.30;
+      floorMultiplier = 70.0;
+    } else if (peakRatio >= 51.0) {
+      // 50x Moonshot (+5,000% PnL): 30% structural trail, 35.0x floor
+      trailPct = 0.30;
+      floorMultiplier = 35.0;
+    } else if (peakRatio >= 21.0) {
+      // 20x Moonshot (+2,000% PnL): 30% structural trail, 15.0x floor
+      trailPct = 0.30;
+      floorMultiplier = 15.0;
+    } else if (peakRatio >= 11.0) {
+      // 10x Moonshot (+1,000% PnL): 30% structural trail, 7.5x floor
+      trailPct = 0.30;
+      floorMultiplier = 7.50;
+    } else if (peakRatio >= 6.0) {
+      // 500%+ Moonshot: 40% structural trail, 4.0x floor
       trailPct = 0.40;
       floorMultiplier = 4.0;
     } else if (peakRatio >= 2.0) {
-      // 100%+ Double: 30% trail
+      // 100%+ Double: 30% trail, 1.50x floor
       trailPct = 0.30;
       floorMultiplier = 1.50;
     } else if (peakRatio >= 1.25) {
-      // 25%+ Gain: 20% trail
+      // 25%+ Gain: 20% trail, 1.10x floor
       trailPct = 0.20;
       floorMultiplier = 1.10;
     }
@@ -228,4 +267,86 @@ export class DynamicExitEngine {
     };
   }
 
+  /**
+   * Evaluates Competing-Risk Hazards for active runners (Blueprint Section XXVIII):
+   * Dynamic competition between upside expansion hazards (h_2x, h_5x, h_10x, h_50x)
+   * and downside failure hazards (h_rug, h_distribution, h_liquidityCollapse, h_death, h_unexitability).
+   */
+  public evaluateHazardRunnerExit(
+    pos: PositionStateSnapshot,
+    hazardParams?: {
+      walletEntropy?: number;
+      independentCapitalAcceleration?: number;
+      exitDepthLamports?: bigint;
+      poolQuoteReservesLamports?: bigint;
+      coordinationDecayRate?: number;
+      sellerAbsorptionRate?: number;
+      recentPriceVelocityBps?: number;
+    }
+  ): {
+    action: ExitActionType;
+    reason: string;
+    reduceFraction: number;
+    hazardState?: RunnerHazardState;
+  } {
+    if (!hazardParams) {
+      const basic = this.evaluateExit(pos);
+      return {
+        action: basic.action,
+        reason: basic.triggerReason,
+        reduceFraction: basic.reduceFraction,
+      };
+    }
+
+    const elapsedSeconds = Math.max(1, pos.holdingTimeSeconds);
+    const currentMultiple = Math.max(0.1, pos.currentPriceUsd / pos.entryPriceUsd);
+    const poolReserves = hazardParams.poolQuoteReservesLamports ?? BigInt(Math.max(1, Math.round(pos.realSolReserve * 1e9)));
+    const exitDepth = hazardParams.exitDepthLamports ?? (poolReserves / 4n);
+
+    const hazardState = CompetingRiskRunner.evaluateHazards({
+      elapsedSeconds,
+      currentMultiple,
+      walletEntropy: hazardParams.walletEntropy ?? 1.0,
+      independentCapitalAcceleration: hazardParams.independentCapitalAcceleration ?? 0.0,
+      exitDepthLamports: exitDepth,
+      poolQuoteReservesLamports: poolReserves,
+      coordinationDecayRate: hazardParams.coordinationDecayRate ?? 0.0,
+      sellerAbsorptionRate: hazardParams.sellerAbsorptionRate ?? Math.max(0, 1 - pos.currentSellPressureRatio),
+      recentPriceVelocityBps: hazardParams.recentPriceVelocityBps ?? Math.round(pos.unrealizedPnlPct * 1000),
+    });
+
+    if (hazardState.recommendedAction === 'FULL_EXIT_HAZARD') {
+      return {
+        action: 'EXIT_100_LIQUIDITY_SHOCK',
+        reason: `COMPETING_HAZARD_FULL_EXIT: Downside hazard dominates expansion (Rug: ${hazardState.hRug}, LiqCollapse: ${hazardState.hLiquidityCollapse}, Unexit: ${hazardState.hUnexitability})`,
+        reduceFraction: 1.0,
+        hazardState,
+      };
+    }
+
+    if (hazardState.recommendedAction === 'PARTIAL_DERISK') {
+      return {
+        action: 'REDUCE_50',
+        reason: `COMPETING_HAZARD_PARTIAL_DERISK: Net convex hazard ratio ${hazardState.netConvexHazardRatio} < 0.3`,
+        reduceFraction: 0.5,
+        hazardState,
+      };
+    }
+
+    if (hazardState.recommendedAction === 'PYRAMID_ADD') {
+      return {
+        action: 'PYRAMID_ADD',
+        reason: `COMPETING_HAZARD_PYRAMID_ADD: Convex expansion ratio ${hazardState.netConvexHazardRatio} > 2.5 with high wallet entropy`,
+        reduceFraction: 0.0,
+        hazardState,
+      };
+    }
+
+    return {
+      action: 'HOLD',
+      reason: `COMPETING_HAZARD_HOLD_CORE_RUNNER: Multiple ${currentMultiple.toFixed(2)}x healthy, hazard ratio ${hazardState.netConvexHazardRatio}`,
+      reduceFraction: 0.0,
+      hazardState,
+    };
+  }
 }

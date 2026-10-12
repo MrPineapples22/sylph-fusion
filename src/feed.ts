@@ -5,6 +5,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { BoundedSet, log } from './core.js';
 import type { Config } from './config.js';
 import { IngestionGapReconciler } from './platform/ingestion/gap-reconciler.js';
+import { CensusRJournalAuthority } from './platform/ingestion/census-r.js';
 import { capturedTransactionObservation, createCapturedSubscribeClient, yellowstoneBackoffAfterSession } from './platform/ingestion/yellowstone-captured-client.js';
 import type { RawObservationEnvelope, ProcessingIntent } from './platform/ingestion/types.js';
 import type { ObservationIngressPort, ObservationSource } from './platform/ingress/port.js';
@@ -35,18 +36,21 @@ export class Feed implements ObservationSource {
   private stopped = false;
   private readonly shutdown = new AbortController();
   readonly gapReconciler = new IngestionGapReconciler();
+  readonly censusJournal: CensusRJournalAuthority;
   last = 0;
   slot = 0;
   readySince = 0;
 
   constructor(private cfg: Config, _connection: Connection, ingress: ObservationIngressPort,
-    private readonly yellowstoneClientFactory: YellowstoneClientFactory = createCapturedSubscribeClient) {
+    private readonly yellowstoneClientFactory: YellowstoneClientFactory = createCapturedSubscribeClient,
+    censusJournal?: CensusRJournalAuthority) {
     if (typeof ingress === 'function' || !ingress || typeof ingress.submit !== 'function') {
       throw new Error(
         'FEED_CALLBACK_BYPASS_FORBIDDEN: Feed requires an ObservationIngressPort instance. Arbitrary callback functions are strictly prohibited.'
       );
     }
     this.#ingress = ingress;
+    this.censusJournal = censusJournal ?? new CensusRJournalAuthority();
   }
 
   public isIngressBound(port: unknown): boolean {
@@ -184,6 +188,40 @@ export class Feed implements ObservationSource {
     // Commit dedupe only after canonical ingress durably accepted the observation.
     if (!this.seen.add(signature)) return receipt;
     if (this.stopped) return receipt;
+
+    // Durably journal accepted observation in Census-R canonical event journal
+    try {
+      const bankHash = `bank-slot-${slot}`;
+      const providerTimestamp = source.observedAt ?? now;
+      if (isHistoricalRepair || source.allowLate) {
+        this.censusJournal.ingestLateEvent({
+          slot,
+          bankHash,
+          txHash: signature,
+          eventIndex: 0,
+          providerId: source.providerId,
+          providerTimestampMs: providerTimestamp,
+          eventType: 'SOLANA_TRANSACTION_OBSERVATION',
+          payload: { logsCount: logs.length, signature, transport: source.transport },
+        });
+      } else {
+        this.censusJournal.commitTransactionBatch({
+          slot,
+          bankHash,
+          txHash: signature,
+          providerId: source.providerId,
+          providerTimestampMs: providerTimestamp,
+          events: [
+            {
+              eventType: 'SOLANA_TRANSACTION_OBSERVATION',
+              payload: { logsCount: logs.length, signature, transport: source.transport },
+            },
+          ],
+        });
+      }
+    } catch (journalErr) {
+      log('feed_census_journal_commit_failed', { error: String(journalErr) });
+    }
 
     this.gapReconciler.registerSlot(slot, 1, false);
     const isLate = this.slot > 0 && slot < this.slot;

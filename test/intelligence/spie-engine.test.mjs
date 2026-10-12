@@ -47,6 +47,13 @@ test('SPIE - SpieEngine: Mathematical Net EV & Factor Confluence', () => {
   assert.ok(['FAST_BUY', 'SLOW_BUY'].includes(evaluation.actionRecommendation), 'Should recommend buy action');
   assert.ok(evaluation.frictionToGrossRatio <= 0.45, 'Friction ratio must be <= 0.45');
   assert.ok(evaluation.dominantPositiveFactor.length > 0, 'Dominant positive factor identified');
+
+  // Breakout expansion mode explicitly triggers BREAKOUT_ENTER
+  const breakoutEval = engine.evaluate({
+    ...primeCandidate,
+    entryTimingMode: 'BREAKOUT_EXPANSION',
+  });
+  assert.equal(breakoutEval.actionRecommendation, 'BREAKOUT_ENTER');
 });
 
 test('SPIE - SpieEngine: Hard Invariant Enforcement (Friction, Rug, Dev Dump, Low Liq)', () => {

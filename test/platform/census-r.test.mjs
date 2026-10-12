@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { Connection } from '@solana/web3.js';
 import { CensusRJournalAuthority } from '../../dist/platform/ingestion/census-r.js';
+import { Feed } from '../../dist/feed.js';
+import { createTestIngress } from '../support/ingress-fixtures.mjs';
 
 test('CENSUS-R: commits transaction event batches atomically with canonical event IDs (Section 10)', () => {
   const census = new CensusRJournalAuthority();
@@ -162,4 +165,49 @@ test('CENSUS-R: canonical content ignores object key order and rejects batch con
   assert.throws(()=>late.commitTransactionBatch({slot:81,bankHash:'bank',txHash:'tx',providerId:'rpc',providerTimestampMs:1000,events:[{eventType:'TRADE',payload:{value:9}},{eventType:'TRADE',payload:{value:2}}]}),/conflicting content/);
   assert.deepEqual(late.getWatermark(),before);
   assert.equal(late.getJournalLength(),1);
+});
+
+test('CENSUS-R: Feed integrates CensusRJournalAuthority with bank/slot awareness and causal replay (REQ-001)', async () => {
+  const events = [];
+  const cfg = {
+    FEED_STALE_MS: 5000,
+    MIN_AGE_MS: 1000,
+    WS_URLS: [],
+    YELLOWSTONE_URL: '',
+  };
+  const conn = new Connection('https://api.mainnet-beta.solana.com', 'confirmed');
+  const ingress = createTestIngress({
+    parser: { parseLogs: () => [{ name: 'TradeEvent', data: { mint: 'mint123', solAmount: 100 } }] },
+    onCommitted: (committed) => {
+      for (const ev of committed.validatedEnvelope.compiledEnvelope.decodedEvents) {
+        events.push(ev);
+      }
+    }
+  });
+
+  const feed = new Feed(cfg, conn, ingress);
+  assert.ok(feed.censusJournal instanceof CensusRJournalAuthority, 'Feed must own CensusRJournalAuthority');
+
+  const logs = ['Program 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P invoke [1]', 'Program 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P success'];
+  const src = { sourceId: 'src-1', providerId: 'https://rpc.example.com', transport: 'ws' };
+
+  // Accept slot 1000
+  await feed.accept('sig-census-1', 1000, logs, src);
+  assert.equal(feed.censusJournal.getJournalLength(), 1);
+  const wm = feed.censusJournal.getWatermark();
+  assert.equal(wm.highestObservedSlot, 1000);
+  assert.equal(wm.highestCanonicalSlot, 1000);
+
+  // Accept late repair slot 900
+  const repairSrc = { ...src, isRepair: true, allowLate: true };
+  await feed.accept('sig-census-2', 900, logs, repairSrc);
+  assert.equal(feed.censusJournal.getJournalLength(), 2);
+
+  // Verify deterministic causal replay orders slot 900 before slot 1000
+  const replayed = feed.censusJournal.replayJournal();
+  assert.equal(replayed.length, 2);
+  assert.equal(replayed[0].slot, 900);
+  assert.equal(replayed[1].slot, 1000);
+  assert.equal(replayed[0].txHash, 'sig-census-2');
+  assert.equal(replayed[1].txHash, 'sig-census-1');
 });

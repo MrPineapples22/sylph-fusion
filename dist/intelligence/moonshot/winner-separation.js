@@ -49,9 +49,8 @@ export class WinnerSeparationEngine {
                 informationDeficitBps,
             });
         }
-        const tRecognizable = wstMs ?? 10_000;
-        const crowdingHorizonMs = Math.max(0, edgeGoneMs - tRecognizable);
-        const decisionSlackMs = Math.max(0, edgeGoneMs - (msetMs ?? tRecognizable));
+        const crowdingHorizonMs = wstMs !== null ? Math.max(0, edgeGoneMs - wstMs) : 0;
+        const decisionSlackMs = msetMs !== null ? Math.max(0, edgeGoneMs - msetMs) : 0;
         return {
             winnerMint: params.winnerMint,
             matchedControlCount: params.matchedControls.length,

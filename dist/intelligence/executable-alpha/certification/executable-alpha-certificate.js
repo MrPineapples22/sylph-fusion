@@ -58,7 +58,7 @@ export class ExecutableAlphaCertificateIssuer {
         const ce = 0.45; // Realized capture efficiency
         const pExit = 0.82; // Stressed exit landing rate
         const executableExecutionProb = pD * pR * pEntry * pS * ce * pExit;
-        const assumedMultiple = 3.5; // Modeled realistic target
+        const assumedMultiple = Math.max(3.5, Math.min(10.0, (state.reachabilityState?.maxReachableMultiple ?? 6.0) * 0.70));
         const grossReturnUsd = this.DESIRED_RESEARCH_STAKE_USD * assumedMultiple;
         const expectedGrossEdgeUsd = executableExecutionProb * grossReturnUsd;
         const expectedFeesUsd = 2.50;

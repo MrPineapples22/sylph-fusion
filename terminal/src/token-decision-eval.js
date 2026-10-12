@@ -13,13 +13,82 @@ export const MAX_OPENING_PRICE_RATIO = 1.15;
 // Pre-committed exit contract (STAGED_DERISK_2X_TRAIL yielded Profit Factor 1.121 and +$119k out-of-sample).
 export const DEFAULT_EMPIRICAL_EXIT_POLICY = {
   id: 'STAGED_DERISK_2X_TRAIL',
-  name: 'Staged Derisk (50% @ 2.0x, Trail -30%, 3m Max Hold)',
+  name: 'Staged Derisk (50% @ 2.0x, Trail -30%, Breakeven Guard +8%, 100x Moonshot Ratchets)',
   targetMultiple: 2.0,
-  deriskFractionBps: 5000, // 50% sell at 2.0x
-  stopLossBps: 2500,       // -25% stop
+  deriskFractionBps: 5000, // 50% sell at 2.0x (risk-free runner)
+  stopLossBps: 1200,       // -12% structural stop
   trailStopBps: 3000,      // -30% trailing stop on remaining runner
+  breakevenGainThresholdPct: 8.0, // Move to breakeven + fees at +8% gain
+  moonshotRatchets: [
+    { targetMultiple: 1.15, floorMultiple: 1.05, trailPct: 0.05, name: 'Stage 1 (+5% Floor)' },
+    { targetMultiple: 1.35, floorMultiple: 1.25, trailPct: 0.10, name: 'Stage 2 (+25% Floor)' },
+    { targetMultiple: 2.0, floorMultiple: 1.50, trailPct: 0.30, name: '2x Double (1.5x Floor)' },
+    { targetMultiple: 5.0, floorMultiple: 3.50, trailPct: 0.30, name: '5x Moonshot (3.5x Floor)' },
+    { targetMultiple: 10.0, floorMultiple: 7.50, trailPct: 0.30, name: '10x Moonshot (7.5x Floor)' },
+    { targetMultiple: 20.0, floorMultiple: 15.0, trailPct: 0.30, name: '20x Moonshot (15x Floor)' },
+    { targetMultiple: 50.0, floorMultiple: 35.0, trailPct: 0.30, name: '50x Moonshot (35x Floor)' },
+    { targetMultiple: 100.0, floorMultiple: 70.0, trailPct: 0.30, name: '100x Moonshot (70x Floor)' },
+  ],
   maxHoldSeconds: 180,     // 180s (3m) maximum hold before terminal decay
 };
+
+/**
+ * Computes point-in-time competing risk hazard state (Blueprint Section XXVIII)
+ * Expansion hazards: h_2x, h_5x, h_10x, h_50x
+ * vs
+ * Failure hazards: h_rug, h_distribution, h_liquidityCollapse, h_death, h_unexitability
+ */
+export function calculateRunnerHazardState({
+  elapsedSeconds = 60,
+  currentMultiple = 1.0,
+  walletEntropy = 1.0,
+  independentCapitalAcceleration = 0.0,
+  realSolReserve = 30,
+  currentSellPressureRatio = 0.1,
+  recentPriceVelocityBps = 0,
+} = {}) {
+  const t = Math.max(1, elapsedSeconds);
+  const m = Math.max(0.1, currentMultiple);
+  const momentumFactor = Math.max(0, recentPriceVelocityBps / 100);
+  const entropyBonus = Math.min(1.5, Math.max(0.5, walletEntropy));
+  const icoaFactor = Math.min(2.0, Math.max(0.2, 1 + independentCapitalAcceleration));
+
+  const h2x = m < 2.0 ? (0.4 * momentumFactor * entropyBonus * icoaFactor) / (1 + m) : 0.05;
+  const h5x = m < 5.0 ? (0.25 * momentumFactor * entropyBonus * icoaFactor) / (1 + m * 0.5) : 0.03;
+  const h10x = (0.15 * momentumFactor * entropyBonus * icoaFactor) / (1 + m * 0.3);
+  const h50x = (0.05 * momentumFactor * entropyBonus * icoaFactor) / (1 + m * 0.2);
+
+  const hRug = Math.max(0.01, Math.min(0.95, (1 - Math.min(1, walletEntropy)) * 0.5 + 0.05 + (t < 60 ? 0.2 : 0.02)));
+  const hDistribution = Math.max(0.01, Math.min(0.95, (currentSellPressureRatio) * 0.6 + (m >= 5 ? 0.25 : 0.05)));
+  const hLiquidityCollapse = Math.max(0.01, Math.min(0.95, realSolReserve < 10 ? 0.6 : 0.05));
+  const hDeath = Math.max(0.01, Math.min(0.95, (recentPriceVelocityBps < -50 ? 0.4 : 0.05) + (t > 600 && m < 1.2 ? 0.5 : 0.05)));
+  const hUnexitability = realSolReserve < 5 ? 0.85 : 0.05;
+
+  const totalUpside = m >= 10 ? h50x : m >= 5 ? h10x : m >= 2 ? h5x : h2x;
+  const totalDownside = hRug * 0.35 + hDistribution * 0.25 + hLiquidityCollapse * 0.25 + hDeath * 0.10 + hUnexitability * 0.05;
+  const netConvexHazardRatio = totalDownside > 0 ? totalUpside / totalDownside : totalUpside;
+
+  let recommendedAction = 'HOLD_CORE_RUNNER';
+  if (hLiquidityCollapse > 0.7 || hRug > 0.8 || hUnexitability > 0.7) {
+    recommendedAction = 'FULL_EXIT_HAZARD';
+  } else if (netConvexHazardRatio < 0.3) {
+    recommendedAction = 'PARTIAL_DERISK';
+  } else if (netConvexHazardRatio > 2.5 && m < 5.0 && walletEntropy > 1.2) {
+    recommendedAction = 'PYRAMID_ADD';
+  }
+
+  return {
+    currentMultiple: Number(m.toFixed(2)),
+    hUpside: Number(totalUpside.toFixed(4)),
+    hDownside: Number(totalDownside.toFixed(4)),
+    netConvexHazardRatio: Number(netConvexHazardRatio.toFixed(3)),
+    recommendedAction,
+    hLiquidityCollapse: Number(hLiquidityCollapse.toFixed(3)),
+    hUnexitability: Number(hUnexitability.toFixed(3)),
+    hRug: Number(hRug.toFixed(3)),
+    hDistribution: Number(hDistribution.toFixed(3)),
+  };
+}
 
 export function evaluateTokenDecision({
   asset,

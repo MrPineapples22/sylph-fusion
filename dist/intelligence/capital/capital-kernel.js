@@ -6,17 +6,95 @@
  * An isolated, deterministic kernel strictly separate from probabilistic AI.
  * It enforces hard safety boundaries, authority modes, and branch-aware accounting.
  */
+import { createHmac, timingSafeEqual } from 'node:crypto';
+export function getAuthorityRank(mode) {
+    switch (mode) {
+        case 'A0_OBSERVE_ONLY': return 0;
+        case 'A1_CANCEL_ONLY': return 1;
+        case 'A2_REDUCE_ONLY': return 2;
+        case 'A3_MAINTAIN': return 3;
+        case 'A4_LIMITED_INCREASE': return 4;
+        case 'A5_NORMAL': return 5;
+    }
+}
+export class CryptographicRecoveryVerifier {
+    secretKey;
+    authorizedIssuer;
+    maxFreshnessMs;
+    constructor(options) {
+        this.secretKey = options?.secretKey ?? 'sylph-institutional-recovery-key-v1';
+        this.authorizedIssuer = options?.authorizedIssuer ?? 'astra-risk-recovery-authority';
+        this.maxFreshnessMs = options?.maxFreshnessMs ?? 30_000;
+    }
+    computeDigest(certificate) {
+        const payload = [
+            certificate.recovery_id,
+            certificate.cause,
+            certificate.previous_authority,
+            certificate.target_authority,
+            certificate.capital_state_root,
+            certificate.position_reconciliation_hash,
+            certificate.provider_status,
+            certificate.market_freshness_ms.toString(),
+            certificate.revocation_epoch.toString(),
+            certificate.control_epoch.toString(),
+            certificate.signer_state,
+            certificate.settlement_state,
+            certificate.timestamp_ms.toString(),
+            certificate.verification_result.toString(),
+            [...certificate.evidence_hashes].sort().join(','),
+            this.authorizedIssuer,
+        ].join(':');
+        return createHmac('sha256', this.secretKey).update(payload).digest('hex');
+    }
+    sign(certificate) {
+        const cert = {
+            ...certificate,
+            verification_result: true,
+        };
+        const proof = this.computeDigest(cert);
+        return {
+            certificate: {
+                ...cert,
+                signature: proof,
+                proof,
+            },
+            proof,
+        };
+    }
+    verify(certificate, signatureOrProof) {
+        const proof = signatureOrProof ?? certificate.signature ?? certificate.proof;
+        if (!proof || typeof proof !== 'string') {
+            return false;
+        }
+        if (certificate.verification_result !== true) {
+            return false;
+        }
+        const expectedDigest = this.computeDigest(certificate);
+        if (proof.length !== expectedDigest.length) {
+            return false;
+        }
+        const bufProof = Buffer.from(proof, 'utf8');
+        const bufExpected = Buffer.from(expectedDigest, 'utf8');
+        if (!timingSafeEqual(bufProof, bufExpected)) {
+            return false;
+        }
+        return true;
+    }
+}
 export class CapitalKernel {
     authorityMode;
     maxOpenPositions;
     maxUnknownCapitalSol;
     maxUnresolvedIntents;
+    recoveryVerifier;
     constructor(options) {
         // Invariant: Bootstrap authority is strictly A0_OBSERVE_ONLY (Master Blueprint Section XXXVIII, LXVII #1)
         this.authorityMode = options?.initialAuthority ?? 'A0_OBSERVE_ONLY';
         this.maxOpenPositions = options?.maxOpenPositions ?? 5;
         this.maxUnknownCapitalSol = options?.maxUnknownCapitalSol ?? 10.0;
         this.maxUnresolvedIntents = options?.maxUnresolvedIntents ?? 3;
+        this.recoveryVerifier = options?.recoveryVerifier;
     }
     getAuthorityMode() {
         return this.authorityMode;
@@ -26,17 +104,7 @@ export class CapitalKernel {
      * Moves strictly downward upon errors or failure signals.
      */
     downgradeAuthority(targetMode, reason) {
-        const rank = (m) => {
-            switch (m) {
-                case 'A0_OBSERVE_ONLY': return 0;
-                case 'A1_CANCEL_ONLY': return 1;
-                case 'A2_REDUCE_ONLY': return 2;
-                case 'A3_MAINTAIN': return 3;
-                case 'A4_LIMITED_INCREASE': return 4;
-                case 'A5_NORMAL': return 5;
-            }
-        };
-        if (rank(targetMode) < rank(this.authorityMode)) {
+        if (getAuthorityRank(targetMode) < getAuthorityRank(this.authorityMode)) {
             this.authorityMode = targetMode;
         }
         return this.authorityMode;
@@ -45,20 +113,69 @@ export class CapitalKernel {
      * Authority restoration requires explicit proof and complete reconciliation via RecoveryCertificate.
      * Direct boolean restoration without cryptographic certificate verification is strictly rejected (BP §48).
      */
-    restoreAuthority(targetModeOrCert, _proofConfirmed) {
+    restoreAuthority(targetModeOrCert, proofOrConfirmed) {
         if (typeof targetModeOrCert === 'object' && targetModeOrCert !== null && 'recovery_id' in targetModeOrCert) {
-            return this.restoreAuthorityWithCertificate(targetModeOrCert);
+            return this.restoreAuthorityWithCertificate(targetModeOrCert, typeof proofOrConfirmed === 'string' ? proofOrConfirmed : undefined);
         }
         return false;
     }
     /**
-     * Recovery is disabled until a trusted cryptographic verifier is connected.
-     * The current certificate shape is caller supplied and has no signature,
-     * canonical evidence binding, or verification authority; its fields cannot
-     * safely promote the authority lattice.
+     * Recovery requires a trusted cryptographic verifier and reconciliation of all recovery invariants.
+     * Unverified or caller-asserted certificates fail closed to prevent unauthorized authority promotion.
      */
-    restoreAuthorityWithCertificate(_cert) {
-        return false;
+    restoreAuthorityWithCertificate(cert, signatureOrProof) {
+        // Fail closed: Caller-asserted certificates without a trusted verifier cannot promote authority
+        if (!this.recoveryVerifier) {
+            return false;
+        }
+        // Rule 1: Verification result must be true
+        if (cert.verification_result !== true) {
+            return false;
+        }
+        // Cryptographic proof / provenance verification
+        const proof = signatureOrProof ?? cert.signature ?? cert.proof;
+        if (!this.recoveryVerifier.verify(cert, proof)) {
+            return false;
+        }
+        // Rule 2: Provider health must be HEALTHY
+        if (cert.provider_status !== 'HEALTHY') {
+            return false;
+        }
+        // Rule 3: Settlement state must be CLEAN
+        if (cert.settlement_state !== 'CLEAN') {
+            return false;
+        }
+        // Rule 4: Signer state must be READY
+        if (cert.signer_state !== 'READY') {
+            return false;
+        }
+        // Rule 5: Market data freshness within 30 seconds (0 <= freshness <= 30_000)
+        if (typeof cert.market_freshness_ms !== 'number' || cert.market_freshness_ms < 0 || cert.market_freshness_ms > 30_000) {
+            return false;
+        }
+        // Rule 6: Capital state root must be at least 16 chars long
+        if (typeof cert.capital_state_root !== 'string' || cert.capital_state_root.length < 16) {
+            return false;
+        }
+        // Rule 7: Position reconciliation hash must be valid non-empty string
+        if (typeof cert.position_reconciliation_hash !== 'string' || cert.position_reconciliation_hash.length < 8) {
+            return false;
+        }
+        // Rule 8: Upward lattice progression: rank(target_authority) > rank(this.authorityMode)
+        if (getAuthorityRank(cert.target_authority) <= getAuthorityRank(this.authorityMode)) {
+            return false;
+        }
+        // Rule 9: Previous authority must match current kernel authority
+        if (cert.previous_authority !== this.authorityMode) {
+            return false;
+        }
+        // Rule 10: Must contain evidence hashes
+        if (!Array.isArray(cert.evidence_hashes) || cert.evidence_hashes.length === 0) {
+            return false;
+        }
+        // All rules passed: promote authority
+        this.authorityMode = cert.target_authority;
+        return true;
     }
     /**
      * Evaluates all 12+ formal non-negotiable invariants (Part LXXIII).

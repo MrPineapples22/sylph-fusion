@@ -69,9 +69,12 @@
 /* ── Safety strip ────────────────────────────────────────── */
 .spot-safety {
   position: sticky; top: 0; z-index: 10;
-  background: #121c25; display: flex; flex-wrap: wrap;
-  gap: 12px 24px; padding: 12px 16px;
+  background: rgba(18, 28, 37, 0.85); display: flex; flex-wrap: wrap;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  gap: 12px 24px; padding: 12px 18px;
   border: 1px solid var(--s-line); border-radius: 8px; margin-top: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.06);
   font-size: 11px;
 }
 .spot-safety b { color: var(--s-caution); margin-left: 5px; }
@@ -98,11 +101,18 @@
   gap: 16px; align-items: start;
 }
 .spot-panel {
-  background: var(--s-panel); border: 1px solid var(--s-line);
+  background: linear-gradient(145deg, rgba(16, 24, 32, 0.9) 0%, rgba(12, 18, 24, 0.95) 100%);
+  border: 1px solid var(--s-line);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border-radius: 12px; padding: 18px; min-width: 0;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   transition: border-color 200ms ease, box-shadow 200ms ease;
 }
-.spot-panel:hover { border-color: rgba(153,69,255,.25); }
+.spot-panel:hover {
+  border-color: rgba(0, 194, 255, 0.3);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45), 0 0 16px rgba(0, 194, 255, 0.06);
+}
 .spot-panel-title {
   display: flex; gap: 10px; align-items: center;
   justify-content: space-between; margin-bottom: 14px;
@@ -111,16 +121,95 @@
 .spot-panel h3 { font-size: 13px; }
 .spot-panel-title > span { font-size: 10px; color: var(--s-muted); }
 
-/* ── Filter tabs ─────────────────────────────────────────── */
-.spot-filters { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 16px; }
-.spot-filters button {
-  border: 1px solid var(--s-line); background: transparent;
-  color: var(--s-muted); border-radius: 6px; font-size: 10px; padding: 8px;
-  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+/* ── Filter tabs & Search ──────────────────────────────────── */
+.spot-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 14px;
 }
-.spot-filters button:hover { border-color: var(--s-purple); color: var(--s-text); }
+.spot-filters { display: flex; flex-wrap: wrap; gap: 6px; }
+.spot-filters button {
+  border: 1px solid var(--s-line);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--s-muted);
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 6px 11px;
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+  transition: transform 140ms ease, background 140ms ease, border-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+.spot-filters button:hover {
+  transform: translateY(-1px);
+  border-color: var(--s-cyan);
+  color: var(--s-text);
+  box-shadow: 0 2px 8px rgba(0, 194, 255, 0.15);
+}
 .spot-filters button[aria-selected=true] {
-  background: #263541; color: white; border-color: #678292;
+  background: linear-gradient(135deg, #1e3344, #182836);
+  color: #ffffff;
+  border-color: var(--s-cyan);
+  box-shadow: 0 0 12px rgba(0, 194, 255, 0.2);
+}
+.spot-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.spot-search-input {
+  background: #151d26;
+  border: 1px solid var(--s-line);
+  border-radius: 6px;
+  color: var(--s-text);
+  font-size: 11px;
+  padding: 6px 24px 6px 10px;
+  width: 150px;
+  outline: none;
+  transition: border-color 150ms ease, width 150ms ease;
+}
+.spot-search-input:focus {
+  border-color: var(--s-cyan);
+  width: 180px;
+}
+.spot-search-clear {
+  position: absolute;
+  right: 6px;
+  background: transparent;
+  border: none;
+  color: var(--s-muted);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.spot-search-clear:hover { color: var(--s-text); }
+.spot-mint-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.spot-mint-row .spot-mint { margin-bottom: 0; }
+.spot-copy-btn {
+  background: rgba(255,255,255,.05);
+  border: 1px solid var(--s-line);
+  color: var(--s-muted);
+  border-radius: 4px;
+  font-size: 10px;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: all 140ms ease;
+  white-space: nowrap;
+}
+.spot-copy-btn:hover {
+  background: rgba(20,241,149,.1);
+  border-color: var(--s-verified);
+  color: var(--s-verified);
 }
 
 /* ── Token card grid ─────────────────────────────────────── */
@@ -129,14 +218,22 @@
 }
 .spot-token {
   width: 100%; text-align: left;
-  background: #16212b; border: 1px solid #33424f;
+  background: linear-gradient(145deg, rgba(22, 33, 43, 0.85), rgba(16, 25, 34, 0.95));
+  border: 1px solid #33424f;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   border-radius: 9px; color: var(--s-text); padding: 14px;
   transition: transform 180ms ease, box-shadow 200ms ease,
               border-color 200ms ease, opacity 200ms ease, filter 200ms ease;
   animation: fadeInUp 300ms ease backwards;
   position: relative;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.06);
 }
-.spot-token:hover { transform: translateY(-2px); }
+.spot-token:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 194, 255, 0.35);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35), 0 0 14px rgba(0, 194, 255, 0.1);
+}
 .spot-token:active:not(:disabled) { transform: translateY(1px); }
 
 /* ── PRIME Spotlight Tier ────────────────────────────────── */
@@ -164,9 +261,15 @@
 /* ── DEVELOPING Tier ─────────────────────────────────────── */
 .spot-token.developing {
   border-color: #33424f;
-  opacity: .75;
+  background: linear-gradient(145deg, #121822, #181f2c 60%, #111721);
+  opacity: .78;
+  transition: transform 160ms ease, border-color 160ms ease, opacity 160ms ease, box-shadow 160ms ease;
 }
-.spot-token.developing:hover { opacity: 1; border-color: rgba(153,69,255,.3); }
+.spot-token.developing:hover {
+  opacity: 1;
+  border-color: rgba(153,69,255,.4);
+  box-shadow: 0 4px 16px rgba(153,69,255,0.14);
+}
 
 /* ── VETOED Tier — Smart Dimming ─────────────────────────── */
 .spot-token.vetoed {
@@ -182,7 +285,11 @@
 }
 
 /* ── Selected state ──────────────────────────────────────── */
-.spot-token.selected { outline: 2px solid rgba(161,184,201,.6); outline-offset: -1px; }
+.spot-token.selected {
+  outline: 2px solid var(--s-verified, #14f195);
+  outline-offset: -1px;
+  box-shadow: 0 0 16px rgba(20,241,149,.18), 0 4px 16px rgba(0,0,0,.3);
+}
 
 /* ── Token card anatomy ──────────────────────────────────── */
 .spot-token-top {
@@ -194,46 +301,101 @@
 
 /* ── Conviction badges ───────────────────────────────────── */
 .spot-badge {
-  font-size: 8px; letter-spacing: .6px; border-radius: 4px;
-  padding: 4px 6px; white-space: normal;
-  transition: background 200ms ease;
+  font-size: 8.5px;
+  letter-spacing: .6px;
+  border-radius: 4px;
+  padding: 3px 7px;
+  white-space: normal;
+  backdrop-filter: blur(6px);
+  border: 1px solid transparent;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  transition: transform 140ms ease, background 200ms ease, border-color 200ms ease, box-shadow 200ms ease;
+}
+.spot-badge:hover {
+  transform: translateY(-1px);
 }
 .spot-badge.prime {
   background: linear-gradient(135deg, #184936, #1a5c3e);
   color: var(--s-verified);
+  border-color: rgba(20, 241, 149, 0.3);
   animation: badgeGlow 2s ease-in-out infinite;
   font-weight: 700;
 }
 .spot-badge.high-conviction {
   background: linear-gradient(135deg, #0d3326, #185a3a);
   color: #a0f0c3;
+  border-color: rgba(20, 241, 149, 0.35);
   text-shadow: 0 0 8px rgba(20,241,149,.6);
   font-weight: 800;
   letter-spacing: .8px;
 }
-.spot-badge.developing { background: #293744; color: #bdcbd5; }
-.spot-badge.vetoed { background: #552532; color: #ffc0c8; }
+.spot-badge.developing {
+  background: #202b36;
+  color: #bdcbd5;
+  border-color: rgba(189, 203, 213, 0.18);
+}
+.spot-badge.vetoed {
+  background: #471d28;
+  color: #ffc0c8;
+  border-color: rgba(255, 192, 200, 0.2);
+}
 
 /* ── Token metrics grid ──────────────────────────────────── */
 .spot-token-metrics {
-  display: grid; grid-template-columns: 1.2fr 1fr .8fr;
-  gap: 8px; padding: 15px 0;
+  display: grid;
+  grid-template-columns: 1.2fr 1fr .8fr;
+  gap: 8px;
+  padding: 10px 12px;
+  margin: 10px 0;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 7px;
+  backdrop-filter: blur(6px);
 }
-.spot-token-metrics span { font-size: 9px; color: var(--s-muted); }
+.spot-token-metrics span {
+  font-size: 8.5px;
+  color: var(--s-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
 .spot-token-metrics b {
-  display: block; font-size: 11px; color: var(--s-text);
-  margin-top: 3px; overflow-wrap: anywhere;
+  display: block;
+  font-size: 11.5px;
+  color: var(--s-text);
+  margin-top: 3px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 /* ── Verification pills ──────────────────────────────────── */
 .spot-pills { display: flex; gap: 5px; flex-wrap: wrap; }
-.spot-pills span { font-size: 9px; padding: 3px 6px; border-radius: 4px; transition: background 200ms ease; }
+.spot-pills span {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .03em;
+  padding: 3px 6px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  transition: transform 140ms ease, background 160ms ease, border-color 160ms ease;
+}
+.spot-pills span:hover { transform: translateY(-1px); }
 .spot-pills .verified {
-  color: var(--s-verified); background: #174431;
+  color: var(--s-verified);
+  background: #174431;
+  border-color: rgba(20,241,149,.25);
   box-shadow: inset 0 0 8px rgba(20,241,149,.08);
 }
-.spot-pills .pending { color: var(--s-caution); background: #3d3324; }
-.spot-pills .danger { color: var(--s-danger); background: #3d1f24; }
+.spot-pills .pending {
+  color: var(--s-caution);
+  background: #3d3324;
+  border-color: rgba(245,158,11,.25);
+}
+.spot-pills .danger {
+  color: var(--s-danger);
+  background: #3d1f24;
+  border-color: rgba(255,59,105,.25);
+}
 
 /* ── Gate status indicators ──────────────────────────────── */
 .spot-gates {
@@ -273,14 +435,16 @@
 /* ── Tooltip ─────────────────────────────────────────────── */
 .spot-tooltip {
   position: absolute; z-index: 20;
-  background: #1a2530; border: 1px solid var(--s-line);
-  border-radius: 6px; padding: 8px 10px;
+  background: rgba(26, 37, 48, 0.94);
+  border: 1px solid rgba(0, 194, 255, 0.25);
+  backdrop-filter: blur(16px);
+  border-radius: 8px; padding: 10px 12px;
   font-size: 10px; color: var(--s-text);
   pointer-events: none; opacity: 0;
   transform: translateY(4px);
   transition: opacity 150ms ease, transform 150ms ease;
-  max-width: 220px; line-height: 1.5;
-  box-shadow: 0 8px 24px rgba(0,0,0,.4);
+  max-width: 240px; line-height: 1.5;
+  box-shadow: 0 12px 32px rgba(0,0,0,.5), 0 0 16px rgba(0, 194, 255, 0.08);
 }
 .spot-tooltip.visible { opacity: 1; transform: translateY(0); }
 .spot-tooltip dt { color: var(--s-muted); font-size: 9px; }
@@ -302,26 +466,77 @@
 .spot-chart-empty p, .spot-note { font-size: 11px; }
 .spot-chart-empty p { color: var(--s-muted); }
 
-.spot-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
-.spot-stats dt { font-size: 10px; color: var(--s-muted); }
-.spot-stats dd { margin: 3px 0; font-size: 13px; }
+.spot-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.spot-stats > div {
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 7px;
+  padding: 10px 12px;
+  backdrop-filter: blur(8px);
+  transition: border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+}
+.spot-stats > div:hover {
+  border-color: rgba(0, 194, 255, 0.2);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+.spot-stats dt {
+  font-size: 9px;
+  color: var(--s-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+.spot-stats dd {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--s-text);
+}
 
 .spot-checks { padding-left: 16px; color: var(--s-caution); font-size: 11px; }
 .spot-checks li { margin: 9px 0; }
 
 .spot-action, .spot-lock {
   width: 100%; min-height: 48px;
-  background: #223440; border: 1px solid #546b7b;
-  border-radius: 7px; color: white; margin-top: 12px;
-  transition: background 200ms ease, border-color 200ms ease, box-shadow 200ms ease;
+  background: rgba(34, 52, 64, 0.8); border: 1px solid #546b7b;
+  border-radius: 8px; color: white; margin-top: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: transform 140ms ease, background 200ms ease, border-color 200ms ease, box-shadow 200ms ease;
 }
 .spot-action:hover:not(:disabled) {
-  background: #2a4050; border-color: var(--s-cyan);
-  box-shadow: 0 0 12px rgba(0,194,255,.12);
+  transform: translateY(-1px);
+  background: rgba(42, 64, 80, 0.95); border-color: var(--s-cyan);
+  box-shadow: 0 4px 16px rgba(0,194,255,.2);
 }
 .spot-action:active:not(:disabled) { transform: translateY(1px); }
 
-.spot-link { display: block; margin-top: 16px; font-size: 11px; text-align: center; }
+.spot-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 14px;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--s-cyan);
+  text-decoration: none;
+  background: rgba(0, 194, 255, 0.05);
+  border: 1px solid rgba(0, 194, 255, 0.22);
+  border-radius: 6px;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
+}
+.spot-link:hover {
+  background: rgba(0, 194, 255, 0.12);
+  border-color: var(--s-cyan);
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(0, 194, 255, 0.22);
+}
 
 /* ── Empty state ─────────────────────────────────────────── */
 .spot-empty {
@@ -334,18 +549,29 @@
 .spot-order p { font-size: 11px; color: var(--s-muted); }
 .spot-order > button:first-of-type {
   width: 100%; min-height: 48px;
-  border: 1px solid #5c5962; border-radius: 7px;
-  background: #333943; color: #d3dce3;
-  transition: background 200ms ease, border-color 200ms ease;
+  border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px;
+  background: rgba(51, 57, 67, 0.6); color: #d3dce3;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transition: transform 140ms ease, background 200ms ease, border-color 200ms ease, box-shadow 200ms ease;
 }
 .spot-order > button:first-of-type:hover:not(:disabled) {
-  background: #3d4553; border-color: var(--s-purple);
+  transform: translateY(-1px);
+  background: rgba(61, 69, 83, 0.85); border-color: var(--s-purple);
+  box-shadow: 0 4px 14px rgba(153, 69, 255, 0.25);
 }
 .spot-lock {
-  color: #ffb3b8; border-color: #85505b; background: #34212a;
+  color: #ffb3b8; border-color: #85505b; background: rgba(52, 33, 42, 0.8);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font-weight: 600;
+  transition: transform 140ms ease, background 200ms ease, border-color 200ms ease, box-shadow 200ms ease;
 }
 .spot-lock:hover:not(:disabled) {
-  background: #4a2e38; box-shadow: 0 0 12px rgba(255,59,105,.1);
+  transform: translateY(-1px);
+  background: rgba(74, 46, 56, 0.9); box-shadow: 0 4px 16px rgba(255,59,105,.2);
 }
 
 .spot-slide { display: block; padding: 16px 0; color: #ffc4c9; font-size: 12px; }
@@ -354,9 +580,21 @@
 /* ── Alerts ──────────────────────────────────────────────── */
 .spot-alerts { grid-column: 1/-1; }
 .spot-alert {
-  border-left: 3px solid #dc8b67; background: #382923;
+  border-left: 3px solid #dc8b67;
+  border-top: 1px solid rgba(220, 139, 103, 0.15);
+  border-right: 1px solid rgba(220, 139, 103, 0.15);
+  border-bottom: 1px solid rgba(220, 139, 103, 0.15);
+  background: rgba(56, 41, 35, 0.75);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   color: #f4c6ad; padding: 12px 16px; font-size: 12px;
-  border-radius: 0 6px 6px 0; margin-bottom: 6px;
+  border-radius: 0 8px 8px 0; margin-bottom: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(220, 139, 103, 0.15);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.spot-alert:hover {
+  border-color: rgba(220, 139, 103, 0.4);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
 }
 
 /* ── Notice and footer ───────────────────────────────────── */
@@ -367,9 +605,23 @@
 }
 
 /* ── Positions ───────────────────────────────────────────── */
-.spot-position { border-bottom: 1px solid var(--s-line); padding: 12px 0; }
-.spot-position dl { font-size: 11px; display: grid; grid-template-columns: 1fr 1fr; }
-.spot-position dd { margin: 0; text-align: right; }
+.spot-position {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(22, 33, 43, 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+.spot-position:hover {
+  transform: translateY(-1px);
+  border-color: rgba(0, 194, 255, 0.25);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+.spot-position dl { font-size: 11px; display: grid; grid-template-columns: 1fr 1fr; row-gap: 4px; margin: 8px 0 0; }
+.spot-position dd { margin: 0; text-align: right; font-family: monospace; font-weight: 600; }
 
 /* ── Mobile nav ──────────────────────────────────────────── */
 .spot-mobile-nav { display: none; }
@@ -431,6 +683,34 @@
   .spot-token-metrics { grid-template-columns: 1fr 1fr; gap: 6px; }
   .spot-badge { font-size: 7px; padding: 3px 4px; }
   .spot-filters button { font-size: 9px; padding: 6px; }
+}
+
+/* ── Deterministic Decision & Veto Trace Table ───────────── */
+.spot-decision-summary {
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+.spot-decision-summary:hover {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+.spot-trace-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  text-align: left;
+}
+.spot-trace-table tbody tr {
+  transition: background 120ms ease;
+}
+.spot-trace-table tbody tr:hover {
+  background: rgba(0, 194, 255, 0.05);
+}
+.spot-trace-table th {
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  font-size: 10px;
 }
 
 /* ── Reduced motion ──────────────────────────────────────── */

@@ -27,6 +27,7 @@ export interface UnifiedOpportunityDecision {
   readonly graphEvidenceIds: readonly string[];    // Capital flow graph evidence IDs
   readonly strategyVersion: string;                // Strategy identifier and version
   readonly featureVersion: string;                 // Point-in-time feature version
+  readonly environmentRoot: string;                // Bound environment root
   readonly freshnessMs: number;                    // Market data observation age
   readonly expectedValue: number;                  // Net expected value in USD
   readonly expectedNetEvBps: number;               // Net EV in basis points
@@ -101,6 +102,7 @@ export interface ReconcileDecisionInputs {
   readonly freshnessMs?: number;
   readonly strategyVersion?: string;
   readonly featureVersion?: string;
+  readonly environmentRoot?: string;
   readonly opportunityStage?: AlphaOpportunityStage;
   readonly competitorDensity?: number;
   readonly opportunityJerk?: number;
@@ -121,9 +123,10 @@ export class UnifiedDecisionEngine {
     const marketSnapshotId = input.marketSnapshotId ?? 'unbound_no_market_snapshot';
     const strategyVersion = input.strategyVersion ?? 'sylph_momentum_v1.0';
     const featureVersion = input.featureVersion ?? 'features_v1';
+    const environmentRoot = input.environmentRoot ?? 'sylph_production_root_sha256_v1';
     const freshnessMs = input.freshnessMs ?? 250;
     const inputDigest = createHash('sha256')
-      .update(`${input.tokenId}:${input.slot}:${marketSnapshotId}:${strategyVersion}:${featureVersion}`)
+      .update(`${input.tokenId}:${input.slot}:${marketSnapshotId}:${strategyVersion}:${featureVersion}:${environmentRoot}`)
       .digest('hex')
       .slice(0, 12);
     const decisionId = `dec_${input.tokenId.slice(0, 8)}_${input.slot}_${inputDigest}`;
@@ -253,6 +256,7 @@ export class UnifiedDecisionEngine {
         marketSnapshotId,
         strategyVersion,
         featureVersion,
+        environmentRoot,
         walletEvidenceIds,
         graphEvidenceIds,
         vetoEvidence,
@@ -274,6 +278,7 @@ export class UnifiedDecisionEngine {
       graphEvidenceIds: Object.freeze(graphEvidenceIds),
       strategyVersion,
       featureVersion,
+      environmentRoot,
       freshnessMs,
       expectedValue: input.riskEvaluation?.maxRiskUsd === undefined
         ? 0

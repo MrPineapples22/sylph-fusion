@@ -1436,12 +1436,32 @@ export class Engine {
       }
       let value: bigint;
       if (s.curve.complete) {
-        // Completion moves the token to another venue. The bonding-curve quote is
-        // no longer executable, and paper mode has no authoritative graduated
-        // venue quote, so keep the mark unavailable instead of inventing a zero.
-        log('position_mark_unavailable', { mint: p.mint, reason: 'curve_complete_without_executable_quote' });
-        this.marks.delete(p.mint);
-        continue;
+        const graduatedState = this.market.ammBridge?.getGraduatedState?.(p.mint);
+        const lifecycleCert = this.market.lifecycle?.getCertificate?.(p.mint);
+        const hasAmmRoute = (graduatedState?.status === 'RAYDIUM_ACTIVE' ||
+                             graduatedState?.status === 'AMM_STABILIZED' ||
+                             lifecycleCert?.valuationStatus === 'PRICED_AMM') &&
+                            Boolean(graduatedState?.currentPoolSolLamports && graduatedState.currentPoolSolLamports > 0n);
+
+        if (hasAmmRoute) {
+          try {
+            const grossExit = this.market.ammExitQuote(p.mint, BigInt(p.qty));
+            value = simulationSellProceeds(this.cfg, grossExit, p.panic);
+            const normalized = (value * BigInt(p.initialQty)) / BigInt(p.qty);
+            if (normalized > BigInt(p.peak)) p.peak = String(normalized);
+          } catch (err) {
+            log('position_mark_unavailable', { mint: p.mint, reason: 'graduated_amm_quote_failed', error: String(err) });
+            this.marks.delete(p.mint);
+            continue;
+          }
+        } else {
+          // Completion moves the token to another venue. The bonding-curve quote is
+          // no longer executable, and if no verified AMM route exists yet, keep the
+          // mark unavailable instead of inventing a zero.
+          log('position_mark_unavailable', { mint: p.mint, reason: 'curve_complete_without_executable_quote' });
+          this.marks.delete(p.mint);
+          continue;
+        }
       } else {
         const reserve = BigInt(s.curve.realQuoteReserves.toString());
         if (BigInt(p.reserve) > 0n && reserve < mulBps(BigInt(p.reserve), 10_000 - this.cfg.LIQUIDITY_DROP_BPS)) p.panic = true;
@@ -1457,7 +1477,9 @@ export class Engine {
       // slippage and panic tip before persisting the mark or recording P&L.
       if (!p.panic && exit?.reason === 'stop') {
         try {
-          const grossExit = this.market.sellQuote(s, BigInt(p.qty));
+          const grossExit = s.curve.complete
+            ? this.market.ammExitQuote(p.mint, BigInt(p.qty))
+            : this.market.sellQuote(s, BigInt(p.qty));
           value = simulationSellProceeds(this.cfg, grossExit, true);
           exit = exitDecision(p, value, this.cfg.STOP_BPS) ?? exit;
         } catch {}

@@ -81,6 +81,50 @@ import { SpieEngine } from './spie/spie-engine.js';
 import { KellyAllocator } from './spie/kelly-allocator.js';
 import { EntryTimingEngine } from './spie/entry-timing.js';
 import { DynamicExitEngine } from './spie/dynamic-exits.js';
+import { WinnerSeparationEngine } from './moonshot/winner-separation.js';
+import { CatchabilityEngine } from './moonshot/catchability.js';
+import { RunnerCommittorEngine } from './executable-alpha/transition/runner-committor.js';
+import { FailureCommittorEngine } from './executable-alpha/transition/failure-committor.js';
+import { FlowReproductionEngine } from './executable-alpha/flow/reproduction-engine.js';
+import { ReactiveFluxEngine } from './executable-alpha/transition/reactive-flux.js';
+import { TransitionPathEngine } from './executable-alpha/transition/transition-path.js';
+import { MetastabilityEngine } from './executable-alpha/transition/metastability.js';
+import { PathwayBottleneckEngine } from './executable-alpha/transition/pathway-bottleneck.js';
+import { DynamicStoppingEngine } from './executable-alpha/exit/dynamic-stopping.js';
+import { ExitPolicyTournament } from './executable-alpha/exit/exit-tournament.js';
+import { ExitRegretLedger } from './executable-alpha/exit/regret-ledger.js';
+import { ExitPolicyTournament as ExitPolicyTournamentMatrix } from './research-matrix/exit-tournament.js';
+import { BayesErrorFrontierEngine } from './executable-alpha/information/bayes-error-frontier.js';
+import { EarliestDecisionTimeEngine } from './executable-alpha/information/earliest-decision-time.js';
+import { RunnerDistinguishabilityCourt, HISTORICAL_2X_TO_10X_BASE_RATE } from './executable-alpha/information/runner-distinguishability.js';
+import { RunnerSearchCostEngine } from './executable-alpha/portfolio/runner-search-cost.js';
+import { TailConcentrationEngine } from './executable-alpha/portfolio/tail-concentration.js';
+import { PortfolioRuinEngine } from './executable-alpha/portfolio/ruin-engine.js';
+import { ExecutableAlphaCertificateIssuer } from './executable-alpha/certification/executable-alpha-certificate.js';
+import { ProspectiveLawCourt } from './executable-alpha/certification/prospective-law-court.js';
+import { ExitMinCutEngine } from './executable-alpha/liquidity/exit-min-cut.js';
+import { LiquidityRegenerationEngine } from './executable-alpha/liquidity/liquidity-regeneration.js';
+import { ExecutableLiquidationSurfaceEngine } from './executable-alpha/liquidity/liquidation-surface.js';
+import { LiquidityFatigueEngine } from './executable-alpha/liquidity/liquidity-fatigue.js';
+import { LiquidationHypergraphEngine } from './executable-alpha/liquidity/liquidation-hypergraph.js';
+import { PortfolioCapacityEngine } from './executable-alpha/portfolio/portfolio-capacity.js';
+import { ExogenousCapitalClassifier } from './executable-alpha/flow/exogenous-capital.js';
+import { InventoryAbsorptionEngine } from './executable-alpha/flow/inventory-absorption.js';
+import { CapitalGenerationEngine } from './executable-alpha/flow/capital-generation.js';
+import { CapitalSurvivalEngine } from './executable-alpha/flow/capital-survival.js';
+import { LatencyBudgetProfiler } from './executable-alpha/execution/latency-budget.js';
+import { FixedReferenceShiftEngine } from './executable-alpha/distribution/fixed-reference-shift.js';
+import { AlphaHalfLifeEngine, AlphaBurnLedger, } from './timing/alpha-half-life.js';
+import { QuoteDecayEngine } from './executable-alpha/execution/quote-decay.js';
+import { ExecutionUrgencyEngine } from './executable-alpha/execution/execution-urgency.js';
+import { ExecutionLaneScorecardEngine } from './executable-alpha/execution/lane-scorecard.js';
+import { LandingPhysicsModel } from './executable-alpha/execution/landing-model.js';
+import { AccountContentionEngine, } from './executable-alpha/execution/account-contention.js';
+import { FeeResponseSurfaceEngine, } from './executable-alpha/execution/fee-response.js';
+import { TransportabilityCourt, } from './executable-alpha/distribution/transportability-court.js';
+import { ObservationQualityEngine, } from './executable-alpha/observation/observation-quality.js';
+import { SensorRaceEngine, } from './executable-alpha/observation/sensor-race.js';
+import { MultiLaneSubmissionRouter } from './executable-alpha/execution/submission-router.js';
 import { OperatorPlaybookEngine } from './adversarial/operator-playbook.js';
 import { EcosystemPhaseEngine } from './signals/ecosystem-phase.js';
 import { MarketPhaseEngine } from './signals/market-phase-engine.js';
@@ -225,6 +269,7 @@ export class MasterIntelligenceEngine {
     kelly;
     entryTiming;
     dynamicExits;
+    exitTournament;
     digitalTwin;
     sourceHealth;
     systemIntegrity;
@@ -310,6 +355,8 @@ export class MasterIntelligenceEngine {
     omegaEpistemic;
     omegaGovernance;
     nexus;
+    laneScorecards;
+    submissionRouter;
     constructor() {
         this.kernel = new IntegrationKernel();
         this.chainTruth = new ChainTruthEngine();
@@ -388,6 +435,7 @@ export class MasterIntelligenceEngine {
         this.kelly = new KellyAllocator();
         this.entryTiming = new EntryTimingEngine();
         this.dynamicExits = new DynamicExitEngine();
+        this.exitTournament = new ExitPolicyTournament('dynamic-stopping');
         this.sourceHealth = new SourceHealthEngine();
         this.systemIntegrity = new SystemIntegrityEngine();
         this.materializedState = new MaterializedStateEngine();
@@ -474,6 +522,8 @@ export class MasterIntelligenceEngine {
         this.omegaEpistemic = new OmegaEpistemicOrchestrator();
         this.omegaGovernance = new OmegaGovernanceOrchestrator();
         this.nexus = new NexusCanonicalState();
+        this.laneScorecards = new ExecutionLaneScorecardEngine();
+        this.submissionRouter = new MultiLaneSubmissionRouter(this.laneScorecards);
         this.setupConnectionAuditor();
         this.registerComponents();
     }
@@ -663,7 +713,7 @@ export class MasterIntelligenceEngine {
         // 1b. Point-in-Time State & Capital Flow Ingestion (Specs Parts IV & X)
         this.pointInTimeState.ingestEvent(event);
         this.capitalFlowGraph.recordTransfer({
-            fromNode: context.rawWallets[0]?.address || 'wallet_unknown',
+            fromNode: context.rawWallets?.[0]?.address || 'wallet_unknown',
             toNode: `mint:${event.mint}`,
             amountSol: Number(event.payload['amountSol'] ?? 5.0),
             timestampMs: event.receivedTimestampMs,
@@ -1290,6 +1340,550 @@ export class MasterIntelligenceEngine {
         else if (!revalReport.is_cleared_to_sign) {
             whyExecutionBlocked = 'BLOCKED — REVOCATION EPOCH CHANGED';
         }
+        // ==========================================
+        // SPIE QUANTITATIVE EV & MULTI-TARGET POWER-LAW KELLY EVALUATION
+        // ==========================================
+        const tranche05 = depthProfile.tranches.find(t => t.sizeSol === 0.5) || depthProfile.tranches[0];
+        const modeledPriceImpactBps = tranche05 ? tranche05.priceImpactBps : 80;
+        const spieCandidate = {
+            mint: event.mint,
+            symbol: event.payload['symbol'] || undefined,
+            realSolReserve: context.liquiditySol,
+            priceImpactBps: modeledPriceImpactBps,
+            factors: {
+                tokenQuality: tokenSecurity.isAllowed ? 0.9 : 0.1,
+                momentum: Math.min(1.0, Math.max(0.0, context.txCount / 50)),
+                liquidityDepth: depthProfile.maxSafePositionSol > 0 ? Math.min(1.0, depthProfile.maxSafePositionSol / 2.5) : Math.min(1.0, context.liquiditySol / 50),
+                participation: Math.min(1.0, Math.max(0.0, participantAnalysis.clusterDispersalRatio)),
+                walletQuality: coordination.isSyntheticClusterLikely ? 0.2 : 0.85,
+                safety: cleanRoomState.isDeceptionSevere ? 0.1 : 0.9,
+                executionFeasibility: twinReport.robustExitCapacitySol > 2 ? 0.9 : 0.6,
+                regimeCompatibility: regime.majorRegime === 'RISK_ON' ? 0.9 : regime.majorRegime === 'RISK_OFF' ? 0.3 : 0.7,
+                timing: !divergenceReport.hasBearishDivergence ? 0.85 : 0.4,
+            },
+            targetUpsidePct: 0.40,
+            structuralStopPct: 0.12,
+            rugProbability: cleanRoomState.isDeceptionSevere ? 0.8 : (recurrenceRisk.isSerialRugger ? 0.9 : 0.05),
+            isDevSold: false,
+            isCurveComplete: context.tokenAgeSec > 300 && context.liquiditySol > 25,
+        };
+        const spieEvaluation = this.spie.evaluate(spieCandidate);
+        const capSnapshot = this.capitalTruth.getSnapshot();
+        const convexKelly = this.kelly.calculateConvexMultiTargetKelly({
+            totalPortfolioCapitalSol: capSnapshot.confirmed_cash_sol > 0 ? capSnapshot.confirmed_cash_sol : 10.0,
+            pTarget: spieEvaluation.pTarget,
+            targetUpsideBps: Math.round(spieEvaluation.grossExpectedUpsideBps || 4000),
+            structuralStopBps: Math.round(spieEvaluation.modeledDownsideBps || 1200),
+            poolReserveSol: context.liquiditySol,
+            mandateLimitSol: 2.0,
+            regime: regime.majorRegime === 'RISK_ON' ? 'SPECULATIVE_EXPANSION' : regime.majorRegime === 'RISK_OFF' ? 'DEGRADED' : 'NEUTRAL',
+            epistemicUncertainty: oodAssessment.noveltyScore ?? 0.15,
+            multiplierDistribution: {
+                p2x: Number((spieEvaluation.pTarget * 0.7).toFixed(4)),
+                p5x: Number((spieEvaluation.pTarget * 0.4).toFixed(4)),
+                p10x: Number((spieEvaluation.pTarget * 0.25).toFixed(4)),
+                p20x: Number((spieEvaluation.pTarget * 0.15).toFixed(4)),
+                p50x: Number((spieEvaluation.pTarget * 0.08).toFixed(4)),
+                p100x: Number((spieEvaluation.pTarget * 0.04).toFixed(4)),
+            },
+            convexHazardRatio: 2.5,
+        });
+        // ==========================================
+        // WINNER SEPARATION, DECISION SLACK & CATCHABILITY TRAJECTORY EVALUATION
+        // ==========================================
+        const tokenAgeMs = Math.max(1000, context.tokenAgeSec * 1000);
+        const birthTimestampMs = Math.max(0, event.receivedTimestampMs - tokenAgeMs);
+        const currentPriceSol = event.payload['priceSol'] || (context.marketCapSol / (context.txCount || 1)) || 0.00003;
+        const realQuoteReservesLamports = BigInt(Math.max(1, Math.round(context.liquiditySol * 1_000_000_000)));
+        const virtualQuoteReservesLamports = realQuoteReservesLamports + 30000000000n;
+        const virtualTokenReserves = 1073000000000000n;
+        const sampleTrajectory = [
+            {
+                timestampMs: birthTimestampMs,
+                slot: BigInt(Math.max(0, event.slot - Math.round(context.tokenAgeSec / 0.4))),
+                priceSol: currentPriceSol * 0.5,
+                realQuoteReservesLamports: realQuoteReservesLamports / 2n,
+                virtualQuoteReservesLamports: virtualQuoteReservesLamports / 2n,
+                virtualTokenReserves: virtualTokenReserves,
+            },
+            {
+                timestampMs: event.receivedTimestampMs,
+                slot: BigInt(event.slot),
+                priceSol: currentPriceSol,
+                realQuoteReservesLamports: realQuoteReservesLamports,
+                virtualQuoteReservesLamports: virtualQuoteReservesLamports,
+                virtualTokenReserves: virtualTokenReserves,
+            },
+        ];
+        const executableAthProfile = CatchabilityEngine.evaluateTrajectory({
+            mint: event.mint,
+            birthTimestampMs,
+            trajectory: sampleTrajectory,
+        });
+        const isPostMigration = context.tokenAgeSec > 300;
+        const edgeDecayMs = isPostMigration ? 600_000 : 60_000;
+        const slices = [
+            {
+                elapsedMs: 5_000,
+                elapsedSlots: 12,
+                pWinner: Math.max(0.01, Number((spieEvaluation.pTarget * 0.4).toFixed(4))),
+                pControlMean: 0.04,
+                executableEvSol: Math.max(0.01, Number(((spieEvaluation.netExpectedEvBps / 10000) * 0.2).toFixed(4))),
+                entryPriceBpsVsBirth: 50,
+                entropyConfidence: 0.70,
+            },
+            {
+                elapsedMs: 15_000,
+                elapsedSlots: 37,
+                pWinner: Math.max(0.02, Number((spieEvaluation.pTarget * 0.7).toFixed(4))),
+                pControlMean: 0.05,
+                executableEvSol: Math.max(0.02, Number(((spieEvaluation.netExpectedEvBps / 10000) * 0.35).toFixed(4))),
+                entryPriceBpsVsBirth: 150,
+                entropyConfidence: 0.80,
+            },
+            {
+                elapsedMs: 30_000,
+                elapsedSlots: 75,
+                pWinner: Number(spieEvaluation.pTarget.toFixed(4)),
+                pControlMean: 0.06,
+                executableEvSol: Math.max(0.05, Number(((spieEvaluation.netExpectedEvBps / 10000) * 0.5).toFixed(4))),
+                entryPriceBpsVsBirth: 300,
+                entropyConfidence: Math.max(0.5, Number((1 - (oodAssessment.noveltyScore ?? 0.15)).toFixed(2))),
+            },
+            {
+                elapsedMs: 45_000,
+                elapsedSlots: 112,
+                pWinner: Number((spieEvaluation.pTarget * 0.95).toFixed(4)),
+                pControlMean: 0.07,
+                executableEvSol: Math.max(0.03, Number(((spieEvaluation.netExpectedEvBps / 10000) * 0.45).toFixed(4))),
+                entryPriceBpsVsBirth: 450,
+                entropyConfidence: Math.max(0.5, Number((1 - (oodAssessment.noveltyScore ?? 0.15)).toFixed(2))),
+            },
+            {
+                elapsedMs: 60_000,
+                elapsedSlots: 150,
+                pWinner: Number((spieEvaluation.pTarget * 0.85).toFixed(4)),
+                pControlMean: 0.08,
+                executableEvSol: Math.max(0.01, Number(((spieEvaluation.netExpectedEvBps / 10000) * 0.35).toFixed(4))),
+                entryPriceBpsVsBirth: 600,
+                entropyConfidence: 0.85,
+            },
+        ];
+        const separationAnalysis = WinnerSeparationEngine.analyzeSeparation({
+            winnerMint: event.mint,
+            matchedControls: [],
+            slices,
+            edgeDecayMs,
+        });
+        // ==========================================
+        // TRANSITION-PATH PHYSICS & FLOW REPRODUCTION EVALUATION (Sections XII & XIII)
+        // ==========================================
+        const runnerCommittor = RunnerCommittorEngine.computeCommittor({
+            currentMultiple: Math.max(1.0, currentPriceSol / (sampleTrajectory[0].priceSol || currentPriceSol * 0.5)),
+            capitalRenewalScore: Math.max(0.0, Math.min(1.0, 1 - (oodAssessment.noveltyScore ?? 0.15))),
+            sellAbsorptionRatio: Math.max(0.1, Number((1 / Math.max(0.1, cleanRoomState.isDeceptionSevere ? 5.0 : 0.8)).toFixed(2))),
+            exitReachability: Math.max(0.1, Number((context.liquiditySol / Math.max(1, context.marketCapSol)).toFixed(2))),
+            actorGrowthRate: Math.max(0.5, Number(((context.rawWallets?.length || 4) / 2.0).toFixed(2))),
+        });
+        const failureCommittor = FailureCommittorEngine.computeFailureCommittor({
+            dtfScore: context.dtfScore ?? (cleanRoomState.isDeceptionSevere ? 0.85 : 0.20),
+            sellPressureRatio: Math.min(1.0, Math.max(0.01, context.sellPressureRatio ?? (cleanRoomState.isDeceptionSevere ? 0.80 : 0.15))),
+            creatorInventoryRatio: Math.min(1.0, Math.max(0.0, (context.creatorRemainingSol || 0) / Math.max(1, context.liquiditySol))),
+            top3HoldersShare: Math.min(1.0, Math.max(0.05, context.top3HoldersShare ?? (coordination.isSyntheticClusterLikely ? 0.70 : 0.25))),
+            liquidityDrainVelocity: Math.min(1.0, Math.max(0.0, context.liquidityDrainVelocity ?? (cleanRoomState.isDeceptionSevere ? 0.10 : 0.005))),
+        });
+        const flowReproduction = FlowReproductionEngine.computeReproduction({
+            uniqueBuyersT1: context.uniqueBuyersT1 ?? Math.max(1, context.txCount || 10),
+            uniqueBuyersT0: context.uniqueBuyersT0 ?? Math.max(1, Math.round((context.txCount || 10) * 0.7)),
+            uniqueSellersT1: context.uniqueSellersT1 ?? Math.max(1, Math.round((context.txCount || 10) * 0.25)),
+            uniqueSellersT0: context.uniqueSellersT0 ?? Math.max(1, Math.round((context.txCount || 10) * 0.35)),
+            secondaryBuyerFraction: context.secondaryBuyerFraction ?? Math.max(0.1, Math.min(0.95, 1 - (oodAssessment.noveltyScore ?? 0.2))),
+            cascadingSellFraction: context.cascadingSellFraction ?? (cleanRoomState.isDeceptionSevere ? 0.75 : 0.15),
+        });
+        const reactiveFlux = ReactiveFluxEngine.computeFlux({
+            qUp: runnerCommittor.qUp,
+            qFail: failureCommittor.qFail,
+            arrivalVelocityTradesPerSec: Math.max(0.1, (context.txCount || 10) / Math.max(1, context.tokenAgeSec)),
+            capitalFlowNetUsdPerSec: Math.max(0, context.liquiditySol * 150 / Math.max(1, context.tokenAgeSec)),
+            poolDepthUsd: context.liquiditySol * 150,
+        });
+        // ==========================================
+        // TRANSITION PATH THEORY (TPT) ENGINE (Section XII & Study 17)
+        // ==========================================
+        const transitionPath = context.transitionPath ?? TransitionPathEngine.analyzePath({
+            qUp: runnerCommittor.qUp,
+            qFail: failureCommittor.qFail,
+            effectiveDrift: context.effectiveDrift ?? Math.max(0.01, (spieEvaluation?.netExpectedEvBps ?? 350) / 10000.0),
+            diffusionVariance: context.diffusionVariance ?? (cleanRoomState.isDeceptionSevere ? 0.35 : 0.08),
+            distanceToTargetMultiple: context.distanceToTargetMultiple ?? 5.0,
+        });
+        // ==========================================
+        // METASTABILITY & ONSAGER-MACHLUP ACTION RESIDUAL (Section XII & Studies 20/21)
+        // ==========================================
+        const plateauDurationSeconds = context.plateauDurationSeconds ?? Math.max(0, context.tokenAgeSec - 15);
+        const volatilityStdDev = context.volatilityStdDev ?? (cleanRoomState.isDeceptionSevere ? 0.40 : 0.12);
+        const volumeDecayRatePerMin = context.volumeDecayRatePerMin ?? (failureCommittor.failureImminent ? 0.25 : 0.03);
+        const observedDrift = context.observedDrift ?? (context.marketCapSol > 100 ? 0.15 : 0.05);
+        const modelDrift = context.modelDrift ?? 0.12;
+        const diffusionVariance = context.diffusionVariance ?? 0.08;
+        const metastability = context.metastability ?? MetastabilityEngine.evaluateMetastability({
+            plateauDurationSeconds,
+            volatilityStdDev,
+            volumeDecayRatePerMin,
+            observedDrift,
+            modelDrift,
+            diffusionVariance,
+        });
+        // ==========================================
+        // PATHWAY BOTTLENECK & ACTIVATION BARRIERS (Section XII & Study 19)
+        // ==========================================
+        const creatorRemainingPct = context.creatorRemainingPct ?? Math.min(1.0, (context.creatorRemainingSol || 0) / Math.max(1, context.liquiditySol));
+        const topHoldersConcentrationPct = context.topHoldersConcentrationPct ?? (coordination.isSyntheticClusterLikely ? 0.65 : 0.20);
+        const bondingCurveProgressPct = context.bondingCurveProgressPct ?? Math.min(99, Math.max(5, (context.marketCapSol / 400.0) * 100));
+        const pathwayBottleneck = context.pathwayBottleneck ?? PathwayBottleneckEngine.analyzeBottlenecks({
+            dtfScore: context.dtfScore ?? (cleanRoomState.isDeceptionSevere ? 0.85 : 0.20),
+            creatorRemainingPct,
+            topHoldersConcentrationPct,
+            bondingCurveProgressPct,
+            poolLiquidityUsd: context.liquiditySol * 150.0,
+        });
+        // ==========================================
+        // EXECUTION LATENCY BUDGET & STAGE PROFILER (Section XVII & Study 36: DECISION-TO-LANDING-X)
+        // ==========================================
+        const currentNowMs = Date.now();
+        const eventTimeMs = event.receivedTimestampMs || currentNowMs;
+        const defaultTrace = context.latencyTrace ?? {
+            observationAt: eventTimeMs - 120,
+            featuresReadyAt: eventTimeMs - 80,
+            decisionAt: eventTimeMs - 50,
+            permitIssuedAt: eventTimeMs - 35,
+            buildCompletedAt: eventTimeMs - 20,
+            signedAt: eventTimeMs - 10,
+            submittedAt: eventTimeMs - 5,
+            firstProviderAckAt: eventTimeMs,
+            landedAt: context.simulatedLandedAtMs ?? (eventTimeMs + 45),
+            terminalAt: context.simulatedTerminalAtMs ?? (eventTimeMs + 85),
+        };
+        const execLatencyBreakdown = (context.executionLatencyBreakdown ||
+            (context.latencyBreakdown && context.latencyBreakdown.criticalBottleneckStage ? context.latencyBreakdown : undefined)) ??
+            LatencyBudgetProfiler.profileTrace(context.latencyTrace ?? defaultTrace);
+        // ==========================================
+        // FIXED REFERENCE SHIFT ENGINE (Section XI & Study FIXED-REFERENCE-SHIFT-X)
+        // ==========================================
+        const baselinePrice = context.baselinePrice ?? Math.max(0.000001, (context.marketCapSol / Math.max(1, context.txCount || 10)) * 0.5);
+        const currentPrice = context.currentPrice ?? Math.max(0.000001, (context.marketCapSol / Math.max(1, context.txCount || 10)));
+        const denominationCurrency = context.denominationCurrency ?? 'SOL';
+        const solPriceUsdAtT0 = context.solPriceUsdAtT0 ?? (context.solPriceUsd ?? 150.0);
+        const solPriceUsdAtT1 = context.solPriceUsdAtT1 ?? (context.solPriceUsd ?? 150.0);
+        const referenceShift = context.referenceShift ?? FixedReferenceShiftEngine.calculateReturn(baselinePrice, currentPrice, denominationCurrency, solPriceUsdAtT0, solPriceUsdAtT1);
+        // ==========================================
+        // EXOGENOUS CAPITAL FLOW DECOMPOSITION (Section XIII & Study 24)
+        // ==========================================
+        const totalInflowUsd = context.totalInflowUsd ?? (context.liquiditySol * 150.0);
+        const fundingDiversityScore = context.fundingDiversityScore ?? Math.min(1.0, (participantAnalysis.effectiveIndependentCount || 1) / Math.max(1, participantAnalysis.rawBuyerCount || 1));
+        const sameFunderClustersCount = context.sameFunderClustersCount ?? (coordination.isSyntheticClusterLikely ? 3 : 0);
+        const deployerRelatedFlowUsd = context.deployerRelatedFlowUsd ?? (cleanRoomState.isDeceptionSevere ? totalInflowUsd * 0.45 : 0);
+        const circularTradeVolumeUsd = context.circularTradeVolumeUsd ?? (coordination.isSyntheticClusterLikely ? totalInflowUsd * 0.30 : 0);
+        const exogenousCapital = context.exogenousCapital ?? ExogenousCapitalClassifier.classifyFlow({
+            totalInflowUsd,
+            fundingDiversityScore,
+            sameFunderClustersCount,
+            deployerRelatedFlowUsd,
+            circularTradeVolumeUsd,
+        });
+        // ==========================================
+        // BELLMAN CONTINUOUS OPTIMAL STOPPING & EXIT TOURNAMENT (Sections XXI & XXII)
+        // ==========================================
+        const effectiveSolPriceUsd = (typeof context.solPriceUsd === 'number' && context.solPriceUsd > 0)
+            ? context.solPriceUsd
+            : (oracleSolPriceUsd > 0 ? oracleSolPriceUsd : 150.0);
+        const markPriceUsd = currentPriceSol * effectiveSolPriceUsd;
+        const entryPriceUsd = (sampleTrajectory[0]?.priceSol || currentPriceSol * 0.5) * effectiveSolPriceUsd;
+        const currentMultiple = entryPriceUsd > 0 ? markPriceUsd / entryPriceUsd : 1.0;
+        const initialPoolSolReservesUsd = (context.liquiditySol > 0 ? context.liquiditySol : 10.0) * effectiveSolPriceUsd;
+        const initialPoolTokenReserves = context.poolTokenReserves ?? 800_000_000;
+        const poolUnitTokenPriceUsd = initialPoolTokenReserves > 0 ? initialPoolSolReservesUsd / initialPoolTokenReserves : 0.00001;
+        const positionTokens = context.totalPositionTokens ?? Math.round((context.positionValueUsd ?? 250.0) / Math.max(1e-8, poolUnitTokenPriceUsd));
+        const currentMarkUsd = positionTokens * poolUnitTokenPriceUsd;
+        const liquidationSurface = context.liquidationSurface ?? ExecutableLiquidationSurfaceEngine.computeSurface({
+            totalTokens: positionTokens,
+            currentMarkPriceUsd: poolUnitTokenPriceUsd,
+            poolSolReservesUsd: initialPoolSolReservesUsd,
+            poolTokenReserves: initialPoolTokenReserves,
+            estimatedBaseFeeUsd: 0.005,
+            estimatedTipUsd: 0.015,
+            slot: BigInt(event.slot),
+            nowMs: event.receivedTimestampMs,
+        });
+        const stressedExitCapacityUsd = liquidationSurface.stressedExitCapacityUsd;
+        const positionState = {
+            positionId: `pos_${event.mint.slice(0, 8)}`,
+            mint: event.mint,
+            poolAddress: `pool_${event.mint.slice(0, 8)}`,
+            entryPriceUsd,
+            currentMarkPriceUsd: markPriceUsd,
+            currentMultiple,
+            totalInitialTokens: positionTokens,
+            remainingTokens: positionTokens,
+            principalInvestedUsd: entryPriceUsd * positionTokens,
+            entryFeesPaidUsd: 2.0,
+            realizedProceedsUsd: 0,
+            entrySlot: BigInt(event.slot - 100),
+            entryTimestampMs: event.sourceTimestampMs - 60_000,
+            runnerState: currentMultiple >= 2.0 ? 'RUNNER_CANDIDATE' : 'PROTECTED',
+        };
+        const researchExitContext = {
+            qUp: runnerCommittor.qUp,
+            qFail: failureCommittor.qFail,
+            dtfScore: context.dtfScore ?? (cleanRoomState.isDeceptionSevere ? 0.85 : 0.20),
+            sellPressureRatio: context.sellPressureRatio ?? (cleanRoomState.isDeceptionSevere ? 0.80 : 0.15),
+            capitalRenewalScore: Math.max(0.0, Math.min(1.0, 1 - (oodAssessment.noveltyScore ?? 0.15))),
+            exitReachability: Math.max(0.1, Number((context.liquiditySol / Math.max(1, context.marketCapSol)).toFixed(2))),
+            creatorDumpRisk: failureCommittor.dominantFailureMode === 'CREATOR_DUMP',
+            authenticityIntact: tokenSecurity.isAllowed && !cleanRoomState.isDeceptionSevere && !coordination.isSyntheticClusterLikely,
+            isEmergencyStopTriggered: !killCheck.permitted || !kernelCheck.passed,
+        };
+        const dynamicStopping = DynamicStoppingEngine.evaluateStopping(positionState, researchExitContext, liquidationSurface);
+        const exitAttemptRecord = this.exitTournament.evaluateTournament({
+            position: positionState,
+            research: researchExitContext,
+            liquidation: liquidationSurface,
+            slot: BigInt(event.slot),
+            decisionAtMs: event.receivedTimestampMs,
+            evidenceRoot: proofReport.evidence_root || 'sylph_evidence_root_sha256_v1',
+            stateRoot: survivalCert.survival_state_root || 'sylph_state_root_sha256_v1',
+        });
+        // ==========================================
+        // INFORMATION FRONTIER & 2X->10X DISTINGUISHABILITY COURT (Sections IX & X)
+        // ==========================================
+        const featureDivergence = Math.max(0.05, Math.min(0.95, 1 - (oodAssessment.noveltyScore ?? 0.20) - (cleanRoomState.hsiDivergence ? cleanRoomState.hsiDivergence * 0.01 : 0.05)));
+        const bayesErrorAnalysis = BayesErrorFrontierEngine.evaluateBounds(context.featureDivergence ?? featureDivergence, HISTORICAL_2X_TO_10X_BASE_RATE, context.acceptableErrorTolerance ?? 0.35);
+        const earliestDecisionProfile = EarliestDecisionTimeEngine.calculate(context.tokenAgeSec, context.volatilityAtr ?? 0.15, context.txCount || 10);
+        const runnerDistinguishability = RunnerDistinguishabilityCourt.evaluateAt2xCrossing({
+            currentMultiple,
+            capitalRenewalRatio: flowReproduction.rBuy / Math.max(0.1, flowReproduction.rSell),
+            independentCapitalAcceleration: Math.max(0.5, ((context.rawWallets?.length || 4) / 2.0)),
+            walletEntropy: Math.max(0.1, Math.min(1.0, 1 - (coordination.isSyntheticClusterLikely ? 0.65 : 0.15))),
+            inventoryLiabilityCliff: failureCommittor.dominantFailureMode === 'CREATOR_DUMP',
+            exitReachabilityPositive: context.liquiditySol > 5 && context.marketCapSol > 0,
+            failureCommittor: failureCommittor.qFail,
+        });
+        // ==========================================
+        // RUNNER SEARCH COST, TAIL CONCENTRATION & RUIN SURVIVABILITY (Sections XXV & XXVI)
+        // ==========================================
+        const runnerSearchCost = context.recentCandidateOutcomes
+            ? RunnerSearchCostEngine.calculateSearchCost(context.recentCandidateOutcomes)
+            : undefined;
+        const tailConcentration = context.historicalPositionPnLs
+            ? TailConcentrationEngine.evaluateTailConcentration(context.historicalPositionPnLs)
+            : undefined;
+        const portfolioRuin = context.ruinParameters
+            ? PortfolioRuinEngine.simulate(context.ruinParameters)
+            : undefined;
+        // ==========================================
+        // PORTFOLIO CAPACITY & OPEN EXPOSURE CEILINGS (Section XXVI)
+        // ==========================================
+        const activePositionCount = context.activePositionCount ?? (this.capitalTruth?.getOpenPositionsCount?.() ?? 0);
+        const availableCashUsd = context.availableCashUsd ?? (context.currentAvailableCashUsd ?? 5000.0);
+        const portfolioCapacity = context.portfolioCapacity ?? PortfolioCapacityEngine.checkCapacity({
+            currentAvailableCashUsd: availableCashUsd,
+            activePositionCount,
+            maxConcurrentPositions: context.maxConcurrentPositions ?? PortfolioCapacityEngine.DEFAULT_MAX_CONCURRENT_POSITIONS,
+            candidateStakeUsd: context.candidateStakeUsd ?? (context.positionValueUsd ?? 250.0),
+            minimumCashBufferUsd: context.minimumCashBufferUsd ?? PortfolioCapacityEngine.DEFAULT_MIN_CASH_BUFFER_USD,
+        });
+        // ==========================================
+        // PROSPECTIVE LAW COURT & EXECUTABLE ALPHA CERTIFICATE (Sections V, XXVIII & XXXI)
+        // ==========================================
+        let lawCourtSession;
+        if (context.candidateTrialVerdicts && Array.isArray(context.candidateTrialVerdicts)) {
+            const court = new ProspectiveLawCourt({
+                sessionId: context.lawCourtSessionId || `session_${event.mint.slice(0, 8)}_${event.slot}`,
+                codeHash: context.lawCourtCodeHash || '0x_sylph_frozen_code_v1',
+                featureSchemaRoot: context.lawCourtFeatureSchemaRoot || '0x_sylph_schema_v1',
+                decisionPolicyVersion: context.lawCourtDecisionPolicyVersion || 'sylph-alpha-v1.0.0',
+                exitPolicyVersion: context.lawCourtExitPolicyVersion || 'dynamic-stopping-v1.0.0',
+                fixedStakeUsd: context.lawCourtFixedStakeUsd ?? 250.0,
+            });
+            for (const trial of context.candidateTrialVerdicts) {
+                court.recordTrialVerdict(trial);
+            }
+            lawCourtSession = court.adjudicate();
+        }
+        const executableAlphaCertificate = context.alphaEvaluationInput
+            ? ExecutableAlphaCertificateIssuer.evaluateAndIssue(context.alphaEvaluationInput)
+            : undefined;
+        // ==========================================
+        // DISTRIBUTION TRANSPORTABILITY COURT (Section XI & Study Family 4)
+        // ==========================================
+        const targetRegime = context.targetDistributionRegime ?? (context.tokenAgeSec < 60 ? 'NEW_LAUNCH' :
+            context.tokenAgeSec < 300 ? 'BONDING_CURVE' :
+                (context.liquiditySol > 80 ? 'POST_MIGRATION' : 'BONDING_CURVE'));
+        const sourceRegime = context.sourceDistributionRegime ?? 'NEW_LAUNCH';
+        const transportabilityRuling = TransportabilityCourt.judge({
+            sourceRegime,
+            targetRegime,
+            covariateShift: context.covariateShift ?? 0.12,
+            conceptShift: context.conceptShift ?? 0.08,
+            calibrationShift: context.calibrationShift ?? 0.04,
+            isPostMigrationSample: context.isPostMigrationSample ?? false,
+            solUsdVolatilityRatio: context.solUsdVolatilityRatio ?? 1.05,
+        });
+        // ==========================================
+        // OBSERVATION QUALITY CERTIFICATE & SENSOR RACE ARBITRATION (Section VIII & Study Family 5)
+        // ==========================================
+        const obsQualityInputs = context.observationQualityInputs ?? {
+            observationCount: context.observationCount ?? Math.max(5, context.txCount ?? 5),
+            historySpanSeconds: context.historySpanSeconds ?? Math.max(15, context.tokenAgeSec ?? 15),
+            slotLag: context.observationSlotLag ?? (event.parentSlot !== undefined && (event.slot - event.parentSlot) <= 12 ? Math.max(0, event.slot - event.parentSlot) : 1),
+            wallAgeMs: context.wallAgeMs ?? Math.max(0, Math.min(250, event.freshnessMs ?? 25)),
+            maxObservedGapSeconds: context.maxObservedGapSeconds ?? Math.min(10, Math.max(1, (context.tokenAgeSec ?? 15) / Math.max(1, context.txCount ?? 5))),
+            sourceCount: context.sensorSourceCount ?? (Array.isArray(context.sensorArrivals) ? context.sensorArrivals.length : (Array.isArray(event.provenance) ? event.provenance.length : 1)),
+            sourcesInAgreement: context.sensorSourcesInAgreement ?? context.sensorSourceCount ?? (Array.isArray(context.sensorArrivals) ? context.sensorArrivals.length : (Array.isArray(event.provenance) ? event.provenance.length : 1)),
+            unobservedDropCount: context.unobservedDropCount ?? 0,
+        };
+        const observationQuality = ObservationQualityEngine.evaluate(obsQualityInputs);
+        const sensorArrivals = context.sensorArrivals;
+        const sensorRace = sensorArrivals && sensorArrivals.length > 0
+            ? SensorRaceEngine.evaluateRace(sensorArrivals)
+            : undefined;
+        // ==========================================
+        // EXIT MIN-CUT & LIQUIDITY REGENERATION ENGINES (Section XIV, Studies 29 & 30)
+        // ==========================================
+        const poolReservesUsd = context.liquiditySol > 0 ? context.liquiditySol * 150.0 : 1000.0;
+        const creatorInvUsd = (context.creatorInventorySol ?? (context.marketCapSol * 0.15)) * 150.0;
+        const whaleInvUsd = (context.topWhaleInventorySol ?? (context.marketCapSol * 0.10)) * 150.0;
+        const exitMinCut = ExitMinCutEngine.computeMinCut({
+            poolSolReservesUsd: context.minCutPoolReservesUsd ?? poolReservesUsd,
+            creatorInventoryUsd: context.minCutCreatorInventoryUsd ?? creatorInvUsd,
+            topWhaleInventoryUsd: context.minCutWhaleInventoryUsd ?? whaleInvUsd,
+            maxAllowedImpactBps: context.maxAllowedImpactBps ?? 1200,
+        });
+        const liquidityRegeneration = context.liquidityShockData
+            ? LiquidityRegenerationEngine.measureRegeneration(context.liquidityShockData)
+            : undefined;
+        // ==========================================
+        // LIQUIDITY FATIGUE STAGED EXIT ENGINE (Section XIV & Study 31)
+        // ==========================================
+        const totalPositionTokens = context.totalPositionTokens ?? 5_000_000;
+        const currentMarkPriceUsd = context.currentMarkPriceUsd ?? ((context.marketCapSol / Math.max(1, context.txCount || 1)) * 150.0);
+        const poolTokenReserves = context.poolTokenReserves ?? 800_000_000;
+        const liquidityFatigue = context.liquidityFatigue ?? LiquidityFatigueEngine.simulateStagedSales({
+            initialTokenPriceUsd: currentMarkPriceUsd,
+            initialPoolSolReservesUsd: poolReservesUsd,
+            initialTokenReserves: poolTokenReserves,
+            totalPositionTokens,
+            fractions: context.stagedSaleFractions ?? [0.25, 0.25, 0.25, 0.25],
+        });
+        // ==========================================
+        // LIQUIDATION HYPERGRAPH ENGINE (Study 28 & Section XIV)
+        // ==========================================
+        const liquidationHypergraph = context.liquidationHypergraph ?? LiquidationHypergraphEngine.buildHypergraph({
+            primaryPoolLiquidityUsd: initialPoolSolReservesUsd,
+            secondaryRoutesLiquidityUsd: context.secondaryRoutesLiquidityUsd ?? 0,
+            primaryVenueName: targetRoute,
+        });
+        // ==========================================
+        // INVENTORY OVERHANG ABSORPTION ENGINE (Section XIII & Study 27)
+        // ==========================================
+        const insiderHoldingTokens = context.insiderHoldingTokens ?? (context.topWhaleInventorySol ? (context.topWhaleInventorySol * 150.0) / Math.max(1e-8, poolUnitTokenPriceUsd) : 100_000_000);
+        const organicBuyRateUsdPerMin = context.organicBuyRateUsdPerMin ?? Math.max(10.0, (context.txCount || 10) * 15.0);
+        const inventoryAbsorption = context.inventoryAbsorption ?? InventoryAbsorptionEngine.evaluateAbsorption({
+            insiderHoldingTokens,
+            tokenPriceUsd: poolUnitTokenPriceUsd,
+            poolDepthUsd: initialPoolSolReservesUsd,
+            organicBuyRateUsdPerMin,
+        });
+        // ==========================================
+        // CAPITAL GENERATIONAL BRANCHING DEPTH (Section XIII & Study 25)
+        // ==========================================
+        const gen0CapitalUsd = context.gen0CapitalUsd ?? (cleanRoomState.isDeceptionSevere ? totalInflowUsd * 0.60 : totalInflowUsd * 0.20);
+        const gen1CapitalUsd = context.gen1CapitalUsd ?? (coordination.isSyntheticClusterLikely ? totalInflowUsd * 0.30 : totalInflowUsd * 0.25);
+        const gen2CapitalUsd = context.gen2CapitalUsd ?? (context.txCount > 20 ? totalInflowUsd * 0.35 : totalInflowUsd * 0.10);
+        const gen3PlusCapitalUsd = context.gen3PlusCapitalUsd ?? (context.txCount > 35 ? totalInflowUsd * 0.20 : 0.0);
+        const capitalGeneration = context.capitalGeneration ?? CapitalGenerationEngine.evaluateDepth({
+            gen0CapitalUsd,
+            gen1CapitalUsd,
+            gen2CapitalUsd,
+            gen3PlusCapitalUsd,
+        });
+        // ==========================================
+        // CAPITAL SURVIVAL & EXTRACTION SIPHON (Section XIII & Study 26)
+        // ==========================================
+        const cumulativeInflowsUsd = context.cumulativeInflowsUsd ?? totalInflowUsd;
+        const cumulativeOutflowsUsd = context.cumulativeOutflowsUsd ?? (cleanRoomState.isDeceptionSevere ? totalInflowUsd * 0.85 : totalInflowUsd * 0.15);
+        const poolAgeSeconds = context.poolAgeSeconds ?? Math.max(1, context.tokenAgeSec);
+        const capitalSurvival = context.capitalSurvival ?? CapitalSurvivalEngine.measureSurvival({
+            cumulativeInflowsUsd,
+            cumulativeOutflowsUsd,
+            poolAgeSeconds,
+            inflowObservationWindowSeconds: context.inflowObservationWindowSeconds ?? 60,
+        });
+        // ==========================================
+        // ALPHA HALF-LIFE, QUOTE DECAY & EXECUTION SHORTFALL (Sections XV, XVI & XX)
+        // ==========================================
+        const alphaHalfLife = AlphaHalfLifeEngine.estimateHalfLife({
+            stage: context.opportunityStage ?? (context.tokenAgeSec < 60 ? 'BONDING_CURVE_EARLY' : 'BONDING_CURVE_MID'),
+            initialEdgeBps: context.initialEdgeBps ?? Math.round(Math.max(50, Math.min(1000, ((spieEvaluation?.netExpectedEvBps ?? 350) + 100)))),
+            hurdleBps: context.hurdleBps ?? 100,
+            competitorDensity: context.competitorDensity ?? (coordination.isSyntheticClusterLikely ? 0.85 : 0.30),
+            opportunityJerk: context.opportunityJerk ?? (failureCommittor.failureImminent ? -0.50 : 0.10),
+            frictionBps: context.frictionBps ?? 50,
+        });
+        const quoteDecay = QuoteDecayEngine.evaluateDecay({
+            initialPriceUsd: (context.marketCapSol / Math.max(1, context.txCount || 1)) * 150.0,
+            quoteSlot: context.quoteSlot ?? (BigInt(event.slot) - BigInt(context.elapsedQuoteSlots ?? 1)),
+            currentSlot: BigInt(event.slot),
+            quoteTimestampMs: context.quoteTimestampMs ?? (event.receivedTimestampMs - (context.elapsedQuoteMs ?? 400)),
+            currentTimestampMs: event.receivedTimestampMs,
+            volatilityAnnualized: context.volatilityAnnualized ?? 1.8,
+        });
+        const alphaBurnAudit = context.latencyBreakdown
+            ? AlphaBurnLedger.auditBurn(context.initialEdgeBps ?? alphaHalfLife.initialEdgeBps, alphaHalfLife, context.latencyBreakdown)
+            : undefined;
+        const executionUrgency = ExecutionUrgencyEngine.calculateUrgency({
+            executablePositionValueUsd: context.positionValueUsd ?? 250.0,
+            failureHazardRatePerSec: failureCommittor.qFail * 0.10,
+            quoteDecayBps: quoteDecay.decayBps,
+            exitReachability: context.exitReachability ?? 0.85,
+            capitalAuthorityUsd: capSnapshot.confirmed_cash_sol * 150.0,
+            emergencyPolicyCapUsd: context.emergencyPolicyCapUsd ?? 5.0,
+        });
+        // ==========================================
+        // MULTI-LANE SUBMISSION ROUTING & LANDING PHYSICS (Sections XVIII & XIX)
+        // ==========================================
+        const writableAccounts = context.writableAccountPubkeys ?? [
+            event.mint,
+            'Vault11111111111111111111111111111111111111',
+            this.vaultSigner.getPublicKey(),
+        ];
+        const submissionRouting = this.submissionRouter.routeSubmission({
+            mint: event.mint,
+            tradeType: policyDecision.action === 'EXIT' ? 'EMERGENCY_SELL' : 'ENTRY_BUY',
+            isLeaderJitoEnabled: context.isLeaderJitoEnabled ?? true,
+            networkCongestionTps: context.networkCongestionTps ?? 2200,
+            writableAccountPubkeys: writableAccounts,
+            poolOpsPerSec: context.poolOpsPerSec ?? 15,
+            urgency: executionUrgency.urgencyLevel,
+            expectedGrossEdgeUsd: ((spieEvaluation?.netExpectedEvBps ?? 350) / 10000.0) * 250.0,
+            solPriceUsd: 150.0,
+        });
+        const activeScorecard = this.laneScorecards.getScorecard(submissionRouting.selectedLane);
+        const activeFeeOpt = submissionRouting.laneEvaluations.find((e) => e.laneId === submissionRouting.selectedLane)?.feeOptimization;
+        const contentionHeatmap = AccountContentionEngine.generateHeatmap({
+            writableAccountPubkeys: writableAccounts,
+            basePoolOpsPerSec: context.poolOpsPerSec ?? 15,
+            globalCongestionLevel: (context.networkCongestionTps ?? 2200) > 3000 ? 0.7 : 0.25,
+            accountRoleOverrides: context.accountRoleOverrides,
+        });
+        const adaptiveFeeBid = FeeResponseSurfaceEngine.computeAdaptiveBid({
+            contentionTier: contentionHeatmap.hottestAccount.contentionTier,
+            urgency: executionUrgency.urgencyLevel,
+            recentFeePercentiles: context.recentFeePercentiles,
+            positionValueUsd: context.positionValueUsd ?? 250.0,
+            maxPolicyCapUsd: context.emergencyPolicyCapUsd ?? 5.0,
+            solPriceUsd: context.solPriceUsd ?? 150.0,
+        });
         // 14. Decision Kernel Logic with Deterministic Capital Protection
         let decision = 'CHALLENGED_ABSTAIN';
         let allocatedSol = 0.0;
@@ -1307,13 +1901,182 @@ export class MasterIntelligenceEngine {
             decision = 'CHALLENGED_ABSTAIN';
             whyExecutionBlocked = 'BLOCKED — OBSERVING MARKET MICROSTRUCTURE';
         }
+        else if (spieEvaluation.opportunityStage === 'INVALIDATED' || (spieEvaluation.actionRecommendation === 'ABSTAIN' && policyDecision.action === 'ENTER' && (spieEvaluation.frictionToGrossRatio > 0.45 || spieEvaluation.netExpectedEvBps <= 0))) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — ${spieEvaluation.abstainReason || 'SPIE QUANTITATIVE ABSTENTION'}`;
+        }
+        else if (separationAnalysis.decisionSlackMs <= 0 || tokenAgeMs > separationAnalysis.edgeGoneMs) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = 'BLOCKED — CROWDING HORIZON EXPIRED / ZERO DECISION SLACK';
+        }
+        else if (failureCommittor.failureImminent || failureCommittor.qFail >= 0.65) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — HIGH FAILURE COMMITTOR (qFail: ${failureCommittor.qFail.toFixed(3)}, dominant: ${failureCommittor.dominantFailureMode})`;
+        }
+        else if (!flowReproduction.isFlowHealthy && flowReproduction.rBuy < 0.80) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — SUB-CRITICAL ORDER FLOW REPRODUCTION (R_buy: ${flowReproduction.rBuy.toFixed(2)} < 0.80)`;
+        }
+        else if (!reactiveFlux.isNetForwardPositive && reactiveFlux.criticalBottleneckSurface !== 'NONE') {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — NEGATIVE REACTIVE FLUX (${reactiveFlux.criticalBottleneckSurface})`;
+        }
+        else if (!bayesErrorAnalysis.isBelowErrorCeiling) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = bayesErrorAnalysis.reason || 'BLOCKED — BAYES ERROR FLOOR EXCEEDS RISK TOLERANCE';
+        }
+        else if (!earliestDecisionProfile.isElapsedAdequate && context.tokenAgeSec < 3.0) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — PREMATURE OBSERVATION BEFORE T* MINIMUM HORIZON (${context.tokenAgeSec}s < ${earliestDecisionProfile.tStar2xSeconds}s)`;
+        }
+        else if (portfolioRuin && (!portfolioRuin.isPortfolioSurvivable || portfolioRuin.probRuin >= 0.15)) {
+            decision = 'SAFETY_LOCKED';
+            whyExecutionBlocked = `BLOCKED — PORTFOLIO RUIN PROBABILITY CRITICAL (P(Ruin): ${(portfolioRuin.probRuin * 100).toFixed(1)}% >= 15%)`;
+        }
+        else if (runnerSearchCost && !runnerSearchCost.isSearchEconomicallyViable && runnerSearchCost.totalCandidatesEvaluated >= 50) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — RUNNER SEARCH COST EXCEEDS CAPTURE (Net: $${runnerSearchCost.netRunnerContributionUsd.toFixed(2)})`;
+        }
+        else if (executableAlphaCertificate && executableAlphaCertificate.decision === 'REJECT') {
+            decision = 'RISK_REJECTED';
+            whyExecutionBlocked = `BLOCKED — EXECUTABLE ALPHA REJECTED (${executableAlphaCertificate.blockers.join('; ')})`;
+        }
+        else if (executableAlphaCertificate && executableAlphaCertificate.decision === 'ABSTAIN') {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — EXECUTABLE ALPHA ABSTAIN (${executableAlphaCertificate.blockers.join('; ')})`;
+        }
+        else if (lawCourtSession && lawCourtSession.courtRuling === 'PROMOTION_DISMISSED_NEGATIVE_EXPECTANCY') {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — PROSPECTIVE LAW COURT DISMISSED (Expectancy: $${lawCourtSession.netExecutableExpectancyUsd.toFixed(2)})`;
+        }
+        else if (context.enforceMinCutCapacity && !exitMinCut.isCapacitySufficientForStake(context.requiredStakeUsd ?? 250.0)) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — INSUFFICIENT MIN-CUT EXIT CAPACITY ($${exitMinCut.qSafeExitUsd.toFixed(2)} < $${(context.requiredStakeUsd ?? 250.0).toFixed(2)}, bottleneck: ${exitMinCut.minCutBottleneckEdge})`;
+        }
+        else if (exitMinCut.qSafeExitUsd < 50.0 && context.liquiditySol > 0 && context.liquiditySol < 5.0) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — SEVERE LIQUIDITY BOTTLENECK (Min-cut: $${exitMinCut.qSafeExitUsd.toFixed(2)}, bottleneck: ${exitMinCut.minCutBottleneckEdge})`;
+        }
+        else if (liquidityRegeneration && (!liquidityRegeneration.isRegenerationRobust || liquidityRegeneration.fullRecoveryProbability < 0.20)) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — FRAGILE LIQUIDITY REGENERATION (Recovery: ${(liquidityRegeneration.fullRecoveryProbability * 100).toFixed(1)}%, half-life: ${liquidityRegeneration.recoveryHalfLifeSeconds.toFixed(1)}s)`;
+        }
+        else if (quoteDecay.isQuoteStale && (context.elapsedQuoteSlots ?? quoteDecay.elapsedSlots) > 2) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — STALE QUOTE DECAY (Elapsed: ${quoteDecay.elapsedSlots} slots / ${quoteDecay.elapsedMs}ms, decay: ${quoteDecay.decayBps} bps)`;
+        }
+        else if (alphaBurnAudit && !alphaBurnAudit.capturesPositiveEdge) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — LATENCY ALPHA BURNED (Remaining edge: ${alphaBurnAudit.remainingEdgeBps} bps <= hurdle ${alphaHalfLife.hurdleBps} bps)`;
+        }
+        else if ((context.enforceContentionGating ?? context.enforceContentionThreshold ?? false) &&
+            contentionHeatmap.hottestAccount.contentionTier === 'CRITICAL_SATURATED' &&
+            contentionHeatmap.parallelSchedulerConflictProb > 0.80) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — SEVERE ACCOUNT CONTENTION (Hottest: ${contentionHeatmap.hottestAccount.pubkey.slice(0, 8)} [${contentionHeatmap.hottestAccount.contentionTier}], P(Conflict): ${(contentionHeatmap.parallelSchedulerConflictProb * 100).toFixed(1)}% > 80.0%)`;
+        }
+        else if (!submissionRouting.isExecutionSafe) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — ${submissionRouting.safetyBlockers.join('; ')}`;
+        }
+        else if (submissionRouting.landingProbability < MultiLaneSubmissionRouter.MINIMUM_ACCEPTABLE_LANDING_PROBABILITY) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — SUBMISSION LANE LANDING PROBABILITY BELOW SAFETY THRESHOLD (P(Land): ${(submissionRouting.landingProbability * 100).toFixed(1)}% < 60.0%, Lane: ${submissionRouting.selectedLane})`;
+        }
+        else if ((context.enforceTransportabilityGating ?? false) &&
+            !transportabilityRuling.admissible) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — DISTRIBUTION TRANSPORTABILITY REJECTED (${transportabilityRuling.certificate.blockers.join('; ') || transportabilityRuling.judicialRationale})`;
+        }
+        else if ((context.enforceObservationQualityGating ?? false) &&
+            !observationQuality.sufficient) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — OBSERVATION QUALITY INSUFFICIENT (${observationQuality.blockers.join('; ') || 'BOUNDS_VIOLATION'})`;
+        }
+        else if ((context.enforceSensorDivergenceGating ?? false) &&
+            sensorRace &&
+            sensorRace.hasSignificantDivergence) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — SENSOR FEED DIVERGENCE EXCESSIVE (${sensorRace.maxSensorDivergenceBps} bps > 150 bps)`;
+        }
+        else if ((context.enforceLiquidationSurfaceGating ?? false) &&
+            (liquidationSurface.stressedExitCapacityUsd < (context.requiredStressedCapacityUsd ?? (context.requiredStakeUsd ?? 50.0)) ||
+                (liquidationSurface.base.points.find((p) => p.percentage === 100)?.impactBps ?? 0) > 2500)) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — INSUFFICIENT STRESSED LIQUIDATION CAPACITY ($${liquidationSurface.stressedExitCapacityUsd.toFixed(2)} < $${((context.requiredStressedCapacityUsd ?? (context.requiredStakeUsd ?? 50.0))).toFixed(2)}, haircut: $${liquidationSurface.liquidityHaircutUsd.toFixed(2)})`;
+        }
+        else if ((context.enforceLiquidityFatigueGating ?? false) &&
+            (liquidityFatigue.fatigueDiscountVsSingleSale > 0.40 ||
+                liquidityFatigue.terminalReserveFractionRemaining < 0.20)) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — EXCESSIVE LIQUIDITY FATIGUE (Terminal: ${(liquidityFatigue.terminalReserveFractionRemaining * 100).toFixed(1)}%, discount: ${(liquidityFatigue.fatigueDiscountVsSingleSale * 100).toFixed(1)}%)`;
+        }
+        else if ((context.enforcePortfolioCapacityGating ?? false) &&
+            !portfolioCapacity.canOpenNewPosition) {
+            decision = 'SAFETY_LOCKED';
+            whyExecutionBlocked = `BLOCKED — PORTFOLIO CAPACITY EXHAUSTED (${portfolioCapacity.blockerReason || 'CEILING_REACHED'})`;
+        }
+        else if ((context.enforceHypergraphGating ?? false) &&
+            (liquidationHypergraph.aggregateExitCapacityUsd < (context.requiredStakeUsd ?? 50.0))) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — INSUFFICIENT HYPERGRAPH EXIT CAPACITY ($${liquidationHypergraph.aggregateExitCapacityUsd.toFixed(2)} < $${(context.requiredStakeUsd ?? 50.0).toFixed(2)})`;
+        }
+        else if ((context.enforceExogenousCapitalGating ?? false) &&
+            (!exogenousCapital.isAuthenticInflow || exogenousCapital.selfFundedRatio > 0.40)) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — INAUTHENTIC CAPITAL FLOW (${exogenousCapital.dominantOrigin}, selfFunded: ${(exogenousCapital.selfFundedRatio * 100).toFixed(1)}%)`;
+        }
+        else if ((context.enforceInventoryAbsorptionGating ?? false) &&
+            inventoryAbsorption.isOverhangDangerous) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — DANGEROUS INVENTORY OVERHANG (Overhang/Pool: ${(inventoryAbsorption.overhangToPoolRatio * 100).toFixed(1)}%, absorption: ${inventoryAbsorption.absorptionTimeMinutes.toFixed(1)}m)`;
+        }
+        else if ((context.enforceCapitalGenerationGating ?? false) &&
+            !capitalGeneration.depthSufficientForRunner &&
+            context.tokenAgeSec > 30.0) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — SHALLOW GENERATIONAL DEPTH (Gen ${capitalGeneration.maximumGenerationReached}, organic: ${(capitalGeneration.organicGenerationalRatio * 100).toFixed(1)}%)`;
+        }
+        else if ((context.enforceCapitalSurvivalGating ?? false) &&
+            capitalSurvival.isExtractionSiphon) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — EXTRACTION SIPHON (Retention: ${(capitalSurvival.capitalRetentionRatio60s * 100).toFixed(1)}%, halfLife: ${capitalSurvival.capitalHalfLifeSeconds.toFixed(1)}s)`;
+        }
+        else if ((context.enforceMetastabilityGating ?? false) &&
+            metastability.isMetastableTrap) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — METASTABLE TRAP DETECTED (Escape: ${(metastability.escapeRatePerSec * 100).toFixed(1)}%/s, plausibility: ${(metastability.pathPlausibilityScore * 100).toFixed(1)}%)`;
+        }
+        else if ((context.enforcePathwayBottleneckGating ?? false) &&
+            pathwayBottleneck.isPathwayChoked) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — PATHWAY CHOKED AT ${pathwayBottleneck.bottleneckSurfaceLocation} (Barrier: ${pathwayBottleneck.activationBarrierEnergy.toFixed(2)}, transmission: ${(pathwayBottleneck.transmissionCoefficient * 100).toFixed(1)}%)`;
+        }
+        else if ((context.enforceTransitionPathGating ?? false) &&
+            transitionPath.pathViabilityRatio < 0.25) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — SUB-CRITICAL TRANSITION PATH (Viability: ${(transitionPath.pathViabilityRatio * 100).toFixed(1)}% < 25.0%)`;
+        }
+        else if ((context.enforceLatencyBudgetGating ?? false) &&
+            execLatencyBreakdown.totalDecisionToLandingMs !== undefined &&
+            execLatencyBreakdown.totalDecisionToLandingMs > (context.maxAcceptableDecisionToLandingMs ?? 1200)) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — EXCESSIVE DECISION-TO-LANDING LATENCY (${execLatencyBreakdown.totalDecisionToLandingMs.toFixed(1)}ms > ${(context.maxAcceptableDecisionToLandingMs ?? 1200)}ms, bottleneck: ${execLatencyBreakdown.criticalBottleneckStage})`;
+        }
+        else if ((context.enforceReferenceShiftGating ?? false) &&
+            (!referenceShift.isValidBaseline || referenceShift.currencyDivergenceBps > (context.maxCurrencyDivergenceBps ?? 1000))) {
+            decision = 'CHALLENGED_ABSTAIN';
+            whyExecutionBlocked = `BLOCKED — CURRENCY REFERENCE DIVERGENCE (${referenceShift.currencyDivergenceBps} bps > ${(context.maxCurrencyDivergenceBps ?? 1000)} bps, valid: ${referenceShift.isValidBaseline})`;
+        }
         else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
             decision = 'AUTHORIZED_SELL';
             const exitResult = this.executeExit({
                 mint: event.mint,
                 netProceedsSol: context.liquiditySol > 0 ? Math.min(context.liquiditySol, 0.5) : 0.45,
                 slot: event.slot,
-                reason: 'POLICY_ROUTER_EXIT',
+                reason: dynamicStopping.optimalAction === 'LIQUIDATE'
+                    ? `BELLMAN_STOPPING_LIQUIDATE (deficit: $${(-dynamicStopping.netContinuationAdvantageUsd).toFixed(2)})`
+                    : 'POLICY_ROUTER_EXIT',
             });
             allocatedSol = exitResult.realizedPnlSol;
         }
@@ -1322,8 +2085,10 @@ export class MasterIntelligenceEngine {
             if (process.env.SYLPH_RUNTIME_MODE === 'live' || process.env.MODE === 'live') {
                 throw new Error('LIVE_EXECUTION_BLOCKED: CertifiedLiveExecutionCoordinator required for live capital mutations');
             }
-            const capSnapshot = this.capitalTruth.getSnapshot();
-            const proposedSizeSol = 0.5 * regime.riskMultiplier * policyDecision.targetAllocationMultiplier * oodAssessment.allowedCapitalMultiplier;
+            const baseCalculatedSol = convexKelly.recommendedAllocationSol > 0
+                ? Math.min(convexKelly.recommendedAllocationSol, 0.5 * regime.riskMultiplier * policyDecision.targetAllocationMultiplier * oodAssessment.allowedCapitalMultiplier)
+                : 0.5 * regime.riskMultiplier * policyDecision.targetAllocationMultiplier * oodAssessment.allowedCapitalMultiplier;
+            const proposedSizeSol = Math.max(0.1, Number(baseCalculatedSol.toFixed(4)));
             // 1. Reserve capital first to produce genuine reservation evidence (Section 14)
             const reservationId = `res_${event.mint.slice(0, 6)}_${event.slot}`;
             const reserveResult = this.capitalTruth.reserveCapital({
@@ -1366,7 +2131,7 @@ export class MasterIntelligenceEngine {
                     current_open_positions_count: updatedCapSnapshot.confirmed_positions_count,
                     unresolved_intents_count: updatedCapSnapshot.unresolved_intents_count,
                     unknown_capital_sol: updatedCapSnapshot.unresolved_transactions_count > 0 ? updatedCapSnapshot.reserved_cash_sol : 0.0,
-                    has_active_reservation: true,
+                    has_active_reservation: this.capitalTruth.hasActiveReservation(reservationId),
                     has_commit_certificate: !!commitCert.is_durable_committed,
                     has_valid_survival_certificate: survivalCert.is_valid,
                     request_control_epoch: updatedCapSnapshot.control_epoch,
@@ -2220,6 +2985,113 @@ export class MasterIntelligenceEngine {
             assuranceCase,
             predictionBundle: multiModelBundle,
             killSwitchStatus: this.killSwitch.getStatus().mode,
+            spieEvaluation,
+            convexKelly,
+            separationAnalysis,
+            executableAthProfile,
+            decisionSlackMs: separationAnalysis.decisionSlackMs,
+            crowdingHorizonMs: separationAnalysis.crowdingHorizonMs,
+            wstMs: separationAnalysis.wstMs,
+            msetMs: separationAnalysis.msetMs,
+            executableAthMultiple: executableAthProfile.eathBySize.get(100) ?? executableAthProfile.displayedAthMultiple,
+            runnerCommittor,
+            failureCommittor,
+            flowReproduction,
+            reactiveFlux,
+            dynamicStopping,
+            exitAttemptRecord,
+            bellmanOptimalAction: dynamicStopping.optimalAction,
+            continuationAdvantageUsd: dynamicStopping.netContinuationAdvantageUsd,
+            qUp: runnerCommittor.qUp,
+            qFail: failureCommittor.qFail,
+            rBuy: flowReproduction.rBuy,
+            rSell: flowReproduction.rSell,
+            isSuperCriticalFlow: flowReproduction.isFlowHealthy,
+            bayesErrorAnalysis,
+            earliestDecisionProfile,
+            runnerDistinguishability,
+            bayesErrorFloor: bayesErrorAnalysis.errorFloor,
+            liftVsBaseRate: runnerDistinguishability.liftVsBaseRate,
+            eligibleForRunnerTreatment: runnerDistinguishability.eligibleForRunnerTreatment,
+            runnerSearchCost,
+            tailConcentration,
+            portfolioRuin,
+            probRuin: portfolioRuin?.probRuin,
+            isPortfolioSurvivable: portfolioRuin?.isPortfolioSurvivable,
+            tailRobustness: tailConcentration?.robustnessClassification,
+            executableAlphaCertificate,
+            lawCourtSession,
+            expectedNetEdgeUsd: executableAlphaCertificate?.expectedNetEdgeUsd,
+            lawCourtRuling: lawCourtSession?.courtRuling,
+            exitMinCut,
+            liquidityRegeneration,
+            qSafeExitUsd: exitMinCut?.qSafeExitUsd,
+            minCutBottleneckEdge: exitMinCut?.minCutBottleneckEdge,
+            isRegenerationRobust: liquidityRegeneration?.isRegenerationRobust,
+            alphaHalfLife,
+            quoteDecay,
+            alphaBurnAudit,
+            executionUrgency,
+            halfLifeMs: alphaHalfLife.halfLifeMs,
+            economicEventHorizonMs: alphaHalfLife.economicEventHorizonMs,
+            quoteDecayBps: quoteDecay.decayBps,
+            urgencyLevel: executionUrgency.urgencyLevel,
+            submissionRouting,
+            laneScorecard: activeScorecard,
+            accountContention: submissionRouting.contentionAnalysis,
+            feeOptimization: activeFeeOpt,
+            selectedSubmissionLane: submissionRouting.selectedLane,
+            laneLandingProbability: submissionRouting.landingProbability,
+            sameSlotLandingProbability: submissionRouting.sameSlotProbability,
+            accountCollisionProbability: submissionRouting.contentionAnalysis.lockCollisionProbability,
+            contentionHeatmap,
+            adaptiveFeeBid,
+            hottestContentionTier: contentionHeatmap.hottestAccount.contentionTier,
+            preemptionFeeMicroLamports: adaptiveFeeBid.recommendedPriorityMicroLamports,
+            transportabilityRuling,
+            isDistributionAdmissible: transportabilityRuling.admissible,
+            migrationSurvivorshipHaircut: transportabilityRuling.migrationSurvivorshipHaircut,
+            referenceCurrencyStability: transportabilityRuling.referenceCurrencyStability,
+            observationQuality,
+            sensorRace,
+            isObservationQualitySufficient: observationQuality.sufficient,
+            sensorRaceWinner: sensorRace?.winnerSensorId,
+            liquidationSurface,
+            liquidityFatigue,
+            stressedExitCapacityUsd: liquidationSurface.stressedExitCapacityUsd,
+            liquidityHaircutUsd: liquidationSurface.liquidityHaircutUsd,
+            liquidityFatigueDiscount: liquidityFatigue.fatigueDiscountVsSingleSale,
+            isLiquidationCapacityAdequate: liquidationSurface.stressedExitCapacityUsd >= (context.requiredStressedCapacityUsd ?? (context.requiredStakeUsd ?? 50.0)) && (liquidationSurface.base.points.find((p) => p.percentage === 100)?.impactBps ?? 0) <= 2500,
+            portfolioCapacity,
+            liquidationHypergraph,
+            canOpenNewPosition: portfolioCapacity.canOpenNewPosition,
+            hypergraphExitCapacityUsd: liquidationHypergraph.aggregateExitCapacityUsd,
+            hypergraphSinglePointOfFailure: liquidationHypergraph.singlePointOfFailureVenue,
+            exogenousCapital,
+            inventoryAbsorption,
+            isAuthenticInflow: exogenousCapital.isAuthenticInflow,
+            isOverhangDangerous: inventoryAbsorption.isOverhangDangerous,
+            netExogenousInflowUsd: exogenousCapital.netExogenousInflowUsd,
+            overhangToPoolRatio: inventoryAbsorption.overhangToPoolRatio,
+            capitalGeneration,
+            capitalSurvival,
+            isDepthSufficient: capitalGeneration.depthSufficientForRunner,
+            isExtractionSiphon: capitalSurvival.isExtractionSiphon,
+            capitalRetentionRatio: capitalSurvival.capitalRetentionRatio60s,
+            maximumGenerationReached: capitalGeneration.maximumGenerationReached,
+            transitionPath,
+            metastability,
+            pathwayBottleneck,
+            isMetastableTrap: metastability.isMetastableTrap,
+            isPathwayChoked: pathwayBottleneck.isPathwayChoked,
+            transitionViabilityRatio: transitionPath.pathViabilityRatio,
+            bottleneckLocation: pathwayBottleneck.bottleneckSurfaceLocation,
+            latencyBreakdown: execLatencyBreakdown,
+            referenceShift,
+            criticalLatencyStage: execLatencyBreakdown.criticalBottleneckStage,
+            totalDecisionToLandingMs: execLatencyBreakdown.totalDecisionToLandingMs,
+            currencyDivergenceBps: referenceShift.currencyDivergenceBps,
+            grossReferenceMultiple: referenceShift.grossMultiple,
             links: {
                 solscan: `https://solscan.io/token/${event.mint}`,
                 pump: `https://pump.fun/${event.mint}`,
@@ -2434,6 +3306,53 @@ export class MasterIntelligenceEngine {
             proofReport,
             executionPermit,
             capitalAuthority: viewModel.capitalAuthority,
+            spieEvaluation,
+            convexKelly,
+            separationAnalysis,
+            executableAthProfile,
+            runnerCommittor,
+            failureCommittor,
+            flowReproduction,
+            reactiveFlux,
+            dynamicStopping,
+            exitAttemptRecord,
+            bayesErrorAnalysis,
+            earliestDecisionProfile,
+            runnerDistinguishability,
+            runnerSearchCost,
+            tailConcentration,
+            portfolioRuin,
+            executableAlphaCertificate,
+            lawCourtSession,
+            exitMinCut,
+            liquidityRegeneration,
+            alphaHalfLife,
+            quoteDecay,
+            alphaBurnAudit,
+            executionUrgency,
+            submissionRouting,
+            laneScorecard: activeScorecard,
+            accountContention: submissionRouting.contentionAnalysis,
+            feeOptimization: activeFeeOpt,
+            contentionHeatmap,
+            adaptiveFeeBid,
+            transportabilityRuling,
+            observationQuality,
+            sensorRace,
+            liquidationSurface,
+            liquidityFatigue,
+            portfolioCapacity,
+            liquidationHypergraph,
+            exogenousCapital,
+            inventoryAbsorption,
+            capitalGeneration,
+            capitalSurvival,
+            transitionPath,
+            metastability,
+            pathwayBottleneck,
+            latencyBreakdown: execLatencyBreakdown,
+            referenceShift,
+            whyExecutionBlocked: decision !== 'AUTHORIZED_BUY' ? whyExecutionBlocked : undefined,
         };
     }
     /**
@@ -2516,7 +3435,332 @@ export class MasterIntelligenceEngine {
         });
         this.portfolioEvac.removePosition(params.mint);
         this.liveThesis.invalidateThesis(params.mint, params.reason || 'POSITION_EXIT');
+        if (result.success) {
+            this.calibrator.recordOutcome(0.65, result.realized_pnl_sol > 0 ? 1 : 0);
+        }
         return { success: result.success, realizedPnlSol: result.realized_pnl_sol };
+    }
+    /**
+     * God-Tier Dynamic Exit & Trailing Ratchet Evaluator (Exit Excellence 50)
+     * Bridges to DynamicExitEngine, providing multi-stage trailing ratchets up to 100x (+10,000% PnL)
+     * and Breakeven Protection.
+     */
+    evaluateDynamicExit(params) {
+        const posSnapshot = {
+            mint: params.mint,
+            entryPriceUsd: params.entryPriceUsd,
+            currentPriceUsd: params.currentPriceUsd,
+            highestPriceUsd: params.highestPriceUsd,
+            lowestPriceUsd: params.lowestPriceUsd ?? params.entryPriceUsd * 0.95,
+            unrealizedPnlPct: (params.currentPriceUsd - params.entryPriceUsd) / params.entryPriceUsd,
+            realSolReserve: params.realSolReserve ?? 30,
+            priorBlockSolReserve: params.realSolReserve ?? 30,
+            consecutiveSellBlocks: params.consecutiveSellBlocks ?? 0,
+            currentSellPressureRatio: params.currentSellPressureRatio ?? 0.1,
+            isDevSold: params.isDevSold ?? false,
+            stagesCompleted: params.stagesCompleted ?? 0,
+            holdingTimeSeconds: params.holdingTimeSeconds ?? 60,
+        };
+        const godTier = this.dynamicExits.evaluateGodTierExits(posSnapshot);
+        const hazardRunnerExit = this.dynamicExits.evaluateHazardRunnerExit(posSnapshot, params.hazardParams);
+        return {
+            godTier,
+            hazardRunnerExit,
+        };
+    }
+    /**
+     * Bellman Continuous Optimal Stopping Evaluator (Blueprint Section XXII)
+     * V(x, q) = \max( Liquidate, Partial, Continue )
+     */
+    evaluateBellmanOptimalStopping(params) {
+        return DynamicStoppingEngine.evaluateStopping(params.pos, params.research, params.liquidation);
+    }
+    /**
+     * Counterfactual Exit Policy Tournament (Blueprint Section XXI)
+     * Evaluates parallel shadow policies against identical market trajectory.
+     */
+    evaluateExitTournament(params) {
+        return this.exitTournament.evaluateTournament(params);
+    }
+    /**
+     * Exit Regret & Counterfactual Ledger Engine (Blueprint Section XXIV)
+     * Computes Runner Capture Efficiency (RCE) against Executable ATH,
+     * premature liquidation cost, late exit cost, and execution shortfall.
+     */
+    computeCounterfactualExitRegret(params) {
+        return ExitRegretLedger.computeRegret(params);
+    }
+    /**
+     * Computes Runner Dependence metrics RD_k for k = 1, 3, 5, 10
+     */
+    calculateRunnerDependence(tradePnlsSol) {
+        return ExitPolicyTournamentMatrix.calculateRunnerDependence(tradePnlsSol);
+    }
+    /**
+     * Evaluates minimax information-theoretic lower bounds on classification error (Blueprint Section IX).
+     * Le Cam distance and Fano lower bound define the fundamental Bayes error floor.
+     */
+    evaluateBayesErrorBounds(featureDivergence, priorSuccessRate = HISTORICAL_2X_TO_10X_BASE_RATE, acceptableRiskTolerance = 0.35) {
+        return BayesErrorFrontierEngine.evaluateBounds(featureDivergence, priorSuccessRate, acceptableRiskTolerance);
+    }
+    /**
+     * Calculates the Earliest Decision Time horizon T* (Blueprint Section IX).
+     * Prevents premature execution before sufficient signal-to-noise is accumulated.
+     */
+    calculateEarliestDecisionTime(elapsedSeconds, volatilityAtr = 0.15, observationsCount = 10) {
+        return EarliestDecisionTimeEngine.calculate(elapsedSeconds, volatilityAtr, observationsCount);
+    }
+    /**
+     * Evaluates runner distinguishability at 2x price multiple (Blueprint Section X).
+     * Enforces 2x -> 10x transition base rate realities and structural distinguishability certificates.
+     */
+    evaluate2xRunnerDistinguishability(features) {
+        return RunnerDistinguishabilityCourt.evaluateAt2xCrossing(features);
+    }
+    /**
+     * Calculates Runner Search Cost and economic search viability (Blueprint Section XXV).
+     * RunnerSearchCost = \sum LossesBeforeRunner + ExecutionFriction
+     */
+    evaluateRunnerSearchCost(outcomes) {
+        return RunnerSearchCostEngine.calculateSearchCost(outcomes);
+    }
+    /**
+     * Evaluates Tail Concentration and outlier fragility (Blueprint Section XXV).
+     * Verifies whether strategy profitability survives single top-winner removal.
+     */
+    evaluateTailConcentration(positionPnLsUsd) {
+        return TailConcentrationEngine.evaluateTailConcentration(positionPnLsUsd);
+    }
+    /**
+     * Simulates Portfolio Ruin dynamics under friction, landing failures, and AMM drawdowns (Blueprint Section XXVI).
+     */
+    simulatePortfolioRuin(params) {
+        return PortfolioRuinEngine.simulate(params);
+    }
+    /**
+     * Section XXVIII & Study 47: Prospective Law Court Engine
+     * Freezes policy contract and adjudicates prospective candidate trials across denominator.
+     */
+    createProspectiveLawCourt(sessionParams) {
+        return new ProspectiveLawCourt(sessionParams);
+    }
+    /**
+     * Section V & XXXI: Master Executable Alpha Certificate Evaluation
+     * Evaluates master alpha equation across 8 foundational gates.
+     */
+    issueExecutableAlphaCertificate(input) {
+        return ExecutableAlphaCertificateIssuer.evaluateAndIssue(input);
+    }
+    /**
+     * Section XIV & Study 29: Exit Min-Cut Liquidity Engine
+     * Computes max-flow min-cut network bottleneck across multi-tier stress scenarios.
+     */
+    computeExitMinCut(params) {
+        return ExitMinCutEngine.computeMinCut(params);
+    }
+    /**
+     * Section XIV & Study 30: Liquidity Regeneration Engine
+     * Measures liquidity replenishment speed, half-life, and hysteresis deficit post-shock.
+     */
+    measureLiquidityRegeneration(params) {
+        return LiquidityRegenerationEngine.measureRegeneration(params);
+    }
+    /**
+     * Section XV & Study 31: Alpha Edge Half-Life & Decay Curvature
+     * Models opportunity half-life and economic event horizon under competitor density.
+     */
+    estimateAlphaHalfLife(params) {
+        return AlphaHalfLifeEngine.estimateHalfLife(params);
+    }
+    /**
+     * Section XV: Latency Alpha Burn Audit
+     * Decomposes edge destruction across subsystem latency phases.
+     */
+    auditAlphaBurn(initialEdgeBps, estimate, breakdown) {
+        return AlphaBurnLedger.auditBurn(initialEdgeBps, estimate, breakdown);
+    }
+    /**
+     * Section XVI & Study 35: Quote Decay & Adverse Selection
+     * Evaluates price degradation across discrete slot lags and intervening trades.
+     */
+    evaluateQuoteDecay(params) {
+        return QuoteDecayEngine.evaluateDecay(params);
+    }
+    /**
+     * Section XX: Dynamic Execution Urgency & Fee Budgeting
+     * Determines urgency state (LOW, NORMAL, HIGH, EMERGENCY) based on VaR, hazard, and decay.
+     */
+    calculateExecutionUrgency(params) {
+        return ExecutionUrgencyEngine.calculateUrgency(params);
+    }
+    /**
+     * Section XIX: Execution Lane Scorecard Record
+     * Records transaction propagation outcome to maintain empirical lane track records.
+     */
+    recordLaneAttempt(event) {
+        return this.laneScorecards.recordAttempt(event);
+    }
+    /**
+     * Section XIX: Get Scorecard for Lane
+     */
+    getLaneScorecard(laneId) {
+        return this.laneScorecards.getScorecard(laneId);
+    }
+    /**
+     * Section XIX: Get All Scorecards
+     */
+    getAllLaneScorecards() {
+        return this.laneScorecards.getAllScorecards();
+    }
+    /**
+     * Section XVIII & Study 37: Estimate Landing Probability
+     */
+    estimateLandingProbability(params) {
+        return LandingPhysicsModel.estimateLanding(params);
+    }
+    /**
+     * Section XVIII & Study 40: Analyze Account Write-Lock Contention
+     */
+    analyzeAccountContention(params) {
+        return AccountContentionEngine.analyzeContention(params);
+    }
+    /**
+     * Section XVIII: Optimize Fee & Compute Unit Limit
+     */
+    optimizeFeeResponse(params) {
+        return FeeResponseSurfaceEngine.optimizeFee(params);
+    }
+    /**
+     * Section XIX & Study 38: Multi-Lane Adaptive Submission Routing
+     */
+    routeSubmissionLane(input) {
+        return this.submissionRouter.routeSubmission(input);
+    }
+    /**
+     * Section XVIII & Study 40: Generate Account Contention Heatmap
+     * Evaluates per-account write lock contention, Sealevel conflict probability, and preemption fees.
+     */
+    generateAccountContentionHeatmap(params) {
+        return AccountContentionEngine.generateHeatmap(params);
+    }
+    /**
+     * Section XVIII & Study 39: Compute Adaptive Priority Fee Bid
+     * Determines quantile-conditioned priority fee and tip respecting institutional hard budget caps.
+     */
+    computeAdaptivePriorityFeeBid(params) {
+        return FeeResponseSurfaceEngine.computeAdaptiveBid(params);
+    }
+    /**
+     * Section XI & Study Family 4: Adjudicate Distribution Transportability
+     * Evaluates cross-regime distribution transportability, migration survivorship bias, and reference currency stability.
+     */
+    adjudicateDistributionTransportability(params) {
+        return TransportabilityCourt.judge(params);
+    }
+    /**
+     * Section VIII & Study Family 5: Evaluate Observation Quality
+     * Assesses temporal freshness, slot lag, observation coverage, missingness and anti-future-leakage bounds.
+     */
+    evaluateObservationQuality(inputs) {
+        return ObservationQualityEngine.evaluate(inputs);
+    }
+    /**
+     * Section VIII & XXXIX: Evaluate Sensor Race & Multi-Feed Arbitration
+     * Arbitrates concurrent sensor arrivals, measures arrival latency races, and flags inter-feed price divergence.
+     */
+    evaluateSensorRace(arrivals) {
+        return SensorRaceEngine.evaluateRace(arrivals);
+    }
+    /**
+     * Section XV & Priority P0 (Section XLVI): Compute Executable Liquidation Surface
+     * Computes laddered percentage exits (10%, 25%, 50%, 75%, 100%) under BASE, -25%, and -50% stressed liquidity.
+     */
+    computeLiquidationSurface(params) {
+        return ExecutableLiquidationSurfaceEngine.computeSurface(params);
+    }
+    /**
+     * Section XIV & Study 31: Simulate Staged Liquidity Fatigue
+     * Models sequential reserve depletion and progressive fragility under repeated partial exits.
+     */
+    simulateLiquidityFatigue(params) {
+        return LiquidityFatigueEngine.simulateStagedSales(params);
+    }
+    /**
+     * Section XXVI: Check Portfolio Capacity
+     * Enforces concurrent position ceilings and minimum cash buffer constraints.
+     */
+    checkPortfolioCapacity(params) {
+        return PortfolioCapacityEngine.checkCapacity(params);
+    }
+    /**
+     * Section XIV & Study 28: Build Liquidation Hypergraph
+     * Models liquidation pathways across venues and computes aggregate exit capacity.
+     */
+    buildLiquidationHypergraph(params) {
+        return LiquidationHypergraphEngine.buildHypergraph(params);
+    }
+    /**
+     * Section XIII & Study 24: Classify Exogenous Capital Flow
+     * Decomposes pool inflows into genuine new capital vs recycled/coordinated/self-funded flow.
+     */
+    classifyExogenousCapital(params) {
+        return ExogenousCapitalClassifier.classifyFlow(params);
+    }
+    /**
+     * Section XIII & Study 27: Evaluate Floating Inventory Overhang Absorption
+     * Evaluates market capacity to absorb insider/sniper floating inventory without freefall crash.
+     */
+    evaluateInventoryAbsorption(params) {
+        return InventoryAbsorptionEngine.evaluateAbsorption(params);
+    }
+    /**
+     * Section XIII & Study 25: Evaluate Capital Generational Branching Depth
+     * Tracks generational branching depth of capital propagation to prevent single-wave collapse.
+     */
+    evaluateCapitalGenerationDepth(params) {
+        return CapitalGenerationEngine.evaluateDepth(params);
+    }
+    /**
+     * Section XIII & Study 26: Measure Capital Survival & Extraction Siphon
+     * Evaluates retention duration of net inflow capital inside the pool to detect predatory extraction.
+     */
+    measureCapitalSurvival(params) {
+        return CapitalSurvivalEngine.measureSurvival(params);
+    }
+    /**
+     * Section XII & Study 17: Analyze Transition Path Theory (TPT) Dynamics
+     * Computes reactive trajectory probability flux and mean first passage times to runner basin.
+     */
+    analyzeTransitionPath(params) {
+        return TransitionPathEngine.analyzePath(params);
+    }
+    /**
+     * Section XII & Studies 20/21: Evaluate Metastability & Onsager-Machlup Action Residual
+     * Determines whether price plateau is a temporary metastable trap or persistent runner state.
+     */
+    evaluateMetastability(params) {
+        return MetastabilityEngine.evaluateMetastability(params);
+    }
+    /**
+     * Section XII & Study 19: Analyze Kinetic Pathway Bottlenecks
+     * Pinpoints kinetic bottleneck surfaces and computes transmission coefficients along runner trajectory.
+     */
+    analyzePathwayBottlenecks(params) {
+        return PathwayBottleneckEngine.analyzeBottlenecks(params);
+    }
+    /**
+     * Section XVII & Study 36: Profile Execution Latency Trace
+     * Deconstructs latency across all 9 canonical stages and detects bottleneck stage.
+     */
+    profileExecutionLatencyTrace(trace) {
+        return LatencyBudgetProfiler.profileTrace(trace);
+    }
+    /**
+     * Section XI & Study FIXED-REFERENCE-SHIFT-X: Calculate Fixed Reference Shift
+     * Enforces currency denomination invariants and tracks divergence between SOL and USD multiples.
+     */
+    calculateFixedReferenceShift(params) {
+        return FixedReferenceShiftEngine.calculateReturn(params.baselinePrice, params.currentPrice, params.currency, params.solPriceUsdAtT0, params.solPriceUsdAtT1);
     }
     /**
      * System Intelligence & Omega Telemetry

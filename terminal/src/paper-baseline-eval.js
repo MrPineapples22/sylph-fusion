@@ -7,6 +7,7 @@
  * - Trade exit stage distribution (TP1, TP2, TP3, stop_loss, censored)
  * - Filter Alpha & Opportunity Cost: Avoided losses (dump/rug rejections) vs missed upside
  */
+import { sha256Hex } from './artifact-manifest-eval.js';
 
 export function evaluatePaperVsBaselineComparison({
   paperSession = null,
@@ -134,6 +135,8 @@ export function groupOutcomesIntoEpisodes(outcomes = []) {
         terminalState: outcome.terminalState,
         observationDurationMs: 0,
         subOutcomesCount: 0,
+        decisionTraceHashes: [],
+        sealedTraceRoot: '',
       });
     }
 
@@ -141,6 +144,14 @@ export function groupOutcomesIntoEpisodes(outcomes = []) {
     ep.subOutcomesCount++;
     if (outcome.censored) {
       ep.censored = true;
+    }
+
+    const traceHash = outcome.decisionTraceHash ||
+      outcome.traceHash ||
+      outcome.trace_hash ||
+      (outcome.decisionTrace && typeof outcome.decisionTrace.getTraceHash === 'function' ? outcome.decisionTrace.getTraceHash() : outcome.decisionTrace?.traceHash);
+    if (traceHash && typeof traceHash === 'string') {
+      ep.decisionTraceHashes.push(traceHash);
     }
 
     const cost = BigInt(String(outcome.costBasisLamports || '0'));
@@ -178,6 +189,12 @@ export function groupOutcomesIntoEpisodes(outcomes = []) {
     if (outcome.terminalState) {
       ep.terminalState = outcome.terminalState;
     }
+  }
+
+  for (const ep of episodes.values()) {
+    const tracesPayload = ep.decisionTraceHashes.slice().sort().join(',');
+    const payload = `${ep.positionId}:${ep.costBasisLamports}:${ep.grossProceedsLamports}:${ep.netReturnLamports}:${tracesPayload}`;
+    ep.sealedTraceRoot = sha256Hex(payload);
   }
 
   return Array.from(episodes.values());

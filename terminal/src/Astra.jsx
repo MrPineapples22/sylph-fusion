@@ -66,11 +66,11 @@ export default React.memo(function Astra() {
       </div>
 
       <div className="astra-rules">
-        1 SOL virtual starting capital · 2% maximum modeled risk · 7% trailing stop · TP +15% / +35% / +75%
+        1 SOL virtual starting capital · 2% max modeled risk · Breakeven lock at +8% · Moonshot ratchets 2x/5x/10x/20x/50x/100x (+10,000% PnL)
       </div>
 
       <p className="live-note">
-        Top 10 observed pools by trailing 1h volume — global ranking unverified. Raydium / Meteora / Orca / Pump.fun / PumpSwap. Basket recalculated every 2 seconds.
+        Top 10 observed pools by trailing 1h volume — global ranking unverified. Discrete Convex Kelly sizing with 45% SPIE friction ceiling. Raydium / Meteora / Orca / Pump.fun / PumpSwap. Basket recalculated every 2 seconds.
       </p>
 
       <div className="astra-carousel" role="region" aria-label="Astra Volume Basket Pairs">

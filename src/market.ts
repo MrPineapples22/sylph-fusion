@@ -6,6 +6,8 @@ import { RpcPool, httpJson } from './rpc.js';
 import type { Config } from './config.js';
 import { mulBps } from './core.js';
 import { PostGraduationAmmBridge } from './platform/execution/solaris/amm-bridge.js';
+import { TokenLifecycleOmegaAuthority } from './platform/lifecycle/token-lifecycle-omega.js';
+import { VenueEconomicsAuthority, type DecomposedExecutionEconomics } from './platform/execution/venue-economics.js';
 
 export type Snapshot = { mint: PublicKey; tokenProgram: PublicKey; supply: bigint; curve: BondingCurve; global: Global; fee: FeeConfig; info: AccountInfo<Buffer>; ata: AccountInfo<Buffer> | null; slot: number; at: number; creatorTokens?: string; entrySafe: boolean };
 
@@ -112,6 +114,7 @@ export function assessFastBoundHolderConcentration(input: {
 export class Market {
   private latestSlot = 0;
   readonly ammBridge = new PostGraduationAmmBridge();
+  readonly lifecycle = new TokenLifecycleOmegaAuthority();
   constructor(readonly rpc: RpcPool, readonly cfg: Config, readonly wallet: PublicKey) {}
   async snapshot(mint: string, minSlot = 0): Promise<Snapshot> {
     const key = new PublicKey(mint), c = this.rpc.connection;
@@ -138,10 +141,53 @@ export class Market {
     if (tokens <= 0n || s.supply <= 0n || BigInt(s.curve.virtualQuoteReserves.toString()) <= 0n || BigInt(s.curve.virtualTokenReserves.toString()) <= 0n) throw new Error('invalid sell quote inputs');
     return BigInt(getSellSolAmountFromTokenAmount({ global: s.global, feeConfig: s.fee, mintSupply: new BN(String(s.supply)), bondingCurve: s.curve, amount: new BN(String(tokens)) }).toString());
   }
+  decomposeBuyEconomics(s: Snapshot, lamports: bigint, slippageBps: number = 0): DecomposedExecutionEconomics {
+    if (lamports <= 0n || s.supply <= 0n) throw new Error('invalid buy economics inputs');
+    const fees = computeFeesBps({
+      global: s.global,
+      feeConfig: s.fee,
+      mintSupply: new BN(String(s.supply)),
+      virtualQuoteReserves: s.curve.virtualQuoteReserves,
+      virtualTokenReserves: s.curve.virtualTokenReserves,
+      quoteMint: s.curve.quoteMint,
+      creatorFeeBps: s.curve.creatorFeeBps
+    });
+    const feeBps = fees.protocolFeeBps.add(fees.creatorFeeBps).toNumber();
+    const actualOutput = this.buyQuote(s, lamports);
+    return VenueEconomicsAuthority.decomposeExecutionEconomics({
+      grossInputLamports: lamports,
+      feeBps,
+      virtualQuoteReserves: BigInt(s.curve.virtualQuoteReserves.toString()),
+      virtualTokenReserves: BigInt(s.curve.virtualTokenReserves.toString()),
+      actualOutputTokens: actualOutput,
+      slippageBps
+    });
+  }
+  ammExitQuote(mint: string, tokens: bigint): bigint {
+    const state = this.ammBridge.getGraduatedState(mint);
+    if (!state || !state.currentPoolSolLamports || state.currentPoolSolLamports <= 0n) {
+      throw new Error('NO_GRADUATED_AMM_POOL');
+    }
+    const poolSol = state.currentPoolSolLamports;
+    const poolTokens = 206_900_000_000_000n;
+    if (tokens <= 0n) throw new Error('invalid exit tokens');
+    const grossSol = (tokens * poolSol) / (poolTokens + tokens);
+    const netSol = (grossSol * 9975n) / 10000n;
+    if (netSol <= 0n) throw new Error('zero executable graduated AMM exit proceeds');
+    return netSol;
+  }
   validateEntry(s: Snapshot): void {
     if (!s.entrySafe) throw new Error('active authority or unsupported extension');
     if (s.curve.complete) {
-      this.ammBridge.registerMigration(s.mint.toBase58(), s.slot);
+      const mintStr = s.mint.toBase58();
+      this.ammBridge.registerMigration(mintStr, s.slot);
+      this.lifecycle.transitionLifecycle(mintStr, {
+        evidenceId: `EV-COMPL-${mintStr.slice(0, 8)}-${s.slot}`,
+        slot: s.slot,
+        timestampMs: Date.now(),
+        source: 'ON_CHAIN_PROGRAM',
+        details: 'Curve complete observed during validation',
+      }, 'COMPLETE_UNMIGRATED');
       throw new Error('unsupported curve mode');
     }
     // Pump SDK v2 supports native-SOL holder-reward curves for both quote
