@@ -17,6 +17,10 @@ export default React.memo(function Astra() {
   const [quotingMint, setQuotingMint] = useState('');
   const [mayanQuote, setMayanQuote] = useState(null);
   const [isQuotingMayan, setIsQuotingMayan] = useState(false);
+  const [birdeyeByMint, setBirdeyeByMint] = useState({});
+  const [checkingBirdeyeMint, setCheckingBirdeyeMint] = useState('');
+  const [streamflowByMint, setStreamflowByMint] = useState({});
+  const [checkingStreamflowMint, setCheckingStreamflowMint] = useState('');
 
   useEffect(() => {
     let stopped = false;
@@ -79,6 +83,36 @@ export default React.memo(function Astra() {
     } finally {
       setIsQuotingMayan(false);
     }
+  };
+
+  const requestBirdeyeOverview = async (mint) => {
+    if (!mint || checkingBirdeyeMint) return;
+    setCheckingBirdeyeMint(mint);
+    setBirdeyeByMint(current => ({...current, [mint]: null}));
+    try {
+      const response = await fetch(`/api/research/birdeye-overview?mint=${encodeURIComponent(mint)}`, {
+        headers: {accept: 'application/json'}, signal: AbortSignal.timeout(8_000),
+      });
+      const result = await response.json();
+      setBirdeyeByMint(current => ({...current, [mint]: result}));
+    } catch (e) {
+      setBirdeyeByMint(current => ({...current, [mint]: {status: 'UNAVAILABLE', errorCode: e?.name === 'TimeoutError' ? 'BIRDEYE_UI_TIMEOUT' : 'BIRDEYE_UI_REQUEST_FAILED'}}));
+    } finally { setCheckingBirdeyeMint(''); }
+  };
+
+  const requestStreamflowOverview = async (mint) => {
+    if (!mint || checkingStreamflowMint) return;
+    setCheckingStreamflowMint(mint);
+    setStreamflowByMint(current => ({...current, [mint]: null}));
+    try {
+      const response = await fetch(`/api/research/streamflow-vesting?mint=${encodeURIComponent(mint)}`, {
+        headers: {accept: 'application/json'}, signal: AbortSignal.timeout(12_000),
+      });
+      const result = await response.json();
+      setStreamflowByMint(current => ({...current, [mint]: result}));
+    } catch (e) {
+      setStreamflowByMint(current => ({...current, [mint]: {status: 'UNAVAILABLE', errorCode: e?.name === 'TimeoutError' ? 'STREAMFLOW_UI_TIMEOUT' : 'STREAMFLOW_UI_REQUEST_FAILED'}}));
+    } finally { setCheckingStreamflowMint(''); }
   };
 
   const links = [
@@ -159,7 +193,31 @@ export default React.memo(function Astra() {
                 <button type="button" className="op-button" disabled={!p.mint || Boolean(quotingMint)} onClick={() => requestRoundTripQuote(p.mint)}>
                   {quotingMint === p.mint ? 'Requesting quote…' : 'Check Jupiter round trip'}
                 </button>
+                <button type="button" className="op-button" style={{marginLeft: '6px'}} disabled={!p.mint || Boolean(checkingBirdeyeMint)} onClick={() => requestBirdeyeOverview(p.mint)}>
+                  {checkingBirdeyeMint === p.mint ? 'Checking Birdeye…' : 'Cross-check Birdeye'}
+                </button>
+                <button type="button" className="op-button" style={{marginLeft: '6px'}} disabled={!p.mint || Boolean(checkingStreamflowMint)} onClick={() => requestStreamflowOverview(p.mint)}>
+                  {checkingStreamflowMint === p.mint ? 'Checking Streamflow…' : 'Check Streamflow vesting'}
+                </button>
                 <small className="font-mono text-muted" style={{ display: 'block', marginTop: '5px' }}>Quote only · no wallet, transaction, or order submission</small>
+                {birdeyeByMint[p.mint] && <div role="status" aria-live="polite" style={{marginTop: '7px', fontSize: '11px'}}>
+                  {birdeyeByMint[p.mint].status === 'AVAILABLE' ? <>
+                    <b>Birdeye overview · independent market source</b>
+                    <small className="font-mono text-muted" style={{display: 'block', marginTop: '3px'}}>
+                      Price {format(birdeyeByMint[p.mint].fields.priceUsd)} · Liquidity {format(birdeyeByMint[p.mint].fields.liquidityUsd)} · Market cap {format(birdeyeByMint[p.mint].fields.marketCapUsd)}
+                    </small>
+                    <small className="font-mono text-muted">Observed {new Date(birdeyeByMint[p.mint].observedAt).toLocaleTimeString()} · manual research only</small>
+                  </> : <b style={{color: '#F59E0B'}}>Birdeye {birdeyeByMint[p.mint].status}: {birdeyeByMint[p.mint].errorCode || 'UNKNOWN'}</b>}
+                </div>}
+                {streamflowByMint[p.mint] && <div role="status" aria-live="polite" style={{marginTop: '7px', fontSize: '11px'}}>
+                  {streamflowByMint[p.mint].status === 'AVAILABLE' ? <>
+                    <b>Streamflow schedules · read-only on-chain lookup</b>
+                    <small className="font-mono text-muted" style={{display: 'block', marginTop: '3px'}}>
+                      Active {streamflowByMint[p.mint].scheduleCount} · remaining {streamflowByMint[p.mint].remainingRawTotal} raw units · next 7d {streamflowByMint[p.mint].unlockNext7dRawTotal} raw units · sender-cancellable {streamflowByMint[p.mint].cancelableBySenderCount}
+                    </small>
+                    <small className="font-mono text-muted">Only Streamflow contracts are counted; this does not cover all vesting or locks.</small>
+                  </> : <b style={{color: '#F59E0B'}}>Streamflow {streamflowByMint[p.mint].status}: {streamflowByMint[p.mint].errorCode || 'UNKNOWN'}</b>}
+                </div>}
                 {quoteByMint[p.mint] && <div role="status" aria-live="polite" style={{ marginTop: '7px', fontSize: '11px' }}>
                   {quoteByMint[p.mint].status === 'QUOTED' ? <>
                     <b style={{ color: quoteByMint[p.mint].roundTripDeltaBps >= 0 ? '#F59E0B' : '#FF3B69' }}>

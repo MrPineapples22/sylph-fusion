@@ -58,6 +58,7 @@
     "@pump-fun/pump-sdk": "2.0.0",
     "@solana/spl-token": "0.4.14",
     "@solana/web3.js": "1.98.4",
+    "@streamflow/stream": "13.4.0",
     "@triton-one/yellowstone-grpc": "4.0.2",
     "bn.js": "5.2.5",
     "bs58": "6.0.0",

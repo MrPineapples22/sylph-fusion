@@ -11,6 +11,8 @@ import path, {resolve} from 'node:path';
 import {createAstraFeed} from './astra-feed.mjs';
 import {createJupiterResearchQuoteService} from './jupiter-research.mjs';
 import {createMayanResearchQuoteService} from './mayan-research.mjs';
+import {createBirdeyeResearchService} from './birdeye-research.mjs';
+import {createStreamflowResearchService} from './streamflow-research.mjs';
 import {createDiscordAlertService} from './discord-alerts.mjs';
 import {createJevMarketFeatureContextBuilder} from './jev-market-context.mjs';
 import {getSoakTelemetry, buildRpcStatusPayload, exportSessionArtifact, readSessionEvents, compareSoakSessions} from './soak-reader.mjs';
@@ -2285,6 +2287,24 @@ async function handleRequest(req,res){
   res.end(JSON.stringify(result));
   return;
  }
+ if(req.method==='GET'&&reqUrl.pathname==='/api/research/birdeye-overview'){
+  const mint=reqUrl.searchParams.get('mint')||'';
+  const result=await birdeyeResearch.overview(mint);
+  res.setHeader('Content-Type','application/json');
+  res.setHeader('Cache-Control','no-store');
+  res.writeHead(result.status==='UNAVAILABLE'?(result.errorCode==='BIRDEYE_API_KEY_UNCONFIGURED'?503:400):200);
+  res.end(JSON.stringify(result));
+  return;
+ }
+ if(req.method==='GET'&&reqUrl.pathname==='/api/research/streamflow-vesting'){
+  const mint=reqUrl.searchParams.get('mint')||'';
+  const result=await streamflowResearch.lookupMint(mint);
+  res.setHeader('Content-Type','application/json');
+  res.setHeader('Cache-Control','no-store');
+  res.writeHead(result.status==='UNAVAILABLE'?(result.errorCode==='STREAMFLOW_RPC_UNCONFIGURED'?503:400):200);
+  res.end(JSON.stringify(result));
+  return;
+ }
  if(reqUrl.pathname==='/astra/basket'){
   try{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(await astraFeed()));}
   catch{res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({verified:false,entryAllowed:false,error:'Astra volume basket unavailable; entries blocked.'}));}return;
@@ -2362,6 +2382,8 @@ const jupiterResearchQuotes=createJupiterResearchQuoteService(process.env, fetch
     ? globalProviderHealthTracker.recordRateLimit('JUPITER_QUOTE')
     : globalProviderHealthTracker.recordFailure('JUPITER_QUOTE', reason),
 });
+const birdeyeResearch=createBirdeyeResearchService(process.env, fetch);
+const streamflowResearch=createStreamflowResearchService(process.env);
 globalProviderHealthTracker.setProviderConfiguration('MAYAN_QUOTE', true, true, false, 'NOT_REQUIRED');
 const mayanResearchQuotes=createMayanResearchQuoteService(process.env, fetch, {
   onValidatedQuote: latencyMs => globalProviderHealthTracker.recordValidatedObservation('MAYAN_QUOTE', latencyMs),
