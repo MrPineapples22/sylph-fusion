@@ -106,7 +106,8 @@ export class TradeLearningService {
             this.minMaturitySlotDelta = options.minMaturitySlotDelta;
         }
         // Tests start with an isolated in-memory instance (0 records).
-        // Servers call .loadFromCsv() to ingest validated but unverified research telemetry.
+        // CSV ingestion is an explicit caller operation. The terminal runtime does
+        // not load attribution files; attached CSV research remains audit-only.
     }
     setOutcomeMaturityRequired(required, minDelayMs, minSlotDelta) {
         this.requireOutcomeMaturity = required;

@@ -51,7 +51,12 @@ export class JitoLifecycleCoordinator {
    */
   public async checkInflightStatus(bundleId: string, signature: string): Promise<JitoStatusReport> {
     const started = Date.now();
+    const unknown = (failureReason: string): JitoStatusReport => ({ bundleId, signature, status: 'UNKNOWN',
+      latencyMs: Date.now() - started, terminal: false, failureReason });
     try {
+      if (!bundleId || !signature || !Number.isSafeInteger(this.timeoutMs) || this.timeoutMs < 100 || this.timeoutMs > 30_000) {
+        return unknown('INVALID_REQUEST');
+      }
       const headers: Record<string, string> = { 'content-type': 'application/json' };
       if (this.jitoAuth) {
         headers['x-jito-auth'] = this.jitoAuth;
@@ -66,88 +71,30 @@ export class JitoLifecycleCoordinator {
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
-
-      const resp = await this.fetchFn(this.jitoRpcUrl, {
-        method: 'POST',
-        headers,
-        body,
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-
-      if (!resp.ok) {
-        return {
-          bundleId,
-          signature,
-          status: 'UNKNOWN',
-          latencyMs: Date.now() - started,
-          terminal: false,
-          failureReason: 'HTTP_' + String(resp.status),
-        };
-      }
-
-      const json = (await resp.json()) as { result?: JitoRpcResponse };
-      const item = json.result?.value?.[0];
-
-      if (!item) {
-        return {
-          bundleId,
-          signature,
-          status: 'INFLIGHT_PENDING',
-          latencyMs: Date.now() - started,
-          terminal: false,
-        };
-      }
-
-      if (item.status === 'Landed') {
-        return {
-          bundleId,
-          signature,
-          status: 'BUNDLE_LANDED',
-          landedSlot: item.landed_slot,
-          latencyMs: Date.now() - started,
-          terminal: true,
-        };
-      }
-
-      if (item.status === 'Failed') {
-        return {
-          bundleId,
-          signature,
-          status: 'AUCTION_LOST',
-          failureReason: 'BUNDLE_DROPPED_BY_LEADER',
-          latencyMs: Date.now() - started,
-          terminal: true,
-        };
-      }
-
-      if (item.status === 'Invalid') {
-        return {
-          bundleId,
-          signature,
-          status: 'RELAY_UNAVAILABLE',
-          failureReason: 'BUNDLE_DROPPED_BY_JITO_RELAY_NON_TERMINAL',
-          latencyMs: Date.now() - started,
-          terminal: false,
-        };
-      }
-
-      return {
-        bundleId,
-        signature,
-        status: 'INFLIGHT_PENDING',
-        latencyMs: Date.now() - started,
-        terminal: false,
-      };
+      try {
+        const resp = await this.fetchFn(this.jitoRpcUrl, { method: 'POST', headers, body, signal: controller.signal, redirect: 'error' });
+        if (!resp.ok) return unknown(`HTTP_${resp.status}`);
+        const payload = await resp.json() as { jsonrpc?: unknown; id?: unknown; error?: unknown; result?: JitoRpcResponse };
+        if (!payload || payload.jsonrpc !== '2.0' || payload.id !== 1 || payload.error != null) return unknown('JSON_RPC_RESPONSE_INVALID');
+        const values = payload?.result?.value;
+        if (!Array.isArray(values)) return unknown('STATUS_RESPONSE_INVALID');
+        const item = values[0];
+        if (!item) return { bundleId, signature, status: 'INFLIGHT_PENDING', latencyMs: Date.now() - started, terminal: false };
+        if (item.bundle_id !== bundleId) return unknown('BUNDLE_ID_MISMATCH');
+        if (item.status === 'Landed') {
+          if (!Number.isSafeInteger(item.landed_slot) || item.landed_slot! <= 0) return unknown('LANDED_SLOT_INVALID');
+          return { bundleId, signature, status: 'BUNDLE_LANDED', landedSlot: item.landed_slot,
+            latencyMs: Date.now() - started, terminal: true };
+        }
+        if (item.status === 'Failed') return { bundleId, signature, status: 'AUCTION_LOST',
+          failureReason: 'BUNDLE_DROPPED_BY_LEADER', latencyMs: Date.now() - started, terminal: true };
+        if (item.status === 'Invalid') return { bundleId, signature, status: 'RELAY_UNAVAILABLE',
+          failureReason: 'BUNDLE_DROPPED_BY_JITO_RELAY_NON_TERMINAL', latencyMs: Date.now() - started, terminal: false };
+        if (item.status === 'Pending') return { bundleId, signature, status: 'INFLIGHT_PENDING', latencyMs: Date.now() - started, terminal: false };
+        return unknown('BUNDLE_STATUS_INVALID');
+      } finally { clearTimeout(timeout); }
     } catch (e: any) {
-      return {
-        bundleId,
-        signature,
-        status: 'UNKNOWN',
-        latencyMs: Date.now() - started,
-        terminal: false,
-        failureReason: e?.message || 'NETWORK_ERROR',
-      };
+      return unknown(e instanceof Error && e.name === 'AbortError' ? 'TIMEOUT' : 'NETWORK_ERROR');
     }
   }
 }

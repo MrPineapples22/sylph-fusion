@@ -16,7 +16,9 @@ var ProviderHealthTracker = class {
       { id: "PUMPPORTAL_WS", role: "DISCOVERY_STREAM", authoritative: true, configured: false, enabled: false, authenticated: false, url: "wss://pumpportal.fun/api/data" },
       { id: "DEXSCREENER_API", role: "MARKET_ENRICHMENT", authoritative: false, configured: false, enabled: false, authenticated: false, url: "https://api.dexscreener.com/latest/dex" },
       { id: "RUGCHECK_API", role: "SECURITY_RISK", authoritative: true, configured: false, enabled: false, authenticated: false, url: "https://api.rugcheck.xyz/v1/tokens" },
-      { id: "JUPITER_QUOTE", role: "EXECUTION_ROUTING", authoritative: false, configured: false, enabled: false, authenticated: false, url: "https://quote-api.jup.ag/v6/quote" },
+      { id: "JUPITER_QUOTE", role: "EXECUTION_ROUTING", authoritative: false, configured: false, enabled: false, authenticated: false, url: "https://api.jup.ag/swap/v2/order" },
+      { id: "JITO_BLOCK_ENGINE", role: "BUNDLE_DELIVERY", authoritative: false, configured: false, enabled: false, authenticated: false, url: "https://mainnet.block-engine.jito.wtf/api/v1/bundles" },
+      { id: "YELLOWSTONE_GRPC", role: "GEYSER_STREAM", authoritative: false, configured: false, enabled: false, authenticated: false, url: "https://yellowstone-grpc.invalid" },
       { id: "SOLANA_RPC", role: "ON_CHAIN_TRUTH", authoritative: true, configured: false, enabled: false, authenticated: false, url: "https://api.mainnet-beta.solana.com" },
       { id: "SOLANA_WSS", role: "ON_CHAIN_TRUTH", authoritative: true, configured: false, enabled: false, authenticated: false, url: "wss://api.mainnet-beta.solana.com" },
       // HELIOS Direct TPU is an optional optimization; unconfigured/disabled by default so it does NOT make platform CRITICAL
@@ -71,7 +73,20 @@ var ProviderHealthTracker = class {
     if (!entry) return;
     if (fromUrl !== toUrl) {
       entry.currentEndpointUrl = toUrl;
-      this.endpointTransitions.set(providerId, { from: fromUrl, to: toUrl, timestamp: Date.now() });
+      const sanitize = (value) => {
+        try {
+          const url = new URL(value);
+          url.username = "";
+          url.password = "";
+          url.search = "";
+          url.hash = "";
+          return url.pathname === "/" ? url.origin : `${url.origin}${url.pathname}`;
+        } catch {
+          return "INVALID_ENDPOINT";
+        }
+      };
+      entry.sanitizedUrl = sanitize(toUrl);
+      this.endpointTransitions.set(providerId, { from: sanitize(fromUrl), to: entry.sanitizedUrl, timestamp: Date.now() });
     }
   }
   recordValidatedObservation(providerId, latencyMs, slotLag, now = Date.now()) {
@@ -309,6 +324,16 @@ var ProviderHealthTracker = class {
           source: id,
           message: `No successful provider observation has been received for ${id}.`,
           timestampMs: now
+        });
+      } else if (!m.transportReachable) {
+        state = "RECONNECTING";
+        degradedCount++;
+        activeAlerts.push({
+          severity: "NOTICE",
+          source: id,
+          message: `Provider ${id} has prior validated observations but its transport is disconnected.`,
+          timestampMs: now,
+          actionRequired: "Wait for the provider reconnect loop and confirm a new validated observation."
         });
       } else if (freshness === "STALE") {
         state = "STALE";

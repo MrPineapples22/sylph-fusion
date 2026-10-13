@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import {parseLandingLaneResearchResponse} from './lane-evidence.js';
 import {
   Shield,
   Zap,
@@ -70,13 +71,15 @@ export function SolanaArchitectureDrawer({
         if (rMaxRisk.status === 'fulfilled') setPaperMaxRiskData(rMaxRisk.value);
         if (rReplay.status === 'fulfilled') setV8ReplayData(rReplay.value);
         if (rMonte.status === 'fulfilled') setMonteCarloData(rMonte.value);
-        if (rLaneScorecards.status === 'fulfilled' && Array.isArray(rLaneScorecards.value?.scorecards)) {
-          setLaneScorecards(rLaneScorecards.value.scorecards);
-          setLaneEvidenceStatus(rLaneScorecards.value.evidenceStatus || 'UNKNOWN');
-          setLaneEvidenceError('');
+        if (rLaneScorecards.status === 'fulfilled') {
+          const parsed = parseLandingLaneResearchResponse(rLaneScorecards.value);
+          setLaneScorecards(parsed.scorecards);
+          setLaneEvidenceStatus(parsed.status);
+          setLaneEvidenceError(parsed.error || '');
         } else {
+          setLaneScorecards([]);
           setLaneEvidenceStatus('UNAVAILABLE');
-          setLaneEvidenceError(rLaneScorecards.status === 'rejected' ? 'The landing-lane research endpoint could not be reached.' : 'The endpoint returned an unrecognized response.');
+          setLaneEvidenceError('The landing-lane research endpoint could not be reached.');
         }
       } catch {
         if (active) {
@@ -314,7 +317,7 @@ export function SolanaArchitectureDrawer({
                           <div><dt>P95 landing time</dt><dd>{Number.isFinite(card.p95LandingMs) ? `${card.p95LandingMs} ms` : 'UNKNOWN'}</dd></div>
                           <div><dt>Average fee / tip</dt><dd>{amount(card.averageFeeUsd)} / {amount(card.averageTipUsd)}</dd></div>
                         </dl>
-                        <p className="mt-2 text-[10px] text-slate-500">Model threshold: {card.eligibleForOptimization === true ? 'met' : card.eligibleForOptimization === false ? 'not met' : 'unknown'}. This local scorecard is not paired same-event evidence.</p>
+                        <p className="mt-2 text-[10px] text-slate-500">Local eligibility rule (≥30 attempts and ≥70% reported landing): {card.eligibleForOptimization ? 'met' : 'not met'}. This is not paired same-event evidence and cannot select a lane.</p>
                       </article>;
                     })}
                   </div>

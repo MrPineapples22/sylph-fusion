@@ -9,6 +9,13 @@ test('missing providers, risk, financial ledger and live signer stay explicitly 
  assert.equal(p.capital.reserved,null);assert.equal(p.executions.state,'UNKNOWN');
  assert.equal(p.capabilities.close.state,'BLOCKED');assert.deepEqual(p.capabilities.close.reasonCodes,['NO_POSITION']);
 });
+test('provider projection preserves connection, authentication and evidence readiness independently',()=>{
+ const i=input();i.health={providers:{YELLOWSTONE_GRPC:{providerId:'YELLOWSTONE_GRPC',state:'RECONNECTING',role:'GEYSER_STREAM',configured:true,enabled:true,authenticationRequirement:'REQUIRED',authenticated:false,transportReachable:false,observationValidated:false,isAuthoritative:false,freshness:'UNKNOWN',lastValidatedObservation:0,lastSuccess:0,avgLatencyMs:0,circuitState:'CLOSED',failureReason:'YELLOWSTONE_STREAM_ENDED',capabilityAvailable:false}}};
+ const provider=new OperatorReadModel().project(i).providers.find(p=>p.id==='YELLOWSTONE_GRPC');
+ assert.equal(provider.configured,true);assert.equal(provider.authenticationRequirement,'REQUIRED');assert.equal(provider.authenticated,false);
+ assert.equal(provider.enabled,true);assert.equal(provider.transportReachable,false);assert.equal(provider.observationValidated,false);assert.equal(provider.capabilityAvailable,false);
+ assert.equal(provider.latencyMs,null,'zero is the no-measurement sentinel, not a zero-millisecond provider latency');
+});
 test('projections increase monotonically and restart creates a new generation',()=>{
  const model=new OperatorReadModel(),a=model.project(input()),b=model.project(input());
  assert.equal(b.projectionVersion,a.projectionVersion+1);assert.equal(a.authorityGeneration,b.authorityGeneration);

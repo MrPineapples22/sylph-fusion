@@ -9,7 +9,7 @@ const asRisk = (risks) => Array.isArray(risks) ? risks.slice(0, 40).flatMap((r) 
     return [{ level: String(r.level ?? 'info').toLowerCase(), name: String(r.name ?? 'Unnamed risk').slice(0, 160), description: String(r.description ?? '').slice(0, 500) }];
 }) : [];
 function base(mint) {
-    return { mint, at: Date.now(), safe: null, score: null, rugged: null,
+    return { mint, at: Date.now(), safe: null, score: null, normalizedScore01: null, rugged: null,
         authorities: { mint: null, freeze: null, status: 'unknown' },
         token2022: { enabled: false, transferFeeBps: null, feeAuthority: null, permanentDelegate: null, defaultFrozen: null, transferHook: null, extensions: [] },
         liquidity: { state: 'unknown', lockedPct: null, unlockAt: null, pools: 0 },
@@ -73,6 +73,9 @@ function applyReport(out, report) {
         return;
     out.providers.rugcheck = 'live';
     out.score = finite(report.score_normalised ?? report.score);
+    const normalizedScore = report.score_normalised;
+    out.normalizedScore01 = Number.isSafeInteger(normalizedScore) && normalizedScore >= 0 && normalizedScore <= 100
+        ? normalizedScore / 100 : null;
     out.rugged = typeof report.rugged === 'boolean' ? report.rugged : null;
     out.risks = asRisk(report.risks);
     const token = report.token ?? {};
@@ -103,10 +106,13 @@ function applyReport(out, report) {
     const bps = holders.slice(0, 10).reduce((sum, h) => sum + (finite(h?.pct ?? h?.percentage) ?? 0) * 100, 0);
     out.holders.top10Bps = holders.length ? Math.round(bps) : null;
     out.holders.top10Status = out.holders.top10Bps === null ? 'unknown' : out.holders.top10Bps > 4000 ? 'over-limit' : 'within-limit';
-    out.bundling.insiders = finite(report.graphInsidersDetected);
+    const reportedInsiders = finite(report.graphInsidersDetected);
+    out.bundling.insiders = Number.isSafeInteger(reportedInsiders) && reportedInsiders >= 0 ? reportedInsiders : null;
     const bundle = out.risks.find(r => /bundl|insider|cluster|sniper/i.test(r.name));
     out.bundling.bundledPct = bundle?.description.match(/(\d+(?:\.\d+)?)\s*%/)?.[1] ? Number(bundle.description.match(/(\d+(?:\.\d+)?)\s*%/)[1]) * 100 : null;
-    out.bundling.state = bundle ? 'flagged' : 'clear';
+    out.bundling.state = bundle || (out.bundling.insiders !== null && out.bundling.insiders > 0)
+        ? 'flagged'
+        : out.bundling.insiders === 0 ? 'clear' : 'unknown';
     const dangerous = out.risks.some(r => /danger|critical/i.test(r.level));
     const isUnsafe = out.rugged === true || dangerous || out.authorities.freeze !== null || out.holders.top10Status === 'over-limit';
     const isVerifiedSafe = out.rugged === false && out.authorities.status === 'revoked' && !dangerous && out.holders.top10Status === 'within-limit' && (['burned', 'locked'].includes(out.liquidity.state) || out.liquidity.state === 'bonding_curve');

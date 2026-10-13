@@ -8,6 +8,7 @@ import { httpJson } from './rpc.js';
 import { log, mulBps } from './core.js';
 import { AssetDeltaEngine } from './platform/execution/asset-delta-engine.js';
 import { canonicalJson } from './platform/pipeline/canonical-hashing.js';
+import { globalProviderHealthTracker } from './platform/ingestion/provider-health.js';
 const JUPITER_PROGRAM = new PublicKey('JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4');
 const COMPUTE_BUDGET_PROGRAM = new PublicKey('ComputeBudget111111111111111111111111111111');
 const JUPITER_ROUTE_DISCRIMINATORS = new Set([
@@ -67,21 +68,48 @@ export class Executor {
     tipAt = 0;
     floor = 0;
     jitoCoordinator;
-    constructor(cfg, rpc, market, key, _signingFirewall) {
+    providerHealth;
+    constructor(cfg, rpc, market, key, _signingFirewall, providerHealth = globalProviderHealthTracker) {
         this.cfg = cfg;
         this.rpc = rpc;
         this.market = market;
         this.key = key;
+        this.providerHealth = providerHealth;
         this.jitoCoordinator = new JitoLifecycleCoordinator(this.cfg.JITO_URL, this.cfg.JITO_AUTH, this.cfg.RPC_TIMEOUT_MS);
+        const endpoint = this.cfg.JITO_URL;
+        const configured = typeof endpoint === 'string' && endpoint.startsWith('https://');
+        this.providerHealth.setProviderConfiguration('JITO_BLOCK_ENGINE', configured, configured, false, this.cfg.JITO_AUTH ? 'REQUIRED' : 'NOT_REQUIRED');
+        this.providerHealth.recordEndpointTransition('JITO_BLOCK_ENGINE', 'https://mainnet.block-engine.jito.wtf/api/v1/bundles', endpoint);
+    }
+    recordJitoSuccess(latencyMs) {
+        this.providerHealth.setProviderConfiguration('JITO_BLOCK_ENGINE', true, true, Boolean(this.cfg.JITO_AUTH), this.cfg.JITO_AUTH ? 'REQUIRED' : 'NOT_REQUIRED');
+        this.providerHealth.recordValidatedObservation('JITO_BLOCK_ENGINE', latencyMs);
+    }
+    recordJitoFailure(reason) {
+        this.providerHealth.recordFailure('JITO_BLOCK_ENGINE', reason);
     }
     async #getTipAccounts() {
-        const response = await httpJson(this.cfg.JITO_URL, this.cfg.RPC_TIMEOUT_MS, {
-            method: 'POST', headers: { 'content-type': 'application/json', ...(this.cfg.JITO_AUTH ? { 'x-jito-auth': this.cfg.JITO_AUTH } : {}) },
-            body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getTipAccounts', params: [] }),
-        });
-        if (response.error || response.result === undefined)
-            throw new Error('Jito rejected request');
-        return response.result;
+        const started = Date.now();
+        try {
+            const response = await httpJson(this.cfg.JITO_URL, this.cfg.RPC_TIMEOUT_MS, {
+                method: 'POST', headers: { 'content-type': 'application/json', ...(this.cfg.JITO_AUTH ? { 'x-jito-auth': this.cfg.JITO_AUTH } : {}) },
+                body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getTipAccounts', params: [] }),
+            });
+            if (response.error || !Array.isArray(response.result) || response.result.length === 0 ||
+                !response.result.every(value => typeof value === 'string' && value.length > 0))
+                throw new Error('JITO_TIP_ACCOUNTS_RESPONSE_INVALID');
+            // Parse provider addresses before recording a validated observation.
+            for (const value of response.result)
+                new PublicKey(value);
+            this.recordJitoSuccess(Date.now() - started);
+            return response.result;
+        }
+        catch (error) {
+            const reason = error instanceof Error && error.message === 'JITO_TIP_ACCOUNTS_RESPONSE_INVALID'
+                ? error.message : error instanceof Error && /^Provider HTTP \d+$/.test(error.message) ? error.message.replace('Provider ', 'JITO ') : 'JITO_TIP_ACCOUNTS_REQUEST_FAILED';
+            this.recordJitoFailure(reason);
+            throw error;
+        }
     }
     async warm() {
         const accounts = await this.#getTipAccounts();
@@ -93,6 +121,7 @@ export class Executor {
     async refreshFloor() {
         if (Date.now() - this.tipAt < 10_000)
             return;
+        const started = Date.now();
         try {
             const rows = await httpJson('https://bundles.jito.wtf/api/v1/bundles/tip_floor', this.cfg.RPC_TIMEOUT_MS);
             const sol = Number(rows[0]?.landed_tips_75th_percentile);
@@ -100,8 +129,10 @@ export class Executor {
                 throw new Error('invalid tip floor');
             this.floor = Math.ceil(sol * 1e9);
             this.tipAt = Date.now();
+            this.recordJitoSuccess(Date.now() - started);
         }
         catch {
+            this.recordJitoFailure('JITO_TIP_FLOOR_UNAVAILABLE');
             this.floor = this.cfg.MIN_TIP_LAMPORTS;
         }
     }
@@ -288,6 +319,10 @@ export class Executor {
     async reconcile(order, bundleId) {
         if (bundleId) {
             const report = await this.jitoCoordinator.checkInflightStatus(bundleId, order.signature);
+            if (report.status === 'UNKNOWN')
+                this.recordJitoFailure(report.failureReason || 'JITO_STATUS_UNKNOWN');
+            else
+                this.recordJitoSuccess(report.latencyMs);
             if (report.status === 'AUCTION_LOST' || report.status === 'SIMULATION_FAILED') {
                 // Relay status is useful diagnostics, but only finalized chain evidence
                 // can decide whether this signature failed or landed.

@@ -339,6 +339,39 @@ test('risk scanner only accepts mint authority bytes from the two canonical Sola
       assert.notEqual(result.safe, true);
     }
 
+    rugcheckReport = { mint, rugged: false, risks: [] };
+    const missingInsiderEvidence = await scanToken(mint, 'https://mock-rpc.solana.com/', 'https://api.rugcheck.xyz/v1/tokens');
+    assert.equal(missingInsiderEvidence.bundling.state, 'unknown');
+    assert.equal(missingInsiderEvidence.bundling.insiders, null);
+    assert.equal(missingInsiderEvidence.normalizedScore01, null);
+
+    rugcheckReport.score = 1200;
+    rugcheckReport.score_normalised = 24;
+    const explicitNormalizedScore = await scanToken(mint, 'https://mock-rpc.solana.com/', 'https://api.rugcheck.xyz/v1/tokens');
+    assert.equal(explicitNormalizedScore.score, 24);
+    assert.equal(explicitNormalizedScore.normalizedScore01, 0.24);
+
+    rugcheckReport.score_normalised = 120;
+    const invalidNormalizedScore = await scanToken(mint, 'https://mock-rpc.solana.com/', 'https://api.rugcheck.xyz/v1/tokens');
+    assert.equal(invalidNormalizedScore.normalizedScore01, null);
+    rugcheckReport.score_normalised = 24.5;
+    const fractionalNormalizedScore = await scanToken(mint, 'https://mock-rpc.solana.com/', 'https://api.rugcheck.xyz/v1/tokens');
+    assert.equal(fractionalNormalizedScore.normalizedScore01, null);
+    rugcheckReport.score_normalised = '24';
+    const stringNormalizedScore = await scanToken(mint, 'https://mock-rpc.solana.com/', 'https://api.rugcheck.xyz/v1/tokens');
+    assert.equal(stringNormalizedScore.normalizedScore01, null);
+    rugcheckReport.score_normalised = undefined;
+
+    rugcheckReport.graphInsidersDetected = 0;
+    const explicitZeroInsiders = await scanToken(mint, 'https://mock-rpc.solana.com/', 'https://api.rugcheck.xyz/v1/tokens');
+    assert.equal(explicitZeroInsiders.bundling.state, 'clear');
+    assert.equal(explicitZeroInsiders.bundling.insiders, 0);
+
+    rugcheckReport.graphInsidersDetected = 2;
+    const detectedInsiders = await scanToken(mint, 'https://mock-rpc.solana.com/', 'https://api.rugcheck.xyz/v1/tokens');
+    assert.equal(detectedInsiders.bundling.state, 'flagged');
+    assert.equal(detectedInsiders.bundling.insiders, 2);
+
     const unsupported = await scanToken(mint, 'https://mock-rpc.solana.com/', 'https://api.rugcheck.xyz/v1/tokens');
     assert.equal(unsupported.providers.rpc, 'unavailable');
     assert.equal(unsupported.authorities.status, 'unknown');

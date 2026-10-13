@@ -50,3 +50,35 @@ test('REQ-004: ProviderHealthTracker serves as single consolidated health author
   tracker.recordTransportReachable('SOLANA_RPC', false);
   assert.equal(engine.getHealthStatus('solana_rpc_primary'), 'DISCONNECTED', 'Unreachable transport must propagate as DISCONNECTED');
 });
+
+test('Jupiter V2 quote-only usage reports configured keyless capability and only validates after a response', () => {
+  const tracker = new ProviderHealthTracker();
+  tracker.setProviderConfiguration('JUPITER_QUOTE', true, true, false, 'NOT_REQUIRED');
+  const configured = tracker.getReport().providers.JUPITER_QUOTE;
+  assert.equal(configured.configured, true);
+  assert.equal(configured.enabled, true);
+  assert.equal(configured.authenticationRequirement, 'NOT_REQUIRED');
+  assert.equal(configured.authenticated, false);
+  assert.equal(configured.observationValidated, false);
+  assert.equal(configured.endpointUrlSanitized, 'https://api.jup.ag/swap/v2/order');
+
+  tracker.recordValidatedObservation('JUPITER_QUOTE', 85);
+  const observed = tracker.getReport().providers.JUPITER_QUOTE;
+  assert.equal(observed.transportReachable, true);
+  assert.equal(observed.observationValidated, true);
+  assert.equal(observed.totalRequestsCount, 1);
+});
+
+test('a previously observed Yellowstone stream reports reconnecting after transport disconnects', () => {
+  const tracker = new ProviderHealthTracker();
+  tracker.setProviderConfiguration('YELLOWSTONE_GRPC', true, true, false, 'UNKNOWN');
+  tracker.recordValidatedObservation('YELLOWSTONE_GRPC', 0, undefined, 10_000);
+  tracker.recordTransportReachable('YELLOWSTONE_GRPC', false);
+
+  const report = tracker.getReport(10_001);
+  assert.equal(report.providers.YELLOWSTONE_GRPC.lastValidatedObservation, 10_000);
+  assert.equal(report.providers.YELLOWSTONE_GRPC.observationValidated, false,
+    'a disconnect invalidates the current observation capability while preserving its last validated timestamp');
+  assert.equal(report.providers.YELLOWSTONE_GRPC.transportReachable, false);
+  assert.equal(report.providers.YELLOWSTONE_GRPC.state, 'RECONNECTING');
+});

@@ -1,7 +1,9 @@
 # SYLPH FUSION — REPOSITORY-WIDE CONNECTIVITY MATRIX
-**Audit Date:** 2026-09-30  
-**Status:** FULLY RECONCILED & CONNECTED  
-**Certification Level:** C4 (Deterministic Architecture & Formal Governance Verified)
+**Audit Date:** 2026-10-12
+**Status:** HISTORICAL ARCHITECTURE INVENTORY — RUNTIME CONNECTIONS NOT CERTIFIED
+**Certification Level:** NOT ESTABLISHED BY THIS DOCUMENT
+
+This file describes intended/internal architecture and historical implementation claims. It is not evidence that provider credentials are configured, external APIs are reachable, market coverage is complete, or production trading is authorized. See `docs/ECOSYSTEM_INTEGRATION_AUDIT_2026-10-12.md` for current code-path evidence and concrete blockers. JEV/Laya hosted inference is advisory only and awaits fresh complete certified feature context. Market discovery is observational and does not authorize entries. The terminal's CSV attribution input is audit-only.
 
 ---
 

@@ -52,6 +52,16 @@ test('External Provider Registry: all 14 providers are properly registered with 
   assert.equal(globalExternalProviderRegistry.verifySigningBoundary(), true);
 });
 
+test('Jupiter registry advertises the current V2 API while keeping transaction authority bounded', () => {
+  const jupiter = EXTERNAL_PROVIDER_REGISTRY.jupiter_api;
+  assert.ok(jupiter);
+  assert.equal(jupiter.url, 'https://api.jup.ag/swap/v2');
+  assert.match(jupiter.purpose, /V2/);
+  assert.equal(jupiter.canSign, false);
+  assert.equal(jupiter.canSubmitTransactions, false);
+  assert.equal(jupiter.canHoldCapital, false);
+});
+
 test('BinoxSwap: Strict Quarantine & Containment Isolation', () => {
   const binox = EXTERNAL_PROVIDER_REGISTRY.binoxswap;
   assert.ok(binox);

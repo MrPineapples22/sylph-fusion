@@ -4,6 +4,7 @@ import bs58 from 'bs58';
 import { SubscribeUpdate } from '@triton-one/yellowstone-grpc';
 import { Feed } from '../../dist/feed.js';
 import { config } from '../../dist/config.js';
+import { ProviderHealthTracker } from '../../dist/platform/ingestion/provider-health.js';
 import {
   capturedPayloadBytes,
   capturedTransactionObservation,
@@ -98,4 +99,28 @@ test('Yellowstone reconnect backoff resets only after a stable 30-second session
   assert.equal(yellowstoneBackoffAfterSession(8000, 30_000, true), 500);
   assert.equal(yellowstoneBackoffAfterSession(8000, 60_000, false), 8000, 'an idle stream closed by the watchdog does not reset');
   assert.equal(yellowstoneBackoffAfterSession(8000, Number.NaN, true), 8000);
+});
+
+test('accepted Yellowstone observations update provider health without exposing endpoint credentials', async () => {
+  const tracker = new ProviderHealthTracker();
+  const endpoint = 'https://geyser.example.invalid:443/stream?api-key=private-value';
+  const f = new Feed(config({
+    RPC_URLS: 'https://rpc.invalid',
+    WS_URLS: 'wss://rpc.invalid',
+    YELLOWSTONE_URL: endpoint,
+    YELLOWSTONE_TOKEN: 'private-token',
+  }), {}, { submit: async () => ({ status: 'ACCEPTED' }) }, undefined, undefined, tracker);
+
+  const captured = createCapturedResponseDeserializer(SubscribeUpdate)(encodedUpdate({ slot: '789' }));
+  await f.acceptYellowstoneCapture(captured);
+  const provider = tracker.getReport().providers.YELLOWSTONE_GRPC;
+  assert.equal(provider.configured, true);
+  assert.equal(provider.authenticationRequirement, 'REQUIRED');
+  assert.equal(provider.authenticated, true, 'an accepted update verifies the configured credential');
+  assert.equal(provider.transportReachable, true);
+  assert.equal(provider.observationValidated, true);
+  assert.equal(provider.totalRequestsCount, 1);
+  assert.equal(provider.endpointUrlSanitized, 'https://geyser.example.invalid/stream');
+  assert.ok(!JSON.stringify(tracker.getReport()).includes('private-value'));
+  assert.ok(!JSON.stringify(tracker.getReport()).includes('private-token'));
 });

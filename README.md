@@ -85,7 +85,7 @@ The modular separation and durable outbox concept come from `D:\pump\sylph`. The
 
 ## Local dashboard
 
-When the bot starts, open **http://127.0.0.1:8787**. `UI_PORT` changes the port. The console shows positions, estimated liquidation values with freshness labels, ledger cash, realized PnL, exposure, feed health, pending orders, discovery candidates, and recent session activity. It refreshes automatically.
+When the bot starts, open **http://127.0.0.1:8787**. `UI_PORT` changes the port. The console shows positions, estimated liquidation values with freshness labels, ledger cash, realized PnL, exposure, feed health, pending orders, discovery candidates, and recent session activity. The **Engine provider health** panel reads the same process's provider tracker and separates configuration, transport, authentication, validated evidence, freshness, and task availability. It refreshes automatically. The separate Operator Terminal on port 8793 has its own process and tracker; its provider table does not establish the Engine feed's live state.
 
 **Pause new entries** persists across restarts. Existing positions continue to be monitored and exited, and already prepared orders remain subject to confirmation/recovery. **Resume new entries** lifts only the operator pause; it never clears a reconciliation safety halt or other risk check. Wallet keys, endpoint credentials and signed transaction bytes are excluded from the dashboard API. The service binds only to loopback and rejects cross-origin actions.
 

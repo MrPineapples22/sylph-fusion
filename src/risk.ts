@@ -7,6 +7,8 @@ export type RiskCheck = {
   at: number;
   safe: boolean | null;
   score: number | null;
+  /** RugCheck score_normalised mapped from its documented 0–100 scale into [0, 1]. */
+  normalizedScore01: number | null;
   rugged: boolean | null;
   authorities: { mint: string | null; freeze: string | null; status: 'revoked' | 'active' | 'unknown' };
   /** transferFeeBps is the highest on-chain older/newer schedule; it is not epoch-selected. */
@@ -27,7 +29,7 @@ const asRisk = (risks: unknown): { level: string; name: string; description: str
 }) : [];
 
 function base(mint: string): RiskCheck {
-  return { mint, at: Date.now(), safe: null, score: null, rugged: null,
+  return { mint, at: Date.now(), safe: null, score: null, normalizedScore01: null, rugged: null,
     authorities: { mint: null, freeze: null, status: 'unknown' },
     token2022: { enabled: false, transferFeeBps: null, feeAuthority: null, permanentDelegate: null, defaultFrozen: null, transferHook: null, extensions: [] },
     liquidity: { state: 'unknown', lockedPct: null, unlockAt: null, pools: 0 },
@@ -88,6 +90,9 @@ function applyReport(out: RiskCheck, report: any) {
   if (!report || typeof report !== 'object') return;
   out.providers.rugcheck = 'live';
   out.score = finite(report.score_normalised ?? report.score);
+  const normalizedScore = report.score_normalised;
+  out.normalizedScore01 = Number.isSafeInteger(normalizedScore) && normalizedScore >= 0 && normalizedScore <= 100
+    ? normalizedScore / 100 : null;
   out.rugged = typeof report.rugged === 'boolean' ? report.rugged : null;
   out.risks = asRisk(report.risks);
   const token = report.token ?? {};
@@ -115,10 +120,13 @@ function applyReport(out: RiskCheck, report: any) {
   const bps = holders.slice(0, 10).reduce((sum: number, h: any) => sum + (finite(h?.pct ?? h?.percentage) ?? 0) * 100, 0);
   out.holders.top10Bps = holders.length ? Math.round(bps) : null;
   out.holders.top10Status = out.holders.top10Bps === null ? 'unknown' : out.holders.top10Bps > 4000 ? 'over-limit' : 'within-limit';
-  out.bundling.insiders = finite(report.graphInsidersDetected);
+  const reportedInsiders = finite(report.graphInsidersDetected);
+  out.bundling.insiders = Number.isSafeInteger(reportedInsiders) && reportedInsiders! >= 0 ? reportedInsiders : null;
   const bundle = out.risks.find(r => /bundl|insider|cluster|sniper/i.test(r.name));
   out.bundling.bundledPct = bundle?.description.match(/(\d+(?:\.\d+)?)\s*%/)?.[1] ? Number(bundle.description.match(/(\d+(?:\.\d+)?)\s*%/)![1]) * 100 : null;
-  out.bundling.state = bundle ? 'flagged' : 'clear';
+  out.bundling.state = bundle || (out.bundling.insiders !== null && out.bundling.insiders > 0)
+    ? 'flagged'
+    : out.bundling.insiders === 0 ? 'clear' : 'unknown';
   const dangerous = out.risks.some(r => /danger|critical/i.test(r.level));
   const isUnsafe = out.rugged === true || dangerous || out.authorities.freeze !== null || out.holders.top10Status === 'over-limit';
   const isVerifiedSafe = out.rugged === false && out.authorities.status === 'revoked' && !dangerous && out.holders.top10Status === 'within-limit' && (['burned','locked'].includes(out.liquidity.state) || out.liquidity.state === 'bonding_curve');

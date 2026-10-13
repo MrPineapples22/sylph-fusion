@@ -87,6 +87,8 @@ test('JitoLifecycleCoordinator: polls inflight bundle statuses and maps results'
       ok: true,
       status: 200,
       json: async () => ({
+        jsonrpc: '2.0',
+        id: 1,
         result: {
           context: { slot: 300000 },
           value: [
@@ -116,6 +118,8 @@ test('JitoLifecycleCoordinator: inverts Invalid status to non-terminal RELAY_UNA
     ok: true,
     status: 200,
     json: async () => ({
+      jsonrpc: '2.0',
+      id: 1,
       result: {
         context: { slot: 300000 },
         value: [
@@ -134,4 +138,19 @@ test('JitoLifecycleCoordinator: inverts Invalid status to non-terminal RELAY_UNA
   assert.equal(result.status, 'RELAY_UNAVAILABLE');
   assert.equal(result.terminal, false);
   assert.match(result.failureReason, /NON_TERMINAL/);
+});
+
+test('JitoLifecycleCoordinator rejects a mismatched bundle identity and unrecognized status', async () => {
+  const makeResponse = value => ({ok: true, status: 200, json: async () => ({jsonrpc: '2.0', id: 1, result: {value: [value]}})});
+  const mismatch = new JitoLifecycleCoordinator('https://test-jito.mock/api/v1/bundles', undefined, 2000,
+    async () => makeResponse({bundle_id: 'different-bundle', status: 'Landed', landed_slot: 300001}));
+  const wrongIdentity = await mismatch.checkInflightStatus('expected-bundle', 'sig-test');
+  assert.equal(wrongIdentity.status, 'UNKNOWN');
+  assert.equal(wrongIdentity.failureReason, 'BUNDLE_ID_MISMATCH');
+
+  const malformed = new JitoLifecycleCoordinator('https://test-jito.mock/api/v1/bundles', undefined, 2000,
+    async () => makeResponse({bundle_id: 'expected-bundle', status: 'Maybe'}));
+  const unknownStatus = await malformed.checkInflightStatus('expected-bundle', 'sig-test');
+  assert.equal(unknownStatus.status, 'UNKNOWN');
+  assert.equal(unknownStatus.failureReason, 'BUNDLE_STATUS_INVALID');
 });

@@ -25,14 +25,17 @@ test('cloud runner reports and preserves the terminal local-only network boundar
   assert.doesNotMatch(source, /getArg\('--host'/);
 });
 
-test('terminal does not start market adapters or risk calls from implicit public endpoints', async () => {
+test('terminal starts only configured market adapters and keeps feature prerequisites explicit', async () => {
   const source = await readFile(new URL('../server.mjs', import.meta.url), 'utf8');
   assert.match(source, /const marketRpcUrl = process\.env\.MARKET_RPC_URL\?\.trim\(\) \|\| null/);
   assert.match(source, /const marketRugcheckUrl = process\.env\.RUGCHECK_URL\?\.trim\(\) \|\| null/);
   assert.match(source, /const marketDexUrl = process\.env\.DEXSCREENER_URL\?\.trim\(\) \|\| null/);
   assert.match(source, /const marketKolUrl = process\.env\.KOLSCAN_URL\?\.trim\(\) \|\| null/);
   assert.match(source, /const marketPumpUrl = process\.env\.PUMPPORTAL_WS_URL\?\.trim\(\) \|\| null/);
-  assert.match(source, /if \(marketConfigured\) await hub\.start\(\)/);
+  assert.match(source, /const marketCapabilities = resolveMarketCapabilities\(process\.env\)/);
+  assert.match(source, /if \(marketCapabilities\.hub\) await hub\.start\(\)/);
+  assert.match(source, /path\.startsWith\('\/api\/search'\) \? \['search', marketCapabilities\.search/);
+  assert.match(source, /path\.startsWith\('\/api\/risk'\) \? \['risk', marketCapabilities\.risk/);
   assert.match(source, /MARKET_ADAPTER_CONFIGURATION_UNAVAILABLE/);
   assert.doesNotMatch(source, /MARKET_RPC_URL\|\|'https:\/\/api\.mainnet-beta\.solana\.com'/);
   assert.doesNotMatch(source, /RUGCHECK_URL\|\|'https:\/\/api\.rugcheck\.xyz/);

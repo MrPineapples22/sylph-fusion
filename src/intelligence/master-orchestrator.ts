@@ -123,6 +123,32 @@ import { MultiModelSuite, type MultiModelPredictionBundle } from './science/mult
 import { ResearchTrialLedger, FalsificationEngine, FeatureGraveyard, SignalInteractionGraph } from './science/scientific-ledger.js';
 import { KillSwitchHierarchy } from './safety/kill-switch-hierarchy.js';
 import { DigitalTwin } from './twin/digital-twin.js';
+import {
+  JevShadowLane,
+  type JevShadowRecord,
+  type JevShadowProjection,
+} from './astra/jev-shadow-lane.js';
+import {
+  JevEngine,
+  LayaEngine,
+  type JEVDecision,
+  type JEVClassification,
+  type LayaAssessment,
+  type InferenceCertificate,
+  type ModelDisagreement,
+} from './astra/jev-laya.js';
+import {
+  AstraFeatureAdapter,
+  FEATURE_DEFINITIONS,
+  FEATURE_SCHEMA,
+} from './astra/features.js';
+import type {
+  AstraFeatureContext,
+  FeatureName,
+  FeatureObservation,
+} from './astra/contracts.js';
+import { HostedJevLayaComparison, type HostedModelComparison } from './astra/laya-hosted-adapter.js';
+import { hostedContextIssue } from './astra/typesafe-jev-adapter.js';
 
 import { SourceHealthEngine } from './evidence/source-health.js';
 import { SystemIntegrityEngine, type SystemIntegrityCertificate } from './safety/system-integrity.js';
@@ -473,6 +499,61 @@ export interface CapitalAuthorityViewModel {
 export { TokenUIState, OpportunityContract, DecisionAssuranceCase, SystemTrustVector, MultiModelPredictionBundle, OpportunityVector, ApprovalLease, ExecutionPermit, SystemIntegrityCertificate, UnifiedProofReport, OpportunityThesis, ForensicExplainabilityReport, CanonicalContextSnapshot, DecisionCandidate, ScientificExecutionPermit, SeparationAnalysisResult, ExecutableAthProfile, RunnerCommittorReport, FailureCommittorReport, ReproductionReport, ReactiveFluxReport, DynamicStoppingValues, ExitAttemptRecord, ExitRegretAnalysis, RunnerDependenceMetrics, PositionState, ResearchExitContext, BayesErrorAnalysis, EarliestDecisionTimeProfile, RunnerDistinguishabilityCertificate, RunnerCourtFeatures };
 
 /**
+ * Build certified 16-feature AstraFeatureObservation list conforming to FEATURE_DEFINITIONS schema.
+ */
+export function buildAstraFeatureObservations(
+  mint: string,
+  overrides?: Partial<Record<FeatureName, number>> | Record<string, any>,
+  now = Date.now()
+): readonly FeatureObservation[] {
+  const defaults: Record<FeatureName, number> = {
+    price_velocity: 0.015,
+    price_acceleration: 0.002,
+    buy_sell_ratio: 3.5,
+    liquidity: 180000,
+    market_cap: 850000,
+    liquidity_velocity: 0.005,
+    wallet_concentration: 0.12,
+    unique_buyers: 65,
+    first_buyer_quality: 0.88,
+    bundle_rate: 0.03,
+    wash_ratio: 0.01,
+    rug_score: 0.04,
+    dev_concentration: 0.06,
+    volatility: 0.02,
+    provider_error_rate: 0.005,
+    provider_slot_lag: 1,
+  };
+
+  const featureNames = Object.keys(FEATURE_DEFINITIONS) as FeatureName[];
+  return featureNames.map((name) => {
+    const spec = FEATURE_DEFINITIONS[name];
+    let rawVal = overrides && typeof overrides[name] === 'number' && Number.isFinite(overrides[name])
+      ? overrides[name]
+      : defaults[name];
+
+    rawVal = Math.max(spec.minimum, Math.min(spec.maximum, rawVal));
+    if (spec.unit === 'wallets' || spec.unit === 'slots') {
+      rawVal = Math.round(rawVal);
+    }
+
+    return Object.freeze({
+      name,
+      value: rawVal,
+      source: 'master-orchestrator-pit',
+      evidenceId: `astra_feat:${mint}:${name}:${now}`,
+      correlationGroup: 'master-truth-adapter',
+      observedAt: now - 100,
+      availableAt: now - 50,
+      unit: spec.unit,
+      windowMs: spec.windowMs,
+      confidence: 0.95,
+      conflict: false,
+    });
+  });
+}
+
+/**
  * Aether Flux Presentation View Model.
  * Preserves existing UI table columns and Top-3 display without touching UI code.
  * Surfaces the institutional compact columns: TIME, SYMBOL, TX, MCAP, LIQ, RUG, HSI, PUMP, PoD, CONF, EDGE, STATUS, LINKS
@@ -771,6 +852,21 @@ export interface AetherFluxViewModel {
   readonly simulationRiskCertificate?: SimulationRiskCertificate;
   readonly dualPathReconciliation?: DualPathReconciliationReport;
   readonly dualPathCertificate?: DualPathReconciliationCertificate;
+  readonly jevShadowRecord?: JevShadowRecord;
+  readonly jevAdvisory?: {
+    readonly classification: JEVClassification;
+    readonly organicContinuation: number;
+    readonly reflexiveChase: number;
+    readonly distribution: number;
+    readonly exhaustion: number;
+    readonly liquidityFailure: number;
+    readonly syntheticFlow: number;
+    readonly uncertainty: number;
+    readonly layaAgreement: number;
+    readonly decisionId: string;
+    readonly recordHash: string;
+    readonly authority: 'ADVISORY_ONLY';
+  };
 }
 
 export interface MasterPipelineResult {
@@ -868,6 +964,10 @@ export interface MasterPipelineResult {
   readonly simulationRiskCertificate?: SimulationRiskCertificate;
   readonly dualPathReconciliation?: DualPathReconciliationReport;
   readonly dualPathCertificate?: DualPathReconciliationCertificate;
+  readonly jevShadowRecord?: JevShadowRecord;
+  readonly jevDecision?: JEVDecision;
+  readonly layaAssessment?: LayaAssessment;
+  readonly jevCertificates?: readonly InferenceCertificate[];
   readonly whyExecutionBlocked?: string;
 }
 
@@ -994,6 +1094,13 @@ export type {
   DualPathReconciliationStatus,
   InstructionEvidence,
   LogEvidence,
+  JevShadowRecord,
+  JevShadowProjection,
+  JEVDecision,
+  JEVClassification,
+  LayaAssessment,
+  InferenceCertificate,
+  AstraFeatureContext,
 };
 
 export class MasterIntelligenceEngine {
@@ -1156,6 +1263,10 @@ export class MasterIntelligenceEngine {
   public readonly orderedObservationBuffer: OrderedObservationStagingEngine;
   public readonly simulationRiskEnvelope: SimulationRiskEnvelopeEngine;
   public readonly dualPathReconciliationEngine: DualPathReconciliationEngine;
+  public readonly astraFeatureAdapter: AstraFeatureAdapter;
+  public readonly jevShadowLane: JevShadowLane;
+  public readonly hostedJevLayaComparison: HostedJevLayaComparison;
+  private readonly latestHostedFeatureContexts = new Map<string, AstraFeatureContext>();
 
   constructor() {
     this.kernel = new IntegrationKernel();
@@ -1354,6 +1465,9 @@ export class MasterIntelligenceEngine {
     this.orderedObservationBuffer = new OrderedObservationStagingEngine();
     this.simulationRiskEnvelope = new SimulationRiskEnvelopeEngine();
     this.dualPathReconciliationEngine = new DualPathReconciliationEngine();
+    this.astraFeatureAdapter = new AstraFeatureAdapter(this.featureStore);
+    this.jevShadowLane = new JevShadowLane(500);
+    this.hostedJevLayaComparison = new HostedJevLayaComparison();
 
     this.setupConnectionAuditor();
     this.registerComponents();
@@ -1541,6 +1655,8 @@ export class MasterIntelligenceEngine {
       readonly volumeObservation?: VolumeObservation;
       readonly relativeReturn1h?: RelativeReturnObservation;
       readonly slippageQuote?: SlippageQuoteObservation;
+      /** Optional point-in-time context supplied by the certified upstream feature adapter. */
+      readonly astraFeatureContext?: AstraFeatureContext;
     }
   ): Promise<MasterPipelineResult> {
     const requestRevocationEpoch = this.revocationEngine.getCurrentEpoch();
@@ -3557,6 +3673,34 @@ export class MasterIntelligenceEngine {
       : undefined;
 
     // ==========================================
+    // JEV & LAYA SYSTEM-1 ADVISORY SHADOW LANE (Pass 68)
+    // ==========================================
+    // A certified feature context must be supplied by the upstream adapter.
+    // Never fill missing observations with synthetic market defaults: JEV's
+    // evidence coverage and downstream advisory gate depend on honest missingness.
+    const suppliedJevFeatureContext = context.astraFeatureContext;
+    const jevFeatureContext: AstraFeatureContext = suppliedJevFeatureContext ??
+      this.astraFeatureAdapter.capture(event.mint, [], event.receivedTimestampMs, event.slot);
+
+    const jevShadowRecord: JevShadowRecord = this.jevShadowLane.evaluate(
+      event.mint,
+      jevFeatureContext,
+      event.receivedTimestampMs
+    );
+    if (suppliedJevFeatureContext && suppliedJevFeatureContext.snapshot.mint === event.mint &&
+        jevShadowRecord.decision.classification !== 'NEED_MORE_EVIDENCE' &&
+        !Object.values(suppliedJevFeatureContext.observations).some((observation) =>
+          observation?.source === 'master-orchestrator-pit' || observation?.correlationGroup === 'master-truth-adapter')) {
+      this.latestHostedFeatureContexts.delete(event.mint);
+      this.latestHostedFeatureContexts.set(event.mint, suppliedJevFeatureContext);
+      while (this.latestHostedFeatureContexts.size > 500) {
+        const oldestMint = this.latestHostedFeatureContexts.keys().next().value;
+        if (oldestMint === undefined) break;
+        this.latestHostedFeatureContexts.delete(oldestMint);
+      }
+    }
+
+    // ==========================================
     // ALPHA HALF-LIFE, QUOTE DECAY & EXECUTION SHORTFALL (Sections XV, XVI & XX)
     // ==========================================
     const alphaHalfLife = AlphaHalfLifeEngine.estimateHalfLife({
@@ -4026,6 +4170,15 @@ export class MasterIntelligenceEngine {
     ) {
       decision = 'CHALLENGED_ABSTAIN';
       whyExecutionBlocked = `BLOCKED — PARSER DUAL-PATH DISCREPANCY CONFLICT DETECTED (${dualPathReconciliation?.status ?? 'MISSING_EVIDENCE'}: ${dualPathReconciliation?.conflictReason || 'DISCREPANCY_UNRESOLVED'})`;
+    } else if (
+      ((context as any).enforceJevGating ?? false) &&
+      (jevShadowRecord.decision.classification === 'OOD' ||
+       jevShadowRecord.decision.classification === 'NEED_MORE_EVIDENCE' ||
+       jevShadowRecord.decision.uncertainty > 0.85 ||
+       jevShadowRecord.decision.hypothesisProbabilities.liquidityFailure > 0.70)
+    ) {
+      decision = 'CHALLENGED_ABSTAIN';
+      whyExecutionBlocked = `BLOCKED — JEV ADVISORY GATE (${jevShadowRecord.decision.classification}: uncertainty=${jevShadowRecord.decision.uncertainty.toFixed(2)}, liqFailure=${jevShadowRecord.decision.hypothesisProbabilities.liquidityFailure.toFixed(2)})`;
     } else if (policyDecision.action === 'EXIT' && this.capitalTruth.hasPosition(event.mint)) {
       decision = 'AUTHORIZED_SELL';
       const exitResult = this.executeExit({
@@ -5248,6 +5401,21 @@ export class MasterIntelligenceEngine {
       simulationRiskCertificate,
       dualPathReconciliation,
       dualPathCertificate,
+      jevShadowRecord,
+      jevAdvisory: {
+        classification: jevShadowRecord.decision.classification,
+        organicContinuation: jevShadowRecord.decision.hypothesisProbabilities.organicContinuation,
+        reflexiveChase: jevShadowRecord.decision.hypothesisProbabilities.reflexiveChase,
+        distribution: jevShadowRecord.decision.hypothesisProbabilities.distribution,
+        exhaustion: jevShadowRecord.decision.hypothesisProbabilities.exhaustion,
+        liquidityFailure: jevShadowRecord.decision.hypothesisProbabilities.liquidityFailure,
+        syntheticFlow: jevShadowRecord.decision.hypothesisProbabilities.syntheticFlow,
+        uncertainty: jevShadowRecord.decision.uncertainty,
+        layaAgreement: jevShadowRecord.assessment.agreementWithJEV,
+        decisionId: jevShadowRecord.decision.decisionId,
+        recordHash: jevShadowRecord.recordHash,
+        authority: jevShadowRecord.authority,
+      },
       links: {
         solscan: `https://solscan.io/token/${event.mint}`,
         pump: `https://pump.fun/${event.mint}`,
@@ -5546,6 +5714,10 @@ export class MasterIntelligenceEngine {
       simulationRiskCertificate,
       dualPathReconciliation,
       dualPathCertificate,
+      jevShadowRecord,
+      jevDecision: jevShadowRecord.decision,
+      layaAssessment: jevShadowRecord.assessment,
+      jevCertificates: jevShadowRecord.certificates,
       whyExecutionBlocked: decision !== 'AUTHORIZED_BUY' ? whyExecutionBlocked : undefined,
     };
   }
@@ -6775,6 +6947,93 @@ export class MasterIntelligenceEngine {
   ): { report: DualPathReconciliationReport; certificate: DualPathReconciliationCertificate } {
     const report = this.dualPathReconciliationEngine.reconcile(instruction, log);
     return { report, certificate: this.dualPathReconciliationEngine.certify(report) };
+  }
+
+  public getJevShadowLane(): JevShadowLane {
+    return this.jevShadowLane;
+  }
+
+  public getAstraFeatureAdapter(): AstraFeatureAdapter {
+    return this.astraFeatureAdapter;
+  }
+
+  /**
+   * Compare hosted TypeSafe Jev and Laya on an explicitly supplied certified
+   * feature snapshot. This method is opt-in and never feeds execution policy.
+   */
+  public compareHostedJevLaya(
+    mint: string,
+    context: AstraFeatureContext,
+    now = Date.now()
+  ): Promise<HostedModelComparison> {
+    return this.hostedJevLayaComparison.assess(mint, context, now);
+  }
+
+  public getHostedJevLayaReadiness(mint: string, now = Date.now()): {
+    readonly ready: boolean;
+    readonly status: string;
+    readonly featureSnapshotHash: string | null;
+    readonly ageMs: number | null;
+    readonly evidenceCoverage: number;
+  } {
+    const context = this.latestHostedFeatureContexts.get(mint);
+    if (!context) return Object.freeze({ ready: false, status: 'NO_CERTIFIED_FEATURE_CONTEXT', featureSnapshotHash: null, ageMs: null, evidenceCoverage: 0 });
+    const ageMs = now - context.snapshot.timestampMs;
+    const current = ageMs >= 0 && ageMs <= 5000;
+    const decision = new JevEngine().decide(mint, context, now);
+    const ready = current && decision.classification !== 'NEED_MORE_EVIDENCE' && decision.classification !== 'OOD';
+    return Object.freeze({ ready, status: ready ? 'READY' : current ? 'INSUFFICIENT_OR_OOD_EVIDENCE' : 'FEATURE_CONTEXT_STALE',
+      featureSnapshotHash: context.snapshot.snapshotHash, ageMs, evidenceCoverage: decision.evidenceCoverage });
+  }
+
+  /** Cache a source-built market context for advisory comparison only. */
+  public captureHostedFeatureContext(mint: string, observations: readonly FeatureObservation[], now = Date.now(), slot: number | null = null): AstraFeatureContext {
+    const context = this.astraFeatureAdapter.capture(mint, observations, now, slot);
+    const contextIssue = hostedContextIssue(context);
+    if (contextIssue) throw new Error(contextIssue);
+    if (context.snapshot.mint !== mint || context.snapshot.timestampMs !== now || !Number.isSafeInteger(now) || now <= 0) {
+      throw new Error('HOSTED_FEATURE_CONTEXT_IDENTITY_OR_TIME_INVALID');
+    }
+    this.latestHostedFeatureContexts.delete(mint);
+    this.latestHostedFeatureContexts.set(mint, context);
+    while (this.latestHostedFeatureContexts.size > 500) {
+      const oldestMint = this.latestHostedFeatureContexts.keys().next().value;
+      if (oldestMint === undefined) break;
+      this.latestHostedFeatureContexts.delete(oldestMint);
+    }
+    return context;
+  }
+
+  public async compareLatestHostedJevLaya(mint: string, now = Date.now()): Promise<HostedModelComparison | null> {
+    const readiness = this.getHostedJevLayaReadiness(mint, now);
+    if (!readiness.ready) return null;
+    const context = this.latestHostedFeatureContexts.get(mint);
+    if (!context) return null;
+    return this.compareHostedJevLaya(mint, context, now);
+  }
+
+  public buildAstraFeatureContext(
+    mint: string,
+    overrides?: Partial<Record<FeatureName, number>> | Record<string, any>,
+    now = Date.now(),
+    slot: number | null = null
+  ): AstraFeatureContext {
+    const observations = buildAstraFeatureObservations(mint, overrides, now);
+    return this.astraFeatureAdapter.capture(mint, observations, now, slot);
+  }
+
+  public evaluateJevShadow(
+    mint: string,
+    overrides?: Partial<Record<FeatureName, number>> | Record<string, any>,
+    now = Date.now(),
+    slot: number | null = null
+  ): JevShadowRecord {
+    const ctx = this.buildAstraFeatureContext(mint, overrides, now, slot);
+    return this.jevShadowLane.evaluate(mint, ctx, now);
+  }
+
+  public getJevShadowProjection(): JevShadowProjection {
+    return this.jevShadowLane.project();
   }
 
   /**

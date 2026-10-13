@@ -489,23 +489,7 @@ export function CapitalCommandView({ capital = {}, positions = [], capabilities 
               >
                 {simulating ? '⏳ Ingesting…' : '🧪 Simulate Test Trade'}
               </button>
-              <button
-                type="button"
-                className="op-button"
-                onClick={async () => {
-                  try {
-                    const res = await fetch('/api/intelligence/learning/reset-positive', { method: 'POST' });
-                    if (res.ok) {
-                      const json = await res.json();
-                      if (json.snapshot) setLearningData(json.snapshot);
-                    }
-                  } catch {}
-                }}
-                style={{color:'#14F195',borderColor:'rgba(20,241,149,0.3)',background:'rgba(20,241,149,0.08)',fontWeight:600}}
-                title="Reload the configured research attribution source"
-              >
-                🔄 Reload CSV
-              </button>
+
               <button
                 type="button"
                 className="op-button"

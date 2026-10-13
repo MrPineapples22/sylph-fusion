@@ -74,9 +74,9 @@ export const EXTERNAL_PROVIDER_REGISTRY = {
     jupiter_api: {
         providerId: 'jupiter_api',
         providerName: 'Jupiter Routing & Swap API',
-        url: 'https://quote-api.jup.ag/v6',
-        purpose: 'DEX routing, multi-hop liquidity quotes, post-migration swap execution',
-        capabilityProvided: 'Swap routes, exact price impact, compute unit budget, serialized swaps',
+        url: 'https://api.jup.ag/swap/v2',
+        purpose: 'Jupiter Swap API V2 quotes, route building, and external swap execution support',
+        capabilityProvided: 'Meta-aggregator order quotes, Metis router instructions, route and fee evidence',
         consumingSubsystem: 'PreSigningRevalidator / ExecutionGateway',
         classification: 'EXTERNAL_TRANSACTION_BUILDER',
         trustLevel: 'HIGH',

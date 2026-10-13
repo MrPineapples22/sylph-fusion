@@ -23,6 +23,7 @@ const files = [
   'components/AdversarialCouncilDrawer.jsx',
   'components/ConservationProofsDrawer.jsx',
   'components/SolanaArchitectureDrawer.jsx',
+  'components/lane-evidence.js',
   'design-system/format.js',
   'design-system/primitives.jsx',
 ];

@@ -9,10 +9,32 @@ function ensurePaperUi() {
 const short = s => s ? s.slice(0, 5) + '…' + s.slice(-5) : '—';
 function sol(raw) { const n = BigInt(raw ?? '0'), sign = n < 0n ? '−' : '', a = n < 0n ? -n : n; return sign + (a / 1000000000n) + '.' + (a % 1000000000n).toString().padStart(9, '0').slice(0, 5); }
 function text(tag, value, cls) { const e = document.createElement(tag); e.textContent = value; if (cls) e.className = cls; return e; }
+function renderProviderHealth(report) {
+  const target = $('provider-health'), providers = Object.values(report?.providers || {});
+  if (!target) return;
+  target.replaceChildren();
+  const configured = providers.filter(p => p.configured && p.enabled).length;
+  $('provider-health-count').textContent = `${configured} enabled · ${providers.length} tracked`;
+  if (!providers.length) { target.append(text('p', 'Provider health is unavailable.', 'muted')); return; }
+  for (const provider of providers) {
+    const row = text('div', '', 'provider-health-row'); row.setAttribute('role', 'listitem');
+    const heading = text('div', '', 'provider-health-heading');
+    const state = provider.state || 'UNKNOWN';
+    const tone = provider.capabilityAvailable && ['OPTIMAL', 'CONNECTED'].includes(state) ? 'positive' : ['DEGRADED', 'RECONNECTING', 'STALE', 'RATE_LIMITED'].includes(state) ? 'warning' : 'muted';
+    heading.append(text('strong', provider.providerId), text('b', state, tone));
+    const transport = !provider.configured ? 'not configured' : !provider.enabled ? 'disabled' : provider.transportReachable ? 'connected' : 'disconnected';
+    const auth = provider.authenticationRequirement === 'NOT_REQUIRED' ? 'auth not required' : provider.authenticationRequirement === 'REQUIRED' ? provider.authenticated ? 'credential verified' : 'credential unverified' : 'auth unknown';
+    const evidence = provider.observationValidated ? `${String(provider.freshness || 'unknown').toLowerCase()} evidence · ${Math.max(0, Math.round((report.evaluatedAtMs - provider.lastValidatedObservation) / 1000))}s` : 'no validated evidence';
+    const usage = provider.capabilityAvailable ? 'available for task' : 'unavailable for task';
+    const failure = provider.failureReason ? ` · last issue ${String(provider.failureReason).replaceAll('_', ' ').toLowerCase()}` : '';
+    row.append(heading, text('small', `${transport} · ${auth} · ${evidence} · ${usage}${failure}`));
+    target.append(row);
+  }
+}
 function toast(message) { $('toast').hidden = false; $('toast').textContent = message; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').hidden = true, 3500); }
 function address(value) { const b = text('button', short(value), 'address'); b.title = 'Copy ' + value; b.addEventListener('click', () => navigator.clipboard.writeText(value).then(() => toast('Address copied')).catch(() => toast('Clipboard unavailable'))); return b; }
 function render(s) {
-  ensurePaperUi(); state = s; renderProfit(s); $('mode').textContent = s.demo ? 'DEMO · OFFLINE' : s.paperActive ? 'PAPER · SIMULATION' : s.mode.toUpperCase() + ' MODE'; $('mode').classList.toggle('live', s.mode === 'live');
+  ensurePaperUi(); state = s; renderProfit(s); renderProviderHealth(s.providerHealth); $('mode').textContent = s.demo ? 'DEMO · OFFLINE' : s.paperActive ? 'PAPER · SIMULATION' : s.mode.toUpperCase() + ' MODE'; $('mode').classList.toggle('live', s.mode === 'live');
   $('clock').textContent = new Date(s.time).toLocaleTimeString([], { hour12: false });
   const exp = s.positions.reduce((n, p) => n + BigInt(p.cost), 0n);
   $('cash').textContent = sol(s.cash); $('pnl').textContent = (BigInt(s.dayPnl) >= 0n ? '+' : '') + sol(s.dayPnl);

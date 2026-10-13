@@ -1190,6 +1190,45 @@ dd {
   font-size: 11px;
 }
 
+.provider-health {
+  margin-top: 16px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.provider-health summary {
+  cursor: pointer;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.provider-health summary span {
+  margin-left: 8px;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.provider-health > p { margin: 8px 0; }
+
+.provider-health-row {
+  padding: 7px 0;
+  border-top: 1px solid var(--line);
+}
+
+.provider-health-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+}
+
+.provider-health-heading strong { color: var(--text); }
+.provider-health-row small { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; line-height: 1.45; }
+.provider-health-row .positive { color: var(--green); }
+.provider-health-row .warning { color: var(--warning); }
+.provider-health-row .muted { color: var(--faint); }
+
 .candidates {
   margin-top: 10px;
 }

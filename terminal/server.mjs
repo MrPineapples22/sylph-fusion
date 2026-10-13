@@ -9,6 +9,10 @@ import {readEngineResearchAudit, resolveEngineDatabasePath} from './engine-resea
 import {fileURLToPath} from 'node:url';
 import path, {resolve} from 'node:path';
 import {createAstraFeed} from './astra-feed.mjs';
+import {createJupiterResearchQuoteService} from './jupiter-research.mjs';
+import {createMayanResearchQuoteService} from './mayan-research.mjs';
+import {createDiscordAlertService} from './discord-alerts.mjs';
+import {createJevMarketFeatureContextBuilder} from './jev-market-context.mjs';
 import {getSoakTelemetry, buildRpcStatusPayload, exportSessionArtifact, readSessionEvents, compareSoakSessions} from './soak-reader.mjs';
 import {capitalEvidence, marketContextEvidence, tokenEvidence} from './evidence-view.mjs';
 import {isLocalRequest, readCommand} from './local-request.mjs';
@@ -16,8 +20,10 @@ import {resolveTerminalNetworkBinding} from './network-binding.mjs';
 import {globalProviderHealthTracker} from '../dist/platform/ingestion/provider-health.js';
 import {discoverySnapshot} from '../dist/discovery.js';
 import {MarketHub, validMint} from '../dist/market-hub.js';
+import {resolveMarketCapabilities} from './market-capabilities.mjs';
 import {scanToken, checkAntiSniperAndDexAsymmetry} from '../dist/risk.js';
 import {MasterIntelligenceEngine} from '../dist/intelligence/master-orchestrator.js';
+import {FEATURE_DEFINITIONS} from '../dist/intelligence/astra/features.js';
 import {globalCommandGateway} from '../dist/command-gateway.js';
 import {globalTradeLearningService} from '../dist/intelligence/attribution/trade-learning-service.js';
 import {globalProjectionService} from '../dist/projection-service.js';
@@ -67,6 +73,12 @@ import {
 } from '../dist/platform/pipeline/realized-edge-ledger.js';
 import {handleCapitalReserveRequest} from './capital-reserve-policy.mjs';
 import {handleDualPathResearchRequest} from './dual-path-research.mjs';
+import {
+  handleJevShadowProjectionRequest,
+  handleJevEvaluationRequest,
+  handleJevHostedStatusRequest,
+  handleHostedJevLayaCompareRequest,
+} from './jev-research.mjs';
 import {buildLandingLaneResearchResponse, buildRunnerSearchCostUnavailableResponse} from './research-evidence.mjs';
 import {
   LocalMarketUniverse,
@@ -122,7 +134,7 @@ process.on('unhandledRejection', (reason) => {
   console.error('Terminal stopped after an unhandled rejection:', reason?.stack || reason?.message || reason);
   process.exit(1);
 });
-const masterEngine = new MasterIntelligenceEngine();
+const jevMarketFeatureContextBuilder = createJevMarketFeatureContextBuilder(FEATURE_DEFINITIONS);
 const vetoRegistry = new HardRuleRegistry();
 const vetoVault = new ProofVault();
 const vetoMicrokernel = new TokenSafetyMicrokernel(vetoRegistry);
@@ -257,6 +269,9 @@ try {
 } catch {
   // If .env is missing, unreadable, or already loaded, proceed with process.env
 }
+// Hosted adapters read credentials and model settings at construction time.
+// Load the local environment first so configured providers are not silently disabled.
+const masterEngine = new MasterIntelligenceEngine();
 const port=Number(process.env.TERMINAL_PORT||8793);
 const terminalNetworkBinding = resolveTerminalNetworkBinding(process.env);
 globalCommandGateway.setEmergencyStopPersistence(emergencyStopStore);
@@ -312,61 +327,6 @@ globalTradeLearningService.setProcessAssessmentResolver((context) => {
   return undefined;
 });
 
-// Ingest authoritative trade autopsies directly from D:\pump\SOL-SYLPH\pavlov_attributions.csv
-function loadPavlovAttributions() {
-  try {
-    const primaryPath = 'D:/pump/SOL-SYLPH/pavlov_attributions.csv';
-    const fallbackPath = resolve(process.cwd(), 'data/pavlov_attributions.csv');
-    const csvPath = fs.existsSync(primaryPath) ? primaryPath : fallbackPath;
-    if (fs.existsSync(csvPath)) {
-      try {
-        const raw = fs.readFileSync(csvPath, 'utf8');
-        const lines = raw.trim().split(/\r?\n/);
-        if (lines.length > 1) {
-          const header = lines[0].split(',').map(h => h.trim().toLowerCase());
-          const soundIdx = header.indexOf('was_decision_sound');
-          const reasonIdx = header.indexOf('decision_soundness_reason');
-          const refIdx = header.indexOf('process_evidence_ref');
-          const mintIdx = header.indexOf('token_mint');
-          const symIdx = header.indexOf('symbol');
-          for (let i = 1; i < lines.length; i++) {
-            const row = lines[i].split(',');
-            if (row.length < 12) continue;
-            if (symIdx !== -1 && row[symIdx]?.trim().toUpperCase() === 'TEST') continue;
-            const sound = soundIdx !== -1 ? row[soundIdx]?.trim() : '';
-            const ref = refIdx !== -1 ? row[refIdx]?.trim() : '';
-            const mint = mintIdx !== -1 ? row[mintIdx]?.trim() : '';
-            const reason = reasonIdx !== -1 ? row[reasonIdx]?.trim() : '';
-            const tradeId = row[0]?.trim();
-            if (ref && (sound === '1' || sound === '0')) {
-              registerVerifiedProcessAssessment(ref, {
-                tokenMint: mint,
-                wasDecisionSound: sound === '1',
-                reason: reason || (sound === '1' ? 'SOUND_DECISION_PROCESS' : 'UNSOUND_DECISION_PROCESS'),
-              });
-            } else if (tradeId && tradeId.startsWith('trd_') && mint) {
-              const synthRef = `evidence:paper_entry_${mint}_${tradeId}`;
-              registerVerifiedProcessAssessment(synthRef, {
-                tokenMint: mint,
-                wasDecisionSound: true,
-                reason: 'SOUND_DECISION_PROCESS',
-              });
-            }
-          }
-        }
-      } catch {
-        // non-blocking
-      }
-    }
-
-    const result = globalTradeLearningService.loadFromCsv(csvPath);
-    const research = globalTradeLearningService.getSnapshot();
-    console.log(`[Pavlov Research] Loaded ${result.loadedCount} validated research rows from ${result.source}; rejected ${research.dataQuality.rejectedRows}/${research.dataQuality.csvRowsRead} rows. Quad breakdown: Alpha=${research.attributionSummary.reinforceAlpha}, Variance=${research.attributionSummary.neutralVariance}, LuckFilter=${research.attributionSummary.doNotReinforceLuck}, Penalize=${research.attributionSummary.penalizePolicy}, Unknown=${research.attributionSummary.unknown}. (Win rate: ${result.winRatePct}%, net research P&L: $${result.totalRealizedPnlUsd})`);
-  } catch (err) {
-    console.warn('[Pavlov Research] Could not load attributions:', err?.message || err);
-  }
-}
-loadPavlovAttributions();
 // Configuration is parsed once into a secret-free immutable snapshot. The
 // terminal only projects this context; it cannot turn a LIVE_BLOCKED snapshot
 // into signing or broadcast authority.
@@ -386,13 +346,12 @@ const marketRugcheckUrl = process.env.RUGCHECK_URL?.trim() || null;
 const marketDexUrl = process.env.DEXSCREENER_URL?.trim() || null;
 const marketKolUrl = process.env.KOLSCAN_URL?.trim() || null;
 const marketPumpUrl = process.env.PUMPPORTAL_WS_URL?.trim() || null;
-const marketConfigured = Boolean(marketRpcUrl && marketRugcheckUrl && marketDexUrl && marketKolUrl && marketPumpUrl);
-const hub=new MarketHub(resolve(project,'data/watchlist.json'),marketRpcUrl || '',resolve(project,'data/kol_wallets.txt'),marketRugcheckUrl || '',process.env.SOLANA_TRACKER_API_KEY || '',marketDexUrl || '',marketKolUrl || '',marketPumpUrl || '');
+const marketCapabilities = resolveMarketCapabilities(process.env);
+const hub=new MarketHub(resolve(project,'data/watchlist.json'),marketRpcUrl || '',resolve(project,'data/kol_wallets.txt'),marketRugcheckUrl || '',process.env.SOLANA_TRACKER_API_KEY || '',marketDexUrl || '',marketKolUrl || '',marketPumpUrl || '',process.env.PUMPPORTAL_TRADE_STREAM_ENABLED?.trim() === 'true');
 hub.setPositionMintsProvider(() => globalCommandGateway.getSnapshot().positions.map(p => p.mint));
-// Do not turn absent configuration into a public-provider runtime.  The
-// terminal remains available for diagnostics, but market-dependent routes are
-// explicitly unavailable until an operator supplies both endpoints.
-try { if (marketConfigured) await hub.start(); } catch (err) { console.error('Hub start error:', err); }
+// Configured adapters start independently; absent endpoints stay unavailable
+// and individual features retain their own provider requirements.
+try { if (marketCapabilities.hub) await hub.start(); } catch (err) { console.error('Hub start error:', err); }
 const discoverySignals = new Map(); // Only a validated signal adapter may populate this map.
 let discoveryCache;
 const discoveryRiskCache = createDiscoveryRiskCache({
@@ -401,6 +360,11 @@ const discoveryRiskCache = createDiscoveryRiskCache({
 });
 const discoveryRisks = discoveryRiskCache.risks;
 const operatorReadModel = new OperatorReadModel();
+const discordAlertService = createDiscordAlertService({webhookUrl: process.env.DISCORD_WEBHOOK_URL || ''});
+const discordAlertInterval = setInterval(() => {
+  void discordAlertService.observe(globalProviderHealthTracker.getReport(), Date.now());
+}, 15_000);
+discordAlertInterval.unref?.();
 
 // Autonomous Guardian, Micro-Trailing Take-Profit & Breakout Entry Ticker:
 // Evaluates pump peaks, dynamically trails stops, locks in profits, rotates stagnant positions,
@@ -417,6 +381,7 @@ const guardianInterval = setInterval(async () => {
       }
     } catch { /* astraFeed fallback */ }
     const snapTokens = hub.snapshot().tokens || [];
+    hub.syncPumpTradeSubscriptions();
     const directSol = snapTokens.find(candidate => candidate.mint === 'So11111111111111111111111111111111111111112');
     if (directSol && Number.isFinite(directSol.price) && directSol.price > 0 && Number.isSafeInteger(directSol.at) && Date.now() - directSol.at <= 8_000) {
       globalCommandGateway.updateSolPriceUsd(directSol.price, directSol.at);
@@ -614,7 +579,7 @@ const guardianInterval = setInterval(async () => {
   }
 }, 2000);
 function refreshRiskEvidence(tokens, now) {
-  if (!marketConfigured) return;
+  if (!marketCapabilities.risk) return;
   discoveryRiskCache.refresh(tokens, now);
 }
 function publishObservedMarketSignal(token, now) {
@@ -679,14 +644,14 @@ function getDiscovery() {
   return discoveryCache;
 }
 async function inspectTokenVetoProof(mint) {
-  if (marketConfigured && typeof hub.ensureToken === 'function') {
+  if (marketCapabilities.discovery && typeof hub.ensureToken === 'function') {
     try {
       await hub.ensureToken(mint);
       discoveryCache = undefined;
     } catch {}
   }
   let risk = discoveryRisks.get(mint);
-  if (!risk && marketConfigured) {
+  if (!risk && marketCapabilities.risk) {
     try {
       risk = await hub.risk(mint);
       if (risk) discoveryRisks.set(mint, risk);
@@ -902,8 +867,13 @@ const startupReadiness = globalLifecycle.getState() === 'BOOT'
     });
 console.warn(`[Safety] ${startupReadiness.reason}`);
 async function readLive(path){
- if (!marketConfigured && (path.startsWith('/api/market') || path.startsWith('/api/search') || path.startsWith('/api/risk') || path.startsWith('/api/intelligence'))) {
-   const error = new Error('MARKET_ADAPTER_CONFIGURATION_UNAVAILABLE: MARKET_RPC_URL, RUGCHECK_URL, DEXSCREENER_URL, KOLSCAN_URL, and PUMPPORTAL_WS_URL must be explicitly configured');
+ const requirement = path.startsWith('/api/search') ? ['search', marketCapabilities.search, 'DEXSCREENER_URL']
+   : path.startsWith('/api/risk') ? ['risk', marketCapabilities.risk, 'MARKET_RPC_URL and RUGCHECK_URL']
+   : path.startsWith('/api/intelligence?') ? ['discovery', marketCapabilities.discovery, 'DEXSCREENER_URL or PUMPPORTAL_WS_URL']
+   : path.startsWith('/api/market') ? ['hub', marketCapabilities.hub, 'at least one market provider endpoint']
+   : null;
+ if (requirement && !requirement[1]) {
+   const error = new Error(`MARKET_ADAPTER_CONFIGURATION_UNAVAILABLE: ${requirement[0]} requires ${requirement[2]}`);
    error.code = 'MARKET_ADAPTER_CONFIGURATION_UNAVAILABLE';
    throw error;
  }
@@ -1106,7 +1076,7 @@ async function handleRequest(req,res){
 
   if (req.method === 'GET' && reqUrl.pathname === '/api/operator') {
     const mint = reqUrl.searchParams.get('mint');
-    if (mint && validMint(mint) && marketConfigured && typeof hub.ensureToken === 'function') {
+    if (mint && validMint(mint) && marketCapabilities.discovery && typeof hub.ensureToken === 'function') {
       try {
         await hub.ensureToken(mint);
         discoveryCache = undefined;
@@ -1114,27 +1084,38 @@ async function handleRequest(req,res){
     }
     const projection = operatorReadModel.project({discovery: getDiscovery(), gateway: globalCommandGateway.getSnapshot(),
       health: globalProviderHealthTracker.getReport(), lifecycle: globalLifecycle.getState(), runtimeContext});
-    res.setHeader('Content-Type','application/json'); res.end(JSON.stringify(projection)); return;
+    res.setHeader('Content-Type','application/json'); res.end(JSON.stringify({...projection, notifications: {discord: discordAlertService.getStatus()}})); return;
+  }
+  if (req.method === 'GET' && reqUrl.pathname === '/api/intelligence/jev/shadow') {
+    await handleJevShadowProjectionRequest(req, res, masterEngine);
+    return;
+  }
+  if (req.method === 'POST' && reqUrl.pathname === '/api/intelligence/jev/evaluate') {
+    await handleJevEvaluationRequest(req, res, masterEngine);
+    return;
   }
   if (req.method === 'GET' && reqUrl.pathname === '/api/intelligence/jev-hosted') {
-    // This is deliberately a capability projection, not an inference endpoint.
-    // The terminal does not yet own a certified 16-feature AstraFeatureContext;
-    // display rows must never be silently promoted into model input.
-    const configured = Boolean(process.env.TYPESAFE_API_KEY?.trim());
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({
-      provider: 'TypeSafe hosted Jev',
-      status: configured ? 'AWAITING_CERTIFIED_CONTEXT' : 'DISABLED',
-      authority: 'ADVISORY_ONLY',
-      executionAuthorized: false,
-      researchOnly: true,
-      model: 'jev-1.13.0',
-      primitives: ['choice', 'score', 'noul'],
-      reason: configured
-        ? 'A server-side key is present. Hosted inference remains blocked until a certified Astra feature context is supplied.'
-        : 'Set TYPESAFE_API_KEY only on the local server to enable the hosted research adapter. No browser credential is used.',
-      safeguards: ['fixed HTTPS endpoint', 'pinned model response', 'deadline-bound request', 'malformed output rejected', 'no command or execution authority'],
-    }));
+    const mint = reqUrl.searchParams.get('mint') || '';
+    if (marketDexUrl && validMint(mint)) {
+      const [marketResult, riskResult] = await Promise.allSettled([
+        hub.ensureToken(mint),
+        marketRpcUrl && marketRugcheckUrl ? hub.risk(mint) : Promise.resolve(null),
+      ]);
+      const token = marketResult.status === 'fulfilled' ? marketResult.value : null;
+      const risk = riskResult.status === 'fulfilled' ? riskResult.value : null;
+      const capturedAt = Date.now();
+      const marketSnapshot = hub.snapshot();
+      const tradeEvidence = hub.getPumpTradeEvidence(mint, capturedAt, 10_000);
+      const observations = jevMarketFeatureContextBuilder(mint, token, risk, tradeEvidence, marketSnapshot.providerHealth, marketSnapshot.network, capturedAt);
+      if (observations.length) {
+        try { masterEngine.captureHostedFeatureContext(mint, observations, capturedAt, hub.network.slot); } catch { /* Readiness remains unavailable on invalid evidence. */ }
+      }
+    }
+    handleJevHostedStatusRequest(req, res, masterEngine);
+    return;
+  }
+  if (reqUrl.pathname === '/api/intelligence/jev-hosted/compare') {
+    await handleHostedJevLayaCompareRequest(req, res, masterEngine);
     return;
   }
   if (req.method === 'GET' && reqUrl.pathname === '/api/intelligence/learning') {
@@ -1177,13 +1158,6 @@ async function handleRequest(req,res){
       return;
     }
   }
-  if (req.method === 'POST' && (reqUrl.pathname === '/api/intelligence/learning/reset-positive' || reqUrl.pathname === '/api/intelligence/learning/clear')) {
-    loadPavlovAttributions();
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ ok: true, snapshot: globalTradeLearningService.getSnapshot() }));
-    return;
-  }
-
   const pythonOrigin = process.env.PYTHON_ORIGIN || 'http://127.0.0.1:5000';
   async function fetchFromPython(endpoint, timeoutMs = 2500) {
     try {
@@ -1241,7 +1215,7 @@ async function handleRequest(req,res){
 
   if (req.method === 'GET' && reqUrl.pathname === '/api/discovery') {
     const mint = reqUrl.searchParams.get('mint');
-    if (mint && validMint(mint) && marketConfigured && typeof hub.ensureToken === 'function') {
+    if (mint && validMint(mint) && marketCapabilities.discovery && typeof hub.ensureToken === 'function') {
       try {
         await hub.ensureToken(mint);
         discoveryCache = undefined;
@@ -1255,7 +1229,7 @@ async function handleRequest(req,res){
     return;
   }
   if (req.method === 'GET' && reqUrl.pathname === '/api/discovery/risk') {
-    if (!marketConfigured) {
+    if (!marketCapabilities.risk) {
       res.writeHead(503, {'Content-Type': 'application/json'});
       res.end(JSON.stringify({error: 'MARKET_ADAPTER_CONFIGURATION_UNAVAILABLE'}));
       return;
@@ -2294,6 +2268,23 @@ async function handleRequest(req,res){
   res.setHeader('Content-Type','application/json');
   res.end(JSON.stringify({ok:true,service:'sylph-paper-terminal',mode:'paper',marketApi:'/live/api/market'}));return;
  }
+ if(req.method==='GET'&&reqUrl.pathname==='/api/research/jupiter-roundtrip'){
+  const mint=reqUrl.searchParams.get('mint')||'';
+  const result=await jupiterResearchQuotes.quoteRoundTrip(mint);
+  res.setHeader('Content-Type','application/json');
+  res.setHeader('Cache-Control','no-store');
+  res.writeHead(result.status==='UNAVAILABLE'?503:200);
+  res.end(JSON.stringify(result));
+  return;
+ }
+ if(req.method==='GET'&&reqUrl.pathname==='/api/research/mayan-bridge-quote'){
+  const result=await mayanResearchQuotes.quoteSolToBaseUsdc();
+  res.setHeader('Content-Type','application/json');
+  res.setHeader('Cache-Control','no-store');
+  res.writeHead(result.status==='UNAVAILABLE'?503:200);
+  res.end(JSON.stringify(result));
+  return;
+ }
  if(reqUrl.pathname==='/astra/basket'){
   try{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(await astraFeed()));}
   catch{res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({verified:false,entryAllowed:false,error:'Astra volume basket unavailable; entries blocked.'}));}return;
@@ -2364,6 +2355,20 @@ async function handleRequest(req,res){
   await serveStaticRequest({req, res, root, project});
 }
 const astraFeed=createAstraFeed(readLive);
+globalProviderHealthTracker.setProviderConfiguration('JUPITER_QUOTE', true, true, false, 'NOT_REQUIRED');
+const jupiterResearchQuotes=createJupiterResearchQuoteService(process.env, fetch, {
+  onValidatedQuote: latencyMs => globalProviderHealthTracker.recordValidatedObservation('JUPITER_QUOTE', latencyMs),
+  onFailure: reason => reason === 'JUPITER_HTTP_429'
+    ? globalProviderHealthTracker.recordRateLimit('JUPITER_QUOTE')
+    : globalProviderHealthTracker.recordFailure('JUPITER_QUOTE', reason),
+});
+globalProviderHealthTracker.setProviderConfiguration('MAYAN_QUOTE', true, true, false, 'NOT_REQUIRED');
+const mayanResearchQuotes=createMayanResearchQuoteService(process.env, fetch, {
+  onValidatedQuote: latencyMs => globalProviderHealthTracker.recordValidatedObservation('MAYAN_QUOTE', latencyMs),
+  onFailure: reason => reason === 'MAYAN_HTTP_429'
+    ? globalProviderHealthTracker.recordRateLimit('MAYAN_QUOTE')
+    : globalProviderHealthTracker.recordFailure('MAYAN_QUOTE', reason),
+});
 globalCommandGateway.setPaperEntryEvidenceProvider((mint, poolAddress) => resolvePaperMarketEvidence({
   mint,
   poolAddress,
@@ -2381,6 +2386,7 @@ const gracefulShutdown = createGracefulShutdown({
   server,
   stopServices: () => {
     clearInterval(guardianInterval);
+    clearInterval(discordAlertInterval);
     discoveryRiskCache.stop();
     hub.stop();
   },

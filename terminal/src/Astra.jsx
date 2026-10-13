@@ -13,6 +13,10 @@ const format = (n) => (n == null ? 'Unknown' : money.format(n));
 export default React.memo(function Astra() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
+  const [quoteByMint, setQuoteByMint] = useState({});
+  const [quotingMint, setQuotingMint] = useState('');
+  const [mayanQuote, setMayanQuote] = useState(null);
+  const [isQuotingMayan, setIsQuotingMayan] = useState(false);
 
   useEffect(() => {
     let stopped = false;
@@ -41,6 +45,42 @@ export default React.memo(function Astra() {
     };
   }, []);
 
+  const requestRoundTripQuote = async (mint) => {
+    if (!mint || quotingMint) return;
+    setQuotingMint(mint);
+    setQuoteByMint(current => ({ ...current, [mint]: null }));
+    try {
+      const response = await fetch(`/api/research/jupiter-roundtrip?mint=${encodeURIComponent(mint)}`, {
+        headers: { accept: 'application/json' },
+        signal: AbortSignal.timeout(12_000),
+      });
+      const result = await response.json();
+      setQuoteByMint(current => ({ ...current, [mint]: result }));
+    } catch (e) {
+      setQuoteByMint(current => ({ ...current, [mint]: { status: 'UNAVAILABLE', errorCode: e?.name === 'TimeoutError' ? 'JUPITER_UI_TIMEOUT' : 'JUPITER_UI_REQUEST_FAILED' } }));
+    } finally {
+      setQuotingMint('');
+    }
+  };
+
+  const requestMayanBridgeQuote = async () => {
+    if (isQuotingMayan) return;
+    setIsQuotingMayan(true);
+    setMayanQuote(null);
+    try {
+      const response = await fetch('/api/research/mayan-bridge-quote', {
+        headers: { accept: 'application/json' },
+        signal: AbortSignal.timeout(12_000),
+      });
+      const result = await response.json();
+      setMayanQuote(result);
+    } catch (e) {
+      setMayanQuote({ status: 'UNAVAILABLE', errorCode: e?.name === 'TimeoutError' ? 'MAYAN_UI_TIMEOUT' : 'MAYAN_UI_REQUEST_FAILED' });
+    } finally {
+      setIsQuotingMayan(false);
+    }
+  };
+
   const links = [
     ['TypeSafe hosted Jev', 'https://typesafe.ai/blog/introducing-system-one-models-and-jev'],
     ['Laya AI Playground', 'https://laya-ai.com/playground'],
@@ -51,6 +91,7 @@ export default React.memo(function Astra() {
     ['GeckoTerminal', 'https://www.geckoterminal.com/solana/pools'],
     ['GMGN', 'https://gmgn.ai/'],
     ['Jupiter', 'https://jup.ag/'],
+    ['Mayan', 'https://mayan.finance/'],
     ['Meteora', 'https://www.meteora.ag/'],
     ['Lifinity', 'https://lifinity.io/dashboard'],
   ];
@@ -67,6 +108,25 @@ export default React.memo(function Astra() {
 
       <div className="astra-rules">
         1 SOL virtual starting capital · 2% max modeled risk · Breakeven lock at +8% · Moonshot ratchets 2x/5x/10x/20x/50x/100x (+10,000% PnL)
+      </div>
+
+      <div className="astra-block" style={{ marginTop: '12px', alignItems: 'flex-start', flexWrap: 'wrap' }} aria-label="Mayan cross-chain quote research">
+        <div style={{ flex: '1 1 260px' }}>
+          <b>MAYAN · SOLANA → BASE</b>
+          <small style={{ display: 'block', marginTop: '4px' }}>Quote the configured paper size from WSOL to Base USDC. Routes are ordered by expected output; compare minimum output and ETA. Indicative bridge research only.</small>
+          {mayanQuote?.status === 'QUOTED' && <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '9px' }}>
+            {mayanQuote.routes.map((route) => <span key={route.type} className="pill" title={`${route.slippageBps} bps quoted slippage`}>
+              {route.type} · {format(Number(route.expectedAmountOut))} expected · {format(Number(route.minimumAmountOut))} minimum · {route.etaSeconds}s
+            </span>)}
+          </div>}
+          {mayanQuote?.status === 'UNAVAILABLE' && <small role="status" style={{ display: 'block', color: '#F59E0B', marginTop: '7px' }}>
+            Mayan quote unavailable · {mayanQuote.errorCode || 'UNKNOWN'}
+          </small>}
+          {mayanQuote?.status === 'QUOTED' && <small style={{ display: 'block', marginTop: '6px' }}>{mayanQuote.note}</small>}
+        </div>
+        <button type="button" className="op-button" disabled={isQuotingMayan} onClick={requestMayanBridgeQuote}>
+          {isQuotingMayan ? 'Requesting Mayan routes…' : 'Quote Mayan bridge routes'}
+        </button>
       </div>
 
       <p className="live-note">
@@ -95,6 +155,26 @@ export default React.memo(function Astra() {
               <small className="font-mono text-muted">
                 5m vol / LP: {p.volumeLiquidity == null ? 'Unknown' : p.volumeLiquidity.toFixed(3)} · Count imbalance: {p.countImbalance == null ? 'Unknown' : p.countImbalance.toFixed(2)}
               </small>
+              <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                <button type="button" className="op-button" disabled={!p.mint || Boolean(quotingMint)} onClick={() => requestRoundTripQuote(p.mint)}>
+                  {quotingMint === p.mint ? 'Requesting quote…' : 'Check Jupiter round trip'}
+                </button>
+                <small className="font-mono text-muted" style={{ display: 'block', marginTop: '5px' }}>Quote only · no wallet, transaction, or order submission</small>
+                {quoteByMint[p.mint] && <div role="status" aria-live="polite" style={{ marginTop: '7px', fontSize: '11px' }}>
+                  {quoteByMint[p.mint].status === 'QUOTED' ? <>
+                    <b style={{ color: quoteByMint[p.mint].roundTripDeltaBps >= 0 ? '#F59E0B' : '#FF3B69' }}>
+                      Quote-implied round-trip Δ {quoteByMint[p.mint].roundTripDeltaBps >= 0 ? '+' : ''}{quoteByMint[p.mint].roundTripDeltaBps.toFixed(1)} bps
+                    </b>
+                    <small className="font-mono text-muted" style={{ display: 'block', marginTop: '3px' }}>
+                      Buy {quoteByMint[p.mint].buyOutputRaw} raw units · sell {quoteByMint[p.mint].sellOutputLamports} lamports · {quoteByMint[p.mint].buyRouter}/{quoteByMint[p.mint].sellRouter}
+                    </small>
+                    <small className="font-mono text-muted" style={{ display: 'block', marginTop: '2px' }}>
+                      Quotes {((quoteByMint[p.mint].roundTripWindowMs || 0) / 1000).toFixed(1)}s apart · sell quote age {Math.max(0, Date.now() - quoteByMint[p.mint].sellQuotedAt) < 1000 ? 'under 1s' : `${Math.floor((Date.now() - quoteByMint[p.mint].sellQuotedAt) / 1000)}s`}
+                    </small>
+                  </> : <b style={{ color: '#F59E0B' }}>{quoteByMint[p.mint].status}: {quoteByMint[p.mint].errorCode || 'SELL_QUOTE_UNAVAILABLE'}</b>}
+                  <small className="font-mono text-muted" style={{ display: 'block', marginTop: '3px' }}>Sequential indicative quotes; not a fill or profit forecast.</small>
+                </div>}
+              </div>
               <ul>
                 <li>
                   <b>Trigger:</b> Watch only; entry blocked.

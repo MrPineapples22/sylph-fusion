@@ -11,9 +11,13 @@ test('dashboard protects reads and writes, validates actions and serves local as
   const server = await startDashboard(source, 0);
   try {
     const page = await fetch(server.url); const html = await page.text();
+    assert.match(html, /127\.0\.0\.1:8793\/simulator/);
     const token = html.match(/name="dashboard-token" content="([a-f0-9]+)"/)[1];
     assert.ok(page.headers.get('content-security-policy').includes("frame-ancestors 'none'"));
-    assert.equal((await fetch(server.url + '/app.js')).status, 200);
+    const script = await fetch(server.url + '/app.js');
+    assert.equal(script.status, 200);
+    assert.match(await script.text(), /renderProviderHealth/);
+    assert.match(html, /Engine provider health/);
     assert.equal((await fetch(server.url + '/api/state')).status, 403);
     assert.equal((await fetch(server.url + '/api/state', { headers: { 'x-dashboard-token': 'é'.repeat(64) } })).status, 403);
     const headers = { 'x-dashboard-token': token, 'content-type': 'application/json', origin: server.url };
@@ -47,7 +51,9 @@ const cfg = config({ RPC_URLS: 'https://one.invalid,https://two.invalid', WS_URL
 function fixture() { return { version: 1, mode: 'paper', wallet: PublicKey.default.toBase58(), positions: {}, cash: '1', dayPnl: '0', day: '2026-09-14', halted: true, closed: {}, pending: { signature: 'public-signature', wire: 'SECRET_SIGNED_WIRE', mint: 'mint', side: 'buy', created: Date.now(), reason: 'test' } }; }
 test('dashboard snapshot excludes credentials and signed transaction bytes', () => {
   const engine = new Engine(cfg, { connection: {} }, {}, {}, dashboardStore, fixture());
-  const value = JSON.stringify(engine.snapshot()); assert.ok(!value.includes('SECRET')); assert.ok(value.includes('public-signature'));
+  const snapshot = engine.snapshot();
+  assert.ok(snapshot.providerHealth.providers.YELLOWSTONE_GRPC);
+  const value = JSON.stringify(snapshot); assert.ok(!value.includes('SECRET')); assert.ok(value.includes('public-signature'));
 });
 test('operator resume persists without clearing a safety halt', async () => {
   let saved;

@@ -44,7 +44,7 @@ export class PumpPortalFrameValidator {
         }
         // 2. Validate event type
         const txType = d.txType;
-        if (txType !== 'create' && txType !== 'trade') {
+        if (txType !== 'create' && txType !== 'trade' && txType !== 'buy' && txType !== 'sell') {
             return { isValid: false, rejectionReason: `UNRECOGNIZED_TX_TYPE: ${txType}` };
         }
         // 3. Validate token mint
@@ -52,7 +52,8 @@ export class PumpPortalFrameValidator {
             return { isValid: false, rejectionReason: 'INVALID_TOKEN_MINT_ADDRESS' };
         }
         // 4. Validate user/trader/creator if provided
-        if (d.user && !this.isValidPublicKey(d.user)) {
+        const trader = d.user ?? d.traderPublicKey;
+        if (trader && !this.isValidPublicKey(trader)) {
             return { isValid: false, rejectionReason: 'INVALID_USER_ADDRESS' };
         }
         // 5. Validate signature and check duplicates
@@ -142,7 +143,7 @@ export class PumpPortalFrameValidator {
             solAmount,
             tokenAmount,
             marketCapSol,
-            user: d.user,
+            user: trader,
             name: d.name ? String(d.name).slice(0, 80) : undefined,
             symbol: d.symbol ? String(d.symbol).slice(0, 24) : undefined,
         };

@@ -176,7 +176,11 @@ export class MarketHub {
     rpcList = [];
     rpcIndex = 0;
     positionMintsProvider;
-    constructor(watchFile, rpc = '', kolFile, rugUrl = '', trackerKey = '', dexUrl = '', kolUrl = '', pumpUrl = '') {
+    pumpTradeEnabled;
+    pumpTradeConfigured;
+    pumpTradeSubscriptions = new Set();
+    pumpTradeEvents = new Map();
+    constructor(watchFile, rpc = '', kolFile, rugUrl = '', trackerKey = '', dexUrl = '', kolUrl = '', pumpUrl = '', enablePumpTradeStream = false) {
         this.watchFile = watchFile;
         this.rpc = rpc;
         this.kolFile = kolFile;
@@ -186,9 +190,18 @@ export class MarketHub {
         this.kolUrl = kolUrl;
         this.pumpUrl = pumpUrl;
         this.rpcList = rpc.split(',').map(s => s.trim()).filter(Boolean);
+        this.pumpTradeEnabled = enablePumpTradeStream;
+        try {
+            const parsed = new URL(pumpUrl);
+            this.pumpTradeConfigured = parsed.protocol === 'wss:' && parsed.hostname === 'pumpportal.fun' && Boolean(parsed.searchParams.get('api-key'));
+        }
+        catch {
+            this.pumpTradeConfigured = false;
+        }
     }
     setPositionMintsProvider(provider) {
         this.positionMintsProvider = provider;
+        this.syncPumpTradeSubscriptions();
     }
     snapshot() {
         const convergence = new Map();
@@ -210,6 +223,12 @@ export class MarketHub {
             network: this.network,
             sources: this.status,
             providerHealth: globalProviderHealthTracker.getReport(),
+            pumpTradeStream: {
+                enabled: this.pumpTradeEnabled,
+                configured: this.pumpTradeConfigured,
+                subscribedMintCount: this.pumpTradeSubscriptions.size,
+                costNotice: 'PumpPortal token-trade subscriptions are metered; see provider terms before enabling.',
+            },
         };
     }
     async start() {
@@ -284,6 +303,50 @@ export class MarketHub {
         const data = JSON.stringify(this.watches) + '\n';
         this.watchWrite = this.watchWrite.catch(() => { }).then(async () => { await mkdir(dirname(this.watchFile), { recursive: true }); await writeFile(this.watchFile, data); });
         await this.watchWrite;
+        this.syncPumpTradeSubscriptions();
+    }
+    syncPumpTradeSubscriptions() {
+        if (!this.pumpTradeEnabled || !this.pumpTradeConfigured || this.ws?.readyState !== WebSocket.OPEN)
+            return;
+        const positions = this.positionMintsProvider?.().filter(validMint) ?? [];
+        const desired = new Set([...this.watches, ...positions, ...this.investigatedMints].filter(validMint));
+        const removed = [];
+        for (const mint of this.pumpTradeSubscriptions) {
+            if (!desired.has(mint)) {
+                removed.push(mint);
+                this.pumpTradeSubscriptions.delete(mint);
+            }
+        }
+        if (removed.length)
+            this.ws.send(JSON.stringify({ method: 'unsubscribeTokenTrade', keys: removed }));
+        const added = [];
+        for (const mint of desired) {
+            if (this.pumpTradeSubscriptions.has(mint))
+                continue;
+            added.push(mint);
+            this.pumpTradeSubscriptions.add(mint);
+        }
+        if (added.length)
+            this.ws.send(JSON.stringify({ method: 'subscribeTokenTrade', keys: added }));
+    }
+    getPumpTradeEvidence(mint, now = Date.now(), windowMs = 10_000) {
+        if (!validMint(mint) || !Number.isSafeInteger(now) || !Number.isSafeInteger(windowMs) || windowMs <= 0)
+            return null;
+        const rows = (this.pumpTradeEvents.get(mint) ?? []).filter(row => now - row.at <= windowMs && row.at <= now);
+        const latest = rows.at(-1)?.at ?? null;
+        const latestSlot = rows.at(-1)?.slot ?? null;
+        const fresh = latest !== null && now - latest <= 5_000;
+        const buyers = new Set(rows.filter(row => row.side === 'buy').map(row => row.user));
+        const sellers = new Set(rows.filter(row => row.side === 'sell').map(row => row.user));
+        return Object.freeze({ mint, source: 'PUMPPORTAL_WS', windowMs, at: latest, latestSlot, fresh,
+            uniqueBuyers: fresh ? buyers.size : null, uniqueSellers: fresh ? sellers.size : null,
+            buyCount: fresh ? rows.filter(row => row.side === 'buy').length : null,
+            sellCount: fresh ? rows.filter(row => row.side === 'sell').length : null,
+            buyVolumeSol: fresh && rows.filter(row => row.side === 'buy').every(row => row.solAmount !== null)
+                ? rows.filter(row => row.side === 'buy').reduce((sum, row) => sum + (row.solAmount ?? 0), 0) : null,
+            sellVolumeSol: fresh && rows.filter(row => row.side === 'sell').every(row => row.solAmount !== null)
+                ? rows.filter(row => row.side === 'sell').reduce((sum, row) => sum + (row.solAmount ?? 0), 0) : null,
+        });
     }
     async search(query) {
         query = query.trim();
@@ -342,6 +405,7 @@ export class MarketHub {
         while (this.investigatedMints.size > 25) {
             this.investigatedMints.delete(this.investigatedMints.keys().next().value);
         }
+        this.syncPumpTradeSubscriptions();
         const now = Date.now();
         const existing = this.tokens.find(t => t.mint === mint);
         if (existing && Number.isFinite(existing.at) && now - existing.at < 10_000) {
@@ -528,6 +592,8 @@ export class MarketHub {
         });
         ws.on('open', () => {
             ws.send(JSON.stringify({ method: 'subscribeNewToken' }));
+            this.pumpTradeSubscriptions.clear();
+            this.syncPumpTradeSubscriptions();
             this.status.pump = { state: 'connected', at: Date.now() };
             this.pumpValidator.resetSlotTracking();
             globalProviderHealthTracker.recordTransportReachable('PUMPPORTAL_WS', true);
@@ -546,6 +612,16 @@ export class MarketHub {
                 }
                 const latency = validated.measuredLatencyMs ?? 20;
                 globalProviderHealthTracker.recordValidatedObservation('PUMPPORTAL_WS', latency, validated.frame?.slot);
+                if ((validated.frame?.txType === 'buy' || validated.frame?.txType === 'sell') &&
+                    validated.frame.user && validated.frame.signature && this.pumpTradeEnabled && this.pumpTradeSubscriptions.has(validated.frame.mint)) {
+                    const mint = validated.frame.mint;
+                    const events = this.pumpTradeEvents.get(mint) ?? [];
+                    const at = Date.now();
+                    events.push({ at, slot: validated.frame.slot ?? null, side: validated.frame.txType, user: validated.frame.user, signature: validated.frame.signature,
+                        solAmount: Number.isFinite(validated.frame.solAmount) ? validated.frame.solAmount : null });
+                    const retained = events.filter(event => at - event.at <= 300_000).slice(-5000);
+                    this.pumpTradeEvents.set(mint, retained);
+                }
                 if (validated.frame?.txType === 'create' && validMint(validated.frame.mint)) {
                     const mint = validated.frame.mint;
                     if (!this.launches.some(x => x.mint === mint)) {

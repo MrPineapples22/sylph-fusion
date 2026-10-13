@@ -13,6 +13,7 @@ import { exitDecision, log, mulBps, settle, recordFailure, recordEquity, pruneRi
 import { startDashboard } from './dashboard.js';
 import { RpcPool } from './rpc.js';
 import { Feed, type MarketEvent } from './feed.js';
+import { globalProviderHealthTracker } from './platform/ingestion/provider-health.js';
 import { CanonicalIngress, createCanonicalSolanaIngress, StoreIngressJournal, isDurableCanonicalIngress, isDurableCanonicalIngressForStore } from './platform/ingress/canonical-ingress.js';
 import { RuntimeTelemetryExporter, type RuntimeTelemetryExportOptions } from './platform/ingress/runtime-telemetry-exporter.js';
 import type { CommittedEnvelope, UnvalidatedObservation } from './platform/ingress/types.js';
@@ -974,6 +975,7 @@ export class Engine {
       mode: this.cfg.MODE, demo: false, wallet: this.state.wallet, time: Date.now(), startedAt: this.startedAt,
       paused: !!this.state.operatorPaused, halted: this.state.halted, stopping: this.stopped,
       feed: { healthy: this.feed.healthy(), last: this.feed.last, slot: this.feed.slot },
+      providerHealth: globalProviderHealthTracker.getReport(now),
       rpcEndpoints: typeof (this.rpc as any)?.getEndpointStats === 'function' ? (this.rpc as any).getEndpointStats() : [],
       cash: this.state.cash, dayPnl: this.state.dayPnl, day: this.state.day,
       funnel: {

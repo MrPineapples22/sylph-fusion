@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { PointInTimeFeatureStore } from '../truth/feature-store.js';
-export const FEATURE_SCHEMA = 'astra-features-1';
+export const FEATURE_SCHEMA = 'astra-features-2';
 const define = (name, unit, windowMs, formula, minimum, maximum, freshnessLimitMs = 5000) => Object.freeze({ name, type: 'number', unit, windowMs, formula, minimum, maximum,
     freshnessLimitMs, version: FEATURE_SCHEMA, missingPolicy: 'UNKNOWN' });
 export const FEATURE_DEFINITIONS = Object.freeze({
@@ -19,7 +19,7 @@ export const FEATURE_DEFINITIONS = Object.freeze({
     dev_concentration: define('dev_concentration', 'fraction', 0, 'verified developer-linked balances / supply', 0, 1, 45000),
     volatility: define('volatility', 'fraction', 30000, 'standard deviation of covered one-second returns', 0, 10),
     provider_error_rate: define('provider_error_rate', 'fraction', 60000, 'failed requests / completed requests in measured window', 0, 1),
-    provider_slot_lag: define('provider_slot_lag', 'slots', 0, 'independent reference finalized slot minus provider finalized slot', 0, 1e7),
+    provider_slot_lag: define('provider_slot_lag', 'slots', 0, 'fresh Solana RPC confirmed slot minus fresh PumpPortal-reported trade slot', 0, 1e7),
 });
 export function observationIssue(value, now) {
     const spec = FEATURE_DEFINITIONS[value?.name];

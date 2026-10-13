@@ -85,10 +85,12 @@ export class OperatorReadModel {
     discovery: Discovery; gateway: GatewayStateSnapshot; health: ProviderHealthReport; lifecycle: string; runtimeContext?: RuntimeConfigSnapshot; now?: number;
   }) {
     const providers = Object.values(health.providers).map(p => ({
-      id: p.providerId, state: p.state, role: p.role, configured: p.configured,
+      id: p.providerId, state: p.state, role: p.role, configured: p.configured, enabled: p.enabled,
+      authenticationRequirement: p.authenticationRequirement, authenticated: p.authenticated,
+      transportReachable: p.transportReachable, observationValidated: p.observationValidated,
       authority: p.isAuthoritative, freshness: p.freshness,
       ageMs: p.lastValidatedObservation > 0 && p.lastValidatedObservation <= now ? now - p.lastValidatedObservation : null,
-      latencyMs: p.lastSuccess > 0 && Number.isFinite(p.avgLatencyMs) ? p.avgLatencyMs : null,
+      latencyMs: p.lastSuccess > 0 && Number.isFinite(p.avgLatencyMs) && p.avgLatencyMs > 0 ? p.avgLatencyMs : null,
       circuit: p.circuitState, reason: p.failureReason, capabilityAvailable: p.capabilityAvailable,
     }));
     const marketFeeds = providers.filter(p => (p.role === 'DISCOVERY_STREAM' || p.role === 'MARKET_ENRICHMENT' || p.id === 'PUMPPORTAL_WS' || p.id === 'DEXSCREENER_API') && p.ageMs != null);

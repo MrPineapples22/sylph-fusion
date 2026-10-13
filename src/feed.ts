@@ -11,6 +11,7 @@ import type { RawObservationEnvelope, ProcessingIntent } from './platform/ingest
 import type { ObservationIngressPort, ObservationSource } from './platform/ingress/port.js';
 import { createUnvalidatedObservation } from './platform/ingress/observation-factory.js';
 import type { IngressReceipt, RawPayloadEncoding, UnvalidatedObservation } from './platform/ingress/types.js';
+import { globalProviderHealthTracker, type ProviderHealthTracker } from './platform/ingestion/provider-health.js';
 
 function providerLabel(endpoint: string): string {
   try { return new URL(endpoint).origin; }
@@ -37,20 +38,28 @@ export class Feed implements ObservationSource {
   private readonly shutdown = new AbortController();
   readonly gapReconciler = new IngestionGapReconciler();
   readonly censusJournal: CensusRJournalAuthority;
+  private readonly providerHealth: ProviderHealthTracker;
   last = 0;
   slot = 0;
   readySince = 0;
 
   constructor(private cfg: Config, _connection: Connection, ingress: ObservationIngressPort,
     private readonly yellowstoneClientFactory: YellowstoneClientFactory = createCapturedSubscribeClient,
-    censusJournal?: CensusRJournalAuthority) {
+    censusJournal?: CensusRJournalAuthority,
+    providerHealth: ProviderHealthTracker = globalProviderHealthTracker) {
     if (typeof ingress === 'function' || !ingress || typeof ingress.submit !== 'function') {
       throw new Error(
         'FEED_CALLBACK_BYPASS_FORBIDDEN: Feed requires an ObservationIngressPort instance. Arbitrary callback functions are strictly prohibited.'
       );
     }
     this.#ingress = ingress;
+    this.providerHealth = providerHealth;
     this.censusJournal = censusJournal ?? new CensusRJournalAuthority();
+    const geyserConfigured = typeof cfg.YELLOWSTONE_URL === 'string' && cfg.YELLOWSTONE_URL.length > 0;
+    this.providerHealth.setProviderConfiguration('YELLOWSTONE_GRPC', geyserConfigured, geyserConfigured, false,
+      cfg.YELLOWSTONE_TOKEN ? 'REQUIRED' : 'UNKNOWN');
+    this.providerHealth.recordEndpointTransition('YELLOWSTONE_GRPC', 'https://yellowstone-grpc.invalid',
+      geyserConfigured ? cfg.YELLOWSTONE_URL : 'https://yellowstone-grpc.invalid');
   }
 
   public isIngressBound(port: unknown): boolean {
@@ -189,6 +198,17 @@ export class Feed implements ObservationSource {
     if (!this.seen.add(signature)) return receipt;
     if (this.stopped) return receipt;
 
+    if (source.transport === 'yellowstone.transaction.logs') {
+      const configured = typeof this.cfg.YELLOWSTONE_URL === 'string' && this.cfg.YELLOWSTONE_URL.length > 0;
+      const tokenConfigured = Boolean(this.cfg.YELLOWSTONE_TOKEN);
+      this.providerHealth.setProviderConfiguration('YELLOWSTONE_GRPC', configured, configured, tokenConfigured,
+        tokenConfigured ? 'REQUIRED' : 'UNKNOWN');
+      // The time from accept() entry through canonical ingress is not network
+      // latency. Zero preserves validated-observation freshness without
+      // inventing a provider latency measurement.
+      this.providerHealth.recordValidatedObservation('YELLOWSTONE_GRPC', 0);
+    }
+
     // Durably journal accepted observation in Census-R canonical event journal
     try {
       const bankHash = `bank-slot-${slot}`;
@@ -261,6 +281,7 @@ export class Feed implements ObservationSource {
         }, 10_000);
         ws.on('pong', () => { pong = Date.now(); });
         ws.on('open', () => {
+          this.providerHealth.recordTransportReachable('SOLANA_WSS', true);
           ws.send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'logsSubscribe', params: [{ mentions: [PUMP_PROGRAM_ID.toBase58()] }, { commitment: 'confirmed' }] }));
           log('websocket_connected', { endpointIndex: index });
         });
@@ -284,7 +305,12 @@ export class Feed implements ObservationSource {
           } catch { log('websocket_message_rejected', { endpointIndex: index }); }
         });
         ws.on('error', () => ws.terminate());
-        ws.on('close', () => { clearInterval(timer); this.sockets.delete(ws); resolve(); });
+        ws.on('close', () => {
+          clearInterval(timer);
+          this.sockets.delete(ws);
+          if (this.sockets.size === 0) this.providerHealth.recordTransportReachable('SOLANA_WSS', false);
+          resolve();
+        });
       });
       if (!this.stopped) {
         backoff = Date.now() - started > 30_000 ? 250 : Math.min(backoff * 2, 10_000);
@@ -301,6 +327,7 @@ export class Feed implements ObservationSource {
       let client: any;
       let sessionStartedAt = 0;
       let sessionReceivedUpdate = false;
+      let sessionFailure = false;
       try {
         client = this.yellowstoneClientFactory({
           endpoint: this.cfg.YELLOWSTONE_URL,
@@ -317,6 +344,7 @@ export class Feed implements ObservationSource {
         watchdog = setInterval(() => { if (Date.now() - last > 30_000) stream.destroy(); }, 5000);
         const request = { accounts: {}, slots: {}, transactions: { pump: { vote: false, failed: false, accountInclude: [PUMP_PROGRAM_ID.toBase58()], accountExclude: [], accountRequired: [] } }, transactionsStatus: {}, blocks: {}, blocksMeta: {}, entry: {}, accountsDataSlice: [], commitment: module.CommitmentLevel.CONFIRMED };
         await new Promise<void>((resolve, reject) => stream.write(request, (e: Error | null) => e ? reject(e) : resolve()));
+        this.providerHealth.recordTransportReachable('YELLOWSTONE_GRPC', true);
         sessionStartedAt = Date.now();
         log('yellowstone_subscribed');
         for await (const captured of stream) {
@@ -327,8 +355,19 @@ export class Feed implements ObservationSource {
           if (update.ping) stream.write({ ...request, ping: { id: 1 } });
           await this.acceptYellowstoneCapture(captured);
         }
-      } catch { log('yellowstone_reconnecting'); }
-      finally { if (watchdog) clearInterval(watchdog); this.grpcStream?.destroy(); this.grpcStream = undefined; try { client?.close?.(); } catch {} }
+      } catch {
+        sessionFailure = true;
+        if (!this.stopped) this.providerHealth.recordFailure('YELLOWSTONE_GRPC', 'YELLOWSTONE_STREAM_FAILURE');
+        log('yellowstone_reconnecting');
+      }
+      finally {
+        if (watchdog) clearInterval(watchdog);
+        this.grpcStream?.destroy();
+        this.grpcStream = undefined;
+        try { client?.close?.(); } catch {}
+        this.providerHealth.recordTransportReachable('YELLOWSTONE_GRPC', false);
+      }
+      if (!this.stopped && !sessionFailure) this.providerHealth.recordFailure('YELLOWSTONE_GRPC', 'YELLOWSTONE_STREAM_ENDED');
       if (!this.stopped) {
         backoff = yellowstoneBackoffAfterSession(backoff, sessionStartedAt ? Date.now() - sessionStartedAt : 0, sessionReceivedUpdate);
         await this.reconnectDelay(backoff + Math.random() * 250);
