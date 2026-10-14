@@ -1,0 +1,97 @@
+{
+  "batchId": "source-review-batch-003-2026-10-14",
+  "reviewedAt": "2026-10-14",
+  "repositoryHead": "f5c31177f2b8d79cdf5e3662e4049ac44b9562b2",
+  "sourcesReviewed": 4,
+  "sources": [
+    {
+      "id": "SRC-063",
+      "url": "https://github.com/raydium-io/raydium-sdk-V2",
+      "status": "PARTIAL_REVIEW",
+      "provenance": ["Official Raydium SDK repository README", "Raydium GitHub license metadata", "Local SYLPH Raydium research adapter and tests"],
+      "discoveries": [
+        "The SDK exposes token and pool list/info methods, account parsing for SPL Token and Token-2022 accounts, and local SDK test examples.",
+        "GitHub identifies the SDK repository license as GPL-3.0; no package install or license compatibility review was performed.",
+        "SYLPH's existing adapter fetches Raydium-reported pool metadata, validates pool/mint identity and reports TVL/volume, while explicitly saying TVL is not executable depth or a swap quote."
+      ],
+      "patterns": ["validate pool id, program id and both mint identities", "keep API/indexer pool metadata distinct from on-chain quote state", "use fresh pool state for any future deterministic quote"],
+      "sylphModules": ["terminal/raydium-pool-research.mjs", "terminal/test/raydium-pool-research.test.mjs", "terminal/provider-health-projection.mjs", "src/market.ts"],
+      "overlap": "A rate-limited, cached, research-only pool identity cross-check already exists. No Raydium SDK dependency or transaction builder is present.",
+      "risks": ["GPL-3.0 dependency has licensing implications that have not been reviewed", "API TVL is not executable liquidity", "SDK transaction builders can create signed-ready material and must remain behind the existing authorization boundary", "pool programs and account layouts need versioning"],
+      "validation": ["license review before dependency adoption or code reuse", "compare API pool rows against independently fetched on-chain accounts", "add quote fixtures by pool type, Token-2022 extension, fee and state slot", "keep unsigned build output outside research/authority layers"],
+      "evidence": ["https://github.com/raydium-io/raydium-sdk-V2", "terminal/raydium-pool-research.mjs", "terminal/test/raydium-pool-research.test.mjs"],
+      "license": "GPL-3.0_REVIEW_REQUIRED",
+      "decision": "RESEARCH_ONLY_NO_SDK_INSTALL"
+    },
+    {
+      "id": "SRC-076",
+      "url": "https://github.com/jito-labs/searcher-examples",
+      "status": "PARTIAL_REVIEW",
+      "provenance": ["Official Jito Searcher Examples README", "Official Jito low-latency transaction docs", "Local SYLPH Jito probe module"],
+      "discoveries": [
+        "The examples cover Block Engine searcher authentication, protobuf service definitions and a CLI that can send test bundles.",
+        "The repository requires a local keypair and Block Engine access/API credentials for examples that send; those flows were inspected only and not run.",
+        "SYLPH's current Jito client only calls getTipAccounts and explicitly reports `bundleSubmissionTested:false`, so the examples do not prove local submission or landing behavior."
+      ],
+      "patterns": ["use challenge-response for authenticated searcher channels", "track subscription results/rejections separately from submission receipt", "correlate bundle id, transaction signatures and finalized outcomes"],
+      "sylphModules": ["terminal/jito-block-engine-health.mjs", "terminal/jito-tip-floor-research.mjs", "src/platform/execution/authority.ts", "src/platform/execution/finalized-settlement*"],
+      "overlap": "Health/tip research exists; Jito searcher gRPC submission is not integrated. No SDK or key material was added.",
+      "risks": ["sample code has signing, fees and tip requirements", "bundle subscription may time out or return rejected/dropped outcomes", "an accepted bundle is not confirmed settlement", "upstream examples may age with protobuf/API changes"],
+      "validation": ["pin repo revision/protobuf before adapter work", "never run sample submission with user credentials absent separate authorization", "exercise mock acceptance/rejection/timeout in deterministic tests", "future integration must reconcile chain confirmation and actual tip/fees"],
+      "evidence": ["https://github.com/jito-labs/searcher-examples", "https://docs.jito.wtf/lowlatencytxnsend/"],
+      "license": "Apache-2.0",
+      "decision": "RESEARCH_ONLY_NO_AUTH_OR_SUBMISSION_CHANGE"
+    },
+    {
+      "id": "SRC-079",
+      "url": "https://github.com/LiteSVM/litesvm",
+      "status": "PARTIAL_REVIEW",
+      "provenance": ["Official LiteSVM README and license metadata", "Local SYLPH test inventory"],
+      "discoveries": [
+        "LiteSVM is an in-process Solana VM test library with program loading, transaction simulation, slot/time control, compute-budget control and optional transaction history.",
+        "The test API can write arbitrary account state and disable signature verification, explicitly bypassing checks for test setup; it must be isolated as test-only infrastructure.",
+        "The project is Rust-first (Apache-2.0); this TypeScript/JavaScript SYLPH checkout has no LiteSVM dependency or Rust program workspace identified by targeted search."
+      ],
+      "patterns": ["use an in-process VM for deterministic program-level fixtures", "separate test state mutation from production RPC evidence", "test runtime errors and transaction state changes rather than trusting mocks alone"],
+      "sylphModules": ["test/platform/veritas-wire-decoder.test.mjs", "test/platform/truth-x.test.mjs", "test/finalized-pump-event-cpi.test.mjs", "src/platform/simulation/"],
+      "overlap": "SYLPH has extensive deterministic Node tests and simulation contracts, but no on-chain Rust program workspace in the current checkout. LiteSVM is therefore a potential future fixture tool only if protocol program binaries and a maintained Node binding fit the pipeline.",
+      "risks": ["account writes or disabled sigverify can produce invalid confidence if mistaken for production behavior", "runtime feature and program versions may differ from mainnet", "adding Rust toolchain/runtime adds maintenance and platform cost"],
+      "validation": ["prove a concrete on-chain program test target before adoption", "pin Agave/runtime feature set and program binary hashes", "keep test account writes in isolated harnesses", "differentially compare critical state transitions to finalized fixtures"],
+      "evidence": ["https://github.com/LiteSVM/litesvm", "https://github.com/LiteSVM/litesvm/blob/master/LICENSE"],
+      "license": "Apache-2.0",
+      "decision": "NO_DIRECT_RUNTIME_INTEGRATION; CONSIDER_ONLY_FOR_PROGRAM_TESTS"
+    },
+    {
+      "id": "SRC-080",
+      "url": "https://github.com/LiteSVM/anchor-litesvm",
+      "status": "PARTIAL_REVIEW",
+      "provenance": ["Official Anchor-LiteSVM README and license metadata", "Local SYLPH project language/dependency inventory"],
+      "discoveries": [
+        "Anchor-LiteSVM supplies an Anchor-compatible provider/context so Rust/Anchor programs can be exercised without an RPC-backed validator.",
+        "It wraps LiteSVM for test use and supports IDL-generated clients/account/event decoding; it remains a test harness, not a canonical-chain evidence source.",
+        "The upstream repository is MIT-licensed, but the current SYLPH checkout contains no Anchor program workspace to adopt it against."
+      ],
+      "patterns": ["reuse IDL-generated clients in local integration fixtures", "test account deserialization and event parsing in the same harness as instruction outcomes", "keep local VM results labeled simulated"],
+      "sylphModules": ["test/platform/truth-x.test.mjs", "test/platform/yellowstone-truth-bridge.test.mjs", "src/platform/ingestion/truth-x.ts"],
+      "overlap": "SYLPH currently verifies decoder/event paths using deterministic Node fixtures; no direct Anchor-LiteSVM dependency or on-chain Anchor program exists locally.",
+      "risks": ["simulation can diverge from the current validator feature set", "a local VM's fabricated state must not advance canonical ingress or live-feed health", "introducing Anchor/Rust test toolchain may duplicate existing fixture paths"],
+      "validation": ["identify an actual Anchor program/binary and exact test objective", "bind test results to program and runtime hashes", "assert simulated fixtures cannot mutate production/canonical state", "compare outputs against independent finalized transaction/account fixtures"],
+      "evidence": ["https://github.com/LiteSVM/anchor-litesvm", "https://github.com/LiteSVM/anchor-litesvm/blob/main/LICENSE"],
+      "license": "MIT",
+      "decision": "NO_DIRECT_INTEGRATION_UNTIL_ANCHOR_PROGRAM_TEST_TARGET_EXISTS"
+    }
+  ],
+  "verification": {
+    "commands": ["node --test terminal/test/raydium-pool-research.test.mjs terminal/test/jito-block-engine-health.test.mjs"],
+    "passed": 5,
+    "failed": 0,
+    "notes": "The 4 Raydium and 1 Jito tests verify local read-only identity/connectivity boundaries. They do not validate LiteSVM or any external SDK code."
+  },
+  "safety": {
+    "external_repositories_cloned_or_executed": false,
+    "signingOrBroadcastChanged": false,
+    "capitalAuthorizationChanged": false,
+    "riskLimitsChanged": false,
+    "servicesStartedStoppedOrRestarted": false
+  }
+}

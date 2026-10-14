@@ -1,0 +1,71 @@
+{
+  "batchId": "source-review-batch-002-2026-10-14",
+  "reviewedAt": "2026-10-14",
+  "repositoryHead": "f5c31177f2b8d79cdf5e3662e4049ac44b9562b2",
+  "sourcesReviewed": 3,
+  "sources": [
+    {
+      "id": "SRC-254",
+      "url": "https://solana.com/docs/core/fees/compute-budget",
+      "status": "PARTIAL_REVIEW",
+      "provenance": ["Official Solana fee documentation", "Local Veritas wire decoder source"],
+      "discoveries": [
+        "For legacy/v0 transactions, priority fees are charged from requested compute-unit limit times CU price, not actual consumed compute; overspecified CU limits cost money.",
+        "The current official page documents v1 transaction behavior: ComputeBudget instructions are no-ops for configuration and the message carries limits/configuration directly.",
+        "Duplicate instructions of the same compute-budget variant cause transaction failure for legacy/v0 processing; execution budget also has a 1.4M CU cap."
+      ],
+      "patterns": ["make fee parser transaction-version aware", "distinguish requested CU limit from consumed units", "derive fee estimate from exact message/runtime version and reconcile to finalized meta.fee"],
+      "sylphModules": ["src/platform/signing/veritas-wire-decoder.ts", "src/platform/ingestion/truth-x.ts", "src/platform/ingress/types.ts", "src/platform/pipeline/execution-economics.ts"],
+      "overlap": "Veritas decodes legacy/v0 compute-budget instructions and calculates priority fee from CU price and limit. Its output type is legacy|0. Official docs now describe v1 message-level fee configuration. This suggests a compatibility gap in that decoder, but the impact on all fee/accounting paths has not been proven; canonical ingestion separately retains transaction meta.fee.",
+      "risks": ["a v1 message may be rejected or misclassified by this decoder", "fee projections may omit a message-level priority fee if routed through unsupported parsing", "canonical actual transaction fee remains authoritative over estimates"],
+      "validation": ["add v1 wire fixtures against an official SDK/runtime version", "prove the decoder's output and failure behavior before a code change", "compare estimated fees with confirmed meta.fee including failed transactions", "route any financial semantic patch through Astra Protocol/Risk independent review"],
+      "evidence": ["https://solana.com/docs/core/fees/compute-budget", "src/platform/signing/veritas-wire-decoder.ts", "src/platform/ingestion/truth-x.ts"],
+      "license": "NOT_APPLICABLE_DOCUMENTATION",
+      "decision": "OPEN_COMPATIBILITY_QUESTION_NO_CODE_CHANGE"
+    },
+    {
+      "id": "SRC-255",
+      "url": "https://solana.com/docs/core/fees/fee-structure",
+      "status": "PARTIAL_REVIEW",
+      "provenance": ["Official Solana fee documentation", "Local Truth-X and execution economics source review"],
+      "discoveries": [
+        "The documented network fee is base signature fee plus prioritization fee, and is charged whether a transaction succeeds or fails.",
+        "Base fee counts transaction signatures and supported precompile signatures; priority fee formula rounds micro-lamports up, while v1 stores an absolute total priority fee in the message.",
+        "Jito tips and venue/protocol fees are separate economic components; net outcome accounting should not collapse them into one network-fee field."
+      ],
+      "patterns": ["store observed total fee and version-specific fee components separately", "record failed attempt fees", "reconcile estimates against chain-reported metadata", "keep tips and venue fees distinct"],
+      "sylphModules": ["src/platform/ingestion/truth-x.ts", "src/platform/pipeline/execution-economics.ts", "src/platform/ledger/clearing.ts", "src/platform/paper/executable-paper-simulator.ts"],
+      "overlap": "Truth-X captures raw transaction `meta.fee`; execution economics exposes base/priority/tip components; paper simulator uses independent configured values. End-to-end version-aware reconciliation across failed trades, tips and venue fees is not demonstrated by this source review.",
+      "risks": ["estimated fee and realized network fee can diverge", "unsuccessful transactions still incur network fees", "fee schema may not represent future transaction versions"],
+      "validation": ["fixture success and failure fees, signature/precompile counts, v0 and v1 fee models", "reconcile separate Jito tip transfers and venue fees to account deltas", "prove all-in net PnL has no double count or omission"],
+      "evidence": ["https://solana.com/docs/core/fees/fee-structure", "src/platform/ingestion/truth-x.ts", "src/platform/pipeline/execution-economics.ts"],
+      "license": "NOT_APPLICABLE_DOCUMENTATION",
+      "decision": "RESEARCH_ONLY_OPEN_RECONCILIATION_VALIDATION"
+    },
+    {
+      "id": "SRC-256",
+      "url": "https://solana.com/docs/tools/production-readiness",
+      "status": "PARTIAL_REVIEW",
+      "provenance": ["Official Solana production readiness checklist", "Project live-status and recovery evidence"],
+      "discoveries": [
+        "Solana publishes production checks across RPC usage, transactions, operations and monitoring; a reachable endpoint or successful build is not a production-readiness result.",
+        "SYLPH's current recorded operational blockers include stale/overflowed Core feed, stale RPC evidence, duplicate legacy Terminal processes and unavailable configured adapters.",
+        "The project has an explicit Start SYLPH check and read-only live status audit, but existing listeners predate some source-level ownership fixes, so checkout state and running-process state must be reported separately."
+      ],
+      "patterns": ["turn checklist items into observable gates", "report process/build provenance", "keep freshness, capacity, recovery and incident evidence distinct", "fail closed on unknown runtime schema"],
+      "sylphModules": ["start-app.mjs", "docs/ECOSYSTEM_LIVE_STATUS_2026-10-14.md", "src/rpc.ts", "src/feed.ts", "terminal/server.mjs"],
+      "overlap": "Current launcher check reports blockers and does not claim live readiness. Prior read-only observation found Engine PAPER/feed blocked and old Terminal processes; this batch did not start, stop or restart any service.",
+      "risks": ["new source code does not update already running processes", "connectivity can be mistaken for durable capacity or chain completeness", "a broad checklist can give false assurance without evidence binding"],
+      "validation": ["rerun read-only check only", "bind process identity, source build ID and status schema", "test degraded/stale/unavailable endpoints", "revalidate after operator-controlled runtime transition"],
+      "evidence": ["https://solana.com/docs/tools/production-readiness", "docs/ECOSYSTEM_LIVE_STATUS_2026-10-14.md"],
+      "license": "NOT_APPLICABLE_DOCUMENTATION",
+      "decision": "RESEARCH_ONLY_NO_RUNTIME_CHANGE"
+    }
+  ],
+  "safety": {
+    "signingOrBroadcastChanged": false,
+    "capitalAuthorizationChanged": false,
+    "riskLimitsChanged": false,
+    "servicesStartedStoppedOrRestarted": false
+  }
+}
