@@ -1,0 +1,133 @@
+{
+  "batchId": "source-review-batch-001-2026-10-14",
+  "reviewedAt": "2026-10-14",
+  "repository": {
+    "path": "D:/Users/juans/SF",
+    "head": "f5c31177f2b8d79cdf5e3662e4049ac44b9562b2",
+    "branch": "feat/certification-layer-c1-c4",
+    "worktreeState": "PREEXISTING_USER_CHANGES_PRESERVED"
+  },
+  "manifest": {
+    "path": "research/registry/resource_manifest.csv",
+    "sha256": "5cf2eed491246816cf8eea758575311aa9b71bf2e6d31779b40d3301cdd6a5cd",
+    "records": 288,
+    "recordValidation": "PASS",
+    "reviewedThisBatch": 5,
+    "remainingForIndividualReview": 283
+  },
+  "rea": {
+    "role": "OUT_OF_BAND_SUPPORTING_EVIDENCE",
+    "capabilityFinding": "REA JavaScript/Electron analysis is appropriate for authorized local application artifacts; it is not a universal URL/repository auditor. Use source inspection, official docs and tests for Rust projects, protocol docs and API services.",
+    "runsThisBatch": 0,
+    "existingLocalEvidence": [
+      ".audit/rea-fresh-dist-2026-10-14.json",
+      ".audit/rea-terminal-dist-2026-10-14.json",
+      ".audit/rea-doctor-2026-10-14.json"
+    ],
+    "limitations": "Prior local analysis is structural evidence only; no claim of runtime loading, semantic equivalence, upstream behavior, provider correctness, or economic advantage."
+  },
+  "sources": [
+    {
+      "id": "SRC-028",
+      "url": "https://github.com/rpcpool/yellowstone-grpc",
+      "status": "PARTIAL_REVIEW",
+      "provenance": ["Official upstream README", "Official upstream changelog", "Local SYLPH source review"],
+      "discoveries": [
+        "Upstream exposes streams for slots, blocks, transactions, deshred transactions and account updates; the protocol surface is broader than a logs-only transaction feed.",
+        "The upstream changelog records replay reconnect edge cases involving duplicate events, partial slots and fork/blockhash verification. Recovery should therefore preserve slot sealing, block identity, replay/live-tail deduplication and explicit equivocation checks.",
+        "Current upstream also documents TLS/auth listener configuration and known block reconstruction limitations; availability of a stream does not establish complete canonical block evidence."
+      ],
+      "patterns": ["separate replay and live-tail reconciliation", "deduplicate by stable transaction/block identity", "pin protocol/client versions and test supported update variants"],
+      "sylphModules": ["src/feed.ts", "src/platform/ingestion/yellowstone-captured-client.ts", "src/platform/ingress/canonical-ingress.ts", "src/platform/ingestion/gap-reconciler.ts"],
+      "overlap": "SYLPH already uses the Triton Yellowstone Node package, retains raw protobuf bytes in a captured deserializer, and routes versioned observations into canonical ingress. The current dependency is @triton-one/yellowstone-grpc 4.0.2; compatibility against current upstream protocol/replay behavior is not established by this review.",
+      "risks": ["upstream client and server versions may diverge", "replay payloads may duplicate or conflict across providers/forks", "BlockMeta reconstruction has upstream caveats", "transport freshness must not be substituted for finalized completeness"],
+      "validation": ["pin server/client/proto versions", "fixture partial-slot replay, duplicate updates, reconnect equivocation and live-tail handoff", "compare finalized slot/blockhash/transaction sets independently", "test bounded backpressure and restart recovery"],
+      "evidence": ["https://github.com/rpcpool/yellowstone-grpc/blob/master/README.md", "https://github.com/rpcpool/yellowstone-grpc/blob/master/CHANGELOG.md"],
+      "license": "NOT_REVIEWED",
+      "decision": "RESEARCH_ONLY_NO_DEPENDENCY_OR_AUTHORITY_CHANGE"
+    },
+    {
+      "id": "SRC-177",
+      "url": "https://github.com/morluto/rea",
+      "status": "PARTIAL_REVIEW",
+      "provenance": ["REA upstream README", "REA documentation links in manifest", "Existing local REA audit records"],
+      "discoveries": [
+        "REA documents local analysis workflows for JavaScript/Electron apps and native/managed targets, with evidence and limitations attached to findings.",
+        "The tool is scoped to supported application artifacts and approved observations; it does not turn arbitrary remote websites or a 288-link catalog into verified integrations.",
+        "Existing local REA output is structural evidence for SYLPH emitted JavaScript. It cannot prove runtime module identity, source semantics, service behavior or profitability."
+      ],
+      "patterns": ["use REA only on an appropriate authorized target", "record exact tool/version/target/evidence", "pair structural mappings with deterministic runtime tests"],
+      "sylphModules": ["local emitted dist/", "terminal/dist/", "src/feed.ts", "src/platform/ingress/canonical-ingress.ts"],
+      "overlap": "Prior local runs analyzed fresh Engine and Terminal artifacts. This batch did not run a new REA command; repo environment discovery did not find a standalone rea executable on PATH.",
+      "risks": ["optional toolchain/Windows limitations may make some REA workflows unavailable", "static mapping can be mistaken for proof of execution", "remote third-party targets require separate authorization and appropriate tool support"],
+      "validation": ["record pinned REA version and exact command/target for each run", "retain raw output and hash", "use deterministic regression tests for behavior claims", "keep REA outside runtime and all trading decisions"],
+      "evidence": ["https://github.com/morluto/rea", "https://morluto.github.io/rea/guides/"],
+      "license": "NOT_REVIEWED",
+      "decision": "RESEARCH_TOOL_ONLY_NO_RUNTIME_INTEGRATION"
+    },
+    {
+      "id": "SRC-257",
+      "url": "https://docs.jito.wtf/lowlatencytxnsend/",
+      "status": "PARTIAL_REVIEW",
+      "provenance": ["Official Jito low-latency transaction documentation", "Local SYLPH Jito status adapters and live-status report"],
+      "discoveries": [
+        "A successful sendBundle response with bundle_id means receipt, not landing; the documented status method must be used to observe bundle processing.",
+        "Jito bundles are atomic and all-or-nothing within a slot, while tip amount participates in an auction and a low tip may fail selection.",
+        "Jito recommends simulation and cost/latency-aware tip selection; transport connectivity and tip-floor reads alone do not verify landed transactions or realized costs."
+      ],
+      "patterns": ["separate submission receipt from landing/finalization evidence", "correlate bundle IDs to transaction signatures and settlement", "measure tip, priority fees, base fees, retries and failed/uncled outcomes"],
+      "sylphModules": ["terminal/jito-block-engine-health.mjs", "terminal/jito-tip-floor-research.mjs", "src/platform/execution/authority.ts", "src/platform/execution/finalized-settlement*"],
+      "overlap": "SYLPH has read-only Block Engine connectivity and tip-floor research projections. Existing live status explicitly labels them CONNECTIVITY_ONLY / tip data; bundle submission and realized landed-cost telemetry remain unverified.",
+      "risks": ["false success if receipt is shown as landing", "tips and priority fees can exceed expected edge", "bundle execution differs from ordinary transaction submission", "uncled/replayed outcomes need reconciliation"],
+      "validation": ["only in isolated fixtures or explicitly authorized non-capital environment", "test receipt-without-landing and status timeout", "reconcile bundle status, signature, finalized transaction and wallet deltas", "record all fees and tips against realized outcomes"],
+      "evidence": ["https://docs.jito.wtf/lowlatencytxnsend/"],
+      "license": "NOT_APPLICABLE_DOCUMENTATION",
+      "decision": "RESEARCH_ONLY_NO_SUBMISSION_PATH_CHANGE"
+    },
+    {
+      "id": "SRC-258",
+      "url": "https://developers.jup.ag/docs/swap/index.md",
+      "status": "PARTIAL_REVIEW",
+      "provenance": ["Official Jupiter Developer docs and Swap V2 API reference", "Local Jupiter research adapter and project integration notes"],
+      "discoveries": [
+        "The current V2 API reference exposes an /order endpoint that returns an assembled transaction and identifies taker as a required request field; an order response is not merely a quote payload.",
+        "SYLPH's existing Jupiter research adapter calls /swap/v2/order, rate-limits requests, validates returned amounts, discards unsigned transaction data, and marks results QUOTE_ONLY with executionAuthorized false.",
+        "Local integration notes say authenticated V2 use requires configured API key and taker public key; neither setting was present in the captured environment, so this authenticated contract was not exercised."
+      ],
+      "patterns": ["keep quote-only response schemas distinct from prepared transaction schemas", "validate mint/amount/response bounds", "record quote timestamps and sequential round-trip window", "discard transaction payload in research-only adapter"],
+      "sylphModules": ["terminal/jupiter-research.mjs", "terminal/provider-health-projection.mjs", "terminal/test/jupiter-research.test.mjs"],
+      "overlap": "A read-only Jupiter adapter exists, but it does not submit or sign. Existing audit reports measured quotes that are snapshots rather than fills or profit estimates.",
+      "risks": ["/order may return transaction material even for a quote workflow", "sequential quotes span time and market state", "fees, landing probability, price movement and failed execution are excluded", "API key/taker contract not verified in this environment"],
+      "validation": ["recheck official V2 schema/version before updates", "fixture authenticated and unauthenticated cases, error/oversize responses, token decimals and partial quotes", "never pass an assembled payload from research to signer", "compare quotes with confirmed fills only in authorized paper/sandbox workflows"],
+      "evidence": ["https://github.com/jup-ag/docs/blob/main/api-reference/swap/order.mdx", "https://developers.jup.ag/docs/swap/index.md"],
+      "license": "NOT_APPLICABLE_DOCUMENTATION",
+      "decision": "RESEARCH_ONLY_NO_SIGNING_OR_SUBMISSION_CHANGE"
+    },
+    {
+      "id": "SRC-259",
+      "url": "https://github.com/pump-fun/pump-public-docs",
+      "status": "PARTIAL_REVIEW",
+      "provenance": ["Official Pump public documentation repository README", "Local Pump curve research adapter", "SYLPH upstream research notes"],
+      "discoveries": [
+        "Official docs describe new Pump curve v3 and PumpSwap v2 instruction families, multi-hop swaps, pump-token quote mints and fee sweeps; the lifecycle is broader than a SOL-only bonding curve followed by one AMM.",
+        "PumpSwap effective quote reserves are the quote-vault balance plus signed virtual_quote_reserves; docs explicitly warn the signed reserve may be negative and raw vault balance alone is not the quote reserve.",
+        "Fees can accrue on curves/pools and be swept separately; synthetic migration behavior and creator/holder-reward fee variants affect interpretation of trade events and quote/accounting state."
+      ],
+      "patterns": ["version account/instruction decoders", "model quote mint and reserve signs explicitly", "separate trade events from fee-sweep events", "bind pool/lifecycle state to slot and canonical account identity"],
+      "sylphModules": ["terminal/pump-curve-research.mjs", "src/platform/ingestion/truth-x.ts", "src/platform/ingress/canonical-ingress.ts", "src/market.ts", "src/platform/execution/solaris/amm-bridge.ts"],
+      "overlap": "SYLPH's Pump adapter is a read-only bonding-curve account reader and explicitly does not return a swap quote. It accepts both SPL Token and Token-2022 mint owners and retains raw reserve values. Graduated-venue fixed-reserve assumptions are separately identified in existing research notes and need a protocol/math review before any economic-semantic patch.",
+      "risks": ["signed reserve coercion or raw-vault pricing can misquote", "instruction/account layouts evolve", "curve completion is not proof of destination-pool liquidity", "fee sweeps and migration events can corrupt volume/PnL attribution if treated as trades"],
+      "validation": ["pin official IDL and SDK versions", "differentially decode versioned raw transactions/account fixtures", "add signed i128, non-SOL quote mint, fee accrual/sweep and synthetic-migration fixtures", "derive post-migration executable quotes from verified pool state and test sell-side feasibility"],
+      "evidence": ["https://github.com/pump-fun/pump-public-docs", "https://github.com/pump-fun/pump-public-docs/blob/main/docs/VIRTUAL_QUOTE_RESERVES_FEE_ADJUSTMENT.md", "https://github.com/pump-fun/pump-public-docs/blob/main/docs/SYNTHETIC_MIGRATION.md"],
+      "license": "NOT_REVIEWED",
+      "decision": "RESEARCH_ONLY_NO_PROTOCOL_OR_EXECUTION_CHANGE"
+    }
+  ],
+  "safety": {
+    "reaConnectedToExecution": false,
+    "signingOrBroadcastChanged": false,
+    "capitalAuthorizationChanged": false,
+    "riskLimitsChanged": false,
+    "externalFinancialActions": false
+  }
+}
