@@ -1,12 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { JupiterResearchQuoteService } from '../jupiter-research.mjs';
+import { JupiterResearchQuoteService, resolveJupiterProviderConfig } from '../jupiter-research.mjs';
 
 const wrappedSol = 'So11111111111111111111111111111111111111112';
 const mint = 'So11111111111111111111111111111111111111113';
 const quote = (inputMint, outputMint, inAmount, outAmount, extra = {}) => new Response(JSON.stringify({
   inputMint, outputMint, inAmount, outAmount, transaction: null, router: 'metis', ...extra,
 }));
+
+test('Jupiter provider health config reflects optional API-key authentication without disabling quote capability', () => {
+  assert.deepEqual(resolveJupiterProviderConfig({}), {
+    configured: true, enabled: true, authenticated: false, authenticationRequirement: 'NOT_REQUIRED',
+  });
+  assert.deepEqual(resolveJupiterProviderConfig({ JUPITER_API_KEY: 'configured-key' }), {
+    configured: true, enabled: true, authenticated: true, authenticationRequirement: 'REQUIRED',
+  });
+});
 
 test('Jupiter round-trip uses two quote-only requests and reports size-specific round-trip friction', async () => {
   const requests = [];

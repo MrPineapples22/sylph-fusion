@@ -9,7 +9,7 @@ import {readEngineResearchAudit, resolveEngineDatabasePath} from './engine-resea
 import {fileURLToPath} from 'node:url';
 import path, {resolve} from 'node:path';
 import {createAstraFeed} from './astra-feed.mjs';
-import {createJupiterResearchQuoteService} from './jupiter-research.mjs';
+import {createJupiterResearchQuoteService, resolveJupiterProviderConfig} from './jupiter-research.mjs';
 import {createMayanResearchQuoteService} from './mayan-research.mjs';
 import {createBirdeyeResearchService} from './birdeye-research.mjs';
 import {createStreamflowResearchService} from './streamflow-research.mjs';
@@ -2375,12 +2375,19 @@ async function handleRequest(req,res){
   await serveStaticRequest({req, res, root, project});
 }
 const astraFeed=createAstraFeed(readLive);
-globalProviderHealthTracker.setProviderConfiguration('JUPITER_QUOTE', true, true, false, 'NOT_REQUIRED');
+const jupiterProviderConfig=resolveJupiterProviderConfig(process.env);
+globalProviderHealthTracker.setProviderConfiguration('JUPITER_QUOTE', jupiterProviderConfig.configured,
+  jupiterProviderConfig.enabled, jupiterProviderConfig.authenticated, jupiterProviderConfig.authenticationRequirement);
 const jupiterResearchQuotes=createJupiterResearchQuoteService(process.env, fetch, {
-  onValidatedQuote: latencyMs => globalProviderHealthTracker.recordValidatedObservation('JUPITER_QUOTE', latencyMs),
-  onFailure: reason => reason === 'JUPITER_HTTP_429'
-    ? globalProviderHealthTracker.recordRateLimit('JUPITER_QUOTE')
-    : globalProviderHealthTracker.recordFailure('JUPITER_QUOTE', reason),
+  onValidatedQuote: latencyMs => {
+    globalProviderHealthTracker.setProviderConfiguration('JUPITER_QUOTE', jupiterProviderConfig.configured,
+      jupiterProviderConfig.enabled, jupiterProviderConfig.authenticated, jupiterProviderConfig.authenticationRequirement);
+    globalProviderHealthTracker.recordValidatedObservation('JUPITER_QUOTE', latencyMs);
+  },
+  onFailure: reason => {
+    if (reason === 'JUPITER_HTTP_429') globalProviderHealthTracker.recordRateLimit('JUPITER_QUOTE');
+    else globalProviderHealthTracker.recordFailure('JUPITER_QUOTE', reason);
+  },
 });
 const birdeyeResearch=createBirdeyeResearchService(process.env, fetch);
 const streamflowResearch=createStreamflowResearchService(process.env);

@@ -132,3 +132,13 @@ export function createJupiterResearchQuoteService(env = process.env, fetchImpl =
   const amountLamports = rawAmount && /^\d+$/.test(rawAmount) ? Number(rawAmount) : 10_000_000;
   return new JupiterResearchQuoteService({ apiKey: env.JUPITER_API_KEY || '', amountLamports, fetchImpl, ...callbacks });
 }
+
+export function resolveJupiterProviderConfig(env = process.env) {
+  const authenticated = typeof env.JUPITER_API_KEY === 'string' && env.JUPITER_API_KEY.trim().length > 0;
+  return Object.freeze({
+    configured: true,
+    enabled: true,
+    authenticated,
+    authenticationRequirement: authenticated ? 'REQUIRED' : 'NOT_REQUIRED',
+  });
+}
