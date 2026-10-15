@@ -43,6 +43,26 @@ test('DEX envelope inspection does not infer a trade from generic logs or missin
   assert.equal(failed.isSuccess, false);
 });
 
+test('Raydium SDK v2 program families are identified without claiming transaction decoding', () => {
+  const parser = new DEXStreamParser();
+  const cases = [
+    ['5quBtoiQqxF9Jv6KYKctB59NT3gtJD2Y65kdnB1Uev3h', 'RAYDIUM_AMM_STABLE'],
+    ['CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK', 'RAYDIUM_CLMM'],
+    ['CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C', 'RAYDIUM_CPMM'],
+    ['LanMV9sAd7wArD4vJFi2qDdfnVhFxYSUg6eADduJ3uj', 'RAYDIUM_LAUNCHPAD'],
+  ];
+
+  for (const [programId, expectedProtocol] of cases) {
+    const result = parser.parseTransaction({ slot: 100, signature: `sig-${expectedProtocol}`, programId, err: null });
+    assert.equal(result.protocol, expectedProtocol);
+    assert.equal(result.decodeStatus, 'NOT_DECODED');
+    assert.equal(result.tradeType, 'UNKNOWN');
+    assert.equal(result.mint, null);
+    assert.equal(result.inAmountSol, null);
+    assert.equal(result.outAmountTokens, null);
+  }
+});
+
 test('landing benchmark never fills empty samples with fabricated success, latency, or tip values', () => {
   const report = new LandingBenchmarkEngine().evaluateBenchmark('empty');
   assert.equal(report.observationLeaderForReview, null);

@@ -1118,6 +1118,56 @@
         "https://developers.jup.ag/docs/swap/build#simulate-compute-unit-limit",
         "test/jupiter-v2-build.test.mjs"
       ]
+    },
+    {
+      "id": "INT-RAYDIUM-V2-PROGRAM-FAMILY-CLASSIFICATION-001",
+      "catalogSourceIds": ["SRC-063"],
+      "area": "read-only DEX program identification",
+      "sourceRevision": "e2e8bcd865189c994682a9477ec8eaf1e2da8aaf",
+      "sourceToPipeline": {
+        "localFinding": "The envelope parser identified Raydium AMM v4 but treated the official stable-AMM, CLMM, CPMM and Launchpad program IDs as unknown. Its output is explicitly a research observation and contains no decoded trade identity or amounts.",
+        "relevantModules": [
+          "src/platform/ingestion/dex-stream-parser.ts",
+          "test/platform/upstream-pattern-adaptations.test.mjs",
+          "src/platform/ingestion/dual-path-reconciler.ts"
+        ],
+        "existingOverlap": "This extends exact program identification in the existing envelope. It does not add a Raydium SDK dependency, transaction decoder, canonical pool-account reader, reconciliation protocol support, or execution route.",
+        "integrationRisks": [
+          "Program IDs and account layouts must remain pinned and be reviewed against upstream upgrades.",
+          "Classification is not proof that a transaction contains a trade instruction or succeeds.",
+          "The SDK is GPL-3.0; dependency adoption or source reuse requires separate license review.",
+          "Raydium API pool metadata remains non-canonical and cannot establish executable liquidity."
+        ],
+        "validationRequirements": [
+          "Known family IDs must be classified exactly and remain NOT_DECODED with null trade fields.",
+          "Unknown IDs and failed transaction metadata must retain existing behavior.",
+          "Do not add newly classified families to transaction reconciliation until independent protocol-specific decoders and fixtures exist."
+        ]
+      },
+      "implementation": {
+        "change": "Added exact classification for Raydium stable AMM, CLMM, CPMM and Launchpad program IDs from the pinned official SDK source. All trade details remain unknown and null.",
+        "files": [
+          "src/platform/ingestion/dex-stream-parser.ts",
+          "dist/platform/ingestion/dex-stream-parser.js",
+          "test/platform/upstream-pattern-adaptations.test.mjs"
+        ],
+        "validation": {
+          "redRegression": "The new regression failed before the patch because the stable-AMM program ID returned UNKNOWN_DEX.",
+          "pinnedBuild": "npm run build:engine in .audit/pinned-build passed.",
+          "focusedTests": "node --test test/platform/upstream-pattern-adaptations.test.mjs test/intelligence/pass-64-stream-multiplexer-dex-parser-landing.test.mjs — 11/11 passed.",
+          "platformSuite": "npm run test:platform in .audit/pinned-build — 1,062/1,062 passed across 23 suites.",
+          "compiledArtifact": "Direct dist parser checks classified 4/4 added IDs and preserved NOT_DECODED/null trade fields.",
+          "rootBuild": "npm run build:engine in the main worktree remains blocked by missing @pump-fun/pump-swap-sdk from its root dependency tree."
+        },
+        "authorityImpact": "Read-only classification only. No transaction reconciliation support, signing, broadcast, custody, capital authorization, or risk-limit changes.",
+        "status": "VERIFIED_PARTIAL_PROGRAM_CLASSIFICATION; NO_RAYDIUM_TRADE_DECODING_OR_EXECUTION"
+      },
+      "evidence": [
+        "https://github.com/raydium-io/raydium-sdk-V2/blob/e2e8bcd865189c994682a9477ec8eaf1e2da8aaf/src/common/programId.ts",
+        "https://github.com/raydium-io/raydium-sdk-V2/blob/e2e8bcd865189c994682a9477ec8eaf1e2da8aaf/src/api/api.ts",
+        "https://github.com/raydium-io/raydium-sdk-V2/blob/e2e8bcd865189c994682a9477ec8eaf1e2da8aaf/src/common/transfer.ts",
+        "test/platform/upstream-pattern-adaptations.test.mjs"
+      ]
     }
   ]
 }

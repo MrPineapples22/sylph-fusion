@@ -61,7 +61,7 @@ SRC-059,github_dex_swaps_launches,https://github.com/0xfnzero/sol-trade-sdk,sour
 SRC-060,github_dex_swaps_launches,https://github.com/franco-bianco/solanaswap-go,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-061,github_dex_swaps_launches,https://github.com/mooncitydev/solana-copytrading-bot,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-062,github_dex_swaps_launches,https://github.com/TreeCityWes/Pump-Fun-Trading-Bot-Solana,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-063,github_dex_swaps_launches,https://github.com/raydium-io/raydium-sdk-V2,source_or_document_review,P0,NOT_REVIEWED,,,,UNASSESSED
+SRC-063,github_dex_swaps_launches,https://github.com/raydium-io/raydium-sdk-V2,source_or_document_review,P0,PARTIAL_REVIEW,RAYDIUM-SDK-V2-2026-10-14,e2e8bcd865189c994682a9477ec8eaf1e2da8aaf,GPL-3.0,PARTIAL_RUNTIME_CLASSIFICATION_ONLY_NO_SDK_INSTALL
 SRC-064,github_dex_swaps_launches,https://github.com/orca-so/whirlpools,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-065,github_dex_swaps_launches,https://github.com/0xsupersimon/raydium-launchpad-bonkfun-transaction-parser-go,source_or_document_review,P1,PARTIAL_REVIEW,UPSTREAM-0cccb67e6dad30ab19245d1b2b24136b69589792,0cccb67e6dad30ab19245d1b2b24136b69589792,UNVERIFIED_NO_LICENSE_FILE,PATTERN_ONLY
 SRC-066,github_execution_validator_jito,https://github.com/blockworks-foundation/autobahn,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED

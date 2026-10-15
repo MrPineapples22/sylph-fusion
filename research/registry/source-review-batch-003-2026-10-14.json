@@ -8,20 +8,21 @@
       "id": "SRC-063",
       "url": "https://github.com/raydium-io/raydium-sdk-V2",
       "status": "PARTIAL_REVIEW",
-      "provenance": ["Official Raydium SDK repository README", "Raydium GitHub license metadata", "Local SYLPH Raydium research adapter and tests"],
+      "provenance": ["Read-only official Raydium SDK V2 checkout at e2e8bcd865189c994682a9477ec8eaf1e2da8aaf", "src/common/programId.ts", "src/api/api.ts", "src/common/transfer.ts", "Raydium GitHub license metadata", "Local SYLPH DEX envelope and deterministic regression test"],
       "discoveries": [
-        "The SDK exposes token and pool list/info methods, account parsing for SPL Token and Token-2022 accounts, and local SDK test examples.",
-        "GitHub identifies the SDK repository license as GPL-3.0; no package install or license compatibility review was performed.",
-        "SYLPH's existing adapter fetches Raydium-reported pool metadata, validates pool/mint identity and reports TVL/volume, while explicitly saying TVL is not executable depth or a swap quote."
+        "The pinned SDK source defines distinct mainnet program IDs for AMM v4, stable AMM, CLMM, CPMM and Launchpad; its API pool lookup returns indexed metadata, while swap instructions are built by product-family-specific paths.",
+        "The SDK's Token-2022 transfer-fee helper selects the older or newer fee schedule using the observed epoch, applies ceiling division and caps fees at the configured maximum; this requires mint-extension and epoch evidence for any quote.",
+        "SYLPH previously classified only Raydium AMM v4 in its research-only DEX envelope. It now recognizes four additional exact Raydium program IDs while still reporting NOT_DECODED and leaving trade fields null."
       ],
-      "patterns": ["validate pool id, program id and both mint identities", "keep API/indexer pool metadata distinct from on-chain quote state", "use fresh pool state for any future deterministic quote"],
-      "sylphModules": ["terminal/raydium-pool-research.mjs", "terminal/test/raydium-pool-research.test.mjs", "terminal/provider-health-projection.mjs", "src/market.ts"],
-      "overlap": "A rate-limited, cached, research-only pool identity cross-check already exists. INT-GRADUATED-AMM-QUOTE-002 adds an explicit simulation observation boundary for supported constant-product pools; it does not ingest canonical pool accounts. No Raydium SDK dependency or transaction builder is present.",
+      "patterns": ["identify venue by exact program ID and keep product families distinct", "keep API/indexer pool metadata distinct from canonical on-chain state", "derive Token-2022 transfer fees from the epoch-selected schedule and cap rather than assuming a flat fee"],
+      "sylphModules": ["src/platform/ingestion/dex-stream-parser.ts", "test/platform/upstream-pattern-adaptations.test.mjs", "src/platform/ingestion/dual-path-reconciler.ts", "src/market.ts", "src/platform/execution/solaris/amm-bridge.ts"],
+      "overlap": "The research envelope now classifies AMM v4, stable AMM, CLMM, CPMM and Launchpad by exact program ID but intentionally does not decode trades. Dual-path reconciliation and the graduated AMM bridge still lack Raydium-family canonical account decoders; no SDK dependency or transaction builder is present.",
       "risks": ["GPL-3.0 dependency has licensing implications that have not been reviewed", "API TVL is not executable liquidity", "SDK transaction builders can create signed-ready material and must remain behind the existing authorization boundary", "pool programs and account layouts need versioning"],
-      "validation": ["license review before dependency adoption or code reuse", "compare API pool rows against independently fetched on-chain accounts", "add quote fixtures by pool type, Token-2022 extension, fee and state slot", "keep unsigned build output outside research/authority layers"],
-      "evidence": ["https://github.com/raydium-io/raydium-sdk-V2", "terminal/raydium-pool-research.mjs", "terminal/test/raydium-pool-research.test.mjs"],
+      "validation": ["license review before dependency adoption or code reuse", "verify program IDs and account layouts against a pinned upstream revision", "compare API pool rows against independently fetched on-chain accounts", "add quote fixtures by pool type, Token-2022 extension, epoch-selected fee, and state slot", "keep any future unsigned build output outside research/authority layers"],
+      "evidence": ["https://github.com/raydium-io/raydium-sdk-V2/tree/e2e8bcd865189c994682a9477ec8eaf1e2da8aaf", "https://github.com/raydium-io/raydium-sdk-V2/blob/e2e8bcd865189c994682a9477ec8eaf1e2da8aaf/src/common/programId.ts", "https://github.com/raydium-io/raydium-sdk-V2/blob/e2e8bcd865189c994682a9477ec8eaf1e2da8aaf/src/api/api.ts", "https://github.com/raydium-io/raydium-sdk-V2/blob/e2e8bcd865189c994682a9477ec8eaf1e2da8aaf/src/common/transfer.ts", "src/platform/ingestion/dex-stream-parser.ts", "test/platform/upstream-pattern-adaptations.test.mjs"],
+      "upstreamRevision": "e2e8bcd865189c994682a9477ec8eaf1e2da8aaf",
       "license": "GPL-3.0_REVIEW_REQUIRED",
-      "decision": "RESEARCH_ONLY_NO_SDK_INSTALL"
+      "decision": "PARTIAL_RUNTIME_CLASSIFICATION_ONLY_NO_SDK_INSTALL"
     },
     {
       "id": "SRC-076",

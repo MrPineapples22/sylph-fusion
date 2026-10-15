@@ -46,7 +46,7 @@ REA is used out of band where the target type and authorization fit its supporte
 
 ## Resume
 
-All 288 records have a URL availability observation. Eight sources now have explicit partial source review status; 280 remain `NOT_REVIEWED`. Record coverage is complete; upstream research and implementation remain incomplete. Continue with concrete findings from each batch, inspect the current local source and pinned upstream documentation, reproduce behavior with focused deterministic tests, and make small patches. Preserve existing workspace changes and do not grant a source trading authority based on inclusion in the manifest.
+All 288 records have a URL availability observation. Nine sources now have explicit partial source review status; 279 remain `NOT_REVIEWED`. Record coverage is complete; upstream research and implementation remain incomplete. Continue with concrete findings from each batch, inspect the current local source and pinned upstream documentation, reproduce behavior with focused deterministic tests, and make small patches. Preserve existing workspace changes and do not grant a source trading authority based on inclusion in the manifest.
 ## Latest implementation verification (2026-10-14)
 
 - `npm run build:engine` — passed after the feed admission snapshot change.
@@ -54,7 +54,7 @@ All 288 records have a URL availability observation. Eight sources now have expl
 - `npm test` in `terminal/` — 475/475 passed, covering operator projections and UI-side research adapters. This verifies the local terminal suite, not the availability or correctness of all 288 upstream sources.
 - Feed/Yellowstone/backpressure regressions — 28/28 passed; the regressions include historical/live health isolation, required Census-R ordering, and admission-time input snapshots.
 
-These checks do not convert catalog triage into exhaustive upstream review or production integration. Registry coverage remains structurally complete (288 records), while every source review is still marked `PARTIAL_REVIEW` and every manifest status remains `NOT_REVIEWED`.
+These checks do not convert catalog triage into exhaustive upstream review or production integration. Registry coverage remains structurally complete (288 records), while all 288 batch records are bounded `PARTIAL_REVIEW` triage and the manifest distinguishes nine sources with direct source review from 279 still `NOT_REVIEWED`.
 
 ## Feed/replay follow-up (2026-10-15)
 
@@ -105,7 +105,7 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - `SRC-065`’s original GitHub slug returned 404; inspection found the owner’s current `raydium-launchpad-bonkfun-transaction-parser-go` repository at commit `0cccb67e6dad30ab19245d1b2b24136b69589792`. The README discusses Geyser parsing, but `hasGeyserMarkers()` returns false and its active alternative decoder returns empty event lists; a separate unreferenced demo function fabricates a sample swap. Decision: pattern-only, no code reuse until parse semantics and license are fixed.
 - `SRC-244` Step Finance: official vendor announcement says its dashboard, APIs, and mobile app were being sunset; the homepage returned 404 in the probe. Decision: no runtime integration.
 - `SRC-245` SonarWatch: the official migration page says SonarWatch is joining Jupiter to build a portfolio tracker; the legacy `sonar.watch` host failed DNS resolution. Decision: reference-only; re-evaluate against Jupiter Portfolio documentation before any use.
-- Manifest status is now 280 `NOT_REVIEWED`, 8 `PARTIAL_REVIEW`. Structural validation still reports 0 defects. URL availability does not increase upstream source review status by itself.
+- Before the Raydium SDK source inspection below, manifest status was 280 `NOT_REVIEWED`, 8 `PARTIAL_REVIEW`. URL availability does not increase upstream source review status by itself.
 
 
 ## Solana V1 wire-decoder follow-up (2026-10-15)
@@ -134,3 +134,12 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - The V0 `/build` adapter now simulates the complete instruction set with the verified lookup tables at a 1.4M compute-unit ceiling, fails closed on simulation error or incomplete usage, and adds a final CU limit of 1.2x measured usage capped at 1.4M.
 - Priority fee is computed with integer ceiling from Jupiter’s micro-lamport CU price and the selected limit; the paper projection uses this route fee rather than the configured maximum. Missing route component data remains explicit, and serialized evidence uses decimal strings.
 - Focused Jupiter V2 tests passed 12/12 and the pinned TypeScript build passed. The full platform suite passed 1,061/1,061 across 23 suites. Simulation used deterministic mocked RPC results; no live Jupiter/RPC call or transaction signing/submission was performed.
+
+
+## Raydium SDK V2 program-family classification (2026-10-14)
+
+- `SRC-063`: inspected official SDK source at `e2e8bcd865189c994682a9477ec8eaf1e2da8aaf`, including `src/common/programId.ts`, pool lookup in `src/api/api.ts`, and epoch-aware Token-2022 transfer fee helpers in `src/common/transfer.ts`. The SDK is GPL-3.0; no package or copied implementation was added.
+- Added exact ID classification for stable AMM, CLMM, CPMM and Launchpad to SYLPH's DEX envelope. Every result remains `NOT_DECODED`, with token and amount fields null. The dual-path reconciler and trade authority were not expanded.
+- Regression failed before the patch because the stable-AMM ID was classified as `UNKNOWN_DEX`. Pinned engine build passed; focused source tests passed 11/11; compiled `dist` classification checks passed 4/4. The normal root build remains blocked by its missing `@pump-fun/pump-swap-sdk` install; no live RPC, transaction construction, signing or submission was exercised.
+- Manifest status is now 279 `NOT_REVIEWED`, 9 `PARTIAL_REVIEW`. This is one bounded partial source review and a classification improvement, not a complete Raydium integration or review of all 288 sources.
+- The full platform suite passed 1,062/1,062 across 23 suites in the pinned dependency build after this change. The normal worktree build remains blocked by the absent root PumpSwap package, so the scratch build result is reported separately.
