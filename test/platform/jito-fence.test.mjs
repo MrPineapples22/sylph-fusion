@@ -113,7 +113,7 @@ test('JitoLifecycleCoordinator: polls inflight bundle statuses and maps results'
   assert.equal(callCount, 1);
 });
 
-test('JitoLifecycleCoordinator: inverts Invalid status to non-terminal RELAY_UNAVAILABLE', async () => {
+test('JitoLifecycleCoordinator: treats Invalid status as absent from the five-minute status window, not relay failure', async () => {
   const mockFetch = async () => ({
     ok: true,
     status: 200,
@@ -135,9 +135,21 @@ test('JitoLifecycleCoordinator: inverts Invalid status to non-terminal RELAY_UNA
   const coordinator = new JitoLifecycleCoordinator('https://test-jito.mock/api/v1/bundles', undefined, 2000, mockFetch);
   const result = await coordinator.checkInflightStatus('bundle-invalid-1', 'sig-invalid-1');
 
-  assert.equal(result.status, 'RELAY_UNAVAILABLE');
+  assert.equal(result.status, 'STATUS_NOT_RETAINED');
   assert.equal(result.terminal, false);
-  assert.match(result.failureReason, /NON_TERMINAL/);
+  assert.equal(result.failureReason, 'BUNDLE_NOT_FOUND_IN_INFLIGHT_WINDOW');
+});
+
+test('JitoLifecycleCoordinator: null and empty status results remain unresolved, not pending or failed', async () => {
+  const responseFor = value => ({ok: true, status: 200, json: async () => ({jsonrpc: '2.0', id: 1, result: {value}})});
+  for (const value of [null, []]) {
+    const coordinator = new JitoLifecycleCoordinator('https://test-jito.mock/api/v1/bundles', undefined, 2000,
+      async () => responseFor(value));
+    const result = await coordinator.checkInflightStatus('bundle-outside-window', 'signature');
+    assert.equal(result.status, 'STATUS_NOT_RETAINED');
+    assert.equal(result.terminal, false);
+    assert.equal(result.failureReason, 'BUNDLE_NOT_FOUND_IN_INFLIGHT_WINDOW');
+  }
 });
 
 test('JitoLifecycleCoordinator rejects a mismatched bundle identity and unrecognized status', async () => {

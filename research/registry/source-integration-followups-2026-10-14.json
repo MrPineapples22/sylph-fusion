@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-15T00:44:00Z",
+  "updatedAt": "2026-10-15T01:05:00Z",
   "interpretation": "Verified local implementation follow-ups linked to catalog source IDs. These records document changes and tests; they do not change source review status, grant integration authority, or establish profitability.",
   "followups": [
     {
@@ -649,6 +649,47 @@
         "https://github.com/rpcpool/yellowstone-grpc/blob/master/examples/typescript/README.md",
         "https://github.com/rpcpool/yellowstone-grpc/blob/master/CHANGELOG.md",
         "test/platform/yellowstone-captured-client.test.mjs"
+      ]
+    },
+    {
+      "id": "INT-JITO-STATUS-WINDOW-001",
+      "catalogSourceIds": ["SRC-257"],
+      "area": "Jito inflight status interpretation",
+      "sourceToPipeline": {
+        "upstreamFindings": [
+          "Jito inflight bundle statuses are only retained for a five-minute lookback; Invalid and missing status results do not establish relay failure or transaction non-landing.",
+          "An accepted sendBundle response establishes receipt, not chain landing; finalized chain reconciliation remains authoritative."
+        ],
+        "relevantModules": ["src/platform/execution/jito-lifecycle-coordinator.ts"],
+        "existingOverlap": "The coordinator already separated inflight status polling from settlement reconciliation. The correction preserves that boundary and uses a nonterminal STATUS_NOT_RETAINED result for absent-window outcomes.",
+        "risks": [
+          "Callers must continue reconciliation after status retention expires.",
+          "This adapter test does not establish live Jito connectivity, transaction landing, or actual trading costs."
+        ],
+        "validationRequirements": [
+          "Test Invalid, null, empty and missing result entries as nonterminal status-not-retained outcomes.",
+          "Keep mismatched bundle IDs and malformed status payloads fail-closed.",
+          "Verify final outcomes from chain state rather than the expiring inflight endpoint."
+        ]
+      },
+      "implementation": {
+        "change": "JitoLifecycleCoordinator now maps Invalid and null/empty/missing inflight results to STATUS_NOT_RETAINED with BUNDLE_NOT_FOUND_IN_INFLIGHT_WINDOW. These outcomes remain nonterminal; no relay failure or non-landing conclusion is inferred.",
+        "files": [
+          "src/platform/execution/jito-lifecycle-coordinator.ts",
+          "dist/platform/execution/jito-lifecycle-coordinator.js",
+          "test/platform/jito-fence.test.mjs"
+        ],
+        "validation": {
+          "build": "npm run build:engine — passed",
+          "focusedTests": "node --test test/platform/jito-fence.test.mjs — 5/5 passed"
+        },
+        "authorityImpact": "No signing, broadcast, capital authorization, or risk-limit changes. No services were started, stopped, or restarted.",
+        "status": "VERIFIED_LOCAL_ADAPTER_FIX; LIVE_JITO_AND_CHAIN_RECONCILIATION_UNVERIFIED"
+      },
+      "evidence": [
+        "https://docs.jito.wtf/lowlatencytxnsend/",
+        "src/platform/execution/jito-lifecycle-coordinator.ts",
+        "test/platform/jito-fence.test.mjs"
       ]
     }
   ]
