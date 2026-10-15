@@ -242,3 +242,10 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - SRC-009 was inspected at 0a5a7ce4c06d917afaea39e3e7f594fd413e60e5. Its README calls it a sample Firedancer Geyser implementation; no LICENSE file was found in the repository checkout.
 - Although the copied schema includes from_slot and replay-info fields, the current filter/server implementation does not consume from_slot and returns an empty successful replay-info response. Schema similarity is not replay-capability evidence.
 - No code/dependency was adopted. Treat the repository as a future protocol-conformance target only after a pinned Firedancer build and license review; catalog status is 24 partial and 264 not reviewed.
+
+
+## Substreams foundational Solana modules review (2026-10-15)
+
+- SRC-010 was inspected at da7262b05bc297e89ad42cdfdf055f2121eb7d40; the workspace declares Apache-2.0 and includes Solana modules despite the root README’s shorter current-implementations list.
+- Source inspection found filter semantics that require fixtures before reuse: blocks_without_votes also removes failed/incomplete transactions, while program_ids_without_votes does not explicitly exclude vote transactions. The README also marks a costUnits schema boundary requiring historical reprocessing.
+- No runtime dependency was added. Keep these as offline analytics patterns only; registry now has 25 partial reviews and 263 not reviewed.
