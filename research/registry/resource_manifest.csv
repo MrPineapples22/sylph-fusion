@@ -74,7 +74,7 @@ SRC-072,github_execution_validator_jito,https://github.com/jito-labs/jito-go-rpc
 SRC-073,github_execution_validator_jito,https://github.com/helius-labs/helius-rust-sdk,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-074,github_execution_validator_jito,https://github.com/orca-so/tx-sender,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-075,github_execution_validator_jito,https://github.com/firedancer-io/firedancer,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-076,github_execution_validator_jito,https://github.com/jito-labs/searcher-examples,source_or_document_review,P0,NOT_REVIEWED,,,,UNASSESSED
+SRC-076,github_execution_validator_jito,https://github.com/jito-labs/searcher-examples,source_or_document_review,P0,PARTIAL_REVIEW,SRC-076-reviewed-f710c30,f710c30b0ec7449b5122f827b0997218ab1a0315,Apache-2.0,RESEARCH_ONLY_NO_AUTH_OR_SUBMISSION_CHANGE
 SRC-077,github_execution_validator_jito,https://github.com/jito-foundation/solana-analysis,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-078,github_execution_validator_jito,https://github.com/jito-foundation/firebam,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-079,github_simulation_testing_security,https://github.com/LiteSVM/litesvm,source_or_document_review,P0,NOT_REVIEWED,,,,UNASSESSED
