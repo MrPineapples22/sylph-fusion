@@ -1062,6 +1062,57 @@
         "src/platform/pipeline/realized-edge-ledger.ts",
         "test/platform/execution-economics-and-governance.test.mjs"
       ]
+    },
+    {
+      "id": "INT-JUPITER-V0-BUILD-VERSION-GUARD-001",
+      "catalogSourceIds": [
+        "SRC-258"
+      ],
+      "area": "Jupiter V2 build response version pinning",
+      "sourceToPipeline": {
+        "upstreamFindings": [
+          "Current Jupiter /build docs identify response transactionVersion as 0 or 1 and default requests to V0.",
+          "For V1, computeBudgetInstructions are empty, ALTs are absent, and computeUnitPrice must be translated into message configuration; that response shape is not compatible with SYLPH’s V0 instruction decoder.",
+          "The /build flow returns instructions and cannot use Jupiter /execute; signing and landing remain caller-controlled."
+        ],
+        "relevantModules": [
+          "src/execution.ts",
+          "src/platform/signing/veritas-wire-decoder.ts",
+          "test/jupiter-v2-build.test.mjs"
+        ],
+        "existingOverlap": "Executor.graduatedSell previously relied on the default transaction version but did not send transactionVersion=0 or check the returned version. It now requests V0 and rejects responses unless transactionVersion is 0 or the canonical string \"0\". Evidence exposes instructionTransactionVersion: 0 while transactionVersion remains null because the method does not serialize a transaction.",
+        "risks": [
+          "This guard preserves V0-only behavior and does not enable V1 transaction building or signing.",
+          "No live Jupiter API response, live signing, submission, or settlement was exercised.",
+          "Provider response validation does not prove the swap instruction’s complete economic effects; signing remains quarantined."
+        ],
+        "validationRequirements": [
+          "Prove the request pins V0 and an explicit V1 response is rejected before it enters the instruction-only route.",
+          "Keep existing amount, output-threshold, instruction-data, signer, compute-fee, and lookup-table checks passing.",
+          "Do not report a transaction version as serialized when only instructions are returned."
+        ]
+      },
+      "implementation": {
+        "change": "Pin Jupiter /build requests to transactionVersion=0, validate response transactionVersion, and record instructionTransactionVersion separately from the absent serialized transaction version. Added a regression that first accepted a V1-shaped response and now rejects it.",
+        "files": [
+          "src/execution.ts",
+          "dist/execution.js",
+          "test/jupiter-v2-build.test.mjs"
+        ],
+        "validation": {
+          "redTest": "New V1-response test failed before the guard because the V0-only path accepted the response.",
+          "pinnedBuild": "TypeScript build using the pinned scratch dependency installation passed.",
+          "focusedTests": "node --test test/jupiter-v2-build.test.mjs — 11/11 passed.",
+          "broaderCoreAttempt": "The core suite was attempted in the selective pinned scratch copy but one source-inventory test could not run because that scratch copy omitted the config directory; no core-suite pass is claimed."
+        },
+        "authorityImpact": "Request/response compatibility guard only. No signing, broadcast, custody, capital authorization, or risk-limit changes; no live process changed.",
+        "status": "VERIFIED_JUPITER_V0_RESPONSE_VERSION_GUARD; LIVE_EXECUTION_AND_V1_SUPPORT_REMAIN_UNVERIFIED"
+      },
+      "evidence": [
+        "https://developers.jup.ag/docs/swap/build",
+        "https://developers.jup.ag/docs/swap/advanced/transaction-versions",
+        "test/jupiter-v2-build.test.mjs"
+      ]
     }
   ]
 }

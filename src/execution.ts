@@ -39,6 +39,8 @@ export interface JupiterBuildEvidence {
   readonly routePlan: readonly JupiterRouteHopEvidence[];
   readonly quoteTimestampMs: number;
   readonly lastValidBlockHeight: number;
+  /** Requested instruction format; this path has not serialized a transaction. */
+  readonly instructionTransactionVersion: 0;
   readonly transactionVersion: null;
   readonly transactionState: 'INSTRUCTIONS_ONLY';
 }
@@ -199,12 +201,14 @@ export class Executor {
       amount: String(amount),
       taker: this.key.publicKey.toBase58(),
       slippageBps: String(slippage),
+      transactionVersion: '0',
       maxAccounts: '32',
     }).toString();
     const build = await httpJson<any>(url.toString(), this.cfg.RPC_TIMEOUT_MS, { headers });
     const isIntegerString = (value: unknown): value is string => typeof value === 'string' && /^(?:0|[1-9][0-9]*)$/.test(value);
     const routePlan = parseJupiterRoutePlan(build?.routePlan);
     if (!build || build.inputMint !== mint || build.outputMint !== NATIVE_MINT.toBase58() || build.swapMode !== 'ExactIn' ||
+      (build.transactionVersion !== 0 && build.transactionVersion !== '0') ||
       !isIntegerString(build.inAmount) || BigInt(build.inAmount) !== amount || !isIntegerString(build.outAmount) || BigInt(build.outAmount) <= 0n ||
       !isIntegerString(build.otherAmountThreshold) || BigInt(build.otherAmountThreshold) <= 0n || BigInt(build.otherAmountThreshold) > BigInt(build.outAmount) ||
       build.slippageBps !== slippage || !Array.isArray(build.setupInstructions) || !Array.isArray(build.computeBudgetInstructions) ||
@@ -278,6 +282,7 @@ export class Executor {
         routePlan: Object.freeze(routePlan.map((hop) => Object.freeze({ ...hop }))),
         quoteTimestampMs: quoteTimestamp,
         lastValidBlockHeight: build.blockhashWithMetadata.lastValidBlockHeight,
+        instructionTransactionVersion: 0,
         transactionVersion: null,
         transactionState: 'INSTRUCTIONS_ONLY',
       },

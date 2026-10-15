@@ -1,6 +1,6 @@
 {
   "batchId": "source-review-batch-001-2026-10-14",
-  "reviewedAt": "2026-10-14",
+  "reviewedAt": "2026-10-15",
   "repository": {
     "path": "D:/Users/juans/SF",
     "head": "f5c31177f2b8d79cdf5e3662e4049ac44b9562b2",
@@ -181,12 +181,14 @@
       "provenance": [
         "Official Jupiter Developer docs index and Swap API V2 reference, fetched 2026-10-15",
         "Official Jupiter RTSE and transaction-version documentation",
-        "Local terminal/jupiter-research.mjs, src/execution.ts, and test/jupiter-v2-build.test.mjs"
+        "Local terminal/jupiter-research.mjs, src/execution.ts, and test/jupiter-v2-build.test.mjs",
+        "Current official Jupiter Build and Transaction Versions docs fetched 2026-10-15",
+        "Local V0-only response guard and deterministic Jupiter V2 build regression"
       ],
       "discoveries": [
         "Swap API V2 recommends /order plus /execute for managed execution and /build for custom instruction composition; /execute is unavailable for /build transactions. SYLPH keeps its /order research adapter quote-only and its /build result as INSTRUCTIONS_ONLY.",
         "Jupiter RTSE is automatic on /order but opt-in on /build with slippageBps=rtse. The docs specifically list fixed slippage as a reasonable choice for meme-token trades and deterministic testing; SYLPH's build path retains its configured fixed slippage bound.",
-        "V1 transactions encode compute budget in message configuration and return no compute-budget instructions or lookup tables; current SYLPH Jupiter build validation expects V0 compute-price instructions and remains fail-closed by not requesting transactionVersion=1."
+        "The current /build response identifies transactionVersion as 0 or 1; V1 has no compute-budget instructions or ALTs and instead returns computeUnitPrice for the message config. A client that does not explicitly request and validate the response version can misclassify a V1 build as V0."
       ],
       "patterns": [
         "keep quote-only response schemas distinct from prepared transaction schemas",
@@ -203,21 +205,17 @@
         "test/jupiter-v2-build.test.mjs",
         "src/platform/signing/veritas-wire-decoder.ts"
       ],
-      "overlap": "The no-taker research adapter remains QUOTE_ONLY, rejects executable transaction material, and bounds u64 inputs. The production-intent graduated sell builder calls V2 /build and returns INSTRUCTIONS_ONLY with fixed slippage and V0-only validation; live signing/submission remains quarantined. V1 config messages are not yet supported.",
+      "overlap": "SYLPH previously relied on Jupiter’s default V0 response but did not send transactionVersion=0 or validate the response transactionVersion. It could therefore accept a V1 response through a V0-only instruction path, where V1 priority-fee configuration is carried outside the returned ComputeBudget instructions. The path now explicitly requests V0, requires response version 0 (number or canonical string), and records instructionTransactionVersion: 0 while leaving transactionVersion null because no serialized transaction is produced. It remains INSTRUCTIONS_ONLY and live signing/submission is quarantined.",
       "risks": [
-        "routing/API changes may alter response shape and token-version support",
-        "sequential quotes span time and market state",
-        "fees, landing probability, price movement and failed execution are excluded",
-        "the API key contract and current live response were not exercised in this environment",
-        "fixed slippage does not use Jupiter's live RTSE estimator"
+        "V1 message config, V1 wallet signing, and V1 finalized transaction reconciliation remain unsupported in the local execution path.",
+        "The API response remains provider evidence; no live API response or authorized execution was exercised.",
+        "Fixed slippage does not use Jupiter RTSE, and returned instruction effects remain subject to local signing/firewall validation."
       ],
       "validation": [
-        "recheck official V2 schema/version before updates",
-        "fixture no-taker quote responses, transaction-bearing responses, error/oversize payloads, u64 bounds and partial quotes",
-        "never pass an assembled payload from research to signer",
-        "keep the /build fixed tolerance bounded by local policy and verify the exact instruction threshold",
-        "add V1 compute-budget message decoding and conformance tests before requesting that response version",
-        "compare quotes with confirmed fills only in authorized paper/sandbox workflows"
+        "Explicitly request transactionVersion=0 and require response transactionVersion 0; reject missing, unknown, or V1 versions.",
+        "Fixture valid no-ALT and ALT responses, malformed instruction encodings, over-cap compute price, and quote/instruction mismatches.",
+        "Keep quote-only and instruction-only shapes separate and never pass research quote objects to the signer.",
+        "Use V1 only after message-config, versioned decoder, signer, and finalized read-path support are complete and independently validated."
       ],
       "evidence": [
         "https://github.com/jup-ag/docs/blob/main/api-reference/swap/order.mdx",
@@ -227,10 +225,14 @@
         "https://developers.jup.ag/docs/swap/build",
         "https://developers.jup.ag/docs/swap/order-and-execute",
         "terminal/jupiter-research.mjs",
-        "terminal/test/jupiter-research.test.mjs"
+        "terminal/test/jupiter-research.test.mjs",
+        "https://developers.jup.ag/docs/swap/build",
+        "https://developers.jup.ag/docs/swap/advanced/transaction-versions",
+        "src/execution.ts",
+        "test/jupiter-v2-build.test.mjs"
       ],
       "license": "NOT_APPLICABLE_DOCUMENTATION",
-      "decision": "RESEARCH_ONLY_NO_SIGNING_OR_SUBMISSION_CHANGE"
+      "decision": "V0_BUILD_RESPONSE_VERSION_GUARD; SIGNING_AND_EXECUTION_UNVERIFIED"
     },
     {
       "id": "SRC-259",

@@ -35,6 +35,7 @@ function response(overrides = {}) {
     outAmount: '50000',
     otherAmountThreshold: '45000',
     swapMode: 'ExactIn',
+    transactionVersion: 0,
     slippageBps: 1000,
     routePlan: [{ swapInfo: { inputMint: mint, outputMint: nativeMint, inAmount: '1000', outAmount: '50000' }, percent: 100 }],
     computeBudgetInstructions: [],
@@ -69,6 +70,7 @@ test('V2 Router build sends exact-in sell request with API key and accepts no-AL
   assert.equal(requestUrl.searchParams.get('amount'), '1000');
   assert.equal(requestUrl.searchParams.get('taker'), key.publicKey.toBase58());
   assert.equal(requestUrl.searchParams.get('slippageBps'), '1000');
+  assert.equal(requestUrl.searchParams.get('transactionVersion'), '0');
   assert.equal(requestHeaders['x-api-key'], 'unit-test-key');
   assert.equal(result.output, 50000n);
   assert.equal(result.minimumOutput, 45000n);
@@ -81,6 +83,7 @@ test('V2 Router build sends exact-in sell request with API key and accepts no-AL
     routePlan: [{ ammKey: null, label: null, inputMint: mint, outputMint: nativeMint, inputAmount: '1000', outputAmount: '50000', percent: 100, feeAmount: null, feeMint: null }],
     quoteTimestampMs: result.quoteTimestamp,
     lastValidBlockHeight: 300,
+    instructionTransactionVersion: 0,
     transactionVersion: null,
     transactionState: 'INSTRUCTIONS_ONLY',
   });
@@ -153,6 +156,17 @@ test('V2 Router build rejects absent or malformed blockhash expiry metadata', as
     await assert.rejects(executor.graduatedSell(mint, 1000n, 1000), /invalid or unsupported Jupiter V2 build response/);
     t.mock.restoreAll();
   }
+});
+
+test('V2 Router build rejects V1 responses in the V0-only instruction path', async t => {
+  t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify(response({
+    transactionVersion: 1,
+    computeBudgetInstructions: [],
+    addressesByLookupTableAddress: {},
+    computeUnitPrice: '1000',
+  }))));
+  const executor = new Executor(cfg, {}, {}, key);
+  await assert.rejects(executor.graduatedSell(mint, 1000n, 1000), /invalid or unsupported Jupiter V2 build response/);
 });
 
 test('V2 Router build rejects minimum output that does not equal the requested slippage bound', async t => {
