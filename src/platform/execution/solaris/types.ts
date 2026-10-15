@@ -53,8 +53,10 @@ export type GraduationStatus =
   | 'BONDING_CURVE'
   | 'MIGRATION_PENDING'
   | 'SNIPER_COOLDOWN'
-  | 'RAYDIUM_ACTIVE'
+  | 'AMM_ACTIVE'
   | 'AMM_STABILIZED';
+
+export type AmmVenue = 'PUMPSWAP' | 'RAYDIUM' | 'METEORA' | 'ORCA' | 'OTHER';
 
 export interface GraduatedTokenState {
   readonly mint: string;
@@ -62,9 +64,15 @@ export interface GraduatedTokenState {
   readonly migrationTriggeredAtSlot: number;
   readonly migrationTriggeredAtMs: number;
   readonly sniperCooldownExpiresAtMs: number;
-  readonly raydiumPoolAddress?: string;
-  readonly initialPoolSolLamports?: bigint;
-  readonly currentPoolSolLamports?: bigint;
+  readonly poolVenue?: AmmVenue;
+  readonly poolAddress?: string;
+  readonly poolQuoteMint?: string;
+  readonly initialPoolQuoteReserves?: bigint;
+  readonly currentPoolQuoteReserves?: bigint;
+  readonly currentPoolTokenReserves?: bigint;
+  readonly poolEffectiveFeeBps?: number;
+  readonly poolSlot?: number;
+  readonly poolObservedAtMs?: number;
   readonly sniperDumpObserved: boolean;
   readonly fairPriceSol?: number;
 }

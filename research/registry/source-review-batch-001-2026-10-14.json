@@ -237,15 +237,17 @@
         "bind pool/lifecycle state to slot and canonical account identity"
       ],
       "sylphModules": [
-        "terminal/pump-curve-research.mjs",
+        "src/market.ts",
+        "src/platform/execution/solaris/amm-bridge.ts",
         "src/platform/ingestion/truth-x.ts",
         "src/platform/ingress/canonical-ingress.ts",
-        "src/market.ts",
-        "src/platform/execution/solaris/amm-bridge.ts"
+        "test/fusion-graduated-exit.test.mjs",
+        "test/platform/solaris-nexus.test.mjs"
       ],
-      "overlap": "SYLPH's Pump adapter is a read-only bonding-curve account reader and explicitly does not return a swap quote. It accepts both SPL Token and Token-2022 mint owners and retains raw reserve values. The graduated-venue quote path was updated in INT-GRADUATED-AMM-QUOTE-002 to require explicit pool reserves, fee, venue and slot; it remains a caller-supplied simulation estimate, not canonical pool ingestion or live execution.",
+      "overlap": "Market supports native-SOL bonding-curve reads and quotes. The graduation bridge previously fabricated default SOL/token reserves, hard-coded a fee, and labeled the destination Raydium. It now requires caller-supplied pool venue, address, quote mint, both reserves, effective fee, and slot; repeated complete-curve snapshots preserve the existing migration/cooldown state. The exit quote remains simulation-only, SOL-quote-only, and lacks a canonical AMM pool-state ingestion/certificate path.",
       "risks": [
-        "signed reserve coercion or raw-vault pricing can misquote",
+        "unverified caller-supplied pool snapshots can still be stale or forged",
+        "non-SOL quote pools cannot be converted into SOL exit proceeds without an independently observed conversion quote",
         "instruction/account layouts evolve",
         "curve completion is not proof of destination-pool liquidity",
         "fee sweeps and migration events can corrupt volume/PnL attribution if treated as trades"
@@ -254,15 +256,20 @@
         "pin official IDL and SDK versions",
         "differentially decode versioned raw transactions/account fixtures",
         "add signed i128, non-SOL quote mint, fee accrual/sweep and synthetic-migration fixtures",
-        "derive post-migration executable quotes from verified pool state and test sell-side feasibility"
+        "derive post-migration executable quotes from verified pool state and test sell-side feasibility",
+        "keep simulation valuation unknown when pool identity, reserves, effective fees, SOL quote mint or source slot are missing"
       ],
       "evidence": [
         "https://github.com/pump-fun/pump-public-docs",
+        "https://github.com/pump-fun/pump-public-docs/blob/main/docs/instructions/BUY.md",
+        "https://github.com/pump-fun/pump-public-docs/blob/main/docs/instructions/TRADE_V3.md",
         "https://github.com/pump-fun/pump-public-docs/blob/main/docs/VIRTUAL_QUOTE_RESERVES_FEE_ADJUSTMENT.md",
-        "https://github.com/pump-fun/pump-public-docs/blob/main/docs/SYNTHETIC_MIGRATION.md"
+        "https://github.com/pump-fun/pump-public-docs/blob/main/docs/SYNTHETIC_MIGRATION.md",
+        "src/market.ts",
+        "src/platform/execution/solaris/amm-bridge.ts"
       ],
       "license": "NOT_REVIEWED",
-      "decision": "RESEARCH_ONLY_NO_PROTOCOL_OR_EXECUTION_CHANGE"
+      "decision": "SIMULATION_MARK_HARDENING_ONLY_NO_CANONICAL_POOL_INGESTION"
     }
   ],
   "safety": {

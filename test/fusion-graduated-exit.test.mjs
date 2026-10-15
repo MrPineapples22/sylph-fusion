@@ -85,10 +85,17 @@ test('REQ-016: Graduated positions maintain valid AMM marks and executable exit 
   assert.equal(c1.valuationStatus, 'UNPRICED_MIGRATING');
   assert.equal(c1.isHoldingPreserved, true, 'Holding must be preserved during migration window');
 
-  // 3. Register verified Raydium AMM pool with 85 SOL reserves
-  const poolAddress = 'RaydiumPoolPumpSwapVerified111111111111111';
+  // 3. Register an explicit PumpSwap pool snapshot with both reserve sides and its fee.
+  const poolAddress = 'PumpSwapPoolObserved111111111111111111111';
   const initialPoolSolReserves = 85_000_000_000n; // 85 SOL
-  market.ammBridge.registerRaydiumPool(mintStr, poolAddress, initialPoolSolReserves);
+  const initialPoolTokenReserves = 206_900_000_000_000n;
+  const poolFeeBps = 25;
+  const wrappedSol = 'So11111111111111111111111111111111111111112';
+  market.ammBridge.registerAmmPool(mintStr, {
+    venue: 'PUMPSWAP', poolAddress, quoteMint: wrappedSol,
+    quoteReserves: initialPoolSolReserves, tokenReserves: initialPoolTokenReserves,
+    effectiveFeeBps: poolFeeBps, slot: 250_000_050, observedAtMs: Date.now(),
+  });
 
   // Mark AMM active in lifecycle
   const c2 = market.lifecycle.transitionLifecycle(mintStr, {
@@ -97,7 +104,7 @@ test('REQ-016: Graduated positions maintain valid AMM marks and executable exit 
     timestampMs: Date.now(),
     source: 'ON_CHAIN_PROGRAM',
     destinationPoolAddress: poolAddress,
-    migrationProgramId: 'raydium_cpmm_or_pumpswap',
+    migrationProgramId: 'pumpswap',
     details: 'Verified AMM liquidity open',
   }, 'AMM_ACTIVE');
 
@@ -108,10 +115,9 @@ test('REQ-016: Graduated positions maintain valid AMM marks and executable exit 
   const quote = market.ammExitQuote(mintStr, tokenAmount);
   assert.ok(quote > 0n, 'Graduated AMM quote must be positive');
 
-  // Expected math: gross = (5_000_000_000 * 85_000_000_000) / (206_900_000_000_000 + 5_000_000_000)
-  // net = (gross * 9975) / 10000
-  const expectedGross = (tokenAmount * initialPoolSolReserves) / (206_900_000_000_000n + tokenAmount);
-  const expectedNet = (expectedGross * 9975n) / 10000n;
+  // Expected math uses observed token and quote reserves plus observed fee.
+  const expectedGross = (tokenAmount * initialPoolSolReserves) / (initialPoolTokenReserves + tokenAmount);
+  const expectedNet = (expectedGross * BigInt(10_000 - poolFeeBps)) / 10_000n;
   assert.equal(quote, expectedNet);
 
   // 5. Test that authority.build() successfully builds executable exit order on graduated venue
@@ -123,4 +129,30 @@ test('REQ-016: Graduated positions maintain valid AMM marks and executable exit 
   assert.equal(built.tokenDelta, -tokenAmount);
   assert.ok(built.solDelta > 0n);
   assert.ok(built.pending.signature.startsWith('sim_'));
+});
+
+test('graduated AMM quote refuses missing reserves, non-SOL quote mints, and stale-identity pool data', () => {
+  const mintStr = 'graduated-token';
+  const market = new Market({ connection: {} }, {}, new PublicKey('11111111111111111111111111111111'));
+  market.ammBridge.registerMigration(mintStr, 100);
+  assert.throws(() => market.ammExitQuote(mintStr, 1_000n), /INCOMPLETE_OR_NON_SOL_QUOTE/);
+  market.ammBridge.registerAmmPool(mintStr, {
+    venue: 'PUMPSWAP', poolAddress: 'pool', quoteMint: 'USDC', quoteReserves: 10_000n,
+    tokenReserves: 100_000n, effectiveFeeBps: 25, slot: 100, observedAtMs: Date.now(),
+  });
+  assert.throws(() => market.ammExitQuote(mintStr, 1_000n), /INCOMPLETE_OR_NON_SOL_QUOTE/);
+  const solMarket = new Market({ connection: {} }, {}, new PublicKey('11111111111111111111111111111111'));
+  solMarket.ammBridge.registerMigration(mintStr, 100);
+  const solPool = {
+    venue: 'PUMPSWAP', poolAddress: 'pool', quoteMint: 'So11111111111111111111111111111111111111112',
+    quoteReserves: 10_000n, tokenReserves: 100_000n, effectiveFeeBps: 25, slot: 100, observedAtMs: Date.now(),
+  };
+  solMarket.ammBridge.registerAmmPool(mintStr, solPool);
+  assert.throws(() => solMarket.ammBridge.registerAmmPool(mintStr, { ...solPool, poolAddress: 'other' }), /AMM_POOL_IDENTITY_CHANGED/);
+  assert.throws(() => solMarket.ammBridge.registerAmmPool(mintStr, { ...solPool, slot: 99 }), /INVALID_AMM_POOL_SNAPSHOT/);
+  const staleMarket = new Market({ connection: {} }, {}, new PublicKey('11111111111111111111111111111111'));
+  staleMarket.ammBridge.registerMigration(mintStr, 100);
+  assert.throws(() => staleMarket.ammBridge.registerAmmPool(mintStr, {
+    ...solPool, observedAtMs: Date.now() - 2_000,
+  }), /AMM_POOL_SNAPSHOT_STALE/);
 });

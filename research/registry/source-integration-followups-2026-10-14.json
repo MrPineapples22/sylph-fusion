@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-15T01:28:00Z",
+  "updatedAt": "2026-10-15T03:05:00Z",
   "interpretation": "Verified local implementation follow-ups linked to catalog source IDs. These records document changes and tests; they do not change source review status, grant integration authority, or establish profitability.",
   "followups": [
     {
@@ -729,6 +729,66 @@
         "https://solana.com/docs/tokens/basics/create-token-account",
         "terminal/jupiter-research.mjs",
         "terminal/test/jupiter-research.test.mjs"
+      ]
+    },
+    {
+      "id": "INT-AMM-POOL-STATE-001",
+      "catalogSourceIds": ["SRC-259", "SRC-063", "SRC-077"],
+      "area": "graduated AMM state and execution-aware exit marks",
+      "sourceToPipeline": {
+        "upstreamFindings": [
+          "Pump graduation does not identify Raydium as the destination; PumpSwap is a first-party venue and Pump documentation describes multiple lifecycle variants and fee-sweep behavior.",
+          "An executable constant-product exit estimate requires observed quote and token reserves and the applicable effective fee; a generic default reserve can invent a mark.",
+          "Non-SOL quote pools cannot be reported as SOL proceeds without a separately verified conversion route.",
+          "A structurally valid pool snapshot still becomes stale; it must carry source observation time and be rejected after its freshness lease expires."
+        ],
+        "relevantModules": [
+          "src/platform/execution/solaris/amm-bridge.ts",
+          "src/platform/execution/solaris/types.ts",
+          "src/market.ts",
+          "src/fusion.ts",
+          "src/platform/execution/authority.ts"
+        ],
+        "existingOverlap": "The existing Market path reads and quotes Pump native-SOL curves. The prior graduation bridge defaulted to 85 SOL, used a hard-coded token reserve and fee, and named Raydium regardless of venue. It now requires an explicit generic AMM pool snapshot and will not price non-SOL quote pools as SOL. No canonical pool account parser or certificate is connected yet.",
+        "risks": [
+          "The new pool API validates shape, identity, slot ordering, and numeric bounds but does not authenticate the caller or certify account ownership/provenance.",
+          "Effective fee must include venue-specific and token transfer costs or the resulting mark remains optimistic.",
+          "No provider path currently populates this state from canonical on-chain pool accounts.",
+          "Freshness timestamps are caller-supplied evidence and remain unauthenticated until bound to a verified pool observation."
+        ],
+        "validationRequirements": [
+          "Require canonical on-chain pool identity and account-owner validation before production use.",
+          "Decode quote/token reserves and fee from a pinned protocol version at a common slot.",
+          "Bind the pool observation timestamp to the source receipt and enforce a bounded maximum age on marks and entry eligibility.",
+          "Test PumpSwap and at least one non-Pump venue, stale/regressing slots, pool identity changes, non-SOL quote mint, and depleted reserves.",
+          "Reconcile simulated marks against finalized exit fills before using them for performance or entry decisions."
+        ]
+      },
+      "implementation": {
+        "change": "Replaced default Raydium-only migration assumptions and fabricated AMM reserves/fee with a generic explicit pool snapshot (venue, pool address, quote mint, quote/token reserves, effective fee, slot, observation time). SOL exit marks now use these supplied values only while the snapshot is within its 1-second freshness lease, and repeated completed-curve observations no longer reset migration state or cooldown.",
+        "files": [
+          "src/platform/execution/solaris/amm-bridge.ts",
+          "src/platform/execution/solaris/types.ts",
+          "src/market.ts",
+          "src/fusion.ts",
+          "src/platform/execution/authority.ts",
+          "test/fusion-graduated-exit.test.mjs",
+          "test/platform/solaris-nexus.test.mjs"
+        ],
+        "validation": {
+          "build": "npm run build:engine — passed",
+          "focusedTests": "node --test test/fusion-graduated-exit.test.mjs test/platform/solaris-nexus.test.mjs test/platform/certified-execution-authority.test.mjs — 22/22 passed",
+          "platformTests": "npm run test:platform — 1,048/1,048 passed after reserve, venue, fee, slot, migration-idempotency, and freshness changes"
+        },
+        "authorityImpact": "No signing, broadcast, custody, capital authorization, or risk-limit bypass. This is a mark/quote path only; it does not add venue submission or canonical pool ingestion.",
+        "status": "VERIFIED_SIMULATION_MARK_CORRECTION; CANONICAL_AMM_INGESTION_AND_LIVE_EXECUTION_UNIMPLEMENTED"
+      },
+      "evidence": [
+        "https://github.com/pump-fun/pump-public-docs/blob/main/docs/instructions/BUY.md",
+        "https://github.com/pump-fun/pump-public-docs/blob/main/docs/instructions/TRADE_V3.md",
+        "https://github.com/pump-fun/pump-public-docs/blob/main/docs/SYNTHETIC_MIGRATION.md",
+        "src/platform/execution/solaris/amm-bridge.ts",
+        "test/fusion-graduated-exit.test.mjs"
       ]
     }
   ]

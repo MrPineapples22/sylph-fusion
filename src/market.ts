@@ -1,5 +1,5 @@
 import { PublicKey, type AccountInfo, type Connection } from '@solana/web3.js';
-import { getAssociatedTokenAddressSync, unpackMint, unpackAccount, TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, getExtensionTypes, ExtensionType } from '@solana/spl-token';
+import { getAssociatedTokenAddressSync, unpackMint, unpackAccount, TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, getExtensionTypes, ExtensionType, NATIVE_MINT } from '@solana/spl-token';
 import { PUMP_SDK, PUMP_PROGRAM_ID, PUMP_FEE_PROGRAM_ID, GLOBAL_PDA, PUMP_FEE_CONFIG_PDA, bondingCurvePda, getBuyTokenAmountFromSolAmount, getSellSolAmountFromTokenAmount, computeFeesBps, type BondingCurve, type Global, type FeeConfig } from '@pump-fun/pump-sdk';
 import BN from 'bn.js';
 import { RpcPool, httpJson } from './rpc.js';
@@ -165,14 +165,17 @@ export class Market {
   }
   ammExitQuote(mint: string, tokens: bigint): bigint {
     const state = this.ammBridge.getGraduatedState(mint);
-    if (!state || !state.currentPoolSolLamports || state.currentPoolSolLamports <= 0n) {
-      throw new Error('NO_GRADUATED_AMM_POOL');
+    if (!state || !state.poolAddress || !state.poolVenue || state.poolQuoteMint !== NATIVE_MINT.toBase58() ||
+        state.currentPoolQuoteReserves === undefined || state.currentPoolTokenReserves === undefined ||
+        state.poolEffectiveFeeBps === undefined || state.poolSlot === undefined ||
+        !this.ammBridge.isPoolSnapshotFresh(state)) {
+      throw new Error('GRADUATED_AMM_SNAPSHOT_INCOMPLETE_OR_NON_SOL_QUOTE');
     }
-    const poolSol = state.currentPoolSolLamports;
-    const poolTokens = 206_900_000_000_000n;
     if (tokens <= 0n) throw new Error('invalid exit tokens');
-    const grossSol = (tokens * poolSol) / (poolTokens + tokens);
-    const netSol = (grossSol * 9975n) / 10000n;
+    if (state.currentPoolTokenReserves <= 0n || state.currentPoolQuoteReserves <= 0n ||
+        state.poolEffectiveFeeBps < 0 || state.poolEffectiveFeeBps >= 10_000) throw new Error('GRADUATED_AMM_SNAPSHOT_INVALID');
+    const grossSol = (tokens * state.currentPoolQuoteReserves) / (state.currentPoolTokenReserves + tokens);
+    const netSol = (grossSol * BigInt(10_000 - state.poolEffectiveFeeBps)) / 10_000n;
     if (netSol <= 0n) throw new Error('zero executable graduated AMM exit proceeds');
     return netSol;
   }

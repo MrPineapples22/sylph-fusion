@@ -57,10 +57,12 @@ export class SimulationExecutionAuthority {
             const mintStr = s.mint.toBase58();
             const graduatedState = this.market.ammBridge?.getGraduatedState(mintStr);
             const lifecycleCert = this.market.lifecycle?.getCertificate(mintStr);
-            const isAmmActive = (graduatedState?.status === 'RAYDIUM_ACTIVE' ||
+            const isAmmActive = (graduatedState?.status === 'AMM_ACTIVE' ||
                 graduatedState?.status === 'AMM_STABILIZED' ||
                 lifecycleCert?.valuationStatus === 'PRICED_AMM') &&
-                Boolean(graduatedState?.currentPoolSolLamports && graduatedState.currentPoolSolLamports > 0n);
+                Boolean(graduatedState?.poolAddress && graduatedState.currentPoolQuoteReserves &&
+                    graduatedState.currentPoolQuoteReserves > 0n && graduatedState.currentPoolTokenReserves &&
+                    graduatedState.currentPoolTokenReserves > 0n && graduatedState.poolSlot);
             if (isAmmActive && side === 'sell' && typeof this.market.ammExitQuote === 'function') {
                 output = this.market.ammExitQuote(mintStr, amount);
             }

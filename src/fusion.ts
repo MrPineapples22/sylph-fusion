@@ -1462,10 +1462,12 @@ export class Engine {
       if (s.curve.complete) {
         const graduatedState = this.market.ammBridge?.getGraduatedState?.(p.mint);
         const lifecycleCert = this.market.lifecycle?.getCertificate?.(p.mint);
-        const hasAmmRoute = (graduatedState?.status === 'RAYDIUM_ACTIVE' ||
+        const hasAmmRoute = (graduatedState?.status === 'AMM_ACTIVE' ||
                              graduatedState?.status === 'AMM_STABILIZED' ||
                              lifecycleCert?.valuationStatus === 'PRICED_AMM') &&
-                            Boolean(graduatedState?.currentPoolSolLamports && graduatedState.currentPoolSolLamports > 0n);
+                            Boolean(graduatedState?.poolAddress && graduatedState.currentPoolQuoteReserves &&
+                              graduatedState.currentPoolQuoteReserves > 0n && graduatedState.currentPoolTokenReserves &&
+                              graduatedState.currentPoolTokenReserves > 0n && graduatedState.poolSlot);
 
         if (hasAmmRoute) {
           try {
