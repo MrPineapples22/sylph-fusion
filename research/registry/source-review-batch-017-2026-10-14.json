@@ -2,7 +2,7 @@
   "batch": 17,
   "date": "2026-10-14",
   "sourceRecords": 15,
-  "directlyReviewed": 5,
+  "directlyReviewed": 10,
   "scope": "Time-series observability and wallet/token relationship graph analytics",
   "method": "Pinned official repository README and license/source inspection with upstream HEAD revisions recorded. Findings are bounded research notes; no REA execution, packages installed, SYLPH code patch, build, or runtime test was performed.",
   "sources": [
@@ -211,17 +211,18 @@
     {
       "id": "SRC-156",
       "url": "https://github.com/jaegertracing/jaeger",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Jaeger repository and documentation; accessed 2026-10-14."
+        "Official Jaeger README and license metadata inspected at pinned main commit 563e23fdb5b95e141a0ca82dad9601fa51c66ec7; accessed 2026-10-15."
       ],
       "discoveries": [
-        "Distributed tracing system for collecting and querying spans.",
-        "OpenTelemetry integration is a primary path for modern instrumentation."
+        "Jaeger v2 is an OpenTelemetry Collector-based distributed tracing platform; its quick start accepts OTLP over gRPC and HTTP.",
+        "Its architecture separates SDK/collector ingestion, storage backend, query service, and UI.",
+        "The README documents backend-version support policies, so storage compatibility must be checked against the current documented support matrix."
       ],
       "patterns": [
-        "Trace a recovery request across ingress, validation, replay and snapshot publication.",
-        "Keep traces sampled and redact token/wallet-sensitive data where not needed."
+        "Propagate trace context across ingress, journal commit, projection, and dashboard boundaries while keeping durable event IDs in the journal.",
+        "Use an asynchronous OTLP exporter so trace collection cannot become a synchronous dependency of the canonical ingress lane."
       ],
       "sylphModules": [
         "src/platform/ingress/canonical-ingress.ts",
@@ -229,164 +230,184 @@
         "src/dashboard.ts"
       ],
       "overlap": [
-        "Tracing complements structured logs/metrics without changing data flow."
+        "Overlaps with OpenTelemetry Collector, Tempo, SigNoz, Uptrace, and HyperDX; one trace backend is enough for an evaluation."
       ],
       "risks": [
-        "Trace volume and sensitive attributes create cost/privacy concerns.",
-        "Sampling may omit rare failures."
+        "Telemetry loss or stale traces do not prove a feed gap; the journal remains authoritative.",
+        "Backend support varies by version and Jaeger storage plugins introduce additional compatibility dependencies.",
+        "Sensitive identifiers in spans require redaction and sampling."
       ],
       "validation": [
-        "Use synthetic traces to prove critical spans and failure attributes exist.",
-        "Ensure sampled telemetry is never treated as complete audit evidence."
+        "Use synthetic local spans to validate trace continuity, sampling, redaction, and exporter outage behavior.",
+        "Test against the documented storage backend version support policy before deployment."
       ],
       "evidence": [
-        "https://github.com/jaegertracing/jaeger"
+        "https://github.com/jaegertracing/jaeger/tree/563e23fdb5b95e141a0ca82dad9601fa51c66ec7",
+        "https://github.com/jaegertracing/jaeger/blob/563e23fdb5b95e141a0ca82dad9601fa51c66ec7/README.md"
       ],
       "license": "Apache-2.0 (repository metadata)",
-      "decision": "RESEARCH_ONLY"
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "563e23fdb5b95e141a0ca82dad9601fa51c66ec7"
     },
     {
       "id": "SRC-157",
       "url": "https://github.com/networkx/networkx",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official NetworkX repository and documentation; accessed 2026-10-14."
+        "Official NetworkX README and LICENSE.txt inspected at pinned main commit 6da4704cbf32ba6f50f6d9c46cc0a071e3a87985; accessed 2026-10-15."
       ],
       "discoveries": [
-        "Python package for creating, manipulating and analyzing complex networks.",
-        "Graph algorithms operate on supplied graph structures; identity clustering quality depends on evidence construction."
+        "NetworkX is a Python package for creating, manipulating, and studying complex networks.",
+        "It is an offline graph-analysis library, not a graph database or Solana data source.",
+        "The pinned LICENSE.txt identifies a 3-clause BSD license."
       ],
       "patterns": [
-        "Represent wallet relationships as typed, time-bounded edges with provenance.",
-        "Keep inferred links distinct from direct on-chain transfers."
+        "For offline wallet research, represent observed transfers or common funding as typed, timestamped edges and preserve the source evidence for every edge.",
+        "Use graph algorithms to generate investigation candidates, then verify each relationship against canonical on-chain transactions."
       ],
       "sylphModules": [
-        "offline wallet analytics",
-        "training feature pipeline"
+        "offline token/wallet relationship analysis",
+        "research data pipeline"
       ],
       "overlap": [
-        "Offline investigation only; no live wallet authority or risk gate."
+        "Complements the graph-tooling resources in the catalog; no runtime service integration is needed."
       ],
       "risks": [
-        "Heuristic clustering can falsely merge unrelated wallets.",
-        "Large graphs can exceed memory/time expectations."
+        "Graph edges can create false associations when based on shared infrastructure, exchange custody, or incomplete observations.",
+        "The Python implementation and memory use may be unsuitable for very large graphs or low-latency runtime.",
+        "Derived centrality/community scores are investigative signals, not risk conclusions."
       ],
       "validation": [
-        "Test known synthetic graph cases and edge provenance.",
-        "Measure false-positive rates before producing any operator signal."
+        "Use a labeled synthetic graph to test connected-component and community assumptions.",
+        "Report every edge’s source, observed time, and uncertainty; independently validate any real-world finding on chain."
       ],
       "evidence": [
-        "https://github.com/networkx/networkx"
+        "https://github.com/networkx/networkx/tree/6da4704cbf32ba6f50f6d9c46cc0a071e3a87985",
+        "https://raw.githubusercontent.com/networkx/networkx/6da4704cbf32ba6f50f6d9c46cc0a071e3a87985/LICENSE.txt"
       ],
-      "license": "BSD-3-Clause (repository metadata)",
-      "decision": "RESEARCH_ONLY"
+      "license": "BSD-3-Clause (pinned LICENSE.txt)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "6da4704cbf32ba6f50f6d9c46cc0a071e3a87985"
     },
     {
       "id": "SRC-158",
       "url": "https://github.com/neo4j/neo4j",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Neo4j repository and documentation; accessed 2026-10-14."
+        "Official Neo4j README and license metadata inspected at pinned 2026.09 commit 54a7dcf7c2501b31866199143364c5332da8936f; accessed 2026-10-15."
       ],
       "discoveries": [
-        "Graph database platform with property graph model and Cypher query language.",
-        "Database deployment/licensing options require evaluation for the intended edition."
+        "Neo4j describes a graph store with Cypher and ACID transactions.",
+        "The GitHub repository advertises GPL-3.0; managed Aura and separate product offerings should not be presumed to share identical terms.",
+        "A graph database could model evidence-linked wallet/token relations, but it would add a separate state store and query interface."
       ],
       "patterns": [
-        "Store provenance-rich wallet/token relations for investigative queries.",
-        "Preserve observation time and evidence source on every relationship."
+        "If used for offline research, store evidence IDs and source timestamps on each node/edge and preserve an exportable deterministic graph snapshot.",
+        "Treat graph outputs as candidate investigations; resolve economic authority in canonical chain records and Engine state."
       ],
       "sylphModules": [
-        "offline wallet analytics",
-        "research data store"
+        "offline token/wallet relationship research",
+        "data export and investigative tooling"
       ],
       "overlap": [
-        "A graph store could support investigations but duplicates no existing execution component."
+        "Overlaps with Memgraph, FalkorDB, and graph libraries already in the catalog."
       ],
       "risks": [
-        "Misleading inferred edges can contaminate downstream analysis.",
-        "Operational and license choices may be substantial."
+        "GPL-3.0 and product/service terms require review for the exact distribution/use model.",
+        "A second state store can drift from the canonical journal and create ambiguous corrections/deletions.",
+        "Graph query results do not establish common control or malicious coordination without validated edge evidence."
       ],
       "validation": [
-        "Use synthetic graph fixtures with expected query results.",
-        "Audit edge provenance, deletion and retention behavior."
+        "Before a prototype, review the intended Neo4j edition and license, then test deterministic import/export and replay from the same evidence set.",
+        "Compare graph-derived links against verified transactions and include false-positive fixtures."
       ],
       "evidence": [
-        "https://github.com/neo4j/neo4j"
+        "https://github.com/neo4j/neo4j/tree/54a7dcf7c2501b31866199143364c5332da8936f",
+        "https://github.com/neo4j/neo4j/blob/54a7dcf7c2501b31866199143364c5332da8936f/LICENSE.txt"
       ],
-      "license": "Mixed licensing/product terms; verify selected edition",
-      "decision": "RESEARCH_ONLY"
+      "license": "GPL-3.0 (GitHub repository metadata; verify product and deployment terms)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "54a7dcf7c2501b31866199143364c5332da8936f"
     },
     {
       "id": "SRC-159",
       "url": "https://github.com/memgraph/memgraph",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Memgraph repository and documentation; accessed 2026-10-14."
+        "Official Memgraph README and root LICENSE inspected at pinned master commit 0f420c4280967268e5425c6d54f31b9155b01c0f; accessed 2026-10-15."
       ],
       "discoveries": [
-        "Graph database supporting property-graph queries and streaming/analytics integrations.",
-        "Supported query language and extension behavior should be checked at a chosen version."
+        "Memgraph is an in-memory, Cypher-compatible graph database implemented in C++ and positioned for real-time graph analytics.",
+        "The root LICENSE explicitly states the source is variously licensed under BSL 1.1 and the Memgraph Enterprise License, with license files under `licenses/`.",
+        "The source README and root license are insufficient to establish the exact rights for each file or an intended deployment."
       ],
       "patterns": [
-        "Model transfers, shared funders and common token exposure as separate edge types.",
-        "Attach evidence confidence and timestamp rather than collapsing to a single wallet score."
+        "If comparing graph engines, keep research ingestion asynchronous and downstream; preserve evidence IDs and edge provenance.",
+        "Run adversarial wallet-cluster fixtures to measure false positives before relying on graph relationships."
       ],
       "sylphModules": [
-        "offline wallet analytics",
-        "training feature pipeline"
+        "offline wallet relationship analysis",
+        "investigative analytics"
       ],
       "overlap": [
-        "Optional research storage; do not inject inferred graph labels as verified market facts."
+        "Same broad role as Neo4j/FalkorDB; do not introduce several graph databases for the same evidence set."
       ],
       "risks": [
-        "False links and temporal leakage can bias wallet ranking.",
-        "Database deployment adds access and consistency concerns."
+        "File-level BSL/MEL terms need review before use; repository-level “open source” wording is not license approval.",
+        "In-memory operation raises persistence, backup, and restart questions for audit-linked graph data.",
+        "Graph scores may confuse common infrastructure with coordinated control."
       ],
       "validation": [
-        "Evaluate on labeled synthetic and reviewed samples.",
-        "Test temporal queries to avoid using future relationships."
+        "Inspect the specific files and license grants planned for use; obtain legal review if deployment rights are unclear.",
+        "Test restart/rebuild and compare graph outputs with a canonical evidence-ledger reference."
       ],
       "evidence": [
-        "https://github.com/memgraph/memgraph"
+        "https://github.com/memgraph/memgraph/tree/0f420c4280967268e5425c6d54f31b9155b01c0f",
+        "https://raw.githubusercontent.com/memgraph/memgraph/0f420c4280967268e5425c6d54f31b9155b01c0f/LICENSE"
       ],
-      "license": "BSL-1.1 (repository metadata; verify terms)",
-      "decision": "RESEARCH_ONLY"
+      "license": "Mixed BSL-1.1 and Memgraph Enterprise License (root LICENSE; file-specific terms must be checked)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "0f420c4280967268e5425c6d54f31b9155b01c0f"
     },
     {
       "id": "SRC-160",
       "url": "https://github.com/FalkorDB/FalkorDB",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official FalkorDB repository and documentation; accessed 2026-10-14."
+        "Official FalkorDB README and root LICENSE inspected at pinned main commit b080a44c135e8b938732f155785992f39adcb41c; accessed 2026-10-15."
       ],
       "discoveries": [
-        "Graph database project designed for graph analytics and query workloads.",
-        "Operational requirements and supported Redis integration model vary by release."
+        "FalkorDB describes a graph database built on GraphBLAS sparse adjacency matrices and oriented toward knowledge graphs/GraphRAG.",
+        "The root LICENSE text is Server Side Public License (SSPL) version 1, not a permissive Apache license.",
+        "Its database/service deployment model makes licensing and hosting terms relevant before considering any use."
       ],
       "patterns": [
-        "Use explicit graph schema and typed, provenance-bearing wallet relation edges.",
-        "Run relationship exploration offline with controlled snapshots."
+        "GraphBLAS is a useful reference for sparse graph computation in offline wallet-cluster analysis.",
+        "Keep source observations and derived confidence separate; a graph acceleration layer must not confer execution or risk authority."
       ],
       "sylphModules": [
-        "offline wallet analytics"
+        "offline graph analytics",
+        "token/wallet relationship research"
       ],
       "overlap": [
-        "No live engine role established; it is a possible research data store."
+        "Overlaps with NetworkX, Neo4j, Memgraph, and graph-tool; no current need for a new graph database in SYLPH runtime."
       ],
       "risks": [
-        "Graph inference can overstate common control.",
-        "Deployment/version compatibility and licensing need confirmation."
+        "SSPL-1.0 has obligations different from permissive open-source licenses; review exact intended use and service model before adopting.",
+        "A graph store can be costly to reconcile and rebuild if source evidence changes or is retracted.",
+        "Graph-derived attribution remains uncertain without verified transaction relationships."
       ],
       "validation": [
-        "Check query correctness against hand-built graph fixtures.",
-        "Version snapshots and document graph construction rules."
+        "Review SSPL text and service obligations before any deployment.",
+        "Use deterministic graph fixtures and reconcile all imported edges to canonical source records; test rebuild/restart before production consideration."
       ],
       "evidence": [
-        "https://github.com/FalkorDB/FalkorDB"
+        "https://github.com/FalkorDB/FalkorDB/tree/b080a44c135e8b938732f155785992f39adcb41c",
+        "https://raw.githubusercontent.com/FalkorDB/FalkorDB/b080a44c135e8b938732f155785992f39adcb41c/LICENSE"
       ],
-      "license": "Not independently verified in this review",
-      "decision": "RESEARCH_ONLY"
+      "license": "SSPL-1.0 (root LICENSE; verify obligations for intended deployment)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "b080a44c135e8b938732f155785992f39adcb41c"
     },
     {
       "id": "SRC-161",

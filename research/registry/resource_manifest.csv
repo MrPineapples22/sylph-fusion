@@ -154,11 +154,11 @@ SRC-152,github_data_observability_ops,https://github.com/questdb/questdb,source_
 SRC-153,github_data_observability_ops,https://github.com/signoz/signoz,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-153-2026-10-15,375b3f8305720b236a83b50955269c60d96e1f9e,MIT for files outside ee/ and cmd/enterprise by root LICENSE; enterprise and third-party components have separate terms,RESEARCH_ONLY
 SRC-154,github_data_observability_ops,https://github.com/vmihailenco/uptrace,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-154-2026-10-15,1e622fff165391a26bbebc135e4c4f8a843ef1bd,AGPL-3.0 (root LICENSE),RESEARCH_ONLY
 SRC-155,github_data_observability_ops,https://github.com/hyperdxio/hyperdx,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-155-2026-10-15,ecddea2a0469bd53416227a79e36392dc633bff8,MIT (repository metadata),RESEARCH_ONLY
-SRC-156,github_data_observability_ops,https://github.com/jaegertracing/jaeger,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-157,github_graph_analytics,https://github.com/networkx/networkx,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-158,github_graph_analytics,https://github.com/neo4j/neo4j,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-159,github_graph_analytics,https://github.com/memgraph/memgraph,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-160,github_graph_analytics,https://github.com/FalkorDB/FalkorDB,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
+SRC-156,github_data_observability_ops,https://github.com/jaegertracing/jaeger,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-156-2026-10-15,563e23fdb5b95e141a0ca82dad9601fa51c66ec7,Apache-2.0 (repository metadata),RESEARCH_ONLY
+SRC-157,github_graph_analytics,https://github.com/networkx/networkx,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-157-2026-10-15,6da4704cbf32ba6f50f6d9c46cc0a071e3a87985,BSD-3-Clause (pinned LICENSE.txt),RESEARCH_ONLY
+SRC-158,github_graph_analytics,https://github.com/neo4j/neo4j,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-158-2026-10-15,54a7dcf7c2501b31866199143364c5332da8936f,GPL-3.0 (GitHub repository metadata; verify product and deployment terms),RESEARCH_ONLY
+SRC-159,github_graph_analytics,https://github.com/memgraph/memgraph,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-159-2026-10-15,0f420c4280967268e5425c6d54f31b9155b01c0f,Mixed BSL-1.1 and Memgraph Enterprise License (root LICENSE; file-specific terms must be checked),RESEARCH_ONLY
+SRC-160,github_graph_analytics,https://github.com/FalkorDB/FalkorDB,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-160-2026-10-15,b080a44c135e8b938732f155785992f39adcb41c,SSPL-1.0 (root LICENSE; verify obligations for intended deployment),RESEARCH_ONLY
 SRC-161,github_graph_analytics,https://github.com/Qiskit/rustworkx,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-162,github_graph_analytics,https://github.com/igraph/python-igraph,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-163,github_graph_analytics,https://github.com/apache/age,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
