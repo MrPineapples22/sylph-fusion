@@ -46,7 +46,7 @@ REA is used out of band where the target type and authorization fit its supporte
 
 ## Resume
 
-All 288 records have a URL availability observation. Twenty sources now have explicit partial source review status; 268 remain `NOT_REVIEWED`. Record coverage is complete; upstream research and implementation remain incomplete. Continue with concrete findings from each batch, inspect the current local source and pinned upstream documentation, reproduce behavior with focused deterministic tests, and make small patches. Preserve existing workspace changes and do not grant a source trading authority based on inclusion in the manifest.
+All 288 records have a URL availability observation. Twenty-one sources now have explicit partial source review status; 267 remain NOT_REVIEWED. Record coverage is complete; upstream research and implementation remain incomplete. Continue with concrete findings from each batch, inspect the current local source and pinned upstream documentation, reproduce behavior with focused deterministic tests, and make small patches. Preserve existing workspace changes and do not grant a source trading authority based on inclusion in the manifest.
 ## Latest implementation verification (2026-10-14)
 
 - `npm run build:engine` — passed after the feed admission snapshot change.
@@ -54,7 +54,7 @@ All 288 records have a URL availability observation. Twenty sources now have exp
 - `npm test` in `terminal/` — 475/475 passed, covering operator projections and UI-side research adapters. This verifies the local terminal suite, not the availability or correctness of all 288 upstream sources.
 - Feed/Yellowstone/backpressure regressions — 28/28 passed; the regressions include historical/live health isolation, required Census-R ordering, and admission-time input snapshots.
 
-These checks do not convert catalog triage into exhaustive upstream review or production integration. Registry coverage remains structurally complete (288 records), while all 288 batch records are bounded `PARTIAL_REVIEW` triage and the manifest distinguishes twenty sources with direct source review from 268 still `NOT_REVIEWED`.
+These checks do not convert catalog triage into exhaustive upstream review or production integration. Registry coverage remains structurally complete (288 records), while all 288 batch records are bounded `PARTIAL_REVIEW` triage and the manifest distinguishes twenty-one sources with direct source review from 267 still NOT_REVIEWED.
 
 ## Feed/replay follow-up (2026-10-15)
 
@@ -214,3 +214,10 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - SRC-005 was inspected at 42971e7d0a5c885f36723a4da54d307713b66c3a; its package is Apache-2.0 and pins Yellowstone gRPC client/proto 6.0.0.
 - The library explicitly disclaims continuous delivery. Its fastest-wins merge emits only slots greater than the current tip, discarding late lower/equal slot evidence; processed commitment can form forks. This is not safe as canonical gap-free ingress.
 - No client dependency or runtime path was added. SYLPH retains source identity and canonical gap recovery; 20 source records now have partial reviews and 268 remain unreviewed.
+
+
+## Firehose Solana schema review (2026-10-15)
+
+- SRC-006 was inspected at 9e577f496581d907a79b4f051dc596dfecae4142; the repository declares Apache-2.0. Its protobuf preserves Solana v1 inline transaction configuration and cost units. The RPC decoder caps supported transaction versions at v1 and fails when a higher version is encountered.
+- This is useful as an offline schema/fixture reference for version-aware decoding and confirmed-versus-finalized separation. SYLPH already has a version-aware wire decoder and gap-recovery pipeline, so no parallel Go indexer was added.
+- Registry now has 21 partial reviews and 267 not reviewed; source-coverage validation remains structural and does not certify a runtime integration.

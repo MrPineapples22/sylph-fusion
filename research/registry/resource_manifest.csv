@@ -4,7 +4,7 @@ SRC-002,github_streaming_rpc,https://github.com/rpcpool/yellowstone-thorofare,so
 SRC-003,github_streaming_rpc,https://github.com/jito-foundation/geyser-grpc-plugin,source_or_document_review,P1,PARTIAL_REVIEW,JITO-GEYSER-GRPC-PLUGIN-2026-10-15,c9a99618303ccbbea32989088fa3b1523b43979b,Apache-2.0,NO_ADOPTION_VALIDATOR_SIDE_REFERENCE_DROPPED_QUEUE_RISK
 SRC-004,github_streaming_rpc,https://github.com/blockworks-foundation/quic_geyser_plugin,source_or_document_review,P1,PARTIAL_REVIEW,QUIC-GEYSER-PLUGIN-2026-10-15,6195338e16104d89dfd8ba9263191118535d584b,AGPL-3.0_REVIEW_REQUIRED,NO_ADOPTION_VALIDATOR_SIDE_BENCHMARK_REFERENCE_ONLY
 SRC-005,github_streaming_rpc,https://github.com/blockworks-foundation/geyser-grpc-connector,source_or_document_review,P1,PARTIAL_REVIEW,GEYSER-GRPC-CONNECTOR-2026-10-15,42971e7d0a5c885f36723a4da54d307713b66c3a,Apache-2.0,NO_ADOPTION_FASTEST_WINS_REJECTED_FOR_CANONICAL_INGRESS
-SRC-006,github_streaming_rpc,https://github.com/streamingfast/firehose-solana,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
+SRC-006,github_streaming_rpc,https://github.com/streamingfast/firehose-solana,source_or_document_review,P1,PARTIAL_REVIEW,FIREHOSE-SOLANA-2026-10-15,9e577f496581d907a79b4f051dc596dfecae4142,Apache-2.0,OFFLINE_SCHEMA_AND_DECODER_REFERENCE_NO_PARALLEL_RUNTIME_INDEXER
 SRC-007,github_streaming_rpc,https://github.com/streamingfast/substreams-solana,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-008,github_streaming_rpc,https://github.com/goldsky-io/streamling,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-009,github_streaming_rpc,https://github.com/firedancer-io/fd-yellowstone,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
