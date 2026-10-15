@@ -58,6 +58,19 @@ test('Jupiter research rejects executable transaction payloads and does not requ
   assert.equal('transaction' in result, false);
 });
 
+test('Jupiter research rejects token output amounts outside the SPL u64 range', async () => {
+  let calls = 0;
+  const service = new JupiterResearchQuoteService({ minRequestGapMs: 0, fetchImpl: async () => {
+    calls += 1;
+    return quote(wrappedSol, mint, '10000000', '18446744073709551616');
+  } });
+  const result = await service.quoteRoundTrip(mint);
+  assert.equal(result.status, 'UNAVAILABLE');
+  assert.equal(result.errorCode, 'JUPITER_QUOTE_SCHEMA_INVALID');
+  assert.equal(calls, 1, 'invalid output must not be reused as the sell input');
+  assert.equal(result.executionAuthorized, false);
+});
+
 test('Jupiter research coalesces concurrent requests and rejects invalid mints before network access', async () => {
   let calls = 0;
   const service = new JupiterResearchQuoteService({ minRequestGapMs: 0, fetchImpl: async url => {

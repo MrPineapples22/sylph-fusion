@@ -178,37 +178,40 @@
         "Local Jupiter research adapter and project integration notes"
       ],
       "discoveries": [
-        "The current V2 API reference exposes an /order endpoint that returns an assembled transaction and identifies taker as a required request field; an order response is not merely a quote payload.",
-        "SYLPH's existing Jupiter research adapter calls /swap/v2/order, rate-limits requests, validates returned amounts, discards unsigned transaction data, and marks results QUOTE_ONLY with executionAuthorized false.",
-        "Local integration notes say authenticated V2 use requires configured API key and taker public key; neither setting was present in the captured environment, so this authenticated contract was not exercised."
+        "Jupiter's current /order contract returns a quote and an assembled transaction when taker is supplied; without taker, the call is intended for price checks and transaction is null. A nonempty transaction must never cross the research-only boundary.",
+        "The adapter requests no taker, marks results QUOTE_ONLY with executionAuthorized false, and now rejects output amount strings above the SPL token u64 maximum before using the buy result as a sell input.",
+        "The current docs support v1 responses only when maxSupportedTransactionVersion=1 and a compatible route wins; this adapter does not request v1 and does not sign or execute any returned transaction."
       ],
       "patterns": [
         "keep quote-only response schemas distinct from prepared transaction schemas",
-        "validate mint/amount/response bounds",
+        "validate mint and raw token amounts against their integer width before arithmetic",
         "record quote timestamps and sequential round-trip window",
-        "discard transaction payload in research-only adapter"
+        "use the no-taker quote path and reject executable payloads in research-only adapter"
       ],
       "sylphModules": [
         "terminal/jupiter-research.mjs",
         "terminal/provider-health-projection.mjs",
         "terminal/test/jupiter-research.test.mjs"
       ],
-      "overlap": "A read-only Jupiter adapter exists, but it does not submit or sign. Existing audit reports measured quotes that are snapshots rather than fills or profit estimates.",
+      "overlap": "A read-only Jupiter adapter calls the no-taker quote path, applies rate limits and response bounds, rejects executable transaction material, and exposes snapshots as QUOTE_ONLY. It does not submit or sign.",
       "risks": [
-        "/order may return transaction material even for a quote workflow",
+        "routing/API changes may alter response shape and token-version support",
         "sequential quotes span time and market state",
         "fees, landing probability, price movement and failed execution are excluded",
-        "API key/taker contract not verified in this environment"
+        "the API key contract and current live response were not exercised in this environment"
       ],
       "validation": [
         "recheck official V2 schema/version before updates",
-        "fixture authenticated and unauthenticated cases, error/oversize responses, token decimals and partial quotes",
+        "fixture no-taker quote responses, transaction-bearing responses, error/oversize payloads, u64 bounds and partial quotes",
         "never pass an assembled payload from research to signer",
         "compare quotes with confirmed fills only in authorized paper/sandbox workflows"
       ],
       "evidence": [
         "https://github.com/jup-ag/docs/blob/main/api-reference/swap/order.mdx",
-        "https://developers.jup.ag/docs/swap/index.md"
+        "https://developers.jup.ag/docs/swap/index.md",
+        "https://developers.jup.ag/docs/swap/order-and-execute",
+        "terminal/jupiter-research.mjs",
+        "terminal/test/jupiter-research.test.mjs"
       ],
       "license": "NOT_APPLICABLE_DOCUMENTATION",
       "decision": "RESEARCH_ONLY_NO_SIGNING_OR_SUBMISSION_CHANGE"

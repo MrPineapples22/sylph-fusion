@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-15T01:05:00Z",
+  "updatedAt": "2026-10-15T01:28:00Z",
   "interpretation": "Verified local implementation follow-ups linked to catalog source IDs. These records document changes and tests; they do not change source review status, grant integration authority, or establish profitability.",
   "followups": [
     {
@@ -690,6 +690,44 @@
         "https://docs.jito.wtf/lowlatencytxnsend/",
         "src/platform/execution/jito-lifecycle-coordinator.ts",
         "test/platform/jito-fence.test.mjs"
+      ]
+    },
+    {
+      "id": "INT-JUPITER-QUOTE-U64-001",
+      "catalogSourceIds": ["SRC-258"],
+      "area": "Jupiter quote-only response bounds",
+      "sourceToPipeline": {
+        "upstreamFindings": [
+          "Jupiter /order returns a quote with transaction null when taker is omitted; the API can return a transaction when taker is supplied.",
+          "Solana token raw amounts are represented by u64 values; quote output outside that range cannot be a valid token amount for the downstream sell quote."
+        ],
+        "relevantModules": ["terminal/jupiter-research.mjs"],
+        "existingOverlap": "The adapter already omits taker, strips response data down to quote fields, enforces QUOTE_ONLY authority and validates response size. This adds a bounded-u64 check before any BigInt arithmetic or second quote.",
+        "risks": [
+          "The adapter remains an untrusted provider snapshot; a valid range does not establish quote freshness, execution, or profit.",
+          "Provider contract changes require fixture and documentation review."
+        ],
+        "validationRequirements": [
+          "Accept valid canonical positive integer amounts within u64.",
+          "Reject amount above u64 before using it as a sell quote input.",
+          "Assert no transaction payload enters results and executionAuthorized remains false."
+        ]
+      },
+      "implementation": {
+        "change": "JupiterResearchQuoteService now validates outAmount as a canonical positive u64 before returning the quote, preventing out-of-range provider values from entering BigInt round-trip arithmetic or becoming the sell input.",
+        "files": ["terminal/jupiter-research.mjs", "terminal/test/jupiter-research.test.mjs"],
+        "validation": {
+          "focusedTests": "node --test terminal/test/jupiter-research.test.mjs — 4/4 passed",
+          "terminalTests": "npm run test:terminal — 351/351 passed"
+        },
+        "authorityImpact": "No signing, transaction submission, capital authorization, or risk-limit changes.",
+        "status": "VERIFIED_LOCAL_QUOTE_SCHEMA_GUARD; LIVE_JUPITER_CONTRACT_UNEXERCISED"
+      },
+      "evidence": [
+        "https://developers.jup.ag/docs/swap/order-and-execute",
+        "https://solana.com/docs/tokens/basics/create-token-account",
+        "terminal/jupiter-research.mjs",
+        "terminal/test/jupiter-research.test.mjs"
       ]
     }
   ]
