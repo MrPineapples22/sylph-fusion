@@ -134,13 +134,13 @@
       "url": "https://docs.jito.wtf/lowlatencytxnsend/",
       "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Jito low-latency transaction documentation",
-        "Local SYLPH Jito status adapters and live-status report"
+        "Official Jito low-latency transaction documentation reviewed 2026-10-14, including JSON-RPC, bundle status, tip-floor and uncled-block sections",
+        "Local SYLPH Jito lifecycle coordinator, fee adapter, paper-only Executor and deterministic tests"
       ],
       "discoveries": [
-        "A successful sendBundle response with bundle_id means receipt, not landing; the documented status method must be used to observe bundle processing.",
-        "Jito bundles are atomic and all-or-nothing within a slot, while tip amount participates in an auction and a low tip may fail selection.",
-        "Inflight bundle status is retained for only five minutes; Invalid or null/empty results mean no status is retained in that window, not relay failure or proof of non-landing. The local coordinator now reports STATUS_NOT_RETAINED as nonterminal and leaves chain reconciliation authoritative."
+        "sendBundle returns a bundle ID on receipt, not a landing guarantee; getInflightBundleStatuses covers only the last five minutes, and missing/Invalid status does not prove non-landing. Current code keeps this result nonterminal and reconciles signatures through finalized RPCs.",
+        "Bundles contain up to five transactions and execute sequentially/atomically in one slot when they land, but Jito documents uncled-block rebroadcast risk that can expose individual transactions to ordinary banking without bundle atomicity/revert protection.",
+        "Jito's tip-floor endpoint reports historical landed-tip percentiles, not a guaranteed clearing price. For single-transaction sendTransaction the docs describe priority fee plus tip; for sendBundle only the tip bids in that auction. The transaction endpoint always skips preflight, so simulation/revalidation must be separate before any future submission integration."
       ],
       "patterns": [
         "separate submission receipt from landing/finalization evidence",
@@ -150,12 +150,15 @@
         "convert decimal SOL tip-floor observations to lamports with exact integer ceiling and clamp to the configured maximum"
       ],
       "sylphModules": [
-        "terminal/jito-block-engine-health.mjs",
-        "terminal/jito-tip-floor-research.mjs",
+        "src/platform/execution/jito-lifecycle-coordinator.ts",
+        "src/platform/execution/jito-tip-floor.ts",
+        "src/execution.ts",
         "src/platform/execution/authority.ts",
-        "src/platform/execution/finalized-settlement*"
+        "src/platform/execution/finalized-settlement*",
+        "test/platform/jito-fence.test.mjs",
+        "test/platform/jito-tip-floor.test.mjs"
       ],
-      "overlap": "SYLPH has read-only Block Engine connectivity and tip-floor research projections. The Jito lifecycle coordinator now distinguishes missing/expired inflight status from relay failure, while finalized chain reconciliation remains authoritative. The tip-floor parser converts the API's decimal SOL value to lamports using integer arithmetic and clamps to the configured maximum. Bundle submission and realized landed-cost telemetry remain unverified.",
+      "overlap": "SYLPH has read-only Block Engine tip-account/tip-floor lookups and an inflight lifecycle observer. Invalid/null status remains unresolved; Executor.reconcile then requires finalized transaction agreement from every configured RPC before paper order reconciliation. Direct Executor build and broadcast are quarantined, so there is no live Jito submission path. Exact tip-floor SOL-to-lamport conversion is bounded and capped. Live tip settlement and post-uncle safeguards remain unverified.",
       "risks": [
         "false success if receipt is shown as landing",
         "tips and priority fees can exceed expected edge",
@@ -167,13 +170,16 @@
         "test receipt-without-landing and status timeout",
         "test Invalid, null and empty inflight results as nonterminal status-not-retained outcomes",
         "reconcile bundle status, signature, finalized transaction and wallet deltas",
-        "record all fees and tips against realized outcomes",
+        "exercise uncled/rebroadcast fixtures and transaction-level state assertions before any bundle submission authority exists",
+        "record finalized transaction fees and actual tip-account deltas against realized outcomes",
         "test exact SOL-to-lamport ceiling, sub-lamport values, malformed values, and configured maximum"
       ],
       "evidence": [
         "https://docs.jito.wtf/lowlatencytxnsend/",
+        "src/platform/execution/jito-lifecycle-coordinator.ts",
         "src/platform/execution/jito-tip-floor.ts",
         "src/execution.ts",
+        "test/platform/jito-fence.test.mjs",
         "test/platform/jito-tip-floor.test.mjs"
       ],
       "license": "NOT_APPLICABLE_DOCUMENTATION",
