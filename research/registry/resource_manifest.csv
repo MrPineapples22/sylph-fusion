@@ -164,11 +164,11 @@ SRC-162,github_graph_analytics,https://github.com/igraph/python-igraph,source_or
 SRC-163,github_graph_analytics,https://github.com/apache/age,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-163-2026-10-15,d7e2e74c95d1ac941a124437198e19b42b15446d,Apache-2.0 (repository metadata),RESEARCH_ONLY
 SRC-164,github_graph_analytics,https://github.com/graphistry/pygraphistry,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-164-2026-10-15,0c71cc4bb8281ecc1f07de8657c4ec45c737a5c1,BSD-3-Clause (repository metadata),RESEARCH_ONLY
 SRC-165,github_graph_analytics,https://github.com/graphframes/graphframes,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-165-2026-10-15,407773a341a344207127139c098337fa601d0275,Apache-2.0 (repository metadata),RESEARCH_ONLY
-SRC-166,github_supply_chain_ci,https://github.com/semgrep/semgrep,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-167,github_supply_chain_ci,https://github.com/stryker-mutator/stryker-js,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-168,github_supply_chain_ci,https://github.com/renovatebot/renovate,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-169,github_supply_chain_ci,https://github.com/sigstore/cosign,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-170,github_supply_chain_ci,https://github.com/sigstore/rekor,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
+SRC-166,github_supply_chain_ci,https://github.com/semgrep/semgrep,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-166-2026-10-15,51602ad27f09ef9342a5620601de5ef8f572fbc6,LGPL-2.1 (repository metadata; platform/rule licensing may differ),RESEARCH_ONLY
+SRC-167,github_supply_chain_ci,https://github.com/stryker-mutator/stryker-js,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-167-2026-10-15,c931a93237816901f1e9f48da411170beeb3dfca,Apache-2.0 (repository metadata),RESEARCH_ONLY
+SRC-168,github_supply_chain_ci,https://github.com/renovatebot/renovate,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-168-2026-10-15,20767551404255f954569588dc1db726dfe791d6,AGPL-3.0 (repository metadata),RESEARCH_ONLY
+SRC-169,github_supply_chain_ci,https://github.com/sigstore/cosign,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-169-2026-10-15,63d9aa14a70c03e73c7b2a2a9a6501566194f5f4,Apache-2.0 (repository metadata),RESEARCH_ONLY
+SRC-170,github_supply_chain_ci,https://github.com/sigstore/rekor,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-170-2026-10-15,774b191f9f761b3def5808bcd54b48ad88de5f89,Apache-2.0 (repository metadata),RESEARCH_ONLY
 SRC-171,github_supply_chain_ci,https://github.com/aquasecurity/trivy,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-172,github_supply_chain_ci,https://github.com/google/osv-scanner,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-173,github_supply_chain_ci,https://github.com/gitleaks/gitleaks,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
