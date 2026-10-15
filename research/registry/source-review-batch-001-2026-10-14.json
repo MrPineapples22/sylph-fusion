@@ -187,7 +187,7 @@
       ],
       "discoveries": [
         "Swap API V2 recommends /order plus /execute for managed execution and /build for custom instruction composition; /execute is unavailable for /build transactions. SYLPH keeps its /order research adapter quote-only and its /build result as INSTRUCTIONS_ONLY.",
-        "Jupiter RTSE is automatic on /order but opt-in on /build with slippageBps=rtse. The docs specifically list fixed slippage as a reasonable choice for meme-token trades and deterministic testing; SYLPH's build path retains its configured fixed slippage bound.",
+        "The current /build response identifies V0/V1 modes. V1 has no compute-budget instructions or ALTs and returns computeUnitPrice for message config; V0 returns a compute-unit price instruction but no compute-unit limit. Jupiter recommends simulating the assembled transaction, then using 1.2x consumed units capped at 1.4M.",
         "The current /build response identifies transactionVersion as 0 or 1; V1 has no compute-budget instructions or ALTs and instead returns computeUnitPrice for the message config. A client that does not explicitly request and validate the response version can misclassify a V1 build as V0."
       ],
       "patterns": [
@@ -195,7 +195,8 @@
         "validate mint and raw token amounts against their integer width before arithmetic",
         "record quote timestamps and sequential round-trip window",
         "preserve fixed slippage guardrails for the configured V0 build path",
-        "treat V1 message-config compute budgets as a separate compatibility implementation before requesting transactionVersion=1"
+        "treat V1 message-config compute budgets as a separate compatibility implementation before requesting transactionVersion=1",
+        "simulate the complete instruction set with resolved ALTs before choosing the compute limit; derive the fee from the returned micro-lamport price and selected limit"
       ],
       "sylphModules": [
         "terminal/jupiter-research.mjs",
@@ -205,17 +206,17 @@
         "test/jupiter-v2-build.test.mjs",
         "src/platform/signing/veritas-wire-decoder.ts"
       ],
-      "overlap": "SYLPH previously relied on Jupiter’s default V0 response but did not send transactionVersion=0 or validate the response transactionVersion. It could therefore accept a V1 response through a V0-only instruction path, where V1 priority-fee configuration is carried outside the returned ComputeBudget instructions. The path now explicitly requests V0, requires response version 0 (number or canonical string), and records instructionTransactionVersion: 0 while leaving transactionVersion null because no serialized transaction is produced. It remains INSTRUCTIONS_ONLY and live signing/submission is quarantined.",
+      "overlap": "SYLPH previously relied on Jupiter’s default V0 response but did not send transactionVersion=0 or validate the response transactionVersion. It could therefore accept a V1 response through a V0-only instruction path, where V1 priority-fee configuration is carried outside the returned ComputeBudget instructions. The path now explicitly requests V0, requires response version 0 (number or canonical string), and records instructionTransactionVersion: 0 while leaving transactionVersion null because no serialized transaction is produced. It remains INSTRUCTIONS_ONLY and live signing/submission is quarantined. It now simulates the full V0 instruction set with response ALTs at a 1.4M-unit ceiling, rejects simulation errors or incomplete usage, inserts a 1.2x compute-unit limit capped at 1.4M, and computes the priority fee with integer ceiling from the V0 CU-price instruction and selected limit. The paper build uses this route-specific fee instead of the blanket configured maximum; route evidence emits amounts as decimal strings.",
       "risks": [
-        "V1 message config, V1 wallet signing, and V1 finalized transaction reconciliation remain unsupported in the local execution path.",
-        "The API response remains provider evidence; no live API response or authorized execution was exercised.",
-        "Fixed slippage does not use Jupiter RTSE, and returned instruction effects remain subject to local signing/firewall validation."
+        "V1 message config, V1 wallet signing, and V1 finalized transaction reconciliation remain unsupported.",
+        "Simulation is a provider/RPC snapshot and can differ from landing state; it does not prove quote fill, landing, or realized PnL.",
+        "No live Jupiter API or RPC simulation was run; integration evidence uses deterministic response and simulation fixtures."
       ],
       "validation": [
         "Explicitly request transactionVersion=0 and require response transactionVersion 0; reject missing, unknown, or V1 versions.",
-        "Fixture valid no-ALT and ALT responses, malformed instruction encodings, over-cap compute price, and quote/instruction mismatches.",
-        "Keep quote-only and instruction-only shapes separate and never pass research quote objects to the signer.",
-        "Use V1 only after message-config, versioned decoder, signer, and finalized read-path support are complete and independently validated."
+        "Simulate the assembled instructions and verified ALT state at the maximum CU limit; reject transaction errors, absent units, zero units, and usage outside the supported range.",
+        "Set the final limit to ceil(1.2 x simulated units), capped at 1.4M, and calculate priority fee from the exact V0 compute-unit price with integer ceiling.",
+        "Keep amount, output-threshold, signer, compute-fee-cap, and lookup-table checks passing; use confirmed fills for realized execution accounting."
       ],
       "evidence": [
         "https://github.com/jup-ag/docs/blob/main/api-reference/swap/order.mdx",
@@ -229,7 +230,8 @@
         "https://developers.jup.ag/docs/swap/build",
         "https://developers.jup.ag/docs/swap/advanced/transaction-versions",
         "src/execution.ts",
-        "test/jupiter-v2-build.test.mjs"
+        "test/jupiter-v2-build.test.mjs",
+        "https://developers.jup.ag/docs/swap/build#simulate-compute-unit-limit"
       ],
       "license": "NOT_APPLICABLE_DOCUMENTATION",
       "decision": "V0_BUILD_RESPONSE_VERSION_GUARD; SIGNING_AND_EXECUTION_UNVERIFIED"

@@ -54,6 +54,10 @@ function response(overrides = {}) {
   };
 }
 
+function mockRpc(simulation = { err: null, unitsConsumed: 100_000 }) {
+  return { connection: { simulateTransaction: async () => ({ value: simulation }) } };
+}
+
 test('V2 Router build sends exact-in sell request with API key and accepts no-ALT result', async t => {
   let requestUrl;
   let requestHeaders;
@@ -62,7 +66,7 @@ test('V2 Router build sends exact-in sell request with API key and accepts no-AL
     requestHeaders = init.headers;
     return new Response(JSON.stringify(response()));
   });
-  const executor = new Executor(cfg, {}, {}, key);
+  const executor = new Executor(cfg, mockRpc(), {}, key);
   const result = await executor.graduatedSell(mint, 1000n, 1000);
   assert.equal(requestUrl.pathname, '/swap/v2/build');
   assert.equal(requestUrl.searchParams.get('inputMint'), mint);
@@ -75,7 +79,10 @@ test('V2 Router build sends exact-in sell request with API key and accepts no-AL
   assert.equal(result.output, 50000n);
   assert.equal(result.minimumOutput, 45000n);
   assert.equal(result.alts.length, 0);
-  assert.equal(result.instructions.length, 1);
+  assert.equal(result.instructions.length, 2);
+  assert.equal(result.instructions[0].programId.toBase58(), 'ComputeBudget111111111111111111111111111111');
+  assert.equal(result.instructions[0].data[0], 2);
+  assert.equal(result.instructions[0].data.readUInt32LE(1), 120_000);
   assert.equal(result.lastValidBlockHeight, 300);
   assert.deepEqual(result.routeEvidence, {
     router: 'JUPITER',
@@ -86,6 +93,10 @@ test('V2 Router build sends exact-in sell request with API key and accepts no-AL
     instructionTransactionVersion: 0,
     transactionVersion: null,
     transactionState: 'INSTRUCTIONS_ONLY',
+    simulatedComputeUnits: 100_000,
+    computeUnitLimit: 120_000,
+    computeUnitPriceMicroLamports: '0',
+    priorityFeeLamports: '0',
   });
   assert.ok(Number.isSafeInteger(result.quoteTimestamp));
 });
@@ -96,7 +107,7 @@ test('V2 build preserves normalized router path and fee denomination as research
     inAmount: '1000', outAmount: '50000', feeAmount: '7', feeMint: nativeMint,
   }, percent: 100 }] });
   t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify(route)));
-  const executor = new Executor(cfg, {}, {}, key);
+  const executor = new Executor(cfg, mockRpc(), {}, key);
   const result = await executor.graduatedSell(mint, 1000n, 1000);
   assert.equal(result.routeEvidence.routePlan[0].ammKey, 'amm-fixture');
   assert.equal(result.routeEvidence.routePlan[0].feeMint, nativeMint);
@@ -113,10 +124,15 @@ test('V2 Router build retains only bounded compute-unit-price instructions', asy
     data: price.toString('base64'),
   };
   t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify(response({ computeBudgetInstructions: [computeIx] }))));
-  const executor = new Executor(cfg, {}, {}, key);
+  const executor = new Executor(cfg, mockRpc(), {}, key);
   const result = await executor.graduatedSell(mint, 1000n, 1000);
-  assert.equal(result.instructions[0].programId.toBase58(), computeIx.programId);
-  assert.equal(result.instructions.length, 2);
+  assert.equal(result.instructions[0].programId.toBase58(), 'ComputeBudget111111111111111111111111111111');
+  assert.equal(result.instructions[0].data[0], 2);
+  assert.equal(result.instructions[1].programId.toBase58(), computeIx.programId);
+  assert.equal(result.instructions.length, 3);
+  assert.equal(result.priorityFeeLamports, 120n);
+  assert.equal(result.routeEvidence.priorityFeeLamports, '120');
+  assert.equal(result.routeEvidence.computeUnitPriceMicroLamports, '1000');
 });
 
 test('V2 Router build rejects unexpected side instructions and priority fee over cap', async t => {
@@ -130,7 +146,7 @@ test('V2 Router build rejects unexpected side instructions and priority fee over
   ];
   for (const fixture of fixtures) {
     t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify(fixture)));
-    const executor = new Executor(cfg, {}, {}, key);
+    const executor = new Executor(cfg, mockRpc(), {}, key);
     await assert.rejects(executor.graduatedSell(mint, 1000n, 1000), /unsupported|exceeds configured cap/);
     t.mock.restoreAll();
   }
@@ -152,7 +168,7 @@ test('V2 Router build rejects configured requests without an API key before netw
 test('V2 Router build rejects absent or malformed blockhash expiry metadata', async t => {
   for (const blockhashWithMetadata of [undefined, { blockhash: Array(31).fill(0), lastValidBlockHeight: 300 }, { blockhash: Array(32).fill(0), lastValidBlockHeight: 0 }]) {
     t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify(response({ blockhashWithMetadata }))));
-    const executor = new Executor(cfg, {}, {}, key);
+    const executor = new Executor(cfg, mockRpc(), {}, key);
     await assert.rejects(executor.graduatedSell(mint, 1000n, 1000), /invalid or unsupported Jupiter V2 build response/);
     t.mock.restoreAll();
   }
@@ -165,13 +181,27 @@ test('V2 Router build rejects V1 responses in the V0-only instruction path', asy
     addressesByLookupTableAddress: {},
     computeUnitPrice: '1000',
   }))));
-  const executor = new Executor(cfg, {}, {}, key);
+  const executor = new Executor(cfg, mockRpc(), {}, key);
   await assert.rejects(executor.graduatedSell(mint, 1000n, 1000), /invalid or unsupported Jupiter V2 build response/);
+});
+
+test('V2 Router build fails closed when compute simulation errors or omits units consumed', async t => {
+  for (const simulation of [
+    { err: { InstructionError: [0, 'Custom'] }, unitsConsumed: 50_000 },
+    { err: null, unitsConsumed: undefined },
+    { err: null, unitsConsumed: 0 },
+    { err: null, unitsConsumed: 1_400_001 },
+  ]) {
+    t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify(response())));
+    const executor = new Executor(cfg, mockRpc(simulation), {}, key);
+    await assert.rejects(executor.graduatedSell(mint, 1000n, 1000), /compute simulation failed or returned incomplete usage/);
+    t.mock.restoreAll();
+  }
 });
 
 test('V2 Router build rejects minimum output that does not equal the requested slippage bound', async t => {
   t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify(response({ otherAmountThreshold: '44999' }))));
-  const executor = new Executor(cfg, {}, {}, key);
+  const executor = new Executor(cfg, mockRpc(), {}, key);
   await assert.rejects(executor.graduatedSell(mint, 1000n, 1000), /invalid Jupiter V2 minimum output/);
 });
 
@@ -185,7 +215,7 @@ test('V2 Router build rejects response economics that disagree with Jupiter rout
   ];
   for (const fixture of fixtures) {
     t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify(fixture)));
-    const executor = new Executor(cfg, {}, {}, key);
+    const executor = new Executor(cfg, mockRpc(), {}, key);
     await assert.rejects(executor.graduatedSell(mint, 1000n, 1000), /invalid or unsupported|do not match/);
     t.mock.restoreAll();
   }
@@ -201,7 +231,7 @@ test('graduated paper settlement credits Jupiter minimum output less configured 
     SLIPPAGE_BPS: 1000,
     PANIC_SLIPPAGE_BPS: 1000,
   });
-  const executor = new Executor(settleCfg, { connection: {} }, {}, key);
+  const executor = new Executor(settleCfg, mockRpc(), {}, key);
   t.mock.method(executor, 'tip', () => 0);
   const snapshot = {
     at: Date.now(),
@@ -211,6 +241,7 @@ test('graduated paper settlement credits Jupiter minimum output less configured 
   };
   const built = await executor.build(snapshot, 'sell', 1_000n, key.publicKey.toBase58(), 0, 'test', false);
   const fees = BigInt(built.overhead.baseFeeLamports) + BigInt(built.overhead.priorityLamports) + BigInt(built.overhead.tipLamports);
+  assert.equal(built.overhead.priorityLamports, '0');
   assert.equal(built.quotedOutput, 50_000n);
   assert.equal(built.solDelta + fees, 45_000n);
   assert.equal(built.pending.lastValidBlockHeight, 300);
@@ -225,7 +256,7 @@ test('graduated paper build rechecks source-snapshot freshness after quote and A
     JUPITER_API_KEY: 'unit-test-key',
     QUOTE_MAX_AGE_MS: 250,
   });
-  const executor = new Executor(shortTtl, {}, {}, key);
+  const executor = new Executor(shortTtl, mockRpc(), {}, key);
   t.mock.method(executor, 'graduatedSell', async () => {
     await new Promise(resolve => setTimeout(resolve, 275));
     return { instructions: [], alts: [], output: 50_000n, quoteTimestamp: Date.now(), lastValidBlockHeight: 300 };

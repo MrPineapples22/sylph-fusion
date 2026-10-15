@@ -1068,49 +1068,54 @@
       "catalogSourceIds": [
         "SRC-258"
       ],
-      "area": "Jupiter V2 build response version pinning",
+      "area": "Jupiter V2 V0 build version, simulation, and compute-fee boundary",
       "sourceToPipeline": {
         "upstreamFindings": [
           "Current Jupiter /build docs identify response transactionVersion as 0 or 1 and default requests to V0.",
           "For V1, computeBudgetInstructions are empty, ALTs are absent, and computeUnitPrice must be translated into message configuration; that response shape is not compatible with SYLPH’s V0 instruction decoder.",
-          "The /build flow returns instructions and cannot use Jupiter /execute; signing and landing remain caller-controlled."
+          "The /build flow returns instructions and cannot use Jupiter /execute; signing and landing remain caller-controlled.",
+          "Jupiter recommends simulating the assembled /build instruction set at a 1.4M CU cap, then sizing the compute limit to 1.2x consumed units, capped at 1.4M; /build returns a unit price instruction but not a CU limit."
         ],
         "relevantModules": [
           "src/execution.ts",
           "src/platform/signing/veritas-wire-decoder.ts",
           "test/jupiter-v2-build.test.mjs"
         ],
-        "existingOverlap": "Executor.graduatedSell previously relied on the default transaction version but did not send transactionVersion=0 or check the returned version. It now requests V0 and rejects responses unless transactionVersion is 0 or the canonical string \"0\". Evidence exposes instructionTransactionVersion: 0 while transactionVersion remains null because the method does not serialize a transaction.",
+        "existingOverlap": "Executor.graduatedSell previously relied on the default transaction version but did not send transactionVersion=0 or check the returned version. It now requests V0 and rejects responses unless transactionVersion is 0 or the canonical string \"0\". Evidence exposes instructionTransactionVersion: 0 while transactionVersion remains null because the method does not serialize a transaction. The builder now resolves and verifies ALTs before compiling the exact instruction set for an unsigned confirmed-commit simulation. It inserts the capped 1.2x CU limit and computes route priority fee by ceiling(microLamports * selectedLimit / 1,000,000). Paper settlement uses this route fee instead of MAX_PRIORITY_LAMPORTS. Route evidence keeps fee fields as strings for safe serialization.",
         "risks": [
-          "This guard preserves V0-only behavior and does not enable V1 transaction building or signing.",
-          "No live Jupiter API response, live signing, submission, or settlement was exercised.",
-          "Provider response validation does not prove the swap instruction’s complete economic effects; signing remains quarantined."
+          "Simulation uses current RPC state and does not guarantee the route will land or realize the simulated output.",
+          "Simulation and fee derivation remain V0-only; V1 message configuration is still unsupported.",
+          "No live Jupiter service, signing, submission, or finalized transaction was exercised."
         ],
         "validationRequirements": [
           "Prove the request pins V0 and an explicit V1 response is rejected before it enters the instruction-only route.",
           "Keep existing amount, output-threshold, instruction-data, signer, compute-fee, and lookup-table checks passing.",
-          "Do not report a transaction version as serialized when only instructions are returned."
+          "Do not report a transaction version as serialized when only instructions are returned.",
+          "Prove the response price and simulated CU limit produce the exact integer-ceiling priority fee, and that the result remains under the configured cap."
         ]
       },
       "implementation": {
-        "change": "Pin Jupiter /build requests to transactionVersion=0, validate response transactionVersion, and record instructionTransactionVersion separately from the absent serialized transaction version. Added a regression that first accepted a V1-shaped response and now rejects it.",
+        "change": "Pin Jupiter /build requests to transactionVersion=0, validate response transactionVersion, and record instructionTransactionVersion separately from the absent serialized transaction version. Added a regression that first accepted a V1-shaped response and now rejects it. The V0 builder now simulates the assembled instruction set with verified ALTs, chooses a 1.2x compute limit capped at 1.4M, and uses the resulting integer-ceiling priority fee in the paper cost projection instead of the configured maximum.",
         "files": [
           "src/execution.ts",
           "dist/execution.js",
           "test/jupiter-v2-build.test.mjs"
         ],
         "validation": {
-          "redTest": "New V1-response test failed before the guard because the V0-only path accepted the response.",
+          "redV1ResponseTest": "The explicit V1-response regression failed before version pinning because the old V0-only path accepted the V1-shaped result.",
           "pinnedBuild": "TypeScript build using the pinned scratch dependency installation passed.",
-          "focusedTests": "node --test test/jupiter-v2-build.test.mjs — 11/11 passed.",
-          "broaderCoreAttempt": "The core suite was attempted in the selective pinned scratch copy but one source-inventory test could not run because that scratch copy omitted the config directory; no core-suite pass is claimed."
+          "focusedTests": "node --test test/jupiter-v2-build.test.mjs — 12/12 passed, including exact CU-price math, 1.2x CU limit, and simulation fail-closed cases.",
+          "platformSuite": "node --test --test-isolation=none test/platform/*.test.mjs — 1,061/1,061 passed across 23 suites after the compute-simulation patch.",
+          "liveIntegration": "No live Jupiter API or RPC simulation, signing, or transaction submission was performed."
         },
         "authorityImpact": "Request/response compatibility guard only. No signing, broadcast, custody, capital authorization, or risk-limit changes; no live process changed.",
-        "status": "VERIFIED_JUPITER_V0_RESPONSE_VERSION_GUARD; LIVE_EXECUTION_AND_V1_SUPPORT_REMAIN_UNVERIFIED"
+        "status": "VERIFIED_V0_BUILD_SIMULATION_AND_PRIORITY_FEE_ESTIMATE; LIVE_EXECUTION_AND_V1_SUPPORT_REMAIN_UNVERIFIED"
       },
       "evidence": [
         "https://developers.jup.ag/docs/swap/build",
         "https://developers.jup.ag/docs/swap/advanced/transaction-versions",
+        "test/jupiter-v2-build.test.mjs",
+        "https://developers.jup.ag/docs/swap/build#simulate-compute-unit-limit",
         "test/jupiter-v2-build.test.mjs"
       ]
     }

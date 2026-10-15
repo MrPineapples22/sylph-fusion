@@ -127,3 +127,10 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - `SRC-258`: current official Jupiter docs specify V0/V1 `/build` response modes and document that V1 carries compute price in message config with empty compute-budget instructions and no ALTs.
 - SYLPH now requests `transactionVersion=0`, rejects a response unless it also identifies V0, and distinguishes the instruction format from a serialized transaction in its evidence type. The regression failed before the guard by accepting a V1-shaped response.
 - Pinned TypeScript build passed; focused Jupiter V2 build tests passed 11/11. A broader core-suite attempt in the selective scratch copy hit a missing `config` directory in a source-inventory test, so no core-suite pass is claimed. No live Jupiter API or signing/submission was exercised.
+
+
+## Jupiter V0 simulation and cost follow-up (2026-10-15)
+
+- The V0 `/build` adapter now simulates the complete instruction set with the verified lookup tables at a 1.4M compute-unit ceiling, fails closed on simulation error or incomplete usage, and adds a final CU limit of 1.2x measured usage capped at 1.4M.
+- Priority fee is computed with integer ceiling from Jupiter’s micro-lamport CU price and the selected limit; the paper projection uses this route fee rather than the configured maximum. Missing route component data remains explicit, and serialized evidence uses decimal strings.
+- Focused Jupiter V2 tests passed 12/12 and the pinned TypeScript build passed. The full platform suite passed 1,061/1,061 across 23 suites. Simulation used deterministic mocked RPC results; no live Jupiter/RPC call or transaction signing/submission was performed.

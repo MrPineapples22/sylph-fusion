@@ -1,5 +1,5 @@
 import { JitoLifecycleCoordinator } from './platform/execution/jito-lifecycle-coordinator.js';
-import { Keypair, PublicKey, TransactionInstruction, type AddressLookupTableAccount, type VersionedTransactionResponse } from '@solana/web3.js';
+import { ComputeBudgetProgram, Keypair, PublicKey, TransactionInstruction, TransactionMessage, VersionedTransaction, type AddressLookupTableAccount, type VersionedTransactionResponse } from '@solana/web3.js';
 import { PUMP_SDK } from '@pump-fun/pump-sdk';
 import { ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, NATIVE_MINT, getAssociatedTokenAddressSync } from '@solana/spl-token';
 import BN from 'bn.js';
@@ -16,6 +16,7 @@ import { globalProviderHealthTracker, type ProviderHealthTracker } from './platf
 
 const JUPITER_PROGRAM = new PublicKey('JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4');
 const COMPUTE_BUDGET_PROGRAM = new PublicKey('ComputeBudget111111111111111111111111111111');
+const JUPITER_MAX_COMPUTE_UNITS = 1_400_000;
 const JUPITER_ROUTE_DISCRIMINATORS = new Set([
   'e517cb977ae3ad2a', // route
   'c1209b3341d69c81', // sharedAccountsRoute
@@ -43,6 +44,10 @@ export interface JupiterBuildEvidence {
   readonly instructionTransactionVersion: 0;
   readonly transactionVersion: null;
   readonly transactionState: 'INSTRUCTIONS_ONLY';
+  readonly simulatedComputeUnits: number;
+  readonly computeUnitLimit: number;
+  readonly computeUnitPriceMicroLamports: string;
+  readonly priorityFeeLamports: string;
 }
 
 function parseJupiterRoutePlan(value: unknown): readonly JupiterRouteHopEvidence[] | null {
@@ -189,7 +194,7 @@ export class Executor {
     }
   }
   private tip(panic: boolean) { return Math.min(this.cfg.MAX_TIP_LAMPORTS, Math.max(this.cfg.MIN_TIP_LAMPORTS, this.floor * (panic ? 2 : 1))); }
-  async graduatedSell(mint: string, amount: bigint, slippage: number): Promise<{ instructions: TransactionInstruction[]; alts: AddressLookupTableAccount[]; output: bigint; minimumOutput: bigint; quoteTimestamp: number; lastValidBlockHeight: number; routeEvidence: JupiterBuildEvidence }> {
+  async graduatedSell(mint: string, amount: bigint, slippage: number): Promise<{ instructions: TransactionInstruction[]; alts: AddressLookupTableAccount[]; output: bigint; minimumOutput: bigint; quoteTimestamp: number; lastValidBlockHeight: number; priorityFeeLamports: bigint; routeEvidence: JupiterBuildEvidence }> {
     if (!this.cfg.JUPITER_URL) throw new Error('Jupiter routing adapter is not explicitly configured');
     if (!this.cfg.JUPITER_API_KEY) throw new Error('Jupiter Swap API V2 requires an explicitly configured API key');
     if (amount <= 0n || !Number.isSafeInteger(slippage) || slippage < 0 || slippage > 10_000) throw new Error('invalid Jupiter quote inputs');
@@ -237,15 +242,18 @@ export class Executor {
         return { pubkey: new PublicKey(a.pubkey), isSigner: a.isSigner, isWritable: a.isWritable };
       }) });
     };
+    if (build.computeBudgetInstructions.length > 1) throw new Error('unsupported Jupiter V2 compute budget instruction');
     const computeBudget: TransactionInstruction[] = build.computeBudgetInstructions.map(decode);
+    let computeUnitPriceMicroLamports = 0n;
     for (const ix of computeBudget) {
       if (!ix.programId.equals(COMPUTE_BUDGET_PROGRAM) || ix.keys.length !== 0 || ix.data.length !== 9 || ix.data[0] !== 3) {
         throw new Error('unsupported Jupiter V2 compute budget instruction');
       }
       const microLamports = ix.data.readBigUInt64LE(1);
-      if ((microLamports * 1_400_000n + 999_999n) / 1_000_000n > BigInt(this.cfg.MAX_PRIORITY_LAMPORTS)) {
+      if ((microLamports * BigInt(JUPITER_MAX_COMPUTE_UNITS) + 999_999n) / 1_000_000n > BigInt(this.cfg.MAX_PRIORITY_LAMPORTS)) {
         throw new Error('Jupiter V2 priority fee exceeds configured cap');
       }
+      computeUnitPriceMicroLamports = microLamports;
     }
     const setup: TransactionInstruction[] = build.setupInstructions.map(decode);
     if (setup.some(ix => !ix.programId.equals(ASSOCIATED_TOKEN_PROGRAM_ID) || !ix.keys[0]?.pubkey.equals(this.key.publicKey) || !ix.keys[2]?.pubkey.equals(this.key.publicKey))) throw new Error('unexpected Jupiter setup');
@@ -269,13 +277,38 @@ export class Executor {
       if (addresses.some(value => !liveAddresses.has(value))) throw new Error('Jupiter V2 lookup table contents changed');
       return table.value;
     }));
+    const recentBlockhash = new PublicKey(Buffer.from(build.blockhashWithMetadata.blockhash)).toBase58();
+    const simulationMessage = new TransactionMessage({
+      payerKey: this.key.publicKey,
+      recentBlockhash,
+      instructions: [
+        ComputeBudgetProgram.setComputeUnitLimit({ units: JUPITER_MAX_COMPUTE_UNITS }),
+        ...computeBudget,
+        ...instructions,
+      ],
+    }).compileToV0Message(alts);
+    const simulation = await this.rpc.connection.simulateTransaction(new VersionedTransaction(simulationMessage), {
+      commitment: 'confirmed',
+      replaceRecentBlockhash: true,
+    });
+    const reportedComputeUnits = simulation?.value?.unitsConsumed;
+    if (!simulation?.value || simulation.value.err !== null || typeof reportedComputeUnits !== 'number' ||
+        !Number.isSafeInteger(reportedComputeUnits) || reportedComputeUnits <= 0 || reportedComputeUnits > JUPITER_MAX_COMPUTE_UNITS) {
+      throw new Error('Jupiter V2 compute simulation failed or returned incomplete usage');
+    }
+    const simulatedComputeUnits = reportedComputeUnits;
+    const computeUnitLimit = Math.min(Math.ceil(simulatedComputeUnits * 1.2), JUPITER_MAX_COMPUTE_UNITS);
+    const priorityFeeLamports = (computeUnitPriceMicroLamports * BigInt(computeUnitLimit) + 999_999n) / 1_000_000n;
+    if (priorityFeeLamports > BigInt(this.cfg.MAX_PRIORITY_LAMPORTS)) throw new Error('Jupiter V2 priority fee exceeds configured cap');
+    const computeUnitLimitInstruction = ComputeBudgetProgram.setComputeUnitLimit({ units: computeUnitLimit });
     return {
-      instructions: [...computeBudget, ...instructions],
+      instructions: [computeUnitLimitInstruction, ...computeBudget, ...instructions],
       alts,
       output: BigInt(build.outAmount),
       minimumOutput,
       quoteTimestamp,
       lastValidBlockHeight: build.blockhashWithMetadata.lastValidBlockHeight,
+      priorityFeeLamports,
       routeEvidence: {
         router: 'JUPITER',
         orderMode: 'ExactIn',
@@ -285,6 +318,10 @@ export class Executor {
         instructionTransactionVersion: 0,
         transactionVersion: null,
         transactionState: 'INSTRUCTIONS_ONLY',
+        simulatedComputeUnits,
+        computeUnitLimit,
+        computeUnitPriceMicroLamports: String(computeUnitPriceMicroLamports),
+        priorityFeeLamports: String(priorityFeeLamports),
       },
     };
   }
@@ -296,6 +333,7 @@ export class Executor {
     let instructions: TransactionInstruction[], alts: AddressLookupTableAccount[] = [];
     let output: bigint;
     let minimumOutput: bigint | undefined;
+    let priorityLamports = BigInt(this.cfg.MAX_PRIORITY_LAMPORTS);
     let routeEvidence: JupiterBuildEvidence | undefined;
     let quoteTimestamp = s.at;
     let lastValidBlockHeight = 0;
@@ -305,6 +343,7 @@ export class Executor {
       if (Date.now() - s.at > this.cfg.QUOTE_MAX_AGE_MS) throw new Error('quote expired');
       instructions = route.instructions; alts = route.alts; output = route.output;
       minimumOutput = route.minimumOutput;
+      priorityLamports = route.priorityFeeLamports;
       routeEvidence = route.routeEvidence;
       quoteTimestamp = route.quoteTimestamp;
       lastValidBlockHeight = route.lastValidBlockHeight;
@@ -320,7 +359,7 @@ export class Executor {
     this.#assertPaperBuild();
     const tip = this.tip(panic);
     const baseFee = 5000n;
-    const fee = BigInt(tip + this.cfg.MAX_PRIORITY_LAMPORTS) + baseFee;
+    const fee = BigInt(tip) + priorityLamports + baseFee;
     const executedSol = side === 'sell' ? (minimumOutput ?? mulBps(output, 10_000 - slippage)) : 0n;
     const slippageLamports = side === 'sell' ? output - executedSol : 0n;
     return {
@@ -332,7 +371,7 @@ export class Executor {
       ...(routeEvidence === undefined ? {} : { routeEvidence }),
       overhead: {
         tipLamports: String(tip),
-        priorityLamports: String(this.cfg.MAX_PRIORITY_LAMPORTS),
+        priorityLamports: String(priorityLamports),
         rentLamports: side === 'buy' ? '3000000' : '0',
         slippageBps: slippage,
         slippageLamports: String(slippageLamports),
