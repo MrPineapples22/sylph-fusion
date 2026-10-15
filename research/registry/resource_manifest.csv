@@ -257,7 +257,7 @@ SRC-255,docs_solana_trading,https://solana.com/docs/core/fees/fee-structure,docu
 SRC-256,docs_solana_trading,https://solana.com/docs/tools/production-readiness,documentation_review,P0,NOT_REVIEWED,,,,UNASSESSED
 SRC-257,docs_solana_trading,https://docs.jito.wtf/lowlatencytxnsend/,documentation_review,P0,NOT_REVIEWED,,,,UNASSESSED
 SRC-258,docs_solana_trading,https://developers.jup.ag/docs/swap/index.md,documentation_review,P0,NOT_REVIEWED,,,,UNASSESSED
-SRC-259,docs_solana_trading,https://github.com/pump-fun/pump-public-docs,documentation_review,P0,PARTIAL_REVIEW,EV-PUMP-SWAP-READER-20261015,8145fdfd9e25c859a9937bed900c2705497eb058,NOT_REVIEWED,CANONICAL_PUMPSWAP_SOL_POOL_READ_PATH_ADDED; EXECUTION_REMAINS_UNVERIFIED
+SRC-259,docs_solana_trading,https://github.com/pump-fun/pump-public-docs,documentation_review,P0,PARTIAL_REVIEW,EV-PUMP-SWAP-READER-20261015,7b93c57ea573ea93f7eea5ee9dbb247b4427dbf1,NOT_REVIEWED,CANONICAL_PUMPSWAP_SOL_POOL_READ_AND_SDK_ALIGNED_SIMULATED_SELL_QUOTE; LIVE_EXECUTION_REMAINS_UNVERIFIED
 SRC-260,docs_rea_reverse_engineering,https://github.com/morluto/rea/blob/main/docs/installation.md,source_or_document_review,P0,NOT_REVIEWED,,,,UNASSESSED
 SRC-261,docs_rea_reverse_engineering,https://github.com/morluto/rea/blob/main/docs/javascript-application-workflows.md,source_or_document_review,P0,NOT_REVIEWED,,,,UNASSESSED
 SRC-262,docs_rea_reverse_engineering,https://github.com/morluto/rea/blob/main/docs/browser-observation.md,source_or_document_review,P0,NOT_REVIEWED,,,,UNASSESSED

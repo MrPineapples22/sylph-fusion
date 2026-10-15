@@ -228,11 +228,13 @@
       "discoveries": [
         "Official docs describe new Pump curve v3 and PumpSwap v2 instruction families, multi-hop swaps, pump-token quote mints and fee sweeps; the lifecycle is broader than a SOL-only bonding curve followed by one AMM.",
         "PumpSwap effective quote reserves are the quote-vault balance plus signed virtual_quote_reserves; docs explicitly warn the signed reserve may be negative and raw vault balance alone is not the quote reserve.",
-        "Fees can accrue on curves/pools and be swept separately; synthetic migration behavior and creator/holder-reward fee variants affect interpretation of trade events and quote/accounting state."
+        "Fees can accrue on curves/pools and be swept separately; synthetic migration behavior and creator/holder-reward fee variants affect interpretation of trade events and quote/accounting state. The pinned PumpSwap SDK rounds LP, protocol and creator sell fees separately, so a combined-fee multiplication can produce a different net quote."
       ],
       "patterns": [
         "version account/instruction decoders",
         "model quote mint and reserve signs explicitly",
+        "preserve raw and signed virtual reserves alongside effective reserves",
+        "round each protocol fee component as the venue SDK does and check real quote-vault sufficiency",
         "separate trade events from fee-sweep events",
         "bind pool/lifecycle state to slot and canonical account identity",
         "surface bounded pool observation provenance and failure states in the operator position view"
@@ -258,6 +260,7 @@
         "differentially decode versioned raw transactions/account fixtures",
         "add signed i128, non-SOL quote mint, fee accrual/sweep and synthetic-migration fixtures",
         "derive post-migration executable quotes from verified pool state and test sell-side feasibility",
+        "differentially compare simulated sell proceeds against the pinned PumpSwap SDK using identical reserves and fee components",
         "keep simulation valuation unknown when pool identity, reserves, effective fees, SOL quote mint or source slot are missing",
         "run protocol golden vectors and deterministic account-context, owner, vault-mint and signed-reserve regression tests before expanding runtime execution support"
       ],
@@ -277,10 +280,12 @@
         "test/platform/pump-swap-pool-reader.test.mjs",
         "test/dashboard.test.mjs",
         "isolated npm ci + TypeScript engine build; focused reader, bridge and dashboard regressions: 19 passed, 0 failed; full platform suite: 1,053 passed, 0 failed (2026-10-15)",
-        "commit 8145fdf adds canonical PumpSwap vault ATA and token-authority checks; test rejects a correct-mint token account controlled by the wrong authority"
+        "commit 8145fdf adds canonical PumpSwap vault ATA and token-authority checks; test rejects a correct-mint token account controlled by the wrong authority",
+        "commit 7b93c57 adds raw/signed quote-reserve and fee-component propagation; deterministic sell regression exactly matches pinned SDK sellBaseInput() output",
+        "npm run build:engine passed; focused PumpSwap, bridge, graduated-exit and dashboard suite: 19 passed, 0 failed; npm run test:platform: 1,053 passed, 0 failed (2026-10-15)"
       ],
       "license": "NOT_REVIEWED",
-      "decision": "CANONICAL_PUMPSWAP_SOL_POOL_READ_PATH_ADDED; EXECUTION_REMAINS_UNVERIFIED"
+      "decision": "CANONICAL_PUMPSWAP_SOL_POOL_READ_AND_SDK_ALIGNED_SIMULATED_SELL_QUOTE; LIVE_EXECUTION_REMAINS_UNVERIFIED"
     }
   ],
   "safety": {
