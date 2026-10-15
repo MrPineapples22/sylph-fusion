@@ -54,10 +54,10 @@ SRC-052,github_dex_swaps_launches,https://github.com/MeteoraAg/damm-v2-go,source
 SRC-053,github_dex_swaps_launches,https://github.com/MeteoraAg/meteora-invent,source_or_document_review,P1,PARTIAL_REVIEW,SRC-053-PINNED-2026-10-14,dd77ef3d5aede3f0ff21d566d052097200417f5e,MIT_REPOSITORY_ISC_PACKAGE_REVIEW_REQUIRED,CONFIG_REFERENCE_ONLY_LICENSE_CONFLICT
 SRC-054,github_dex_swaps_launches,https://github.com/orca-so/account-microscope,source_or_document_review,P1,PARTIAL_REVIEW,SRC-054-PINNED-2026-10-14,f7d0575d37225cb4b4caabbccf3efa8a29b54c4a,LICENSE_NOT_FOUND_REVIEW_REQUIRED,READ_ONLY_REFERENCE_NO_LICENSE_CLEARANCE
 SRC-055,github_dex_swaps_launches,https://github.com/jup-ag/metis-binary,source_or_document_review,P1,PARTIAL_REVIEW,SRC-055-PINNED-2026-10-14,f7e6cbd8c0a6ca9314ff6fc6c9887c4ad258bdb,LICENSE_NOT_FOUND_BINARY_DISTRIBUTION_UNREVIEWED,BINARY_UNVERIFIED_NO_RUNTIME_ADOPTION
-SRC-056,github_dex_swaps_launches,https://github.com/jup-ag/jupiter-quote-api-node,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-057,github_dex_swaps_launches,https://github.com/jup-ag/rfq-webhook-toolkit,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-058,github_dex_swaps_launches,https://github.com/MeteoraAg/dynamic-fee-sharing,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-059,github_dex_swaps_launches,https://github.com/0xfnzero/sol-trade-sdk,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
+SRC-056,github_dex_swaps_launches,https://github.com/jup-ag/jupiter-quote-api-node,source_or_document_review,P1,PARTIAL_REVIEW,SRC-056-PINNED-2026-10-14,6dbd33abfaa1f495f28ad122b3c06edf4ce28360,PACKAGE_DECLARES_MIT_ROOT_LICENSE_FILE_NOT_FOUND,LEGACY_V6_QUOTE_ONLY_NO_SIGNER
+SRC-057,github_dex_swaps_launches,https://github.com/jup-ag/rfq-webhook-toolkit,source_or_document_review,P1,PARTIAL_REVIEW,SRC-057-PINNED-2026-10-14,3aa4fce515d4b5827ee2d48f08041ea706d911cd,MIT,RFQ_RESEARCH_ONLY_NO_ENDPOINT
+SRC-058,github_dex_swaps_launches,https://github.com/MeteoraAg/dynamic-fee-sharing,source_or_document_review,P1,PARTIAL_REVIEW,SRC-058-PINNED-2026-10-14,3e327c1ab085246612d28da21e1a78c7008119fe,LICENSE_NOT_FOUND_PACKAGE_DECLARES_ISC_REVIEW_REQUIRED,FEE_CLAIM_RESEARCH_ONLY_NO_CUSTODY
+SRC-059,github_dex_swaps_launches,https://github.com/0xfnzero/sol-trade-sdk,source_or_document_review,P1,PARTIAL_REVIEW,SRC-059-PINNED-2026-10-14,4f2bd75c60ceea128ec773db533068c14a55c1fa,MIT,STATIC_REVIEW_ONLY_NO_EXECUTION_ADOPTION
 SRC-060,github_dex_swaps_launches,https://github.com/franco-bianco/solanaswap-go,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-061,github_dex_swaps_launches,https://github.com/mooncitydev/solana-copytrading-bot,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-062,github_dex_swaps_launches,https://github.com/TreeCityWes/Pump-Fun-Trading-Bot-Solana,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED

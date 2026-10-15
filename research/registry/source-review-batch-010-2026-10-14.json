@@ -2,13 +2,13 @@
   "batchId": "source-review-batch-010-2026-10-14",
   "reviewedAt": "2026-10-14",
   "repository": {
-    "localHead": "e3f8c96",
-    "remoteHead": "e3f8c96",
+    "localHead": "85bb405",
+    "remoteHead": "85bb405",
     "mainAndTaskBranchMatch": true,
     "worktreeHasPreexistingEdits": true
   },
   "sourceRecords": 15,
-  "directlyReviewed": 8,
+  "directlyReviewed": 12,
   "sources": [
     {
       "id": "SRC-048",
@@ -342,19 +342,20 @@
     {
       "id": "SRC-056",
       "url": "https://github.com/jup-ag/jupiter-quote-api-node",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Jupiter repository README and API references"
+        "Jupiter API v6 README, package metadata and OpenAPI artifact",
+        "Pinned repository commit 6dbd33abfaa1f495f28ad122b3c06edf4ce28360"
       ],
       "discoveries": [
-        "This Node package wraps the legacy Metis quote API shape.",
-        "Jupiter's current docs identify Swap V2 as the current API direction, so V1/Metis integrations require migration review.",
-        "SYLPH's current research adapter already uses V2 order snapshots and rejects transaction payloads."
+        "Generated @jup-ag/api client is version 6.0.48 and describes Jupiter V6",
+        "README says hosted paid APIs are deprecated and describes separate quote and swap-transaction endpoints",
+        "the swap endpoint returns a transaction for caller signing/sending."
       ],
       "patterns": [
-        "pin API generation and endpoint",
-        "keep quote data separate from transaction build",
-        "validate response schema and freshness"
+        "Keep quote acquisition separate from transaction construction",
+        "pin generated OpenAPI/client version",
+        "keep signing and broadcast outside data adapter."
       ],
       "sylphModules": [
         "terminal/jupiter-research.mjs",
@@ -363,38 +364,39 @@
       ],
       "overlap": "Legacy wrapper overlaps and is superseded by current V2 research path; do not add as second Jupiter client.",
       "risks": [
-        "deprecated API schema",
-        "route data stale or not executable",
-        "response may include build material"
+        "Legacy V6 API shape",
+        "package says MIT but no root LICENSE in pinned tree",
+        "transaction response crosses signer boundary if consumed carelessly."
       ],
       "validation": [
-        "follow current V2 migration docs",
-        "test stale/malformed quote rejection",
-        "keep research endpoint unable to sign or broadcast"
+        "compare pinned source and OpenAPI/IDL with current official deployment",
+        "use deterministic offline fixtures for timeout, expiry, fee and account behavior",
+        "do not add signing, broadcast, claims, or external endpoint without dedicated review"
       ],
       "evidence": [
         "https://github.com/jup-ag/jupiter-quote-api-node",
-        "https://developers.jup.ag/docs/swap"
+        "https://github.com/jup-ag/jupiter-quote-api-node/tree/6dbd33abfaa1f495f28ad122b3c06edf4ce28360"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "NO_ADOPTION; MAINTAIN_V2_ADAPTER_ONLY"
+      "license": "PACKAGE_DECLARES_MIT_ROOT_LICENSE_FILE_NOT_FOUND",
+      "decision": "V6_QUOTE_REFERENCE_ONLY_NO_SIGNING"
     },
     {
       "id": "SRC-057",
       "url": "https://github.com/jup-ag/rfq-webhook-toolkit",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Jupiter RFQ webhook toolkit README"
+        "Jupiter RFQ README, Cargo workspace, order-engine source and documented API",
+        "Pinned repository commit 3aa4fce515d4b5827ee2d48f08041ea706d911cd"
       ],
       "discoveries": [
-        "Toolkit supports implementation of Jupiter RFQ webhooks for external market makers.",
-        "RFQ quote lifecycle introduces callback, quote expiry and maker availability semantics distinct from aggregator spot quotes.",
-        "No SYLPH market-maker/RFQ endpoint is configured or in scope."
+        "RFQ is an order-engine market-maker webhook flow",
+        "README documents 250 ms webhook timeout, 55 s quote/transaction expiry split (20 s fulfillment, 35 s user acceptance), and 5 s frontend re-quote cadence",
+        "repeated 50x responses can suspend a webhook."
       ],
       "patterns": [
-        "validate request identifiers and quote expiry",
-        "make callback authentication/replay protection explicit",
-        "reconcile fill against exact quote terms"
+        "Model quote expiry and request timeout as separate clocks",
+        "explicit unsupported-pair response differs from service failure",
+        "record maker latency/availability separately from aggregator quotes."
       ],
       "sylphModules": [
         "src/execution.ts",
@@ -403,37 +405,40 @@
       ],
       "overlap": "Potential future institutional/RFQ route, but current project has no maker service to expose.",
       "risks": [
-        "webhook attack surface",
-        "quote replay/expiry",
-        "external commitment and fill mismatch"
+        "Webhook source and fulfillment behavior can change",
+        "external market-maker enrollment is required",
+        "signing and fill validation are privileged paths",
+        "audit coverage is not a runtime guarantee."
       ],
       "validation": [
-        "review current Jupiter RFQ spec and auth",
-        "test replay, timeout, duplicate and changed-amount cases",
-        "keep endpoint disabled absent explicit product scope"
+        "compare pinned source and OpenAPI/IDL with current official deployment",
+        "use deterministic offline fixtures for timeout, expiry, fee and account behavior",
+        "do not add signing, broadcast, claims, or external endpoint without dedicated review"
       ],
       "evidence": [
-        "https://github.com/jup-ag/rfq-webhook-toolkit"
+        "https://github.com/jup-ag/rfq-webhook-toolkit",
+        "https://github.com/jup-ag/rfq-webhook-toolkit/tree/3aa4fce515d4b5827ee2d48f08041ea706d911cd"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "NOT_APPLICABLE_WITHOUT_RFQ_MAKER_SERVICE"
+      "license": "MIT",
+      "decision": "RFQ_PATTERN_ONLY_NO_MARKET_MAKER_ENDPOINT"
     },
     {
       "id": "SRC-058",
       "url": "https://github.com/MeteoraAg/dynamic-fee-sharing",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Meteora repository description"
+        "Meteora dynamic-fee-sharing README, Cargo source, package metadata and deployment config",
+        "Pinned repository commit 3e327c1ab085246612d28da21e1a78c7008119fe"
       ],
       "discoveries": [
-        "Repository concerns dynamic fee sharing for Meteora protocol participants.",
-        "Fee-sharing configuration and accrued claims are economic flows distinct from swap quote impact and transaction fees.",
-        "No evidence was found that SYLPH currently handles fee-sharing positions or claims."
+        "README publishes a fee-sharing program ID and pinned toolchain versions",
+        "source defines fee vault/authority PDAs and claim-related events",
+        "package metadata declares ISC but no root LICENSE file is present."
       ],
       "patterns": [
-        "account for protocol-level fee distribution separately",
-        "bind fee claims to pool/config identity",
-        "reconcile accrued and claimed balances on chain"
+        "Keep accrued revenue claims separate from swap price impact and network fee accounting",
+        "derive fee-vault identity from pinned program seeds",
+        "verify deployment ID against official state before reading."
       ],
       "sylphModules": [
         "src/platform/execution/authority.ts",
@@ -442,37 +447,40 @@
       ],
       "overlap": "Potential accounting research if the app provides LP positions; current trading workflow is token swaps, not pool fee sharing.",
       "risks": [
-        "program-specific fee entitlement",
-        "claim transaction side effects",
-        "fee rates/config updates"
+        "No root LICENSE",
+        "claim/transfer functions affect custody",
+        "program deployment and state layout require independent verification",
+        "not a quote adapter."
       ],
       "validation": [
-        "verify official program/version and terms",
-        "test accrual/claim arithmetic against chain records",
-        "do not add claims to realized PnL before settlement"
+        "compare pinned source and OpenAPI/IDL with current official deployment",
+        "use deterministic offline fixtures for timeout, expiry, fee and account behavior",
+        "do not add signing, broadcast, claims, or external endpoint without dedicated review"
       ],
       "evidence": [
-        "https://github.com/MeteoraAg/dynamic-fee-sharing"
+        "https://github.com/MeteoraAg/dynamic-fee-sharing",
+        "https://github.com/MeteoraAg/dynamic-fee-sharing/tree/3e327c1ab085246612d28da21e1a78c7008119fe"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "OUT_OF_SCOPE_FOR_SWAP_ONLY_ACCOUNTING"
+      "license": "LICENSE_NOT_FOUND_PACKAGE_DECLARES_ISC_REVIEW_REQUIRED",
+      "decision": "FEE_CLAIM_RESEARCH_ONLY_NO_CUSTODY_PATH"
     },
     {
       "id": "SRC-059",
       "url": "https://github.com/0xfnzero/sol-trade-sdk",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Rust SDK README and execution lane description"
+        "Sol Trade SDK README, Cargo metadata and client/instruction source",
+        "Pinned repository commit 4f2bd75c60ceea128ec773db533068c14a55c1fa"
       ],
       "discoveries": [
-        "SDK advertises multi-DEX trading across Pump/PumpSwap, Bonk, Raydium, Meteora and Jito/SWQoS lanes.",
-        "Its focus includes transaction submission/low-latency trading, which crosses SYLPH's critical execution and signer boundary.",
-        "README feature claims are not evidence of safe exact-message simulation, fill reconciliation, or current protocol correctness."
+        "Rust SDK advertises multi-DEX trading and latency-sensitive sends",
+        "Cargo declares MIT and Solana SDK 4.0.1",
+        "inspected client/instruction modules accept Signer/Keypair and build signed-trade paths with slippage controls."
       ],
       "patterns": [
-        "separate quote builder from transport lane",
-        "record landed/failed/expired outcomes per transaction",
-        "measure full round-trip costs including priority and tips"
+        "Study per-DEX adapter boundaries and exact account-meta construction",
+        "measure execution cost and inclusion separately",
+        "keep transaction-building and signing behind SYLPH authority."
       ],
       "sylphModules": [
         "src/execution.ts",
@@ -482,20 +490,21 @@
       ],
       "overlap": "Large overlap with existing execution authority and protocol adapters; no code should be copied directly.",
       "risks": [
-        "signing/broadcast capability",
-        "low-latency speculative routes and MEV risks",
-        "protocol/version and fee behavior may drift"
+        "Direct signer and low-latency execution capability crosses critical boundary",
+        "repository claims do not establish safe fills or profit",
+        "protocol IDs and Solana v4 compatibility require fixture validation."
       ],
       "validation": [
-        "static source/license audit only until authorized sandbox exists",
-        "test exact transaction identity and failed-transaction fee accounting",
-        "verify no fallback bypasses authority and risk limits"
+        "compare pinned source and OpenAPI/IDL with current official deployment",
+        "use deterministic offline fixtures for timeout, expiry, fee and account behavior",
+        "do not add signing, broadcast, claims, or external endpoint without dedicated review"
       ],
       "evidence": [
-        "https://github.com/0xfnzero/sol-trade-sdk"
+        "https://github.com/0xfnzero/sol-trade-sdk",
+        "https://github.com/0xfnzero/sol-trade-sdk/tree/4f2bd75c60ceea128ec773db533068c14a55c1fa"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "NO_INTEGRATION; SELECTIVE_TEST_PATTERN_REVIEW_ONLY"
+      "license": "MIT",
+      "decision": "NO_EXECUTION_ADOPTION; AUTHORITY_BOUNDARY_REVIEW_ONLY"
     },
     {
       "id": "SRC-060",

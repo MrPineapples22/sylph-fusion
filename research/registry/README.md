@@ -370,3 +370,12 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - SRC-054 Orca Account Microscope is pinned at f7d0575d37225cb4b4caabbccf3efa8a29b54c4a. It preserves RPC context slot for account inspection, but exported JSON hardcodes rentEpoch to zero; useful as a read-only UI reference only, with no root LICENSE found.
 - SRC-055 Jupiter Metis Binary is pinned at f7e6cbd8c0a6ca9314ff6fc6c9887c4ad258bdb. The repository contains deployment examples and external binary documentation, not routing source/artifact or a license file; implementation behavior remains unverified.
 - Registry status: 68 direct source inspections and 220 catalog-triage records. No external binary, key-handling workflow, dependency or trade path was integrated.
+
+
+## Swap, RFQ and fee boundary follow-up (2026-10-14)
+
+- SRC-056 Jupiter API client is pinned at 6dbd33abfaa1f495f28ad122b3c06edf4ce28360 (package 6.0.48, README identifies V6). It separates quote from swap-transaction creation; the latter returns a transaction for caller signing. Treat as legacy comparison only; package metadata says MIT, but no root LICENSE was found.
+- SRC-057 Jupiter RFQ toolkit is pinned at 3aa4fce515d4b5827ee2d48f08041ea706d911cd (MIT). README documents 250 ms webhook timeout and fixed quote/transaction expiry periods; it is a maker endpoint design, not a consumer aggregator adapter. No endpoint or signer path added.
+- SRC-058 Meteora dynamic-fee-sharing is pinned at 3e327c1ab085246612d28da21e1a78c7008119fe. Source defines fee vault/authority PDAs and claim events; package says ISC but no root LICENSE was found. Claims are custody accounting, not swap quote fees.
+- SRC-059 Sol Trade SDK is pinned at 4f2bd75c60ceea128ec773db533068c14a55c1fa (MIT). Inspected source accepts signing keys and has multi-DEX trade construction; reviewed for boundary risks only, never executed or integrated.
+- Registry status: 72 direct source inspections and 216 catalog-triage records. No credentials, signing, quote or broadcast integration was exercised.
