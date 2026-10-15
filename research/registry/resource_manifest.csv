@@ -169,11 +169,11 @@ SRC-167,github_supply_chain_ci,https://github.com/stryker-mutator/stryker-js,sou
 SRC-168,github_supply_chain_ci,https://github.com/renovatebot/renovate,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-168-2026-10-15,20767551404255f954569588dc1db726dfe791d6,AGPL-3.0 (repository metadata),RESEARCH_ONLY
 SRC-169,github_supply_chain_ci,https://github.com/sigstore/cosign,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-169-2026-10-15,63d9aa14a70c03e73c7b2a2a9a6501566194f5f4,Apache-2.0 (repository metadata),RESEARCH_ONLY
 SRC-170,github_supply_chain_ci,https://github.com/sigstore/rekor,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-170-2026-10-15,774b191f9f761b3def5808bcd54b48ad88de5f89,Apache-2.0 (repository metadata),RESEARCH_ONLY
-SRC-171,github_supply_chain_ci,https://github.com/aquasecurity/trivy,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-172,github_supply_chain_ci,https://github.com/google/osv-scanner,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-173,github_supply_chain_ci,https://github.com/gitleaks/gitleaks,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-174,github_supply_chain_ci,https://github.com/open-policy-agent/opa,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-175,github_supply_chain_ci,https://github.com/github/codeql,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
+SRC-171,github_supply_chain_ci,https://github.com/aquasecurity/trivy,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-171-2026-10-15,088b9706d7e3af33ef1a8d2dee305370df714293,Apache-2.0 (repository metadata),RESEARCH_ONLY
+SRC-172,github_supply_chain_ci,https://github.com/google/osv-scanner,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-172-2026-10-15,f455353546889009663c1f8b640d5880a01c889a,Apache-2.0 (repository metadata),RESEARCH_ONLY
+SRC-173,github_supply_chain_ci,https://github.com/gitleaks/gitleaks,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-173-2026-10-15,b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b,MIT (repository metadata),RESEARCH_ONLY_SECURITY_PATCHES_ONLY
+SRC-174,github_supply_chain_ci,https://github.com/open-policy-agent/opa,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-174-2026-10-15,89d111ce4b45c3af9b79ac1137efe2e9aab6cc92,Apache-2.0 (repository metadata),RESEARCH_ONLY
+SRC-175,github_supply_chain_ci,https://github.com/github/codeql,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-175-2026-10-15,dd4405c2c2a8cd5ee7d200e7230ab8dd52e13dc6,"MIT query/library repo; CLI/engine separately licensed",RESEARCH_ONLY_LICENSE_CHECK_REQUIRED
 SRC-176,github_project_rea,https://github.com/MrPineapples22/sylph-fusion,target_source_audit,P0,NOT_REVIEWED,,,,UNASSESSED
 SRC-177,github_project_rea,https://github.com/morluto/rea,target_source_audit,P0,NOT_REVIEWED,,,,UNASSESSED
 SRC-178,github_additional_solana,https://github.com/solana-program/token-2022,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED

@@ -212,165 +212,182 @@
     {
       "id": "SRC-171",
       "url": "https://github.com/aquasecurity/trivy",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Trivy vulnerability scanner documentation; accessed 2026-10-14."
+        "Official Trivy README and license metadata inspected at pinned main commit 088b9706d7e3af33ef1a8d2dee305370df714293; accessed 2026-10-15."
       ],
       "discoveries": [
-        "Trivy scans OS, language package and other targets for known vulnerabilities.",
-        "Scanner databases are fetched/cached and their freshness affects findings."
+        "Trivy scans filesystems, remote Git repositories, images, VMs and Kubernetes for vulnerabilities, misconfigurations, secrets, SBOM and license data.",
+        "Its scanners cover OS and language dependencies; results depend on target, selected scanners and vulnerability database state.",
+        "The repository documents Apache-2.0 licensing and warns that per-main-push canary builds may contain critical bugs and are not recommended for production."
       ],
       "patterns": [
-        "Scan source dependencies and release images in CI.",
-        "Track database timestamp and distinguish vulnerabilities from exploitability assessment."
+        "Scan the pinned source tree, lockfiles and any release image in CI using a pinned stable scanner and recorded database metadata.",
+        "Retain machine-readable findings and triage them with code review; a clean scan is not proof of security or exploitability."
       ],
       "sylphModules": [
         "package manifests and lockfiles",
-        "release pipeline"
+        "release pipeline",
+        "CI security checks"
       ],
       "overlap": [
-        "Complements code and dependency review, not a substitute for it."
+        "Complements source review and dependency audits; no runtime role."
       ],
       "risks": [
-        "Scanner database may be stale or omit issues.",
-        "Container scanning scope depends on target and configuration."
+        "Database freshness and scanner coverage affect findings.",
+        "Canary builds are explicitly not recommended for production.",
+        "Scanner findings require triage and do not prove exploitability."
       ],
       "validation": [
-        "Use known vulnerable/safe fixtures and verify expected results.",
-        "Pin scanner version and database/update policy."
+        "Use a pinned stable version against known vulnerable and clean fixtures.",
+        "Record database metadata and review ignored paths, severities and image/source scope."
       ],
       "evidence": [
-        "https://github.com/aquasecurity/trivy",
-        "https://github.com/aquasecurity/trivy/blob/main/docs/guide/scanner/vulnerability.md"
+        "https://github.com/aquasecurity/trivy/tree/088b9706d7e3af33ef1a8d2dee305370df714293",
+        "https://github.com/aquasecurity/trivy/blob/088b9706d7e3af33ef1a8d2dee305370df714293/README.md"
       ],
       "license": "Apache-2.0 (repository metadata)",
-      "decision": "RESEARCH_ONLY"
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "088b9706d7e3af33ef1a8d2dee305370df714293"
     },
     {
       "id": "SRC-172",
       "url": "https://github.com/google/osv-scanner",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official OSV-Scanner repository documentation; accessed 2026-10-14."
+        "Official OSV-Scanner README and license metadata inspected at pinned main commit f455353546889009663c1f8b640d5880a01c889a; accessed 2026-10-15."
       ],
       "discoveries": [
-        "Scans supported dependency manifests against OSV vulnerability data.",
-        "The repository distinguishes v2 from legacy v1 workflows; CLI and output should be pinned."
+        "OSV-Scanner maps supported dependency manifests and package ecosystems to vulnerability records in the OSV database.",
+        "Its README documents package-manager and container scanning plus guided dependency remediation; results inform maintenance but do not make upgrades safe automatically.",
+        "The repository declares Apache-2.0 licensing and uses OSV-Scalibr for package and project-type analysis."
       ],
       "patterns": [
-        "Include dependency scans in CI with machine-readable outputs.",
-        "Review direct and transitive dependency advisories before updating."
+        "Include a pinned scanner invocation in CI and archive machine-readable findings plus database/version context.",
+        "Review direct and transitive advisories and run regression/build checks before applying any suggested dependency upgrade."
       ],
       "sylphModules": [
-        "package.json",
-        "lockfile",
-        "CI configuration"
+        "package.json and lockfile",
+        "CI dependency review",
+        "release manifests"
       ],
       "overlap": [
-        "Supply-chain hygiene only; no runtime code-path role."
+        "Supply-chain review only; does not affect runtime decisions."
       ],
       "risks": [
-        "Advisory matching can have package/version ambiguity.",
-        "Scanner major version changes can alter output and behavior."
+        "Advisory matching and package/version data may be incomplete or ambiguous.",
+        "Suggested upgrades can change behavior and must be tested before merge.",
+        "Scanner or database versions can change results."
       ],
       "validation": [
-        "Test against known vulnerable lockfiles and clean fixtures.",
-        "Record scanner version and database timestamp."
+        "Test against known vulnerable and clean lockfile fixtures.",
+        "Record scanner version, advisory data timestamp and accepted exceptions."
       ],
       "evidence": [
-        "https://github.com/google/osv-scanner"
+        "https://github.com/google/osv-scanner/tree/f455353546889009663c1f8b640d5880a01c889a",
+        "https://github.com/google/osv-scanner/blob/f455353546889009663c1f8b640d5880a01c889a/README.md"
       ],
       "license": "Apache-2.0 (repository metadata)",
-      "decision": "RESEARCH_ONLY"
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "f455353546889009663c1f8b640d5880a01c889a"
     },
     {
       "id": "SRC-173",
       "url": "https://github.com/gitleaks/gitleaks",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Gitleaks repository and documentation; accessed 2026-10-14."
+        "Official Gitleaks README and MIT license metadata inspected at pinned master commit b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b; accessed 2026-10-15."
       ],
       "discoveries": [
-        "Secret scanner detects credential-like patterns in files and Git history.",
-        "Custom rules and allowlists affect detection coverage."
+        "Gitleaks scans files, Git history and stdin for credential-like secrets, with pre-commit and CI integration documented.",
+        "The README marks the project feature-complete and says future releases are security patches only, directing new feature work toward Betterleaks.",
+        "Its rules, baselines and allowlists affect coverage; scan reports may contain sensitive matched material and require restricted handling."
       ],
       "patterns": [
-        "Run local/CI secret scans and prevent newly introduced credential patterns.",
-        "Treat matches as sensitive incident evidence and redact reports."
+        "Run a pinned secret scan on diffs and repository history with reports kept access-controlled and redacted before sharing.",
+        "Treat any suspected real match as a secret-handling incident; the scanner cannot revoke or rotate credentials."
       ],
       "sylphModules": [
         "repository history",
-        "CI configuration",
-        "secret handling"
+        "CI security checks",
+        "credential handling"
       ],
       "overlap": [
-        "Can detect accidental exposure, but cannot revoke or rotate a credential."
+        "Potential CI tool only; no credential or signer integration."
       ],
       "risks": [
         "False positives and allowlists can hide real secrets.",
-        "Scanner output itself may include matched secret material."
+        "Reports may expose matching secret values.",
+        "Project is feature-complete with security-patch-only future releases."
       ],
       "validation": [
-        "Test known dummy secrets and false-positive fixtures.",
-        "Protect scan artifacts and review allowlist changes."
+        "Use fabricated dummy secrets and expected nonmatches in isolated fixtures.",
+        "Review allowlist edits and protect generated reports."
       ],
       "evidence": [
-        "https://github.com/gitleaks/gitleaks"
+        "https://github.com/gitleaks/gitleaks/tree/b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b",
+        "https://github.com/gitleaks/gitleaks/blob/b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b/README.md"
       ],
       "license": "MIT (repository metadata)",
-      "decision": "RESEARCH_ONLY"
+      "decision": "RESEARCH_ONLY_SECURITY_PATCHES_ONLY",
+      "pinnedRevision": "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b"
     },
     {
       "id": "SRC-174",
       "url": "https://github.com/open-policy-agent/opa",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official OPA README and documentation; accessed 2026-10-14."
+        "Official OPA README and Apache license metadata inspected at pinned main commit 89d111ce4b45c3af9b79ac1137efe2e9aab6cc92; accessed 2026-10-15."
       ],
       "discoveries": [
-        "OPA evaluates declarative Rego policies against caller-supplied data.",
-        "Integrations require the application to enforce returned allow/deny decisions."
+        "OPA is a general-purpose policy engine; policy authors express context-aware decisions in Rego against caller-supplied input.",
+        "OPA provides local CLI and integration/deployment paths; application code remains responsible for consuming and enforcing decisions.",
+        "The repository declares Apache-2.0 licensing; this review does not establish an external policy service as suitable for SYLPH capital or signing authority."
       ],
       "patterns": [
-        "Express release/deployment guardrails as tested policies.",
-        "Keep signer authorization enforced in existing trusted code, even if policy evaluation is externalized."
+        "Use policy-as-code for offline release/deployment checks with explicit input schemas and fail-closed handling.",
+        "Keep the trusted in-process execution authority as the enforcement boundary; policy output can only add a restriction, never grant bypass authority."
       ],
       "sylphModules": [
-        "src/platform/execution/authority.ts",
         "release certification",
-        "CI deployment gates"
+        "CI deployment gates",
+        "src/platform/execution/authority.ts (review reference only)"
       ],
       "overlap": [
-        "Potential policy tooling, but not a replacement for existing capital/signing controls."
+        "Could model static release predicates, but no OPA process or policy is added to the runtime."
       ],
       "risks": [
-        "Policy data/context omissions can produce unsafe allows.",
-        "Networked policy service availability must fail closed where critical."
+        "Incomplete input or a mistaken default can yield an unsafe allow.",
+        "Service outages or policy bundle drift must not bypass trusted local restrictions.",
+        "Policy checks do not replace authorization and capital controls."
       ],
       "validation": [
-        "Test allow/deny boundary cases and policy bundle integrity.",
-        "Prove failure or timeout cannot bypass execution authority."
+        "Test allow/deny, missing-field, malformed-input and timeout cases.",
+        "Prove policy failure cannot skip existing execution authority."
       ],
       "evidence": [
-        "https://github.com/open-policy-agent/opa"
+        "https://github.com/open-policy-agent/opa/tree/89d111ce4b45c3af9b79ac1137efe2e9aab6cc92",
+        "https://github.com/open-policy-agent/opa/blob/89d111ce4b45c3af9b79ac1137efe2e9aab6cc92/README.md"
       ],
       "license": "Apache-2.0 (repository metadata)",
-      "decision": "RESEARCH_ONLY"
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "89d111ce4b45c3af9b79ac1137efe2e9aab6cc92"
     },
     {
       "id": "SRC-175",
       "url": "https://github.com/github/codeql",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official CodeQL query/library repository README; accessed 2026-10-14."
+        "Official CodeQL query/library README and repository license inspected at pinned main commit dd4405c2c2a8cd5ee7d200e7230ab8dd52e13dc6; accessed 2026-10-15."
       ],
       "discoveries": [
-        "Repository contains standard CodeQL libraries and queries used for code security analysis.",
-        "The CodeQL CLI/engine is separately licensed from this open source query repository."
+        "The repository contains standard CodeQL libraries and queries used by GitHub code scanning and application-security products.",
+        "The query/library repository is MIT-licensed, while the CodeQL CLI and analysis engine are in another repository and separately licensed.",
+        "The README states that use of the CodeQL CLI to analyze closed-source code requires a separate commercial license."
       ],
       "patterns": [
-        "Use supported code scanning for source-level security queries in CI.",
-        "Add custom queries only with reviewed test fixtures."
+        "Use supported code scanning for source-level security queries only after confirming licensing and language support.",
+        "Add custom queries only with reviewed positive/negative test fixtures and treat findings as signals for human review."
       ],
       "sylphModules": [
         "src/platform/execution/authority.ts",
@@ -378,21 +395,24 @@
         "CI security checks"
       ],
       "overlap": [
-        "Static analysis complements tests; repository alone does not supply all scanning components or licensing."
+        "Static analysis can complement tests and reviews; the query repo alone does not supply an unrestricted scanner license."
       ],
       "risks": [
-        "CLI licensing differs from query repo license.",
-        "Static findings require triage and do not prove absence of vulnerabilities."
+        "CLI/engine licensing differs from the MIT query/library repository.",
+        "Findings need triage and do not prove the absence of vulnerabilities.",
+        "Language and query coverage may not include every relevant TypeScript behavior."
       ],
       "validation": [
-        "Verify code language support and entitlement before use.",
-        "Test custom query expected matches and non-matches."
+        "Verify code-scanning entitlement for the repository and intended use.",
+        "Test custom query matches and nonmatches on minimal fixtures; preserve tool version and results."
       ],
       "evidence": [
-        "https://github.com/github/codeql"
+        "https://github.com/github/codeql/tree/dd4405c2c2a8cd5ee7d200e7230ab8dd52e13dc6",
+        "https://github.com/github/codeql/blob/dd4405c2c2a8cd5ee7d200e7230ab8dd52e13dc6/README.md"
       ],
-      "license": "Query repo MIT; CLI/engine separately licensed (README)",
-      "decision": "RESEARCH_ONLY"
+      "license": "MIT (query/library repository); CodeQL CLI/engine separately licensed, including closed-source analysis entitlement",
+      "decision": "RESEARCH_ONLY_LICENSE_CHECK_REQUIRED",
+      "pinnedRevision": "dd4405c2c2a8cd5ee7d200e7230ab8dd52e13dc6"
     },
     {
       "id": "SRC-178",

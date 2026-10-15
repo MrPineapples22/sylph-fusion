@@ -1,25 +1,25 @@
 {
-  "generatedAt": "2026-10-15T05:01:21.073Z",
+  "generatedAt": "2026-10-15T05:04:50.167Z",
   "manifestRows": 288,
   "uniqueManifestIds": 288,
   "batchFiles": 23,
   "catalogRecords": 288,
   "uniqueCatalogIds": 288,
-  "directlyReviewedRecords": 178,
-  "triageOnlyRecords": 110,
+  "directlyReviewedRecords": 183,
+  "triageOnlyRecords": 105,
   "manifestReviewStatusCounts": {
-    "PARTIAL_REVIEW": 178,
-    "NOT_REVIEWED": 110
+    "PARTIAL_REVIEW": 183,
+    "NOT_REVIEWED": 105
   },
   "batchStatusCounts": {
-    "PARTIAL_REVIEW": 178,
-    "CATALOG_TRIAGE": 110
+    "PARTIAL_REVIEW": 183,
+    "CATALOG_TRIAGE": 105
   },
-  "distinctDecisionCount": 169,
+  "distinctDecisionCount": 171,
   "topDecisionCounts": [
     {
       "decision": "RESEARCH_ONLY",
-      "count": 97
+      "count": 95
     },
     {
       "decision": "REFERENCE_ONLY",
