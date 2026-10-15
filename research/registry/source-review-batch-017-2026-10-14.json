@@ -2,7 +2,7 @@
   "batch": 17,
   "date": "2026-10-14",
   "sourceRecords": 15,
-  "directlyReviewed": 10,
+  "directlyReviewed": 15,
   "scope": "Time-series observability and wallet/token relationship graph analytics",
   "method": "Pinned official repository README and license/source inspection with upstream HEAD revisions recorded. Findings are bounded research notes; no REA execution, packages installed, SYLPH code patch, build, or runtime test was performed.",
   "sources": [
@@ -412,181 +412,202 @@
     {
       "id": "SRC-161",
       "url": "https://github.com/Qiskit/rustworkx",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official rustworkx repository and documentation; accessed 2026-10-14."
+        "Official rustworkx README and repository license metadata inspected at pinned main commit 25398ab47f664962076508de27aa78ec52e24eaf; accessed 2026-10-15."
       ],
       "discoveries": [
-        "High-performance graph algorithms exposed through Python bindings backed by Rust.",
-        "The package targets graph computation, not wallet attribution semantics."
+        "rustworkx is a general-purpose Python graph library implemented in Rust, exposing shortest-path and other graph operations.",
+        "The README notes that it originated to provide a faster directed graph for Qiskit but now describes broader graph-library use.",
+        "The project publishes Apache-2.0 license metadata; binary packages or source builds have platform/toolchain requirements."
       ],
       "patterns": [
-        "Use scalable graph primitives for offline connected-component or path analysis.",
-        "Keep algorithm output separate from evidentiary interpretation."
+        "For offline graph investigations, use a compact Rust-backed graph library only after profiling the data size and algorithm needs.",
+        "Preserve stable node identity and evidence-bearing edge attributes when computing connected components or paths."
       ],
       "sylphModules": [
-        "offline wallet analytics"
+        "offline wallet/token relationship analytics",
+        "research processing tools"
       ],
       "overlap": [
-        "Potential implementation library for research scripts only."
+        "Overlaps with NetworkX and igraph as a graph-algorithm library; no runtime service integration."
       ],
       "risks": [
-        "Performance does not resolve ambiguous identity evidence.",
-        "Python/Rust dependency and serialization boundaries require pinning."
+        "Graph speed does not validate the input evidence or inferred relationship.",
+        "Index-based node IDs can be unstable across graph rebuilds unless a stable external identity map is maintained.",
+        "Platform binaries and Rust source builds have distinct compatibility requirements."
       ],
       "validation": [
-        "Compare algorithm results against small hand-verified graphs.",
-        "Benchmark representative graph size and memory."
+        "Compare chosen algorithm output with a small hand-verified graph fixture including disconnected components and duplicate edges.",
+        "Pin package and algorithm version; verify reproducible results from the same evidence snapshot."
       ],
       "evidence": [
-        "https://github.com/Qiskit/rustworkx"
+        "https://github.com/Qiskit/rustworkx/tree/25398ab47f664962076508de27aa78ec52e24eaf",
+        "https://github.com/Qiskit/rustworkx/blob/25398ab47f664962076508de27aa78ec52e24eaf/README.md"
       ],
       "license": "Apache-2.0 (repository metadata)",
-      "decision": "RESEARCH_ONLY"
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "25398ab47f664962076508de27aa78ec52e24eaf"
     },
     {
       "id": "SRC-162",
       "url": "https://github.com/igraph/python-igraph",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official python-igraph repository and documentation; accessed 2026-10-14."
+        "Official python-igraph README and GitHub license metadata inspected at pinned main commit 6188691e703fd7463e8b07076bff896fb6eae8a1; accessed 2026-10-15."
       ],
       "discoveries": [
-        "Python interface to igraph for network analysis and graph algorithms.",
-        "Graph metrics describe the encoded graph and are not independent proof of wallet ownership."
+        "python-igraph is the Python interface to igraph for creating, manipulating, and analyzing large graphs.",
+        "GitHub identifies GPL-2.0 licensing; verify the exact license text and downstream package/component terms for any redistribution.",
+        "It is an offline analytical dependency, not an on-chain data provider or runtime risk evaluator."
       ],
       "patterns": [
-        "Compute centrality/community candidates on timestamped evidence graphs.",
-        "Report the underlying edges with every analyst-facing score."
+        "Use graph libraries for exploratory connected-component, community, and centrality analysis on curated wallet evidence.",
+        "Keep graph-edge provenance and confidence independent from algorithm scores."
       ],
       "sylphModules": [
-        "offline wallet analytics",
-        "training feature pipeline"
+        "offline graph analysis",
+        "research data pipeline"
       ],
       "overlap": [
-        "Research-only, with no direct engine integration established."
+        "Overlaps with NetworkX and rustworkx; choose a single library based on workload and licensing, rather than including all."
       ],
       "risks": [
-        "Community detection may vary with algorithm parameters/randomness.",
-        "High centrality does not equal maliciousness or profitability."
+        "GPL-2.0 licensing may constrain use or distribution; confirm exact terms before incorporation.",
+        "Graph algorithms can encode misleading assumptions when edge direction, weighting, or time windows are wrong.",
+        "Large graph inputs can consume substantial memory."
       ],
       "validation": [
-        "Fix seeds/algorithm parameters and test stable known graphs.",
-        "Audit precision/recall on manually reviewed examples."
+        "Create adversarial fixtures for common exchange funders, shared services, and unrelated wallets to estimate false-positive clustering.",
+        "Record code/version, algorithm parameters, graph snapshot hash, and data provenance for repeatability."
       ],
       "evidence": [
-        "https://github.com/igraph/python-igraph"
+        "https://github.com/igraph/python-igraph/tree/6188691e703fd7463e8b07076bff896fb6eae8a1",
+        "https://github.com/igraph/python-igraph/blob/6188691e703fd7463e8b07076bff896fb6eae8a1/LICENSE"
       ],
-      "license": "GPL-2.0-or-later (repository metadata)",
-      "decision": "RESEARCH_ONLY"
+      "license": "GPL-2.0 (GitHub metadata; review pinned LICENSE and package terms before reuse)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "6188691e703fd7463e8b07076bff896fb6eae8a1"
     },
     {
       "id": "SRC-163",
       "url": "https://github.com/apache/age",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Apache AGE repository and documentation; accessed 2026-10-14."
+        "Official Apache AGE README and Apache license metadata inspected at pinned master commit d7e2e74c95d1ac941a124437198e19b42b15446d; accessed 2026-10-15."
       ],
       "discoveries": [
-        "Apache AGE adds graph database capabilities to PostgreSQL.",
-        "Graph queries coexist with relational storage under PostgreSQL deployment and extension constraints."
+        "Apache AGE is a PostgreSQL extension that adds graph processing and graph queries over an existing relational database.",
+        "Its README describes graph analytics and a graph layer built on PostgreSQL, rather than a standalone low-latency market data adapter.",
+        "The repository declares Apache-2.0 licensing."
       ],
       "patterns": [
-        "Join graph-derived wallet links to normalized token and transaction records with provenance.",
-        "Keep direct observations and inferred edges in different tables/types."
+        "If a graph-backed research warehouse is justified, linking graph nodes to relational evidence IDs can keep provenance queryable with the underlying records.",
+        "Build graph-derived aggregates as read-only analysis and preserve the same deterministic import source."
       ],
       "sylphModules": [
-        "offline wallet analytics",
-        "historical research store"
+        "offline wallet/token relationship research",
+        "historical analytics"
       ],
       "overlap": [
-        "Potential analytical extension; no need to add absent a validated graph-query requirement."
+        "Would add a graph extension on top of a database; overlaps with other graph engines and existing SQLite-based canonical state."
       ],
       "risks": [
-        "PostgreSQL/version compatibility and graph query semantics need verification.",
-        "Incorrectly inferred links can propagate into relational analytics."
+        "Requires PostgreSQL and extension-version operations, backup, migration, and compatibility planning.",
+        "Graph transaction semantics do not establish blockchain event completeness.",
+        "A separate relational graph database would be unnecessary if existing analytics can handle the workload."
       ],
       "validation": [
-        "Test migrations, query results and restore on pinned PostgreSQL versions.",
-        "Enforce provenance and temporal validity constraints."
+        "Validate extension and PostgreSQL version compatibility; test deterministic import/export, restart, migration, and query results.",
+        "Reconcile all graph edges to canonical evidence and test corrections/retractions."
       ],
       "evidence": [
-        "https://github.com/apache/age"
+        "https://github.com/apache/age/tree/d7e2e74c95d1ac941a124437198e19b42b15446d",
+        "https://github.com/apache/age/blob/d7e2e74c95d1ac941a124437198e19b42b15446d/README.md"
       ],
       "license": "Apache-2.0 (repository metadata)",
-      "decision": "RESEARCH_ONLY"
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "d7e2e74c95d1ac941a124437198e19b42b15446d"
     },
     {
       "id": "SRC-164",
       "url": "https://github.com/graphistry/pygraphistry",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official PyGraphistry repository and documentation; accessed 2026-10-14."
+        "Official PyGraphistry README and repository license metadata inspected at pinned default-branch commit 0c71cc4bb8281ecc1f07de8657c4ec45c737a5c1; accessed 2026-10-15."
       ],
       "discoveries": [
-        "Python tooling for building and visualizing graph analytics workflows.",
-        "Visualization can help analysts inspect clusters and relationships but does not validate them."
+        "PyGraphistry is a Python client library for loading, shaping, embedding, and visualizing large graphs.",
+        "Its README positions visualization through the Graphistry analyzer; deployment target, data residency, and hosted versus self-hosted handling must be verified before sending wallet data.",
+        "GitHub identifies BSD-3-Clause licensing for the repository."
       ],
       "patterns": [
-        "Expose graph edges with source, time and confidence fields in analyst exploration.",
-        "Use visual review to locate suspicious patterns for verification."
+        "Use graph visualization only as an analyst-facing view over a redacted, evidence-linked graph export.",
+        "Include edge source, time, and confidence in tooltips so visual proximity is not presented as proof of common control."
       ],
       "sylphModules": [
-        "offline wallet analytics",
-        "operator research tooling"
+        "offline research visualization",
+        "operator/analyst tooling"
       ],
       "overlap": [
-        "Visualization only; should not change automated token decisions."
+        "Complements graph algorithms and overlaps with other graph visualization tools; not a runtime data source."
       ],
       "risks": [
-        "Visual salience can create false confidence.",
-        "Hosted service/data-sharing options require privacy review."
+        "Submitting graph data to a hosted analyzer can disclose wallet relationships and sensitive research; confirm deployment and data handling before use.",
+        "Visualization layout can imply stronger relationships than the underlying evidence supports.",
+        "GPU features and optional backend dependencies add environment constraints."
       ],
       "validation": [
-        "Use synthetic or properly redacted data for prototypes.",
-        "Trace every displayed edge back to source evidence."
+        "Use synthetic or redacted graphs for any hosted/demo environment.",
+        "Test that every visible relation links to its source evidence and that uncertainty is displayed explicitly."
       ],
       "evidence": [
-        "https://github.com/graphistry/pygraphistry"
+        "https://github.com/graphistry/pygraphistry/tree/0c71cc4bb8281ecc1f07de8657c4ec45c737a5c1",
+        "https://github.com/graphistry/pygraphistry/blob/0c71cc4bb8281ecc1f07de8657c4ec45c737a5c1/LICENSE.txt"
       ],
-      "license": "Not independently verified in this review",
-      "decision": "RESEARCH_ONLY"
+      "license": "BSD-3-Clause (repository metadata)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "0c71cc4bb8281ecc1f07de8657c4ec45c737a5c1"
     },
     {
       "id": "SRC-165",
       "url": "https://github.com/graphframes/graphframes",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official GraphFrames repository and documentation; accessed 2026-10-14."
+        "Official GraphFrames README and Apache license metadata inspected at pinned main commit 407773a341a344207127139c098337fa601d0275; accessed 2026-10-15."
       ],
       "discoveries": [
-        "GraphFrames provides graph algorithms and queries over Apache Spark DataFrames.",
-        "It is oriented to distributed/batch graph analytics rather than latency-critical execution."
+        "GraphFrames provides DataFrame-based graph algorithms and motif queries on Apache Spark.",
+        "It is a distributed analytics package, with runtime compatibility tied to Spark, Scala, and GraphFrames versions.",
+        "The repository declares Apache-2.0 licensing."
       ],
       "patterns": [
-        "Scale historical relationship analysis across large transfer datasets.",
-        "Make graph snapshot and algorithm version reproducible."
+        "Use distributed graph processing only when deterministic historical wallet data exceeds the practical capacity of local analysis.",
+        "Version event-time windows, edge filters, and algorithm parameters so batch graph results are reproducible."
       ],
       "sylphModules": [
-        "offline historical analytics",
-        "offline wallet analytics"
+        "offline historical graph analytics",
+        "research data pipeline"
       ],
       "overlap": [
-        "Potential batch research framework; no runtime use indicated."
+        "Overlaps with NetworkX, rustworkx, igraph, and graph database options; substantially heavier and intended for larger offline workloads."
       ],
       "risks": [
-        "Spark infrastructure adds operational complexity.",
-        "Temporal leakage and inferred-edge quality remain fundamental risks."
+        "Spark cluster, serialization, and version compatibility add substantial operational cost.",
+        "Distributed execution may introduce nondeterministic ordering in outputs unless results are normalized.",
+        "A graph result still needs source-level on-chain verification and cannot become trade authorization."
       ],
       "validation": [
-        "Compare distributed results with a small reference graph.",
-        "Use time-bounded splits and retain input snapshot hashes."
+        "Compare small fixtures against a single-process reference and normalize output ordering.",
+        "Test the exact Spark/Scala/GraphFrames combination and deterministic replay of the same input snapshot."
       ],
       "evidence": [
-        "https://github.com/graphframes/graphframes"
+        "https://github.com/graphframes/graphframes/tree/407773a341a344207127139c098337fa601d0275",
+        "https://github.com/graphframes/graphframes/blob/407773a341a344207127139c098337fa601d0275/README.md"
       ],
       "license": "Apache-2.0 (repository metadata)",
-      "decision": "RESEARCH_ONLY"
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "407773a341a344207127139c098337fa601d0275"
     }
   ]
 }

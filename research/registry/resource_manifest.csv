@@ -159,11 +159,11 @@ SRC-157,github_graph_analytics,https://github.com/networkx/networkx,source_or_do
 SRC-158,github_graph_analytics,https://github.com/neo4j/neo4j,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-158-2026-10-15,54a7dcf7c2501b31866199143364c5332da8936f,GPL-3.0 (GitHub repository metadata; verify product and deployment terms),RESEARCH_ONLY
 SRC-159,github_graph_analytics,https://github.com/memgraph/memgraph,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-159-2026-10-15,0f420c4280967268e5425c6d54f31b9155b01c0f,Mixed BSL-1.1 and Memgraph Enterprise License (root LICENSE; file-specific terms must be checked),RESEARCH_ONLY
 SRC-160,github_graph_analytics,https://github.com/FalkorDB/FalkorDB,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-160-2026-10-15,b080a44c135e8b938732f155785992f39adcb41c,SSPL-1.0 (root LICENSE; verify obligations for intended deployment),RESEARCH_ONLY
-SRC-161,github_graph_analytics,https://github.com/Qiskit/rustworkx,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-162,github_graph_analytics,https://github.com/igraph/python-igraph,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-163,github_graph_analytics,https://github.com/apache/age,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-164,github_graph_analytics,https://github.com/graphistry/pygraphistry,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-165,github_graph_analytics,https://github.com/graphframes/graphframes,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
+SRC-161,github_graph_analytics,https://github.com/Qiskit/rustworkx,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-161-2026-10-15,25398ab47f664962076508de27aa78ec52e24eaf,Apache-2.0 (repository metadata),RESEARCH_ONLY
+SRC-162,github_graph_analytics,https://github.com/igraph/python-igraph,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-162-2026-10-15,6188691e703fd7463e8b07076bff896fb6eae8a1,GPL-2.0 (GitHub metadata; review pinned LICENSE and package terms before reuse),RESEARCH_ONLY
+SRC-163,github_graph_analytics,https://github.com/apache/age,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-163-2026-10-15,d7e2e74c95d1ac941a124437198e19b42b15446d,Apache-2.0 (repository metadata),RESEARCH_ONLY
+SRC-164,github_graph_analytics,https://github.com/graphistry/pygraphistry,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-164-2026-10-15,0c71cc4bb8281ecc1f07de8657c4ec45c737a5c1,BSD-3-Clause (repository metadata),RESEARCH_ONLY
+SRC-165,github_graph_analytics,https://github.com/graphframes/graphframes,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-165-2026-10-15,407773a341a344207127139c098337fa601d0275,Apache-2.0 (repository metadata),RESEARCH_ONLY
 SRC-166,github_supply_chain_ci,https://github.com/semgrep/semgrep,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-167,github_supply_chain_ci,https://github.com/stryker-mutator/stryker-js,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-168,github_supply_chain_ci,https://github.com/renovatebot/renovate,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
