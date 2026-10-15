@@ -43,9 +43,9 @@ SRC-041,github_parsers_sdks,https://github.com/codama-idl/spec,source_or_documen
 SRC-042,github_parsers_sdks,https://github.com/0xfnzero/sol-parser-sdk,source_or_document_review,P1,PARTIAL_REVIEW,SOL-PARSER-RUST-2026-10-14,1a21a76352055589e62aaa4b8b3376dfcefb4a21,MIT,DIFFERENTIAL_PARSER_AND_QUEUE_INTEGRITY_REFERENCE_NO_SECOND_RUNTIME
 SRC-043,github_parsers_sdks,https://github.com/tkhq/solana-parser,source_or_document_review,P1,PARTIAL_REVIEW,TKHQ-SOLANA-PARSER-2026-10-14,ac15e1d94ac7725ba31c5f3e79ceb4dc8a6354d4,Apache-2.0,LEGACY_AND_V0_ENVELOPE_FIXTURE_REFERENCE_NO_RUNTIME_DEPENDENCY
 SRC-044,github_parsers_sdks,https://github.com/0xfnzero/sol-parser-sdk-nodejs,source_or_document_review,P1,PARTIAL_REVIEW,SOL-PARSER-NODE-2026-10-14,dfdb0e07d38c7611326e5ccf23617c6b9111fd4c,MIT,QUEUE_AND_REPLAY_DIFFERENTIAL_REFERENCE_PRESERVE_FAIL_CLOSED_OVERFLOW
-SRC-045,github_parsers_sdks,https://github.com/0xfnzero/sol-parser-sdk-python,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-046,github_parsers_sdks,https://github.com/0xfnzero/sol-parser-sdk-golang,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-047,github_parsers_sdks,https://github.com/cxcx-ai/solana-dex-parser,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
+SRC-045,github_parsers_sdks,https://github.com/0xfnzero/sol-parser-sdk-python,source_or_document_review,P1,PARTIAL_REVIEW,SOL-PARSER-PYTHON-2026-10-14,7c489bfb5c803c7414c5ea95d63f18cfe2009b76,README_MIT_BADGE_ONLY_NO_LICENSE_FILE_OR_PACKAGE_DECLARATION,OFFLINE_DIFFERENTIAL_RESEARCH_ONLY_NO_REUSE_PENDING_LICENSE
+SRC-046,github_parsers_sdks,https://github.com/0xfnzero/sol-parser-sdk-golang,source_or_document_review,P1,PARTIAL_REVIEW,SOL-PARSER-GO-2026-10-14,bff0ea18dfce3efb6c8159baf21d2d1ced19102b,README_MIT_BADGE_ONLY_NO_LICENSE_FILE_OR_MODULE_DECLARATION,OFFLINE_DIFFERENTIAL_REFERENCE_ONLY_NO_RUNTIME_ADOPTION_PENDING_LICENSE
+SRC-047,github_parsers_sdks,https://github.com/cxcx-ai/solana-dex-parser,source_or_document_review,P1,PARTIAL_REVIEW,CXCX-SOLANA-DEX-PARSER-2026-10-14,0c67d8ffa78c7fb2e80230ec53d0627c9531566a,MIT,OFFLINE_DIFFERENTIAL_FIXTURE_ONLY_NO_RUNTIME_DUPLICATION_OR_NET_PNL_AUTHORITY
 SRC-048,github_parsers_sdks,https://github.com/metaplex-foundation/blockbuster,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-049,github_dex_swaps_launches,https://github.com/raydium-io/raydium-library,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-050,github_dex_swaps_launches,https://github.com/raydium-io/raydium-cpi,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED

@@ -36,7 +36,7 @@
 | 021 | 15 | SRC-214–228 | Solana transaction delivery, routers, venues and trading terminals |
 | 022 | 15 | SRC-229–243 | Token risk screening, transaction safety and custody/signing controls |
 | 023 | 9 | SRC-244–251, SRC-253 | Portfolio monitoring, REA references, graph tooling and GitHub source hosting |
-| **Total** | **288 / 288** | **100.00%** | **57 pinned source/document partial reviews and 231 catalog-triage-only records; none of this count means runtime integration** |
+| **Total** | **288 / 288** | **100.00%** | **60 pinned source/document partial reviews and 228 catalog-triage-only records; none of this count means runtime integration** |
 
 `PARTIAL_REVIEW` means pinned source/document inspection was performed; `CATALOG_TRIAGE` is a structured catalog note without direct inspection. Neither means exhaustive review or runtime integration. Research-only status never implies approval for runtime use.
 
@@ -46,7 +46,7 @@ REA is used out of band where the target type and authorization fit its supporte
 
 ## Resume
 
-All 288 records have a URL availability observation. Fifty-seven sources now have explicit partial source review status; 231 remain NOT_REVIEWED. Record coverage is complete; upstream research and implementation remain incomplete. Continue with concrete findings from each batch, inspect the current local source and pinned upstream documentation, reproduce behavior with focused deterministic tests, and make small patches. Preserve existing workspace changes and do not grant a source trading authority based on inclusion in the manifest.
+All 288 records have a URL availability observation. Sixty sources now have explicit partial source review status; 228 remain NOT_REVIEWED. Record coverage is complete; upstream research and implementation remain incomplete. Continue with concrete findings from each batch, inspect the current local source and pinned upstream documentation, reproduce behavior with focused deterministic tests, and make small patches. Preserve existing workspace changes and do not grant a source trading authority based on inclusion in the manifest.
 ## Latest implementation verification (2026-10-14)
 
 - `npm run build:engine` — passed after the feed admission snapshot change.
@@ -345,3 +345,10 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - SRC-043 tkhq/solana-parser is pinned at ac15e1d94ac7725ba31c5f3e79ceb4dc8a6354d4 (Apache-2.0). It accepts legacy/v0 messages, rejects unsupported versions, and does not resolve ALT references. Fixture reference only.
 - SRC-044 Node Sol Parser is pinned at dfdb0e07d38c7611326e5ccf23617c6b9111fd4c (MIT). It exposes queue-drop and replay-continuity counters, but defaults to dropping on queue overflow; fromSlot replay is provider-dependent, and cold ALT misses are skipped/countable. Preserve SYLPH’s fail-closed overflow latch.
 - Registry status: 57 direct source inspections and 231 catalog-triage records. No parser dependency or trade behavior changed.
+
+
+## Multi-language and transaction parser follow-up (2026-10-14)
+
+- SRC-045 Python parser is pinned at 7c489bfb5c803c7414c5ea95d63f18cfe2009b76 and identifies itself as pure Python. SRC-046 Go parser is pinned at bff0ea18dfce3efb6c8159baf21d2d1ced19102b. Both READMEs show MIT badges, but neither pinned tree contains a LICENSE file or package/module license declaration; reuse is not cleared. Their family-level release notes identify protocol-version gaps, so language parity is not assumed.
+- SRC-047 cxcx/solana-dex-parser is pinned at 0c67d8ffa78c7fb2e80230ec53d0627c9531566a (MIT). It reads outer/inner instructions, transaction status, balance changes and transaction metadata fee; that fee field is not a full realized-cost breakdown, and no-match must be distinguished from parse failure. Differential fixtures only.
+- Registry status: 60 direct source inspections and 228 catalog-triage records. No parser package or execution path changed.

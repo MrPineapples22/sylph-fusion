@@ -1,7 +1,7 @@
 {
   "path": "D:\\Users\\juans\\SF-feed-ingress/research/registry/resource_manifest.csv",
-  "sha256": "12dbed01e5cd3032cabec85fc1b9e5a1f6ca4ecce1eca4c07a71af9af90f7fd5",
-  "bytes": 46234,
+  "sha256": "60ae620a8e09004ef4b2d2c5b905147508fe2a560c5fe6dbc3e4101f60d47cf4",
+  "bytes": 46744,
   "records": 288,
   "uniqueIds": 288,
   "uniqueUrls": 288,
@@ -35,8 +35,8 @@
     "P2": 159
   },
   "reviewStatuses": {
-    "NOT_REVIEWED": 231,
-    "PARTIAL_REVIEW": 57
+    "NOT_REVIEWED": 228,
+    "PARTIAL_REVIEW": 60
   },
   "invalidUrls": [],
   "duplicateIds": [],
