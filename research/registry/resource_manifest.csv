@@ -77,8 +77,8 @@ SRC-075,github_execution_validator_jito,https://github.com/firedancer-io/firedan
 SRC-076,github_execution_validator_jito,https://github.com/jito-labs/searcher-examples,source_or_document_review,P0,PARTIAL_REVIEW,SRC-076-reviewed-f710c30,f710c30b0ec7449b5122f827b0997218ab1a0315,Apache-2.0,RESEARCH_ONLY_NO_AUTH_OR_SUBMISSION_CHANGE
 SRC-077,github_execution_validator_jito,https://github.com/jito-foundation/solana-analysis,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-078,github_execution_validator_jito,https://github.com/jito-foundation/firebam,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-079,github_simulation_testing_security,https://github.com/LiteSVM/litesvm,source_or_document_review,P0,NOT_REVIEWED,,,,UNASSESSED
-SRC-080,github_simulation_testing_security,https://github.com/LiteSVM/anchor-litesvm,source_or_document_review,P0,NOT_REVIEWED,,,,UNASSESSED
+SRC-079,github_simulation_testing_security,https://github.com/LiteSVM/litesvm,source_or_document_review,P0,PARTIAL_REVIEW,LITESVM-2026-10-14,1dda337d22521a4310ec959ebabce0aa4910c497,Apache-2.0,TEST_TOOLING_REFERENCE_ONLY_NO_CURRENT_SBF_TARGET
+SRC-080,github_simulation_testing_security,https://github.com/LiteSVM/anchor-litesvm,source_or_document_review,P0,PARTIAL_REVIEW,ANCHOR-LITESVM-2026-10-14,0afefab1a2a97ccf9441099b19455f6cb1037617,MIT,NO_CURRENT_ANCHOR_TARGET_AND_OLD_LITESVM_API
 SRC-081,github_simulation_testing_security,https://github.com/anza-xyz/svm,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-082,github_simulation_testing_security,https://github.com/anza-xyz/sbpf,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-083,github_simulation_testing_security,https://github.com/firedancer-io/solfuzz-agave,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
