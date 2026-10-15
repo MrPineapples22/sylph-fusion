@@ -89,9 +89,9 @@ SRC-087,github_simulation_testing_security,https://github.com/Shopify/toxiproxy,
 SRC-088,github_simulation_testing_security,https://github.com/Syndica/sig,source_or_document_review,P1,PARTIAL_REVIEW,SRC-088-PINNED-2026-10-14,b5026c60fe56b51edd79131115b7e741449d6b2e,Apache-2.0,CLIENT_DIVERSITY_RESEARCH_ONLY_NO_DEPLOYMENT
 SRC-089,github_simulation_testing_security,https://github.com/SperLat/Sombra,source_or_document_review,P1,PARTIAL_REVIEW,SRC-089-PINNED-2026-10-14,886825795456f071738b0f429e8894c78790cca5,AGPL-3.0_REVIEW_REQUIRED,EVIDENCE_LABEL_PATTERN_ONLY_AGPL_REVIEW
 SRC-090,github_simulation_testing_security,https://github.com/Unizuka22/opensol-agent,source_or_document_review,P1,PARTIAL_REVIEW,SRC-090-PINNED-2026-10-14,8f80b2a3e5479288be9d118c7110a0ba30ff23c4,MIT,READ_ONLY_RESEARCH_PATTERN_NO_RUNTIME_DEPENDENCY
-SRC-091,github_treasury_signing_crosschain,https://github.com/Squads-Protocol/smart-account-program,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-092,github_treasury_signing_crosschain,https://github.com/Squads-Protocol/v4-examples,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-093,github_treasury_signing_crosschain,https://github.com/Squads-Protocol/squads-multisig-batch-optimizer,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
+SRC-091,github_treasury_signing_crosschain,https://github.com/Squads-Protocol/smart-account-program,source_or_document_review,P2,PARTIAL_REVIEW,SRC-091-PINNED-2026-10-14,80bf1f7ad28fd1176c364879776982730b8e9c80,AGPL-3.0_REVIEW_REQUIRED,AUTHORIZATION_PATTERN_ONLY_AGPL_NO_CUSTODY_INTEGRATION
+SRC-092,github_treasury_signing_crosschain,https://github.com/Squads-Protocol/v4-examples,source_or_document_review,P2,PARTIAL_REVIEW,SRC-092-PINNED-2026-10-14,292304d7404a94156db3375ac0dbc8d428679069,LICENSE_NOT_FOUND_REVIEW_REQUIRED,EXAMPLE_INDEX_ONLY_NO_LICENSE_CLEARANCE
+SRC-093,github_treasury_signing_crosschain,https://github.com/Squads-Protocol/squads-multisig-batch-optimizer,source_or_document_review,P2,PARTIAL_REVIEW,SRC-093-PINNED-2026-10-14,863482ed7626c532ff858bbc7105af35da12fa78,MIT,SERIALIZATION_PATTERN_ONLY_NO_MULTISIG_RUNTIME_CHANGE
 SRC-094,github_treasury_signing_crosschain,https://github.com/wormhole-foundation/wormhole,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-095,github_treasury_signing_crosschain,https://github.com/wormhole-foundation/wormhole-connect,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-096,github_treasury_signing_crosschain,https://github.com/wormhole-foundation/wormhole-circle-integration,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
@@ -99,9 +99,9 @@ SRC-097,github_treasury_signing_crosschain,https://github.com/debridge-finance/m
 SRC-098,github_treasury_signing_crosschain,https://github.com/debridge-finance/desdk,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-099,github_treasury_signing_crosschain,https://github.com/debridge-finance/dln-contracts,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-100,github_treasury_signing_crosschain,https://github.com/solana-program/token-wrap,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-101,github_treasury_signing_crosschain,https://github.com/hashicorp/vault,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
+SRC-101,github_treasury_signing_crosschain,https://github.com/hashicorp/vault,source_or_document_review,P2,PARTIAL_REVIEW,SRC-101-PINNED-2026-10-14,54e4149458609ce5535df65be3bf2ddac0ebaeaa,BUSINESS_SOURCE_LICENSE_REVIEW_REQUIRED,CUSTODY_ARCHITECTURE_REFERENCE_ONLY_NO_DEPLOYMENT
 SRC-102,github_treasury_signing_crosschain,https://github.com/Infisical/infisical,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-103,github_treasury_signing_crosschain,https://github.com/getsops/sops,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
+SRC-103,github_treasury_signing_crosschain,https://github.com/getsops/sops,source_or_document_review,P2,PARTIAL_REVIEW,SRC-103-PINNED-2026-10-14,e39ca97b6209f9132ea40d22beb37d796060cb32,MPL-2.0,SECRET_HANDLING_PATTERN_ONLY_NO_CREDENTIAL_ACCESS
 SRC-104,github_treasury_signing_crosschain,https://github.com/smallstep/certificates,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-105,github_treasury_signing_crosschain,https://github.com/spiffe/spire,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-106,github_quant_ml_data,https://github.com/ClickHouse/ClickHouse,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED

@@ -445,3 +445,13 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - SRC-089 Sombra is pinned at 886825795456f071738b0f429e8894c78790cca5 (AGPL-3.0). Its explicit live-RPC/demo/heuristic labels and append-only evidence logs are useful UI patterns; its heuristic score is not certified or integrated.
 - SRC-090 OpenSol Agent is pinned at 8f80b2a3e5479288be9d118c7110a0ba30ff23c4 (MIT). It describes a read-only, no-key investigation flow; generated narrative should remain tied to visible source evidence. No package was run.
 - Registry status: 98 direct source inspections and 190 catalog-triage records. No runtime dependency, feed connection, or trading authority changed.
+
+
+## Custody, authorization and secret-handling references (2026-10-14)
+
+- SRC-091 Squads Smart Account Program is pinned at 80bf1f7ad28fd1176c364879776982730b8e9c80 (AGPL-3.0). Its source checks signer thresholds, proposal state and exact transaction matching; no custody path was added.
+- SRC-092 Squads v4 examples are pinned at 292304d7404a94156db3375ac0dbc8d428679069. The repository contains Rust CPI and TypeScript examples, but the inspected tree has no README or root license; examples were not run.
+- SRC-093 Squads batch optimizer is pinned at 863482ed7626c532ff858bbc7105af35da12fa78 (MIT). It packs atomic instruction buckets by serialized transaction size and returns failures for buckets that do not fit.
+- SRC-101 HashiCorp Vault is pinned at 54e4149458609ce5535df65be3bf2ddac0ebaeaa. It is a secrets product, not an importable Go library; licensing is not treated as open-source approval. No server or secret was accessed.
+- SRC-103 SOPS is pinned at e39ca97b6209f9132ea40d22beb37d796060cb32 (MPL-2.0). Its key-service interfaces support explicit KMS/decryption configuration; no key service or encrypted file was accessed.
+- Registry status: 103 direct source inspections and 185 catalog-triage records. No credential, signer, custody or deploy path was exercised.
