@@ -221,3 +221,10 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - SRC-006 was inspected at 9e577f496581d907a79b4f051dc596dfecae4142; the repository declares Apache-2.0. Its protobuf preserves Solana v1 inline transaction configuration and cost units. The RPC decoder caps supported transaction versions at v1 and fails when a higher version is encountered.
 - This is useful as an offline schema/fixture reference for version-aware decoding and confirmed-versus-finalized separation. SYLPH already has a version-aware wire decoder and gap-recovery pipeline, so no parallel Go indexer was added.
 - Registry now has 21 partial reviews and 267 not reviewed; source-coverage validation remains structural and does not certify a runtime integration.
+
+
+## Substreams Solana schema-generation review (2026-10-15)
+
+- SRC-007 was inspected at 1ab1476471d654e03e486763ea3a2e2bec698cae; the helper library is Apache-2.0 and targets Rust/WASM Substreams use.
+- Its documentation warns that generated Rust block models are manually synchronized with source protobuf definitions and recommends protobuf extern_path reuse. This is a schema-drift prevention pattern, not a live data or execution integration.
+- SYLPH already has TypeScript-native ingress and v1 decoding. No Rust dependency was added; catalog progress is 22 partial reviews and 266 not reviewed.
