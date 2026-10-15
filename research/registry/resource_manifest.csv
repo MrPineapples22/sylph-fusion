@@ -31,10 +31,10 @@ SRC-029,github_streaming_rpc,https://github.com/helius-labs/yellowstone-grpc,sou
 SRC-030,github_streaming_rpc,https://github.com/jito-foundation/solana-accountsdb-connector,source_or_document_review,P1,PARTIAL_REVIEW,ACCOUNTSDB-CONNECTOR-SOURCE-2026-10-14,c18632c1b2dad92b3358acc22a5b4fa6fec55f1b,UNDECLARED_REUSE_NOT_CLEARED,FORK_AND_QUEUE_REFERENCE_ONLY_NO_DEPENDENCY_OR_CANONICAL_AUTHORITY
 SRC-031,github_streaming_rpc,https://github.com/solana-foundation/rpc-latency-monitor,source_or_document_review,P1,PARTIAL_REVIEW,RPC-LATENCY-MONITOR-SOURCE-2026-10-14,f539f7f871fdb6fd15f1bb007ea72d605595e81d,Apache-2.0,READ_ONLY_PROVIDER_TELEMETRY_NO_CANONICAL_OR_EXECUTION_AUTHORITY
 SRC-032,github_parsers_sdks,https://github.com/codama-idl/codama,source_or_document_review,P1,PARTIAL_REVIEW,CODAMA-SOURCE-2026-10-14,252238f4f6165fafc46816077414fcef35d69e64,MIT,OFFLINE_CODE_GENERATION_REFERENCE_NO_UNVERIFIED_RUNTIME_DECODER
-SRC-033,github_parsers_sdks,https://github.com/codama-idl/renderers-js,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-034,github_parsers_sdks,https://github.com/codama-idl/renderers-rust,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-035,github_parsers_sdks,https://github.com/codama-idl/renderers-go,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-036,github_parsers_sdks,https://github.com/metaplex-foundation/shank,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
+SRC-033,github_parsers_sdks,https://github.com/codama-idl/renderers-js,source_or_document_review,P1,PARTIAL_REVIEW,CODAMA-JS-RENDERER-2026-10-14,2d3897cc92cca191db7f7cea852b90b6f332045a,MIT,ISOLATED_OFFLINE_CODEC_GENERATION_REFERENCE_NO_RUNTIME_MIGRATION
+SRC-034,github_parsers_sdks,https://github.com/codama-idl/renderers-rust,source_or_document_review,P1,PARTIAL_REVIEW,CODAMA-RUST-RENDERER-2026-10-14,95148ba6a0fdc171ee493ad3b42748a283076bdb,MIT,DIFFERENTIAL_FIXTURE_REFERENCE_ONLY_NO_RUST_RUNTIME_SURFACE
+SRC-035,github_parsers_sdks,https://github.com/codama-idl/renderers-go,source_or_document_review,P1,PARTIAL_REVIEW,CODAMA-GO-RENDERER-2026-10-14,c0464029406defa9d6f4c86793c93302aa754698,MIT,OPTIONAL_CROSS_LANGUAGE_FIXTURE_SOURCE_NO_RUNTIME_ADOPTION
+SRC-036,github_parsers_sdks,https://github.com/metaplex-foundation/shank,source_or_document_review,P1,PARTIAL_REVIEW,SHANK-SOURCE-2026-10-14,265f5a8f251457ffbaa34e1904f24bed045a8374,APACHE-2.0_CRATE_DECLARATIONS_NO_ROOT_LICENSE_FILE,IDL_PROVENANCE_PATTERN_ONLY_NO_DEPENDENCY_OR_DEPLOYED_CODE_ATTESTATION
 SRC-037,github_parsers_sdks,https://github.com/anza-xyz/wincode,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-038,github_parsers_sdks,https://github.com/debridge-finance/evm-sol-serializer,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-039,github_parsers_sdks,https://github.com/firedancer-io/solana_dissector,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED

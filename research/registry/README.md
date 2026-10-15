@@ -36,7 +36,7 @@
 | 021 | 15 | SRC-214–228 | Solana transaction delivery, routers, venues and trading terminals |
 | 022 | 15 | SRC-229–243 | Token risk screening, transaction safety and custody/signing controls |
 | 023 | 9 | SRC-244–251, SRC-253 | Portfolio monitoring, REA references, graph tooling and GitHub source hosting |
-| **Total** | **288 / 288** | **100.00%** | **45 pinned source/document partial reviews and 243 catalog-triage-only records; none of this count means runtime integration** |
+| **Total** | **288 / 288** | **100.00%** | **49 pinned source/document partial reviews and 239 catalog-triage-only records; none of this count means runtime integration** |
 
 `PARTIAL_REVIEW` means pinned source/document inspection was performed; `CATALOG_TRIAGE` is a structured catalog note without direct inspection. Neither means exhaustive review or runtime integration. Research-only status never implies approval for runtime use.
 
@@ -46,7 +46,7 @@ REA is used out of band where the target type and authorization fit its supporte
 
 ## Resume
 
-All 288 records have a URL availability observation. Forty-five sources now have explicit partial source review status; 243 remain NOT_REVIEWED. Record coverage is complete; upstream research and implementation remain incomplete. Continue with concrete findings from each batch, inspect the current local source and pinned upstream documentation, reproduce behavior with focused deterministic tests, and make small patches. Preserve existing workspace changes and do not grant a source trading authority based on inclusion in the manifest.
+All 288 records have a URL availability observation. Forty-nine sources now have explicit partial source review status; 239 remain NOT_REVIEWED. Record coverage is complete; upstream research and implementation remain incomplete. Continue with concrete findings from each batch, inspect the current local source and pinned upstream documentation, reproduce behavior with focused deterministic tests, and make small patches. Preserve existing workspace changes and do not grant a source trading authority based on inclusion in the manifest.
 ## Latest implementation verification (2026-10-14)
 
 - `npm run build:engine` — passed after the feed admission snapshot change.
@@ -319,3 +319,11 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - SRC-031 RPC Latency Monitor is pinned at f539f7f871fdb6fd15f1bb007ea72d605595e81d (Apache-2.0). It is multi-region, read-only RPC telemetry; optional reference claims are fail-open and it does not measure transaction landing.
 - SRC-032 Codama is pinned at 252238f4f6165fafc46816077414fcef35d69e64 (MIT). Its visitor pipeline generates clients from IDLs; generated decoders remain untrusted until pinned and checked against byte-level fixtures.
 - The registry now reports 45 directly inspected sources and 243 triage-only records. This advances source research only; no code dependency, runtime authority, signer path, or trade behavior changed.
+
+
+## IDL generation source follow-up (2026-10-14)
+
+- SRC-033 JavaScript renderer is pinned at 2d3897cc92cca191db7f7cea852b90b6f332045a (MIT). It generates Solana Kit clients, defaults to deleting its output folder and syncing package.json, and supports explicit .js imports for Node ESM. Generation is suitable only in an isolated staging package with reviewed diffs.
+- SRC-034 Rust renderer is pinned at 95148ba6a0fdc171ee493ad3b42748a283076bdb (MIT); SRC-035 Go renderer at c0464029406defa9d6f4c86793c93302aa754698 (MIT). Both are cross-language fixture references only; SYLPH has no Rust or Go runtime surface.
+- SRC-036 Shank is pinned at 265f5a8f251457ffbaa34e1904f24bed045a8374. Its inspected crates declare Apache-2.0, while the pinned tree has no root LICENSE; source-derived IDL still does not attest deployed bytecode.
+- Registry status: 49 direct source inspections and 239 catalog-triage records. No runtime dependencies or trading behavior changed.
