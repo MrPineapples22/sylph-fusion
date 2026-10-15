@@ -84,3 +84,9 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - Engine build passed; focused PumpSwap/bridge/graduated-exit/dashboard tests passed 19/19; platform suite passed 1,053/1,053. This verifies simulated quote parity for the fixture, not live transaction execution or the full Pump lifecycle.
 - Two follow-on reader regressions prove SDK parity with a nonzero creator fee and fail closed when effective virtual reserves exceed the executable raw quote vault. Engine build passed and the expanded platform suite passed 1,055/1,055.
 - `SRC-259` remains `PARTIAL_REVIEW`; its manifest integration status is still `NOT_REVIEWED` because this is not a complete upstream review or live execution integration.
+
+## Solana paper-fee accounting follow-up (2026-10-14)
+
+- Simulated filled-trade cost accounting now includes a fixed 5,000-lamport one-signature base-fee assumption alongside priority fee and Jito tip across the gateway, terminal settlement, and paper adapter. Buy basis, sell net proceeds/PnL, and terminal fee display have focused regressions.
+- Engine build and terminal production build passed; focused runtime tests passed 19/19 in a pinned scratch installation. Terminal's dependency install reported one high-severity advisory; dependency remediation is outside this fee patch.
+- This is paper accounting only. It does not implement version-aware transaction fee decoding, signature-count inference, failed-on-chain transaction reconciliation, or finalized meta.fee accounting; SRC-255 remains partial and the catalog's integration status is unchanged.

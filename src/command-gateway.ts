@@ -8,7 +8,7 @@
 
 import { globalConfigAuthority } from './config-authority.js';
 import { globalLifecycle } from './lifecycle/system-lifecycle.js';
-import { SimulatedEngine, type OrderRequest, type FillReport } from './execution-engine.js';
+import { SIMULATED_BASE_NETWORK_FEE_LAMPORTS, SimulatedEngine, type OrderRequest, type FillReport } from './execution-engine.js';
 import { LeaderScheduleTracker } from './platform/execution/solaris/leader-schedule.js';
 import { DynamicTipAndContentionOracle } from './platform/execution/solaris/tip-oracle.js';
 import { BimodalExecutionRouter, type RouteRequest } from './platform/execution/solaris/bimodal-router.js';
@@ -218,7 +218,7 @@ type PaperEntryEvidenceProvider = (mint: string, poolAddress: string) => Promise
 type AutonomousExitExpectation = Pick<ExitPolicyDecision, 'reason' | 'fractionBps' | 'emergency' | 'nextStage'>;
 
 function simulatedNetworkFeeUsd(report: Pick<FillReport, 'priorityFeeLamports' | 'jitoTipLamports'>, solPriceUsd: number): number {
-  const feeLamports = report.priorityFeeLamports + report.jitoTipLamports;
+  const feeLamports = SIMULATED_BASE_NETWORK_FEE_LAMPORTS + report.priorityFeeLamports + report.jitoTipLamports;
   return Number(feeLamports) / 1e9 * solPriceUsd;
 }
 

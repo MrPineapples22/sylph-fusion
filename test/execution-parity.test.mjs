@@ -34,7 +34,7 @@ test('parity: filled BUY updates cash, position, overlay, and tape', () => {
     preTradeReserves: { sol: 50_000_000_000n, token: 1_000_000_000_000n },
     postTradeReserves: { sol: 51_000_000_000n, token: 980_000_000_000n } };
   const next = handleExecutionFilled(state, { order: o, report, telemetry });
-  assert.equal(next.cash, 98_999_850_000n);
+  assert.equal(next.cash, 98_999_845_000n, 'filled buy includes one-signature base fee');
   assert.equal(next.positionsByPool[POOL].remainingTokens, 20_000_000_000n);
   assert.equal(next.positions[0].remainingTokens, 20_000_000_000n);
   assert.equal(next.activeOverlays[POOL].sol, 51_000_000_000n);
@@ -58,7 +58,7 @@ test('parity: partial SELL advances ladder and realized PnL', () => {
   assert.equal(next.positionsByPool[POOL].remainingTokens, 14_000_000_000n);
   assert.equal(next.positionsByPool[POOL].ladderStep, 1);
   // Legacy reducer and migrated handler share the same raw-unit cost-basis convention.
-  assert.equal(next.positionsByPool[POOL].realizedPnlLamports, 359_550_000n);
+  assert.equal(next.positionsByPool[POOL].realizedPnlLamports, 359_545_000n, 'filled sell includes one-signature base fee');
   assert.equal(next.activeOverlays[POOL].sol, 50_640_000_000n);
 });
 
