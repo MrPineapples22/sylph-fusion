@@ -228,3 +228,10 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - SRC-007 was inspected at 1ab1476471d654e03e486763ea3a2e2bec698cae; the helper library is Apache-2.0 and targets Rust/WASM Substreams use.
 - Its documentation warns that generated Rust block models are manually synchronized with source protobuf definitions and recommends protobuf extern_path reuse. This is a schema-drift prevention pattern, not a live data or execution integration.
 - SYLPH already has TypeScript-native ingress and v1 decoding. No Rust dependency was added; catalog progress is 22 partial reviews and 266 not reviewed.
+
+
+## Streamling data-pipeline review (2026-10-15)
+
+- SRC-008 was inspected at a7cb8dae343486773e1535729bdcc4c45a7f6e44. It is a standalone single-node columnar pipeline runtime; its documented checkpoint protocol is at-least-once and requires idempotent sink handling for replay duplicates.
+- The current license is FSL-1.1 with a future Apache-2.0 grant on each version’s second anniversary, and includes competing-use restrictions. No code or dependency was adopted.
+- Its checkpoint/ack pattern may inform future offline training ETL, but it cannot replace SYLPH’s canonical chain journal or capital ledger. Registry count is 23 partial reviews and 265 not reviewed.
