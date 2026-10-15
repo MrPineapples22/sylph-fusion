@@ -1,19 +1,19 @@
 {
-  "generatedAt": "2026-10-15T04:32:57.170Z",
+  "generatedAt": "2026-10-15T04:34:40.001Z",
   "manifestRows": 288,
   "uniqueManifestIds": 288,
   "batchFiles": 23,
   "catalogRecords": 288,
   "uniqueCatalogIds": 288,
-  "directlyReviewedRecords": 93,
-  "triageOnlyRecords": 195,
+  "directlyReviewedRecords": 98,
+  "triageOnlyRecords": 190,
   "manifestReviewStatusCounts": {
-    "PARTIAL_REVIEW": 93,
-    "NOT_REVIEWED": 195
+    "PARTIAL_REVIEW": 98,
+    "NOT_REVIEWED": 190
   },
   "batchStatusCounts": {
-    "PARTIAL_REVIEW": 93,
-    "CATALOG_TRIAGE": 195
+    "PARTIAL_REVIEW": 98,
+    "CATALOG_TRIAGE": 190
   },
   "distinctDecisionCount": 169,
   "topDecisionCounts": [
@@ -58,11 +58,11 @@
       "count": 1
     },
     {
-      "decision": "AUTHORIZED_LOCAL_POC_TESTS_ONLY",
+      "decision": "AUDIT_INDEX_REFERENCE_ONLY",
       "count": 1
     },
     {
-      "decision": "AUTHORIZED_MANUAL_DIAGNOSTICS_ONLY; NO_RUNTIME_INGESTION",
+      "decision": "AUTHORIZED_LOCAL_POC_TESTS_ONLY",
       "count": 1
     }
   ],

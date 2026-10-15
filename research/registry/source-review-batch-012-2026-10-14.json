@@ -2,13 +2,13 @@
   "batchId": "source-review-batch-012-2026-10-14",
   "reviewedAt": "2026-10-14",
   "repository": {
-    "localHead": "4151265ea7a87127cf957d0fb2b2ef0beb959b0b",
-    "remoteHead": "4151265ea7a87127cf957d0fb2b2ef0beb959b0b",
+    "localHead": "074ed82",
+    "remoteHead": "074ed82",
     "mainAndTaskBranchMatch": true,
     "worktreeHasPreexistingEdits": true
   },
   "sourceRecords": 9,
-  "directlyReviewed": 4,
+  "directlyReviewed": 9,
   "sources": [
     {
       "id": "SRC-082",
@@ -178,19 +178,20 @@
     {
       "id": "SRC-086",
       "url": "https://github.com/Ackee-Blockchain/public-audit-reports",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official public audit reports repository"
+        "Ackee public-audit-reports README, catalog structure and pinned commit",
+        "Pinned repository commit 2033ac4dcd808e9cebdadfbaff40e4e89e33998f"
       ],
       "discoveries": [
-        "Repository collects public client audit reports; each report is scoped to specific commit/program/version.",
-        "An audit report is historical evidence and does not certify later deployed code or operational configuration.",
-        "No report was selected as a direct audit of SYLPH in this review."
+        "Repository indexes published third-party smart-contract audit reports.",
+        "Reports are external documents rather than a reusable runtime library.",
+        "A report applies only to its stated program/version/scope."
       ],
       "patterns": [
-        "bind security claims to audited commit and scope",
-        "map findings to current code revision",
-        "retest fixes and regressions independently"
+        "Tie audit findings to exact program version and scope.",
+        "Track remediation status separately from report publication.",
+        "Use audits alongside tests and deployed-code identity."
       ],
       "sylphModules": [
         "RELEASE_CERTIFICATION.md",
@@ -199,37 +200,39 @@
       ],
       "overlap": "Useful for external program/protocol security references but no direct report-level integration identified.",
       "risks": [
-        "scope mismatch",
-        "stale findings or unaudited new code",
-        "report redistribution/license constraints"
+        "Individual report licenses/redistribution terms vary.",
+        "No specific report was audited against SYLPH dependencies here.",
+        "A published audit does not prove current deployed code matches the audited build."
       ],
       "validation": [
-        "identify exact report and target commit",
-        "verify current deployed program hash",
-        "do not treat report as blanket safety claim"
+        "Pin exact source/report and validate applicable scope.",
+        "Keep provenance, freshness and risk interpretation distinct.",
+        "Use isolated deterministic test data; do not route findings directly to signing authority."
       ],
       "evidence": [
-        "https://github.com/Ackee-Blockchain/public-audit-reports"
+        "https://github.com/Ackee-Blockchain/public-audit-reports",
+        "https://github.com/Ackee-Blockchain/public-audit-reports/tree/2033ac4dcd808e9cebdadfbaff40e4e89e33998f"
       ],
-      "license": "REPORTS_HAVE_PER_DOCUMENT_TERMS_REVIEW_REQUIRED",
-      "decision": "REFERENCE_ONLY; AUDIT_SCOPE_MUST_MATCH_EXACT_TARGET"
+      "license": "REPORTS_ONLY_INDIVIDUAL_LICENSES_NOT_AUDITED",
+      "decision": "AUDIT_INDEX_REFERENCE_ONLY"
     },
     {
       "id": "SRC-087",
       "url": "https://github.com/Shopify/toxiproxy",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Shopify Toxiproxy README and project description"
+        "Toxiproxy README, Go module, toxic implementation and usage docs",
+        "Pinned repository commit 49299d8838525126e09c85ebe0ba89940a3261e5"
       ],
       "discoveries": [
-        "Toxiproxy is a TCP proxy for simulating network/system conditions in resilience tests.",
-        "It can support deterministic latency, timeout and connection fault injection for stream/RPC adapters.",
-        "It does not model all gRPC/QUIC/UDP protocol behaviors and would require an isolated test network."
+        "Framework inserts a controllable TCP proxy for deterministic network fault tests.",
+        "Documented toxics cover latency, connection down, bandwidth limits, timeout and slow close.",
+        "README frames use for CI/development fault injection."
       ],
       "patterns": [
-        "inject bounded latency and disconnect faults",
-        "replay deterministic failure schedules",
-        "assert recovery and no silent data loss"
+        "Reproduce sustained latency and disconnects through a controlled proxy.",
+        "Assert reconnect, queue-drain and continuity behavior under bounded faults.",
+        "Keep fault knobs deterministic and test-only."
       ],
       "sylphModules": [
         "src/rpc.ts",
@@ -239,37 +242,39 @@
       ],
       "overlap": "Existing unit tests mock failures; a proxy could add integration-level TCP failure testing without replacing code.",
       "risks": [
-        "test proxy configuration can expose services",
-        "TCP-only limits for UDP/QUIC paths",
-        "chaos can disturb shared user services if misconfigured"
+        "Must remain isolated from production endpoints/credentials.",
+        "TCP proxy behavior is not identical to every WebSocket/provider implementation.",
+        "No SYLPH test was run through this tool."
       ],
       "validation": [
-        "use isolated test ports/processes",
-        "test recovery under timeout/reset/rate-limit cases",
-        "never point fault injection at production endpoints"
+        "Pin exact source/report and validate applicable scope.",
+        "Keep provenance, freshness and risk interpretation distinct.",
+        "Use isolated deterministic test data; do not route findings directly to signing authority."
       ],
       "evidence": [
-        "https://github.com/Shopify/toxiproxy"
+        "https://github.com/Shopify/toxiproxy",
+        "https://github.com/Shopify/toxiproxy/tree/49299d8838525126e09c85ebe0ba89940a3261e5"
       ],
       "license": "MIT",
-      "decision": "OPTIONAL_TEST_INFRASTRUCTURE_CANDIDATE; ISOLATED_ONLY"
+      "decision": "TEST_PATTERN_REFERENCE_ONLY_NO_RUNTIME_DEPENDENCY"
     },
     {
       "id": "SRC-088",
       "url": "https://github.com/Syndica/sig",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Syndica Sig README and repository metadata"
+        "Syndica Sig README, license and project architecture docs",
+        "Pinned repository commit b5026c60fe56b51edd79131115b7e741449d6b2e"
       ],
       "discoveries": [
-        "Sig is a Solana validator client implementation written in Zig.",
-        "A distinct client implementation can serve protocol differential testing but is not automatically independent market evidence.",
-        "Running a validator client requires significant infrastructure and version tracking."
+        "Sig is an independent Solana validator implemented in Zig.",
+        "README distinguishes current multi-process v2 from maintenance-mode v1.",
+        "v2 components communicate via typed shared-memory regions and separate sandboxes."
       ],
       "patterns": [
-        "compare client behavior on fixed block/transaction vectors",
-        "record client version and feature activation",
-        "treat divergence as a signal for investigation, not immediate truth selection"
+        "Use independent validator observations to detect implementation-specific discrepancies.",
+        "Treat producer/service health and message freshness as separate signals.",
+        "Pin major architecture generation alongside evidence."
       ],
       "sylphModules": [
         "src/platform/ingestion/census-r.ts",
@@ -278,37 +283,39 @@
       ],
       "overlap": "Potential client diversity source; not a direct data adapter for current application.",
       "risks": [
-        "implementation maturity and protocol parity",
-        "different client outputs around edge cases",
-        "operational cost"
+        "Validator infrastructure and Zig build are outside SYLPH TypeScript runtime.",
+        "Sparse review did not build or start a node.",
+        "Cross-client agreement is not proof of finality or strategy quality."
       ],
       "validation": [
-        "pin release and feature set",
-        "compare against Agave/Firedancer vectors",
-        "do not use an unverified client as sole canonical source"
+        "Pin exact source/report and validate applicable scope.",
+        "Keep provenance, freshness and risk interpretation distinct.",
+        "Use isolated deterministic test data; do not route findings directly to signing authority."
       ],
       "evidence": [
-        "https://github.com/Syndica/sig"
+        "https://github.com/Syndica/sig",
+        "https://github.com/Syndica/sig/tree/b5026c60fe56b51edd79131115b7e741449d6b2e"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "CLIENT_DIVERSITY_RESEARCH_ONLY"
+      "license": "Apache-2.0",
+      "decision": "CLIENT_DIVERSITY_RESEARCH_ONLY_NO_DEPLOYMENT"
     },
     {
       "id": "SRC-089",
       "url": "https://github.com/SperLat/Sombra",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Sombra README and repository description"
+        "Sombra README, root license and risk-console data truth labels",
+        "Pinned repository commit 886825795456f071738b0f429e8894c78790cca5"
       ],
       "discoveries": [
-        "Sombra describes a Solana pre-transaction risk/evidence console for wallets, signatures, blocks and programs.",
-        "A pre-transaction screen is a derived risk signal and cannot guarantee post-submit execution or prevent all malicious token behavior.",
-        "No SYLPH integration or provider authority was verified."
+        "Project describes pre-transaction wallet/signature/program screening with allow/review/block outcomes.",
+        "It labels live-RPC data separately from demo samples and local heuristics.",
+        "Audit evidence is exported to JSON/CSV and appended to JSONL logs."
       ],
       "patterns": [
-        "show supporting evidence with each risk result",
-        "fail closed when required evidence is unavailable",
-        "separate advisory risk from signing authorization"
+        "Preserve provenance labels across chain facts, demo fixtures and heuristics.",
+        "Make risk decisions explainable with source evidence and explicit guardrails.",
+        "Append auditable decision records instead of overwriting conclusions."
       ],
       "sylphModules": [
         "src/market.ts",
@@ -318,37 +325,39 @@
       ],
       "overlap": "Potentially overlaps RugCheck/GoPlus and existing manual research surface; needs source-by-source comparison.",
       "risks": [
-        "false positives/negatives",
-        "unverified data sources",
-        "pre-transaction assumptions can become stale"
+        "AGPL-3.0 license; prototype heuristic scores are not certified risk signals.",
+        "Live RPC availability and demo fallback must never be conflated.",
+        "Not an authorization/signing service or direct SYLPH engine."
       ],
       "validation": [
-        "inspect code, data provenance and license",
-        "test exact mint/transaction binding",
-        "ensure advisory output cannot authorize execution"
+        "Pin exact source/report and validate applicable scope.",
+        "Keep provenance, freshness and risk interpretation distinct.",
+        "Use isolated deterministic test data; do not route findings directly to signing authority."
       ],
       "evidence": [
-        "https://github.com/SperLat/Sombra"
+        "https://github.com/SperLat/Sombra",
+        "https://github.com/SperLat/Sombra/tree/886825795456f071738b0f429e8894c78790cca5"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "NO_AUTHORITY; OPTIONAL_RESEARCH_UI_COMPARISON"
+      "license": "AGPL-3.0_REVIEW_REQUIRED",
+      "decision": "EVIDENCE_LABEL_PATTERN_ONLY_AGPL_REVIEW"
     },
     {
       "id": "SRC-090",
       "url": "https://github.com/Unizuka22/opensol-agent",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official OpenSol Agent README and repository description"
+        "OpenSol Agent README, license and project architecture description",
+        "Pinned repository commit 8f80b2a3e5479288be9d118c7110a0ba30ff23c4"
       ],
       "discoveries": [
-        "Project describes a CLI-first Solana intelligence agent producing wallet, token and transaction risk reports.",
-        "Agent-generated reports are derived outputs that need explicit source provenance and deterministic verification.",
-        "No credentials, tool access, or SYLPH integration were examined or configured."
+        "CLI-first read-only intelligence tool queries public wallet/token/transaction data.",
+        "README explicitly says it does not require keys or trade.",
+        "Its report separates source probes from plain-English explanation and describes visible signals."
       ],
       "patterns": [
-        "use bounded read-only tools",
-        "cite source records in generated findings",
-        "keep AI summaries separate from canonical decisions"
+        "Keep investigative read paths isolated from execution authority.",
+        "Show raw evidence behind generated narrative or score.",
+        "Avoid private keys in read-only analytics workflows."
       ],
       "sylphModules": [
         "research/registry/",
@@ -357,20 +366,21 @@
       ],
       "overlap": "Potential research UX pattern; existing app should avoid a duplicate agent engine and keep its controls explicit.",
       "risks": [
-        "prompt/tool injection from untrusted chain metadata",
-        "hallucinated or stale risk claims",
-        "shell/API tools could introduce side effects"
+        "AI narrative can overstate source facts if not tied to evidence.",
+        "Public RPC results need timestamps/freshness and endpoint provenance.",
+        "No runtime/package execution or external LLM call was performed."
       ],
       "validation": [
-        "inspect tool permissions and data lineage",
-        "adversarial-test untrusted metadata handling",
-        "require deterministic evidence for any operational conclusion"
+        "Pin exact source/report and validate applicable scope.",
+        "Keep provenance, freshness and risk interpretation distinct.",
+        "Use isolated deterministic test data; do not route findings directly to signing authority."
       ],
       "evidence": [
-        "https://github.com/Unizuka22/opensol-agent"
+        "https://github.com/Unizuka22/opensol-agent",
+        "https://github.com/Unizuka22/opensol-agent/tree/8f80b2a3e5479288be9d118c7110a0ba30ff23c4"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "NO_RUNTIME_AGENT_INTEGRATION; RESEARCH_UI_PATTERN_ONLY"
+      "license": "MIT",
+      "decision": "READ_ONLY_RESEARCH_PATTERN_NO_RUNTIME_DEPENDENCY"
     }
   ]
 }

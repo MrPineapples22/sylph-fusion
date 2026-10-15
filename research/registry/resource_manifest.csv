@@ -84,11 +84,11 @@ SRC-082,github_simulation_testing_security,https://github.com/anza-xyz/sbpf,sour
 SRC-083,github_simulation_testing_security,https://github.com/firedancer-io/solfuzz-agave,source_or_document_review,P1,PARTIAL_REVIEW,SRC-083-PINNED-2026-10-14,4e9fdeed80d1c67e4c8e89a49d2ade21a5ce9612,Apache-2.0,DIFFERENTIAL_FUZZ_REFERENCE_ONLY_NOT_RUN
 SRC-084,github_simulation_testing_security,https://github.com/firedancer-io/test-vectors,source_or_document_review,P1,PARTIAL_REVIEW,SRC-084-PINNED-2026-10-14,07967b11a161388b30c675c4684cadce00cc67fc,LICENSE_NOT_FOUND_REVIEW_REQUIRED,FIXTURE_REFERENCE_ONLY_LICENSE_REVIEW
 SRC-085,github_simulation_testing_security,https://github.com/neodyme-labs/solana-poc-framework,source_or_document_review,P1,PARTIAL_REVIEW,SRC-085-PINNED-2026-10-14,afb00cad6c0c32fb4e89c1b974e79a1b46e39d02,MIT_OR_APACHE-2.0,AUTHORIZED_LOCAL_POC_TESTS_ONLY
-SRC-086,github_simulation_testing_security,https://github.com/Ackee-Blockchain/public-audit-reports,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-087,github_simulation_testing_security,https://github.com/Shopify/toxiproxy,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-088,github_simulation_testing_security,https://github.com/Syndica/sig,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-089,github_simulation_testing_security,https://github.com/SperLat/Sombra,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-090,github_simulation_testing_security,https://github.com/Unizuka22/opensol-agent,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
+SRC-086,github_simulation_testing_security,https://github.com/Ackee-Blockchain/public-audit-reports,source_or_document_review,P1,PARTIAL_REVIEW,SRC-086-PINNED-2026-10-14,2033ac4dcd808e9cebdadfbaff40e4e89e33998f,REPORTS_ONLY_INDIVIDUAL_LICENSES_NOT_AUDITED,AUDIT_INDEX_REFERENCE_ONLY
+SRC-087,github_simulation_testing_security,https://github.com/Shopify/toxiproxy,source_or_document_review,P1,PARTIAL_REVIEW,SRC-087-PINNED-2026-10-14,49299d8838525126e09c85ebe0ba89940a3261e5,MIT,TEST_PATTERN_REFERENCE_ONLY_NO_RUNTIME_DEPENDENCY
+SRC-088,github_simulation_testing_security,https://github.com/Syndica/sig,source_or_document_review,P1,PARTIAL_REVIEW,SRC-088-PINNED-2026-10-14,b5026c60fe56b51edd79131115b7e741449d6b2e,Apache-2.0,CLIENT_DIVERSITY_RESEARCH_ONLY_NO_DEPLOYMENT
+SRC-089,github_simulation_testing_security,https://github.com/SperLat/Sombra,source_or_document_review,P1,PARTIAL_REVIEW,SRC-089-PINNED-2026-10-14,886825795456f071738b0f429e8894c78790cca5,AGPL-3.0_REVIEW_REQUIRED,EVIDENCE_LABEL_PATTERN_ONLY_AGPL_REVIEW
+SRC-090,github_simulation_testing_security,https://github.com/Unizuka22/opensol-agent,source_or_document_review,P1,PARTIAL_REVIEW,SRC-090-PINNED-2026-10-14,8f80b2a3e5479288be9d118c7110a0ba30ff23c4,MIT,READ_ONLY_RESEARCH_PATTERN_NO_RUNTIME_DEPENDENCY
 SRC-091,github_treasury_signing_crosschain,https://github.com/Squads-Protocol/smart-account-program,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-092,github_treasury_signing_crosschain,https://github.com/Squads-Protocol/v4-examples,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-093,github_treasury_signing_crosschain,https://github.com/Squads-Protocol/squads-multisig-batch-optimizer,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED

@@ -435,3 +435,13 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - SRC-084 Firedancer test-vectors is pinned at 07967b11a161388b30c675c4684cadce00cc67fc. Its README documents protobuf mismatch fixtures and CI regression coverage; no root LICENSE found and binary inputs were not decoded.
 - SRC-085 Solana PoC Framework is pinned at afb00cad6c0c32fb4e89c1b974e79a1b46e39d02 (MIT OR Apache-2.0). Its local, versioned PoC setup can support authorized deterministic reproductions; it is not production-runtime certification.
 - Registry status: 93 direct source inspections and 195 catalog-triage records. No VM/runtime code or fuzz tests were added or run.
+
+
+## Fault injection, independent clients and evidence labeling (2026-10-14)
+
+- SRC-086 Ackee public audit index is pinned at 2033ac4dcd808e9cebdadfbaff40e4e89e33998f. It indexes scoped reports, not a reusable library or proof that the deployed code matches an audited version.
+- SRC-087 Toxiproxy is pinned at 49299d8838525126e09c85ebe0ba89940a3261e5 (MIT). Deterministic TCP latency, timeout, bandwidth and disconnect faults are useful for isolated recovery tests; no SYLPH test was run through it.
+- SRC-088 Syndica Sig is pinned at b5026c60fe56b51edd79131115b7e741449d6b2e (Apache-2.0). Its current v2 validator architecture separates sandboxed services via typed shared memory; no validator was built or started.
+- SRC-089 Sombra is pinned at 886825795456f071738b0f429e8894c78790cca5 (AGPL-3.0). Its explicit live-RPC/demo/heuristic labels and append-only evidence logs are useful UI patterns; its heuristic score is not certified or integrated.
+- SRC-090 OpenSol Agent is pinned at 8f80b2a3e5479288be9d118c7110a0ba30ff23c4 (MIT). It describes a read-only, no-key investigation flow; generated narrative should remain tied to visible source evidence. No package was run.
+- Registry status: 98 direct source inspections and 190 catalog-triage records. No runtime dependency, feed connection, or trading authority changed.
