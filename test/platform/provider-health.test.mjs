@@ -61,6 +61,19 @@ test('Raydium pool lookup is tracked as supplemental market research, never auth
   assert.equal(provider.capabilityAvailable, true);
 });
 
+test('provider health reports bounded latency percentiles without hiding sample count', () => {
+  const tracker = new ProviderHealthTracker();
+  tracker.setProviderConfiguration('YELLOWSTONE_GRPC', true, true, false, 'NOT_REQUIRED');
+  Array.from({ length: 25 }, (_, index) => index + 1).forEach((latency, index) =>
+    tracker.recordValidatedObservation('YELLOWSTONE_GRPC', latency, undefined, 1_000 + index));
+
+  const provider = tracker.getReport(2_000).providers.YELLOWSTONE_GRPC;
+  assert.equal(provider.latencySampleCount, 20);
+  assert.equal(provider.latencyP50Ms, 15);
+  assert.equal(provider.latencyP90Ms, 23);
+  assert.equal(provider.latencyP99Ms, 25);
+});
+
 test('Jupiter Swap V2 is classified as quote research, not transaction execution', () => {
   const tracker = new ProviderHealthTracker();
   tracker.setProviderConfiguration('JUPITER_QUOTE', true, true, false, 'NOT_REQUIRED');

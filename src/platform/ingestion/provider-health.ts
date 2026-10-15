@@ -80,6 +80,11 @@ export interface ProviderMetricEntry extends ProviderCapabilityStatus {
   readonly isAuthoritative: boolean;
   readonly lastSuccessTimestampMs: number;
   readonly avgLatencyMs: number;
+  /** Nearest-rank percentiles from the bounded rolling window of measured successful samples. */
+  readonly latencyP50Ms: number;
+  readonly latencyP90Ms: number;
+  readonly latencyP99Ms: number;
+  readonly latencySampleCount: number;
   readonly errorRatePct: number;
   readonly totalRequestsCount: number;
   readonly totalErrorsCount: number;
@@ -89,6 +94,12 @@ export interface ProviderMetricEntry extends ProviderCapabilityStatus {
   readonly failoverProviderId?: string;
   readonly endpointUrlSanitized: string;
   readonly rateLimitedUntilMs?: number;
+}
+
+function nearestRankLatencyPercentile(sortedLatencyMs: readonly number[], percentile: number): number {
+  if (sortedLatencyMs.length === 0) return 0;
+  const rank = Math.max(1, Math.ceil((percentile / 100) * sortedLatencyMs.length));
+  return sortedLatencyMs[Math.min(sortedLatencyMs.length, rank) - 1];
 }
 
 export interface ProviderHealthReport {
@@ -512,6 +523,10 @@ export class ProviderHealthTracker {
           isAuthoritative: m.isAuthoritative,
           lastSuccessTimestampMs: 0,
           avgLatencyMs: 0,
+          latencyP50Ms: 0,
+          latencyP90Ms: 0,
+          latencyP99Ms: 0,
+          latencySampleCount: 0,
           errorRatePct: 0,
           totalRequestsCount: 0,
           totalErrorsCount: 0,
@@ -525,9 +540,13 @@ export class ProviderHealthTracker {
 
       const feedAgeMs = Math.max(0, now - m.lastSuccessMs);
       const successfulSamples = m.samples.filter(s => s.success && s.latencyMs > 0);
+      const sortedLatencyMs = successfulSamples.map(s => s.latencyMs).sort((a, b) => a - b);
       const avgLatency = successfulSamples.length
         ? Math.round(successfulSamples.reduce((a, b) => a + b.latencyMs, 0) / successfulSamples.length)
         : 0;
+      const latencyP50Ms = nearestRankLatencyPercentile(sortedLatencyMs, 50);
+      const latencyP90Ms = nearestRankLatencyPercentile(sortedLatencyMs, 90);
+      const latencyP99Ms = nearestRankLatencyPercentile(sortedLatencyMs, 99);
       const recentErrors = m.samples.filter(s => !s.success).length;
       const errorRate = m.samples.length > 0 ? (recentErrors / m.samples.length) * 100 : 0;
 
@@ -644,6 +663,10 @@ export class ProviderHealthTracker {
         isAuthoritative: m.isAuthoritative,
         lastSuccessTimestampMs: m.lastSuccessMs,
         avgLatencyMs: avgLatency,
+        latencyP50Ms,
+        latencyP90Ms,
+        latencyP99Ms,
+        latencySampleCount: sortedLatencyMs.length,
         errorRatePct: Number(errorRate.toFixed(1)),
         totalRequestsCount: m.totalRequests,
         totalErrorsCount: m.totalErrors,

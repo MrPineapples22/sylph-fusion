@@ -13,6 +13,12 @@
 function authSatisfied(requirement, authenticated) {
     return requirement === 'NOT_REQUIRED' || (requirement === 'REQUIRED' && authenticated === true);
 }
+function nearestRankLatencyPercentile(sortedLatencyMs, percentile) {
+    if (sortedLatencyMs.length === 0)
+        return 0;
+    const rank = Math.max(1, Math.ceil((percentile / 100) * sortedLatencyMs.length));
+    return sortedLatencyMs[Math.min(sortedLatencyMs.length, rank) - 1];
+}
 export class ProviderHealthTracker {
     metrics = new Map();
     endpointTransitions = new Map();
@@ -355,6 +361,10 @@ export class ProviderHealthTracker {
                     isAuthoritative: m.isAuthoritative,
                     lastSuccessTimestampMs: 0,
                     avgLatencyMs: 0,
+                    latencyP50Ms: 0,
+                    latencyP90Ms: 0,
+                    latencyP99Ms: 0,
+                    latencySampleCount: 0,
                     errorRatePct: 0,
                     totalRequestsCount: 0,
                     totalErrorsCount: 0,
@@ -367,9 +377,13 @@ export class ProviderHealthTracker {
             }
             const feedAgeMs = Math.max(0, now - m.lastSuccessMs);
             const successfulSamples = m.samples.filter(s => s.success && s.latencyMs > 0);
+            const sortedLatencyMs = successfulSamples.map(s => s.latencyMs).sort((a, b) => a - b);
             const avgLatency = successfulSamples.length
                 ? Math.round(successfulSamples.reduce((a, b) => a + b.latencyMs, 0) / successfulSamples.length)
                 : 0;
+            const latencyP50Ms = nearestRankLatencyPercentile(sortedLatencyMs, 50);
+            const latencyP90Ms = nearestRankLatencyPercentile(sortedLatencyMs, 90);
+            const latencyP99Ms = nearestRankLatencyPercentile(sortedLatencyMs, 99);
             const recentErrors = m.samples.filter(s => !s.success).length;
             const errorRate = m.samples.length > 0 ? (recentErrors / m.samples.length) * 100 : 0;
             // Freshness
@@ -501,6 +515,10 @@ export class ProviderHealthTracker {
                 isAuthoritative: m.isAuthoritative,
                 lastSuccessTimestampMs: m.lastSuccessMs,
                 avgLatencyMs: avgLatency,
+                latencyP50Ms,
+                latencyP90Ms,
+                latencyP99Ms,
+                latencySampleCount: sortedLatencyMs.length,
                 errorRatePct: Number(errorRate.toFixed(1)),
                 totalRequestsCount: m.totalRequests,
                 totalErrorsCount: m.totalErrors,

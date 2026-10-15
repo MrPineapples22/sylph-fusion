@@ -1,6 +1,6 @@
 id,category,url,default_method,priority,review_status,evidence_id,commit_or_capture_digest,license,decision
 SRC-001,github_streaming_rpc,https://github.com/anza-xyz/jetstreamer,source_or_document_review,P1,PARTIAL_REVIEW,JETSTREAMER-SOURCE-2026-10-15,ce2f3678d78ce4a430f63621301b78d914d76a8a,MIT_OR_APACHE-2.0,STAGING_HISTORICAL_RESEARCH_ONLY_NO_LIVE_FEED_AUTHORITY
-SRC-002,github_streaming_rpc,https://github.com/rpcpool/yellowstone-thorofare,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
+SRC-002,github_streaming_rpc,https://github.com/rpcpool/yellowstone-thorofare,source_or_document_review,P1,PARTIAL_REVIEW,YELLOWSTONE-THOROFARE-2026-10-15,582bdd06e1309d8fe686f34e0a53d074ee96bea6,Apache-2.0,BOUNDED_HEALTH_METRIC_PATTERN_ADAPTED_NO_RUNTIME_DEPENDENCY
 SRC-003,github_streaming_rpc,https://github.com/jito-foundation/geyser-grpc-plugin,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-004,github_streaming_rpc,https://github.com/blockworks-foundation/quic_geyser_plugin,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-005,github_streaming_rpc,https://github.com/blockworks-foundation/geyser-grpc-connector,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED

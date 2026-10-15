@@ -1168,6 +1168,57 @@
         "https://github.com/raydium-io/raydium-sdk-V2/blob/e2e8bcd865189c994682a9477ec8eaf1e2da8aaf/src/common/transfer.ts",
         "test/platform/upstream-pattern-adaptations.test.mjs"
       ]
+    },
+    {
+      "id": "INT-THOROFARE-LATENCY-DIST-001",
+      "catalogSourceIds": [
+        "SRC-002"
+      ],
+      "area": "bounded provider-health latency distribution telemetry",
+      "sourceToPipeline": {
+        "upstreamFindings": [
+          "Thorofare measures six Yellowstone slot stages and reports p50/p90/p99 distributions. Its comparative delay metric assigns zero when an endpoint wins, so it is specific to paired endpoint comparisons.",
+          "SYLPH ProviderHealthTracker currently records up to 20 recent request/observation samples and exposes an average; these samples do not measure Yellowstone slot propagation or finality-stage timing."
+        ],
+        "relevantModules": [
+          "src/platform/ingestion/provider-health.ts",
+          "test/platform/provider-health.test.mjs",
+          "src/platform/ingestion/yellowstone-captured-client.ts"
+        ],
+        "existingOverlap": "The existing rolling sample window already supplies successful measured latency. The adaptation exposes nearest-rank percentiles and the positive measurement count from that same window; it does not implement a two-provider benchmark.",
+        "risks": [
+          "A p99 derived from at most 20 samples is a coarse diagnostic and unstable at low sample counts.",
+          "Request latency must not be presented as slot propagation or finalization latency.",
+          "Percentiles do not establish market-feed freshness, canonicality, provider truth, or execution quality."
+        ],
+        "validationRequirements": [
+          "Assert exact p50/p90/p99 nearest-rank values and reported sample count.",
+          "Assert only the latest 20 measured successful samples contribute.",
+          "Run the provider-health, Yellowstone client and Jito health regressions; keep feed gates and execution authority unchanged."
+        ]
+      },
+      "implementation": {
+        "change": "Added latencyP50Ms, latencyP90Ms, latencyP99Ms and latencySampleCount to ProviderMetricEntry. Percentiles use nearest-rank over positive-latency successful samples in the existing bounded 20-request window. Empty measurement windows report zeros.",
+        "files": [
+          "src/platform/ingestion/provider-health.ts",
+          "dist/platform/ingestion/provider-health.js",
+          "test/platform/provider-health.test.mjs"
+        ],
+        "validation": {
+          "redRegression": "New regression initially failed because latencySampleCount was absent.",
+          "focusedCompile": "Direct TypeScript compilation of src/platform/ingestion/provider-health.ts passed using the repository compiler and NodeNext strict options.",
+          "focusedTests": "node --test test/platform/provider-health.test.mjs test/platform/yellowstone-captured-client.test.mjs test/platform/jito-provider-health.test.mjs — 25/25 passed.",
+          "engineBuild": "npm run build:engine did not pass: installed root dependency tree is missing @pump-fun/pump-swap-sdk, imported by src/platform/execution/solaris/pump-swap-pool-reader.ts.",
+          "platformSuite": "node --test --test-isolation=none test/platform/*.test.mjs — 972/980 passed, 8 test files failed to load because @pump-fun/pump-swap-sdk is absent: canonical-ingress-crash-recovery, durable-research-spool, paper-max-risk, pump-swap-pool-reader, runtime-telemetry-producer, solaris-nexus, staging-ingress-batch, venue-economics. No assertion failure in the new percentile regression; the eight failures are module-resolution failures."
+        },
+        "authorityImpact": "Observability fields only. Provider availability and feed-health decisions are unchanged; no signing, broadcast, custody, capital, authorization or risk-limit paths changed.",
+        "status": "VERIFIED_BOUNDED_LATENCY_PERCENTILES; FULL_ENGINE_BUILD_BLOCKED_BY_MISSING_INSTALLED_SDK"
+      },
+      "evidence": [
+        "https://github.com/rpcpool/yellowstone-thorofare/blob/582bdd06e1309d8fe686f34e0a53d074ee96bea6/README.md",
+        "https://github.com/rpcpool/yellowstone-thorofare/blob/582bdd06e1309d8fe686f34e0a53d074ee96bea6/Cargo.toml",
+        "test/platform/provider-health.test.mjs"
+      ]
     }
   ]
 }
