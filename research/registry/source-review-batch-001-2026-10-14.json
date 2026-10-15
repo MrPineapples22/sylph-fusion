@@ -245,7 +245,7 @@
         "test/fusion-graduated-exit.test.mjs",
         "test/platform/solaris-nexus.test.mjs"
       ],
-      "overlap": "Market supports native-SOL bonding-curve reads and quotes. The graduation bridge requires supplied pool venue, address, quote mint, reserves, fee and slot, and rejects AMM buys unless the observation is the exact immutable object produced by the canonical RPC reader; a caller cannot forge the source label. The PumpSwap reader derives the canonical SOL pool, refetches pool/mint/vault/global/fee accounts in one context, validates account owners and mints, handles signed virtual quote reserves, and computes fees through the pinned PumpSwap SDK. Market calls it after curve completion and keeps migration pending on failure. Engine snapshots and the positions table surface observation state, slot, provenance, staleness and bounded error codes. The path is SOL-quote only; broader PumpSwap lifecycle, alternate quote conversion, route execution and a recovery certificate are not implemented.",
+      "overlap": "Market supports native-SOL bonding-curve reads and quotes. The graduation bridge requires supplied pool venue, address, quote mint, reserves, fee and slot, and rejects AMM buys unless the observation is the exact immutable object produced by the canonical RPC reader; a caller cannot forge the source label. The PumpSwap reader derives the canonical SOL pool, refetches pool/mint/vault/global/fee accounts in one context, validates token-program ownership, expected associated-token addresses, pool-PDA token authority and vault mints, handles signed virtual quote reserves, and computes fees through the pinned PumpSwap SDK. Market calls it after curve completion and keeps migration pending on failure. Engine snapshots and the positions table surface observation state, slot, provenance, staleness and bounded error codes. The path is SOL-quote only; broader PumpSwap lifecycle, alternate quote conversion, route execution and a recovery certificate are not implemented.",
       "risks": [
         "the reader supports the canonical native-SOL pool path only and does not yet certify alternate quote pools or all account-layout generations",
         "non-SOL quote pools cannot be converted into SOL exit proceeds without an independently observed conversion quote",
@@ -276,7 +276,8 @@
         "ui/style.css",
         "test/platform/pump-swap-pool-reader.test.mjs",
         "test/dashboard.test.mjs",
-        "isolated npm ci + TypeScript engine build; focused tests: 14 passed, 0 failed; dashboard and focused regressions: 19 passed, 0 failed; full platform suite: 1,053 passed, 0 failed (2026-10-15)"
+        "isolated npm ci + TypeScript engine build; focused reader, bridge and dashboard regressions: 19 passed, 0 failed; full platform suite: 1,053 passed, 0 failed (2026-10-15)",
+        "commit 8145fdf adds canonical PumpSwap vault ATA and token-authority checks; test rejects a correct-mint token account controlled by the wrong authority"
       ],
       "license": "NOT_REVIEWED",
       "decision": "CANONICAL_PUMPSWAP_SOL_POOL_READ_PATH_ADDED; EXECUTION_REMAINS_UNVERIFIED"
