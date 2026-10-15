@@ -48,18 +48,18 @@
       "status": "PARTIAL_REVIEW",
       "provenance": ["Official Solana production readiness checklist", "Project live-status and recovery evidence"],
       "discoveries": [
-        "Solana publishes production checks across RPC usage, transactions, operations and monitoring; a reachable endpoint or successful build is not a production-readiness result.",
-        "SYLPH's current recorded operational blockers include stale/overflowed Core feed, stale RPC evidence, duplicate legacy Terminal processes and unavailable configured adapters.",
-        "The project has an explicit Start SYLPH check and read-only live status audit, but existing listeners predate some source-level ownership fixes, so checkout state and running-process state must be reported separately."
+        "Solana publishes production checks across RPC usage, transactions, operations and monitoring; a reachable endpoint or successful build is not a production-readiness result. SYLPH's current recorded operational blockers include stale/overflowed Core feed, stale RPC evidence, duplicate legacy Terminal processes and unavailable configured adapters.",
+        "The project has an explicit Start SYLPH check and read-only live status audit, but existing listeners predate some source-level ownership fixes, so checkout state and running-process state must be reported separately.",
+        "The declared package manager is pnpm 11.19.0, but the checked-in pnpm lock omitted two direct package dependencies; the worktree node_modules junction also resolved Pump SDK 4.0.0 despite the project pinning 2.0.0, so a pinned scratch install was needed to establish build evidence."
       ],
       "patterns": ["turn checklist items into observable gates", "report process/build provenance", "keep freshness, capacity, recovery and incident evidence distinct", "fail closed on unknown runtime schema"],
       "sylphModules": ["start-app.mjs", "docs/ECOSYSTEM_LIVE_STATUS_2026-10-14.md", "src/rpc.ts", "src/feed.ts", "terminal/server.mjs"],
-      "overlap": "Current launcher check reports blockers and does not claim live readiness. Prior read-only observation found Engine PAPER/feed blocked and old Terminal processes; this batch did not start, stop or restart any service.",
-      "risks": ["new source code does not update already running processes", "connectivity can be mistaken for durable capacity or chain completeness", "a broad checklist can give false assurance without evidence binding"],
-      "validation": ["rerun read-only check only", "bind process identity, source build ID and status schema", "test degraded/stale/unavailable endpoints", "revalidate after operator-controlled runtime transition"],
+      "overlap": "Current launcher check reports blockers and does not claim live readiness. Prior read-only observation found Engine PAPER/feed blocked and old Terminal processes; this batch did not start, stop or restart any service. A scratch clean install exposed stale pnpm/package-lock files and an external node_modules junction whose Pump SDK version does not match the declared pin. Both lockfiles were reconciled in the candidate branch; a pinned scratch install and engine build were then verified.",
+      "risks": ["new source code does not update already running processes", "connectivity can be mistaken for durable capacity or chain completeness", "a broad checklist can give false assurance without evidence binding", "the user worktree's junction remains unmodified and local runtime modules may still differ from the lock until reinstalled"],
+      "validation": ["run a clean install using each documented package manager against its frozen/locked file", "build with exact pinned dependencies rather than a shared node_modules junction", "bind process identity, source build ID and status schema", "test degraded/stale/unavailable endpoints", "revalidate after operator-controlled runtime transition"],
       "evidence": ["https://solana.com/docs/tools/production-readiness", "docs/ECOSYSTEM_LIVE_STATUS_2026-10-14.md"],
       "license": "NOT_APPLICABLE_DOCUMENTATION",
-      "decision": "RESEARCH_ONLY_NO_RUNTIME_CHANGE"
+      "decision": "LOCKFILE_REPRODUCIBILITY_FIX_VERIFIED_IN_ISOLATED_SCRATCH; LIVE_READINESS_UNCHANGED"
     }
   ],
   "safety": {

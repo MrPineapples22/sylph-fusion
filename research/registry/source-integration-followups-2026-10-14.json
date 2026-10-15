@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-15T01:08:00Z",
+  "updatedAt": "2026-10-15T01:12:00Z",
   "interpretation": "Verified local implementation follow-ups linked to catalog source IDs. These records document changes and tests; they do not change source review status, grant integration authority, or establish profitability.",
   "followups": [
     {
@@ -870,6 +870,53 @@
         "https://solana.com/docs/core/transactions/versioned-transactions",
         "https://github.com/solana-foundation/transaction-v1-examples",
         "src/platform/signing/veritas-wire-decoder.ts",
+        "test/platform/veritas-wire-decoder.test.mjs"
+      ]
+    },
+    {
+      "id": "INT-LOCKFILE-CLEAN-INSTALL-001",
+      "catalogSourceIds": ["SRC-256"],
+      "area": "pinned dependency installation and build reproducibility",
+      "sourceToPipeline": {
+        "upstreamFindings": [
+          "The project declares pnpm 11.19.0 as its package manager and lists exact runtime dependency versions.",
+          "The candidate pnpm lock did not include two declared direct packages, so a frozen install correctly failed.",
+          "The shared worktree node_modules junction resolved @pump-fun/pump-sdk 4.0.0 while package.json and pnpm lock specify 2.0.0; compilation against that junction was not sufficient evidence for the locked source set."
+        ],
+        "relevantModules": ["package.json", "pnpm-lock.yaml", "package-lock.json", "tsconfig.json"],
+        "existingOverlap": "A scratch copy of the source and manifests was used to reconcile both lockfiles, install dependencies without lifecycle scripts, verify Pump SDK 2.0.0 and transitive PumpSwap SDK 1.20.0, then build and run targeted tests. The user's existing node_modules junction was left untouched.",
+        "risks": [
+          "A checked-in lockfile does not install dependencies into an existing worktree automatically.",
+          "This clean install/build does not establish live service readiness or production behavior.",
+          "The installation omitted dependency lifecycle scripts, so native optional bindings fell back to pure JavaScript in tests."
+        ],
+        "validationRequirements": [
+          "A pnpm frozen install succeeds from a scratch copy using the checked-in pnpm lock.",
+          "An npm clean install succeeds from a scratch copy using package-lock.json.",
+          "Confirm installed SDK versions match the declared pins before accepting build/test evidence.",
+          "Build the engine and run representative AMM, fee-accounting, transaction-compatibility, and signing tests in that environment."
+        ]
+      },
+      "implementation": {
+        "change": "Reconciled pnpm-lock.yaml and package-lock.json with the exact dependencies declared in package.json. No runtime code or installed worktree dependencies were modified.",
+        "files": ["pnpm-lock.yaml", "package-lock.json"],
+        "validation": {
+          "frozenPnpmInstall": "pnpm install --frozen-lockfile --ignore-scripts — passed in isolated scratch copy",
+          "cleanNpmInstall": "npm ci --ignore-scripts --no-audit --no-fund — passed in isolated scratch copy",
+          "lockedSdkVersions": "npm ls confirmed @pump-fun/pump-sdk 2.0.0 and @pump-fun/pump-swap-sdk 1.20.0",
+          "engineBuild": "npm run build:engine — passed in isolated scratch copy after clean install",
+          "focusedTests": "Six platform suites covering AMM, economic deltas, transaction compatibility, and signing — 42/42 passed"
+        },
+        "authorityImpact": "Dependency reproducibility only; no signing, broadcast, custody, capital authorization, or risk-limit changes.",
+        "status": "VERIFIED_LOCKFILE_ALIGNMENT_AND_PINNED_BUILD; USER_WORKTREE_DEPENDENCY_JUNCTION_UNCHANGED"
+      },
+      "evidence": [
+        "package.json",
+        "pnpm-lock.yaml",
+        "package-lock.json",
+        "src/market.ts",
+        "test/fusion-graduated-exit.test.mjs",
+        "test/platform/truth-x.test.mjs",
         "test/platform/veritas-wire-decoder.test.mjs"
       ]
     }
