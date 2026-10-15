@@ -104,11 +104,11 @@ SRC-102,github_treasury_signing_crosschain,https://github.com/Infisical/infisica
 SRC-103,github_treasury_signing_crosschain,https://github.com/getsops/sops,source_or_document_review,P2,PARTIAL_REVIEW,SRC-103-PINNED-2026-10-14,e39ca97b6209f9132ea40d22beb37d796060cb32,MPL-2.0,SECRET_HANDLING_PATTERN_ONLY_NO_CREDENTIAL_ACCESS
 SRC-104,github_treasury_signing_crosschain,https://github.com/smallstep/certificates,source_or_document_review,P2,PARTIAL_REVIEW,SRC-104-PINNED-2026-10-14,74be79c6f93c8f1b30212551b4d9d12fb12e48be,Apache-2.0,IDENTITY_INFRASTRUCTURE_REFERENCE_ONLY_NO_DEPLOYMENT
 SRC-105,github_treasury_signing_crosschain,https://github.com/spiffe/spire,source_or_document_review,P2,PARTIAL_REVIEW,SRC-105-PINNED-2026-10-14,6d10e93a4eef9b270cba5dc6082f1c3c5bd99879,Apache-2.0,WORKLOAD_IDENTITY_PATTERN_ONLY_NO_DEPLOYMENT
-SRC-106,github_quant_ml_data,https://github.com/ClickHouse/ClickHouse,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-107,github_quant_ml_data,https://github.com/apache/arrow,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-108,github_quant_ml_data,https://github.com/apache/datafusion,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-109,github_quant_ml_data,https://github.com/feast-dev/feast,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-110,github_quant_ml_data,https://github.com/nautechsystems/nautilus_trader,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
+SRC-106,github_quant_ml_data,https://github.com/ClickHouse/ClickHouse,source_or_document_review,P2,PARTIAL_REVIEW,SRC-106-PINNED-2026-10-14,57332cc193b396025fc6bbc3cfaa0a16cf063eda,Apache-2.0,ANALYTICS_STORAGE_PATTERN_ONLY_NO_DEPLOYMENT
+SRC-107,github_quant_ml_data,https://github.com/apache/arrow,source_or_document_review,P2,PARTIAL_REVIEW,SRC-107-PINNED-2026-10-14,ca5564e007a209e251b9d4648af4bc6a53c68c4f,Apache-2.0,OFFLINE_COLUMNAR_PATTERN_ONLY_NO_DEPENDENCY
+SRC-108,github_quant_ml_data,https://github.com/apache/datafusion,source_or_document_review,P2,PARTIAL_REVIEW,SRC-108-PINNED-2026-10-14,e732212cabd030d500efc35049448b3714017c7b,Apache-2.0,OFFLINE_RESEARCH_ENGINE_REFERENCE_ONLY
+SRC-109,github_quant_ml_data,https://github.com/feast-dev/feast,source_or_document_review,P2,PARTIAL_REVIEW,SRC-109-PINNED-2026-10-14,2dfb9e6d1a37719fd11028d916094050f1cdd552,Apache-2.0,FEATURE_LINEAGE_PATTERN_ONLY_NO_DEPLOYMENT
+SRC-110,github_quant_ml_data,https://github.com/nautechsystems/nautilus_trader,source_or_document_review,P2,PARTIAL_REVIEW,SRC-110-PINNED-2026-10-14,ce453eb995731e3873f0267dda5e4c3a7c514ac6,LGPL-3.0-only_REVIEW_REQUIRED,BACKTEST_ACCOUNTING_PATTERN_ONLY_NO_ENGINE_DUPLICATION
 SRC-111,github_quant_ml_data,https://github.com/polakowo/vectorbt,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-112,github_quant_ml_data,https://github.com/microsoft/qlib,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-113,github_quant_ml_data,https://github.com/lightgbm-org/LightGBM,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED

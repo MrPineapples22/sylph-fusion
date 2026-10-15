@@ -1,19 +1,19 @@
 {
-  "generatedAt": "2026-10-15T04:36:47.836Z",
+  "generatedAt": "2026-10-15T04:37:51.054Z",
   "manifestRows": 288,
   "uniqueManifestIds": 288,
   "batchFiles": 23,
   "catalogRecords": 288,
   "uniqueCatalogIds": 288,
-  "directlyReviewedRecords": 106,
-  "triageOnlyRecords": 182,
+  "directlyReviewedRecords": 111,
+  "triageOnlyRecords": 177,
   "manifestReviewStatusCounts": {
-    "PARTIAL_REVIEW": 106,
-    "NOT_REVIEWED": 182
+    "PARTIAL_REVIEW": 111,
+    "NOT_REVIEWED": 177
   },
   "batchStatusCounts": {
-    "PARTIAL_REVIEW": 106,
-    "CATALOG_TRIAGE": 182
+    "PARTIAL_REVIEW": 111,
+    "CATALOG_TRIAGE": 177
   },
   "distinctDecisionCount": 169,
   "topDecisionCounts": [
@@ -50,6 +50,10 @@
       "count": 2
     },
     {
+      "decision": "ANALYTICS_STORAGE_PATTERN_ONLY_NO_DEPLOYMENT",
+      "count": 1
+    },
+    {
       "decision": "ARCHIVE_BACKFILL_REFERENCE_ONLY; NO_RUNTIME_DEPENDENCY",
       "count": 1
     },
@@ -59,10 +63,6 @@
     },
     {
       "decision": "AUDIT_INDEX_REFERENCE_ONLY",
-      "count": 1
-    },
-    {
-      "decision": "AUTHORIZATION_PATTERN_ONLY_AGPL_NO_CUSTODY_INTEGRATION",
       "count": 1
     }
   ],

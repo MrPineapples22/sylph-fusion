@@ -463,3 +463,13 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - SRC-104 Smallstep certificates is pinned at 74be79c6f93c8f1b30212551b4d9d12fb12e48be (Apache-2.0). It is CA infrastructure for managed certificate issuance; no CA was launched.
 - SRC-105 SPIRE is pinned at 6d10e93a4eef9b270cba5dc6082f1c3c5bd99879 (Apache-2.0). Its Workload API issues identities for mTLS/service authentication; this does not itself authorize financial actions. No server was configured.
 - Registry status: 106 direct source inspections and 182 catalog-triage records. No credentials, signing configuration, CA or workload identity was touched.
+
+
+## Analytics storage and point-in-time feature patterns (2026-10-14)
+
+- SRC-106 ClickHouse is pinned at 57332cc193b396025fc6bbc3cfaa0a16cf063eda (Apache-2.0). Its columnar analytical storage is a research/history pattern, not a mutable live execution database; it was not installed or benchmarked.
+- SRC-107 Apache Arrow is pinned at ca5564e007a209e251b9d4648af4bc6a53c68c4f (Apache-2.0). Typed columnar batches and IPC could reduce offline data movement, provided ordering/schema metadata remain explicit.
+- SRC-108 DataFusion is pinned at e732212cabd030d500efc35049448b3714017c7b (Apache-2.0). SQL/DataFrame scans suit offline cohort analysis; no query engine was run or added to the live lane.
+- SRC-109 Feast is pinned at 2dfb9e6d1a37719fd11028d916094050f1cdd552 (Apache-2.0). Point-in-time retrieval is relevant to preventing future-feature leakage; serving materialization freshness remains a separate concern.
+- SRC-110 NautilusTrader is pinned at ce453eb995731e3873f0267dda5e4c3a7c514ac6 (LGPL-3.0-only). Its explicit backtest/live divergence and reconciliation concepts are references only; no second execution engine was installed.
+- Registry status: 111 direct source inspections and 177 catalog-triage records. No analytics database, feature store, or trading engine was deployed.
