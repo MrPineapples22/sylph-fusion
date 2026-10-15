@@ -1,7 +1,7 @@
 {
   "path": "D:\\Users\\juans\\SF\\research\\registry\\resource_manifest.csv",
-  "sha256": "5212122796342ca08fcec78f603aae24f89103b662de6436d17afe81d6e91a45",
-  "bytes": 39318,
+  "sha256": "e1039f10fb5fdffe411d0f9f0aec96a6ec3a320aaec270613158287ea5517d58",
+  "bytes": 39302,
   "records": 288,
   "uniqueIds": 288,
   "uniqueUrls": 288,
@@ -35,8 +35,8 @@
     "P2": 159
   },
   "reviewStatuses": {
-    "NOT_REVIEWED": 286,
-    "PARTIAL_REVIEW": 2
+    "NOT_REVIEWED": 283,
+    "PARTIAL_REVIEW": 5
   },
   "invalidUrls": [],
   "duplicateIds": [],

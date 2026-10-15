@@ -1,18 +1,18 @@
 {
-  "generatedAt": "2026-10-15T02:28:00.466Z",
+  "generatedAt": "2026-10-15T02:35:59.422Z",
   "manifestRows": 288,
   "uniqueManifestIds": 288,
   "batchFiles": 23,
   "batchReviewRecords": 288,
   "uniqueReviewedIds": 288,
   "manifestReviewStatusCounts": {
-    "NOT_REVIEWED": 286,
-    "PARTIAL_REVIEW": 2
+    "NOT_REVIEWED": 283,
+    "PARTIAL_REVIEW": 5
   },
   "batchStatusCounts": {
     "PARTIAL_REVIEW": 288
   },
-  "distinctDecisionCount": 165,
+  "distinctDecisionCount": 167,
   "topDecisionCounts": [
     {
       "decision": "RESEARCH_ONLY",
@@ -20,7 +20,7 @@
     },
     {
       "decision": "REFERENCE_ONLY",
-      "count": 14
+      "count": 12
     },
     {
       "decision": "NO_RUNTIME_INTEGRATION",

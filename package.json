@@ -29,6 +29,7 @@
     "audit:c1": "node scripts/audit-single-authority-door.mjs",
     "test:all": "npm run test:core && npm run test:intelligence && npm run test:platform && npm run test:terminal",
     "research:manifest": "node scripts/research-export-manifest.mjs",
+    "research:audit:urls": "node scripts/audit-resource-availability.mjs",
     "research:pumpfun:ingest": "node scripts/pumpfun-rpc-ingest.mjs",
     "research:pumpfun:verify": "node scripts/verify-pumpfun-evidence.mjs",
     "research:pumpfun:cohorts": "node scripts/analyze-pumpfun-cohorts.mjs",

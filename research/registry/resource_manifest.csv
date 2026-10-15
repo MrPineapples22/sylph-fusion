@@ -63,7 +63,7 @@ SRC-061,github_dex_swaps_launches,https://github.com/mooncitydev/solana-copytrad
 SRC-062,github_dex_swaps_launches,https://github.com/TreeCityWes/Pump-Fun-Trading-Bot-Solana,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-063,github_dex_swaps_launches,https://github.com/raydium-io/raydium-sdk-V2,source_or_document_review,P0,NOT_REVIEWED,,,,UNASSESSED
 SRC-064,github_dex_swaps_launches,https://github.com/orca-so/whirlpools,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-065,github_dex_swaps_launches,https://github.com/0xsupersimon/raydium-launchpad-bonkfun,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
+SRC-065,github_dex_swaps_launches,https://github.com/0xsupersimon/raydium-launchpad-bonkfun-transaction-parser-go,source_or_document_review,P1,PARTIAL_REVIEW,UPSTREAM-0cccb67e6dad30ab19245d1b2b24136b69589792,0cccb67e6dad30ab19245d1b2b24136b69589792,UNVERIFIED_NO_LICENSE_FILE,PATTERN_ONLY
 SRC-066,github_execution_validator_jito,https://github.com/blockworks-foundation/autobahn,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-067,github_execution_validator_jito,https://github.com/blockworks-foundation/lite-rpc,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-068,github_execution_validator_jito,https://github.com/jito-foundation/jito-programs,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
@@ -242,8 +242,8 @@ SRC-240,web_token_safety_custody,https://www.fireblocks.com,public_doc_or_opt_in
 SRC-241,web_token_safety_custody,https://aws.amazon.com/kms/,public_doc_or_opt_in_passive_browser,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-242,web_token_safety_custody,https://phantom.com,public_doc_or_opt_in_passive_browser,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-243,web_token_safety_custody,https://solflare.com,public_doc_or_opt_in_passive_browser,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-244,web_token_safety_custody,https://step.finance,public_doc_or_opt_in_passive_browser,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-245,web_token_safety_custody,https://sonar.watch,public_doc_or_opt_in_passive_browser,P2,NOT_REVIEWED,,,,UNASSESSED
+SRC-244,web_token_safety_custody,https://step.finance,public_doc_or_opt_in_passive_browser,P2,PARTIAL_REVIEW,OFFICIAL-STEP-WINDDOWN-2025-11-04,,HOSTED_PRODUCT_SUNSET,NO_RUNTIME_INTEGRATION
+SRC-245,web_token_safety_custody,https://sonar.watch,public_doc_or_opt_in_passive_browser,P2,PARTIAL_REVIEW,OFFICIAL-SONAR-MIGRATION-2026-10-15,,HOSTED_PRODUCT_MIGRATED,REFERENCE_ONLY
 SRC-246,web_token_safety_custody,https://orb.helius.dev,public_doc_or_opt_in_passive_browser,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-247,web_visual_debug_rea,https://graph-tool.skewed.de,public_doc_or_opt_in_passive_browser,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-248,web_visual_debug_rea,https://rea.tools/,public_doc_or_opt_in_passive_browser,P2,NOT_REVIEWED,,,,UNASSESSED
