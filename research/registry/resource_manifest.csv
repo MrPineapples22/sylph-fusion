@@ -15,7 +15,7 @@ SRC-013,github_streaming_rpc,https://github.com/streamingfast/firehose-core,sour
 SRC-014,github_streaming_rpc,https://github.com/streamingfast/bstream,source_or_document_review,P1,PARTIAL_REVIEW,BSTREAM-CURSOR-FORK-2026-10-15,71724f9213e7bcd830f8d7188da138d7b9d2dcac,Apache-2.0,FORK_AWARE_CURSOR_PATTERN_NO_RUNTIME_DEPENDENCY
 SRC-015,github_streaming_rpc,https://github.com/streamingfast/dstore,source_or_document_review,P1,PARTIAL_REVIEW,DSTORE-ADAPTER-DURABILITY-2026-10-15,6c74c85f222277bab06fc13212cb4e49927cc254,Apache-2.0,BACKEND_SPECIFIC_DURABILITY_TEST_PATTERN_NO_DEPENDENCY
 SRC-016,github_streaming_rpc,https://github.com/metaplex-foundation/digital-asset-rpc-infrastructure,source_or_document_review,P1,PARTIAL_REVIEW,METAPLEX-DAS-PAGINATION-2026-10-15,9c7e1b6bb97962acba17b62e522e18b9cb3abc4f,AGPL-3.0_REVIEW_REQUIRED,NFT_API_PATTERN_ONLY_NO_DEPENDENCY_OR_CODE_REUSE
-SRC-017,github_streaming_rpc,https://github.com/metaplex-foundation/digital-asset-validator-plugin,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
+SRC-017,github_streaming_rpc,https://github.com/metaplex-foundation/digital-asset-validator-plugin,source_or_document_review,P1,PARTIAL_REVIEW,METAPLEX-GEYSER-RETRY-2026-10-15,2615ce96bedaabb217e2e0f0dc875991f85507bf,AGPL-3.0_REVIEW_REQUIRED,RETRY_EXHAUSTION_PATTERN_ONLY_NO_DEPENDENCY_OR_CODE_REUSE
 SRC-018,github_streaming_rpc,https://github.com/metaplex-foundation/aura,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-019,github_streaming_rpc,https://github.com/goldsky-io/streamling-community-plugins,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-020,github_streaming_rpc,https://github.com/rpcpool/radiance-triton-faithful,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED

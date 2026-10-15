@@ -46,7 +46,7 @@ REA is used out of band where the target type and authorization fit its supporte
 
 ## Resume
 
-All 288 records have a URL availability observation. Thirty-one sources now have explicit partial source review status; 257 remain NOT_REVIEWED. Record coverage is complete; upstream research and implementation remain incomplete. Continue with concrete findings from each batch, inspect the current local source and pinned upstream documentation, reproduce behavior with focused deterministic tests, and make small patches. Preserve existing workspace changes and do not grant a source trading authority based on inclusion in the manifest.
+All 288 records have a URL availability observation. Thirty-two sources now have explicit partial source review status; 256 remain NOT_REVIEWED. Record coverage is complete; upstream research and implementation remain incomplete. Continue with concrete findings from each batch, inspect the current local source and pinned upstream documentation, reproduce behavior with focused deterministic tests, and make small patches. Preserve existing workspace changes and do not grant a source trading authority based on inclusion in the manifest.
 ## Latest implementation verification (2026-10-14)
 
 - `npm run build:engine` — passed after the feed admission snapshot change.
@@ -280,3 +280,9 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - `SRC-016` was inspected at `9c7e1b6bb97962acba17b62e522e18b9cb3abc4f`. The DAS repository builds NFT/compressed-asset ingestion and query infrastructure; the inspected API enforces cursor/page mode and stable ID ordering constraints. Its root license is AGPL-3.0.
 - The pagination pattern is useful for derived-data APIs, but DAS does not supply fungible token liquidity or executable trade evidence. No dependency/code reuse is planned; Windows MAX_PATH prevented a complete fixture checkout, so this remains a bounded partial review.
 - Registry progress is 31 direct partial reviews and 257 not reviewed. This count reflects review entries, not integrations.
+
+## Metaplex validator plugin retry behavior review (2026-10-15)
+
+- `SRC-017` was inspected at `2615ce96bedaabb217e2e0f0dc875991f85507bf`. Its Redis consumer XACKs messages after the configured retry threshold, removing them from the pending retry set even if the consumer has not processed them. The underlying stream entry may remain until trim; do not describe this as immediate deletion.
+- This is a concrete lossy retry pattern relevant to queue telemetry and dead-letter design. The plugin runs inside a validator and uses AGPL-3.0; no SYLPH dependency or producer path was adopted. Its README minimum validator version also conflicts with current pinned Agave 4.2.2 interfaces.
+- Catalog progress is 32 direct partial reviews and 256 not reviewed. This is source research progress, not a verified integration.
