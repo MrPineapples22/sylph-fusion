@@ -46,10 +46,10 @@ SRC-044,github_parsers_sdks,https://github.com/0xfnzero/sol-parser-sdk-nodejs,so
 SRC-045,github_parsers_sdks,https://github.com/0xfnzero/sol-parser-sdk-python,source_or_document_review,P1,PARTIAL_REVIEW,SOL-PARSER-PYTHON-2026-10-14,7c489bfb5c803c7414c5ea95d63f18cfe2009b76,README_MIT_BADGE_ONLY_NO_LICENSE_FILE_OR_PACKAGE_DECLARATION,OFFLINE_DIFFERENTIAL_RESEARCH_ONLY_NO_REUSE_PENDING_LICENSE
 SRC-046,github_parsers_sdks,https://github.com/0xfnzero/sol-parser-sdk-golang,source_or_document_review,P1,PARTIAL_REVIEW,SOL-PARSER-GO-2026-10-14,bff0ea18dfce3efb6c8159baf21d2d1ced19102b,README_MIT_BADGE_ONLY_NO_LICENSE_FILE_OR_MODULE_DECLARATION,OFFLINE_DIFFERENTIAL_REFERENCE_ONLY_NO_RUNTIME_ADOPTION_PENDING_LICENSE
 SRC-047,github_parsers_sdks,https://github.com/cxcx-ai/solana-dex-parser,source_or_document_review,P1,PARTIAL_REVIEW,CXCX-SOLANA-DEX-PARSER-2026-10-14,0c67d8ffa78c7fb2e80230ec53d0627c9531566a,MIT,OFFLINE_DIFFERENTIAL_FIXTURE_ONLY_NO_RUNTIME_DUPLICATION_OR_NET_PNL_AUTHORITY
-SRC-048,github_parsers_sdks,https://github.com/metaplex-foundation/blockbuster,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-049,github_dex_swaps_launches,https://github.com/raydium-io/raydium-library,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-050,github_dex_swaps_launches,https://github.com/raydium-io/raydium-cpi,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-051,github_dex_swaps_launches,https://github.com/MeteoraAg/dbc-go,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
+SRC-048,github_parsers_sdks,https://github.com/metaplex-foundation/blockbuster,source_or_document_review,P1,PARTIAL_REVIEW,SRC-048-PINNED-2026-10-14,ac98b92d14a6d9fa21a1a4a4ec3d90d0a3b0da73,AGPL-3.0-only_REVIEW_REQUIRED,PATTERN_REFERENCE_ONLY_AGPL_REVIEW_REQUIRED
+SRC-049,github_dex_swaps_launches,https://github.com/raydium-io/raydium-library,source_or_document_review,P1,PARTIAL_REVIEW,SRC-049-PINNED-2026-10-14,72a22dcd6136fdd354c47d35aaa4b035652398c5,LICENSE_NOT_FOUND_REVIEW_REQUIRED,LEGACY_REFERENCE_ONLY_NO_LICENSE_CLEARANCE
+SRC-050,github_dex_swaps_launches,https://github.com/raydium-io/raydium-cpi,source_or_document_review,P1,PARTIAL_REVIEW,SRC-050-PINNED-2026-10-14,115df2779d53bacc7db9d0be2773a4b48a6d372b,LICENSE_NOT_FOUND_REVIEW_REQUIRED,INTERFACE_REFERENCE_ONLY_NO_LICENSE_CLEARANCE
+SRC-051,github_dex_swaps_launches,https://github.com/MeteoraAg/dbc-go,source_or_document_review,P1,PARTIAL_REVIEW,SRC-051-PINNED-2026-10-14,377824fc6056f10ee51074080c92362de52b09da,LICENSE_NOT_FOUND_REVIEW_REQUIRED,RESEARCH_GAP_NO_LICENSE_CLEARANCE
 SRC-052,github_dex_swaps_launches,https://github.com/MeteoraAg/damm-v2-go,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-053,github_dex_swaps_launches,https://github.com/MeteoraAg/meteora-invent,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-054,github_dex_swaps_launches,https://github.com/orca-so/account-microscope,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED

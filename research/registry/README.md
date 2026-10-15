@@ -352,3 +352,12 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - SRC-045 Python parser is pinned at 7c489bfb5c803c7414c5ea95d63f18cfe2009b76 and identifies itself as pure Python. SRC-046 Go parser is pinned at bff0ea18dfce3efb6c8159baf21d2d1ced19102b. Both READMEs show MIT badges, but neither pinned tree contains a LICENSE file or package/module license declaration; reuse is not cleared. Their family-level release notes identify protocol-version gaps, so language parity is not assumed.
 - SRC-047 cxcx/solana-dex-parser is pinned at 0c67d8ffa78c7fb2e80230ec53d0627c9531566a (MIT). It reads outer/inner instructions, transaction status, balance changes and transaction metadata fee; that fee field is not a full realized-cost breakdown, and no-match must be distinguished from parse failure. Differential fixtures only.
 - Registry status: 60 direct source inspections and 228 catalog-triage records. No parser package or execution path changed.
+
+
+## Protocol parser and DEX lifecycle follow-up (2026-10-14)
+
+- SRC-048 BlockBuster is pinned at ac98b92d14a6d9fa21a1a4a4ec3d90d0a3b0da73 (AGPL-3.0). Its README warns that IDLs may omit remaining/optional account semantics; Plerkle coupling and license make this a pattern reference only.
+- SRC-049 Raydium library is pinned at 72a22dcd6136fdd354c47d35aaa4b035652398c5. Its README documents a legacy Rust/Solana/Anchor toolchain and separate AMM/CLMM/CPMM paths; no root LICENSE was found. Do not treat its CLI as a current client SDK.
+- SRC-050 Raydium CPI is pinned at 115df2779d53bacc7db9d0be2773a4b48a6d372b. It is an on-chain CPI interface, not an off-chain quote adapter; account privileges and minimum-output constraints need versioned fixtures. No root LICENSE was found.
+- SRC-051 Meteora DBC Go is pinned at 377824fc6056f10ee51074080c92362de52b09da. Its separate curve math and instruction/account helpers suggest preserving the launch-curve versus migrated-AMM boundary. No root LICENSE was found; current official IDL/fixtures and licensing are prerequisites.
+- Registry status: 64 direct source inspections and 224 catalog-triage records. This is bounded source inspection, not runtime integration or exhaustive upstream validation.
