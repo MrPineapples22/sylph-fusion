@@ -790,6 +790,47 @@
         "src/platform/execution/solaris/amm-bridge.ts",
         "test/fusion-graduated-exit.test.mjs"
       ]
+    },
+    {
+      "id": "INT-FEE-COMPONENT-CONSISTENCY-001",
+      "catalogSourceIds": ["SRC-255"],
+      "area": "observed transaction fee component reconciliation",
+      "sourceToPipeline": {
+        "upstreamFindings": [
+          "Solana's total network fee is base fee plus priority fee; the base fee may include transaction and precompile signatures.",
+          "The v1 priority fee is a total lamport amount, while legacy/v0 derive it from requested compute limit and micro-lamports per CU.",
+          "A reported burned amount must be bounded by base fee, not just by total transaction fee."
+        ],
+        "relevantModules": ["src/platform/ingestion/truth-x.ts", "test/platform/truth-x.test.mjs"],
+        "existingOverlap": "EconomicDeltaEngine accepted feeBurnedLamports and priorityFeeLamports when each was individually no greater than feeLamports, even when burned fees exceeded the base fee left after priority fees. It now derives baseFeeLamports only when priority-fee evidence is explicitly present and rejects that contradictory decomposition.",
+        "risks": [
+          "This consistency check does not prove that supplied fee components were decoded correctly for a given transaction version.",
+          "A missing priority-fee observation intentionally leaves base fee unknown.",
+          "Jito tips and venue fees remain separate economic components and are outside this validator."
+        ],
+        "validationRequirements": [
+          "Reject burned fee greater than total fee minus explicit priority fee.",
+          "Keep the derived base fee undefined when priority-fee evidence is absent.",
+          "Add version-specific fee fixtures and reconcile them against canonical chain meta.fee before using for net PnL."
+        ]
+      },
+      "implementation": {
+        "change": "EconomicDeltaEngine now exposes baseFeeLamports = feeLamports - priorityFeeLamports when priority fee is supplied and rejects feeBurnedLamports above the derived base fee. Added deterministic regression assertions for contradictory and incomplete decompositions.",
+        "files": ["src/platform/ingestion/truth-x.ts", "test/platform/truth-x.test.mjs"],
+        "validation": {
+          "redTest": "Before the implementation, the updated Truth-X test failed because baseFeeLamports was absent.",
+          "build": "npm run build:engine — passed",
+          "focusedTests": "node --test test/platform/truth-x.test.mjs — 9/9 passed"
+        },
+        "authorityImpact": "Accounting validation only; no signing, broadcast, custody, capital authorization, or risk-limit changes.",
+        "status": "VERIFIED_FEE_COMPONENT_CONSISTENCY_GUARD; VERSIONED_FEE_DECODING_AND_FULL_PNL_RECONCILIATION_REMAIN_OPEN"
+      },
+      "evidence": [
+        "https://solana.com/docs/core/fees/fee-structure",
+        "https://solana.com/docs/core/transactions/versioned-transactions",
+        "src/platform/ingestion/truth-x.ts",
+        "test/platform/truth-x.test.mjs"
+      ]
     }
   ]
 }

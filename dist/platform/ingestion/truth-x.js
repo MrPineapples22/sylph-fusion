@@ -173,8 +173,12 @@ export class TxV1TruthEngine {
 export class EconomicDeltaEngine {
     static calculateDeltas(input) {
         const priorityFeeLamports = input.priorityFeeLamports ?? 0n;
+        const baseFeeLamports = input.priorityFeeLamports === undefined
+            ? undefined
+            : input.feeLamports - priorityFeeLamports;
         if (input.feeLamports < 0n || (input.priorityFeeLamports !== undefined && (priorityFeeLamports < 0n || priorityFeeLamports > input.feeLamports)) ||
-            (input.feeBurnedLamports !== undefined && (input.feeBurnedLamports < 0n || input.feeBurnedLamports > input.feeLamports))) {
+            (input.feeBurnedLamports !== undefined && (input.feeBurnedLamports < 0n || input.feeBurnedLamports > input.feeLamports)) ||
+            (input.feeBurnedLamports !== undefined && baseFeeLamports !== undefined && input.feeBurnedLamports > baseFeeLamports)) {
             throw new Error('ECONOMIC_DELTA_INVALID_FEE_COMPONENTS');
         }
         const lamportDeltas = [];
@@ -233,6 +237,7 @@ export class EconomicDeltaEngine {
             tokenDeltas,
             lamportDeltas,
             feeBurnedLamports: input.feeBurnedLamports,
+            baseFeeLamports,
             priorityFeeLamports: input.priorityFeeLamports,
             tradeAttribution: 'UNKNOWN',
         };
