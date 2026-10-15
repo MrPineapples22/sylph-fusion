@@ -1,4 +1,4 @@
-import { getExtensionTypes, ExtensionType, NATIVE_MINT, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, unpackAccount, unpackMint, } from '@solana/spl-token';
+import { getExtensionTypes, ExtensionType, NATIVE_MINT, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync, unpackAccount, unpackMint, } from '@solana/spl-token';
 import { computeFeesBps, GLOBAL_CONFIG_PDA, PUMP_AMM_FEE_CONFIG_PDA, PUMP_AMM_PROGRAM_ID, PUMP_AMM_SDK, PUMP_FEE_PROGRAM_ID, canonicalPumpPoolPda, pumpPoolAuthorityPda, } from '@pump-fun/pump-swap-sdk';
 import BN from 'bn.js';
 import { PublicKey } from '@solana/web3.js';
@@ -102,6 +102,11 @@ export async function readCanonicalPumpSwapPool(connection, mint, options = {}) 
     if (!tokenProgram.equals(TOKEN_PROGRAM_ID) && !tokenProgram.equals(TOKEN_2022_PROGRAM_ID)) {
         throw new Error('PUMP_BASE_MINT_PROGRAM_UNSUPPORTED');
     }
+    const expectedBaseVault = getAssociatedTokenAddressSync(mint, poolAddress, true, tokenProgram);
+    const expectedQuoteVault = getAssociatedTokenAddressSync(NATIVE_MINT, poolAddress, true, TOKEN_PROGRAM_ID);
+    if (!pool.poolBaseTokenAccount.equals(expectedBaseVault) || !pool.poolQuoteTokenAccount.equals(expectedQuoteVault)) {
+        throw new Error('PUMP_AMM_VAULT_ADDRESS_MISMATCH');
+    }
     requireOwner(baseInfo, tokenProgram, 'PUMP_BASE_VAULT_PROGRAM_MISMATCH');
     requireOwner(quoteInfo, TOKEN_PROGRAM_ID, 'PUMP_QUOTE_VAULT_PROGRAM_MISMATCH');
     const mintState = unpackMint(mint, canonicalMintInfo, tokenProgram);
@@ -111,9 +116,10 @@ export async function readCanonicalPumpSwapPool(connection, mint, options = {}) 
     }
     const baseVault = unpackAccount(pool.poolBaseTokenAccount, baseInfo, tokenProgram);
     const quoteVault = unpackAccount(pool.poolQuoteTokenAccount, quoteInfo, TOKEN_PROGRAM_ID);
-    if (!baseVault.mint.equals(mint) || !quoteVault.mint.equals(NATIVE_MINT) ||
+    if (!baseVault.owner.equals(poolAddress) || !quoteVault.owner.equals(poolAddress) ||
+        !baseVault.mint.equals(mint) || !quoteVault.mint.equals(NATIVE_MINT) ||
         baseVault.amount <= 0n || quoteVault.amount <= 0n) {
-        throw new Error('PUMP_AMM_VAULT_MINT_OR_BALANCE_MISMATCH');
+        throw new Error('PUMP_AMM_VAULT_AUTHORITY_MINT_OR_BALANCE_MISMATCH');
     }
     const effectiveQuoteReserves = quoteVault.amount + BigInt(pool.virtualQuoteReserves.toString());
     if (effectiveQuoteReserves <= 0n || effectiveQuoteReserves > U64_MAX) {

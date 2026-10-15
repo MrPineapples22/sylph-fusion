@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import BN from 'bn.js';
-import { AccountLayout, MintLayout, NATIVE_MINT, TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { AccountLayout, MintLayout, NATIVE_MINT, TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from '@solana/spl-token';
 import { Keypair, PublicKey } from '@solana/web3.js';
 import {
   GLOBAL_CONFIG_PDA,
@@ -49,8 +49,8 @@ function tokenAccount(mint, owner, amount) {
 async function fixture({ virtualQuoteReserves = -50_000_000n, slot = 101 } = {}) {
   const mint = Keypair.generate().publicKey;
   const poolAddress = canonicalPumpPoolPda(mint, NATIVE_MINT);
-  const baseVault = Keypair.generate().publicKey;
-  const quoteVault = Keypair.generate().publicKey;
+  const baseVault = getAssociatedTokenAddressSync(mint, poolAddress, true, TOKEN_PROGRAM_ID);
+  const quoteVault = getAssociatedTokenAddressSync(NATIVE_MINT, poolAddress, true, TOKEN_PROGRAM_ID);
   const pool = {
     poolBump: 1, index: 0, creator: pumpPoolAuthorityPda(mint), baseMint: mint,
     quoteMint: NATIVE_MINT, lpMint: Keypair.generate().publicKey,
@@ -125,6 +125,15 @@ test('PumpSwap reader rejects a stale context and a vault owned by the wrong tok
   await assert.rejects(
     readCanonicalPumpSwapPool(wrongOwner.connection, wrongOwner.mint, { decoder }),
     /PUMP_QUOTE_VAULT_PROGRAM_MISMATCH/,
+  );
+
+  const wrongAuthority = await fixture();
+  const authorityPool = PUMP_AMM_SDK.decodePool(wrongAuthority.accounts.get(wrongAuthority.poolAddress.toBase58()));
+  wrongAuthority.accounts.set(authorityPool.poolBaseTokenAccount.toBase58(),
+    tokenAccount(wrongAuthority.mint, Keypair.generate().publicKey, 2_000_000_000n));
+  await assert.rejects(
+    readCanonicalPumpSwapPool(wrongAuthority.connection, wrongAuthority.mint, { decoder }),
+    /PUMP_AMM_VAULT_AUTHORITY_MINT_OR_BALANCE_MISMATCH/,
   );
 });
 

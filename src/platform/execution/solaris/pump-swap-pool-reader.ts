@@ -4,6 +4,7 @@ import {
   NATIVE_MINT,
   TOKEN_2022_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
+  getAssociatedTokenAddressSync,
   unpackAccount,
   unpackMint,
 } from '@solana/spl-token';
@@ -154,6 +155,11 @@ export async function readCanonicalPumpSwapPool(
   if (!tokenProgram.equals(TOKEN_PROGRAM_ID) && !tokenProgram.equals(TOKEN_2022_PROGRAM_ID)) {
     throw new Error('PUMP_BASE_MINT_PROGRAM_UNSUPPORTED');
   }
+  const expectedBaseVault = getAssociatedTokenAddressSync(mint, poolAddress, true, tokenProgram);
+  const expectedQuoteVault = getAssociatedTokenAddressSync(NATIVE_MINT, poolAddress, true, TOKEN_PROGRAM_ID);
+  if (!pool.poolBaseTokenAccount.equals(expectedBaseVault) || !pool.poolQuoteTokenAccount.equals(expectedQuoteVault)) {
+    throw new Error('PUMP_AMM_VAULT_ADDRESS_MISMATCH');
+  }
   requireOwner(baseInfo, tokenProgram, 'PUMP_BASE_VAULT_PROGRAM_MISMATCH');
   requireOwner(quoteInfo, TOKEN_PROGRAM_ID, 'PUMP_QUOTE_VAULT_PROGRAM_MISMATCH');
 
@@ -164,9 +170,10 @@ export async function readCanonicalPumpSwapPool(
   }
   const baseVault = unpackAccount(pool.poolBaseTokenAccount, baseInfo, tokenProgram);
   const quoteVault = unpackAccount(pool.poolQuoteTokenAccount, quoteInfo, TOKEN_PROGRAM_ID);
-  if (!baseVault.mint.equals(mint) || !quoteVault.mint.equals(NATIVE_MINT) ||
+  if (!baseVault.owner.equals(poolAddress) || !quoteVault.owner.equals(poolAddress) ||
+      !baseVault.mint.equals(mint) || !quoteVault.mint.equals(NATIVE_MINT) ||
       baseVault.amount <= 0n || quoteVault.amount <= 0n) {
-    throw new Error('PUMP_AMM_VAULT_MINT_OR_BALANCE_MISMATCH');
+    throw new Error('PUMP_AMM_VAULT_AUTHORITY_MINT_OR_BALANCE_MISMATCH');
   }
 
   const effectiveQuoteReserves = quoteVault.amount + BigInt(pool.virtualQuoteReserves.toString());
