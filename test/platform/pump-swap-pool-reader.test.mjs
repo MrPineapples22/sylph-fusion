@@ -48,7 +48,7 @@ function tokenAccount(mint, owner, amount) {
   return info(TOKEN_PROGRAM_ID, data);
 }
 
-async function fixture({ virtualQuoteReserves = -50_000_000n, slot = 101 } = {}) {
+async function fixture({ virtualQuoteReserves = -50_000_000n, quoteVaultAmount = 1_000_000_000n, coinCreator = PublicKey.default, slot = 101 } = {}) {
   const mint = Keypair.generate().publicKey;
   const poolAddress = canonicalPumpPoolPda(mint, NATIVE_MINT);
   const baseVault = getAssociatedTokenAddressSync(mint, poolAddress, true, TOKEN_PROGRAM_ID);
@@ -57,7 +57,7 @@ async function fixture({ virtualQuoteReserves = -50_000_000n, slot = 101 } = {})
     poolBump: 1, index: 0, creator: pumpPoolAuthorityPda(mint), baseMint: mint,
     quoteMint: NATIVE_MINT, lpMint: Keypair.generate().publicKey,
     poolBaseTokenAccount: baseVault, poolQuoteTokenAccount: quoteVault,
-    lpSupply: new BN(1), coinCreator: PublicKey.default, isMayhemMode: false,
+    lpSupply: new BN(1), coinCreator, isMayhemMode: false,
     isCashbackCoin: false, virtualQuoteReserves: new BN(virtualQuoteReserves.toString()),
     creatorFeeBps: new BN(0), canEditCreatorFee: false,
   };
@@ -67,7 +67,7 @@ async function fixture({ virtualQuoteReserves = -50_000_000n, slot = 101 } = {})
     [poolAddress.toBase58(), poolInfo],
     [mint.toBase58(), mintInfo(mint)],
     [baseVault.toBase58(), tokenAccount(mint, poolAddress, 2_000_000_000n)],
-    [quoteVault.toBase58(), tokenAccount(NATIVE_MINT, poolAddress, 1_000_000_000n)],
+    [quoteVault.toBase58(), tokenAccount(NATIVE_MINT, poolAddress, quoteVaultAmount)],
     [GLOBAL_CONFIG_PDA.toBase58(), info(PUMP_AMM_PROGRAM_ID, Buffer.from([1]))],
     [PUMP_AMM_FEE_CONFIG_PDA.toBase58(), info(PUMP_FEE_PROGRAM_ID, Buffer.from([1]))],
   ]);
@@ -129,6 +129,39 @@ test('PumpSwap reader verifies canonical pool, token-vault ownership, and signed
   spoofBridge.registerAmmPool('spoof-mint', { ...observation, source: 'CANONICAL_ON_CHAIN_RPC' });
   assert.equal(spoofBridge.canExecuteTrade('spoof-mint', 'BUY').allowed, false);
   assert.equal(spoofBridge.getObservationSummary('spoof-mint').status, 'UNVERIFIED');
+});
+
+test('PumpSwap sell quote matches SDK when creator fees are nonzero and rounded independently', async () => {
+  const coinCreator = Keypair.generate().publicKey;
+  const f = await fixture({ coinCreator });
+  const feeBreakdown = { lpFeeBps: 21n, protocolFeeBps: 7n, creatorFeeBps: 13n };
+  const observation = await readCanonicalPumpSwapPool(f.connection, f.mint, {
+    minContextSlot: 100, decoder: { ...decoder, feeBreakdown: () => feeBreakdown },
+  });
+  const market = new Market({ connection: {} }, {}, PublicKey.default);
+  market.ammBridge.registerMigration(f.mint.toBase58(), 100);
+  market.ammBridge.registerAmmPool(f.mint.toBase58(), observation);
+  const amountIn = 100_000_000n;
+  const sdkExactSellOut = sellBaseInput({
+    base: new BN(amountIn.toString()), slippage: 0,
+    baseReserve: new BN(observation.tokenReserves.toString()),
+    quoteReserve: new BN(observation.rawQuoteReserves.toString()),
+    virtualQuoteReserves: new BN(observation.virtualQuoteReserves.toString()),
+    globalConfig: { lpFeeBasisPoints: new BN(21), protocolFeeBasisPoints: new BN(7), coinCreatorFeeBasisPoints: new BN(13) },
+    feeConfig: null, baseMintAccount: { supply: new BN('1000000000000') }, baseMint: f.mint,
+    coinCreator, creator: pumpPoolAuthorityPda(f.mint), quoteMint: NATIVE_MINT, isMayhemMode: false,
+  }).uiQuote;
+  assert.equal(market.ammExitQuote(f.mint.toBase58(), amountIn), BigInt(sdkExactSellOut.toString()));
+});
+
+test('PumpSwap sell quote fails closed when virtual reserves exceed executable raw quote vault', async () => {
+  const f = await fixture({ virtualQuoteReserves: 949_999_999n, quoteVaultAmount: 1n });
+  const observation = await readCanonicalPumpSwapPool(f.connection, f.mint, { minContextSlot: 100, decoder });
+  assert.equal(observation.quoteReserves, 950_000_000n);
+  const market = new Market({ connection: {} }, {}, PublicKey.default);
+  market.ammBridge.registerMigration(f.mint.toBase58(), 100);
+  market.ammBridge.registerAmmPool(f.mint.toBase58(), observation);
+  assert.throws(() => market.ammExitQuote(f.mint.toBase58(), 100_000_000n), /PUMP_AMM_INSUFFICIENT_REAL_QUOTE_RESERVES/);
 });
 
 test('PumpSwap reader rejects a stale context and a vault owned by the wrong token program', async () => {

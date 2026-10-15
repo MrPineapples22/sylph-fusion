@@ -82,4 +82,5 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - Commit `7b93c57ea573ea93f7eea5ee9dbb247b4427dbf1` retains raw quote-vault reserves, signed virtual quote reserves and separate LP/protocol/creator fee components from the canonical pool reader through the market quote path.
 - Simulated sell proceeds now use the pinned PumpSwap SDK's per-component fee rounding and raw-vault sufficiency rule. A deterministic regression compares the SYLPH quote to `sellBaseInput()` on identical fixture state.
 - Engine build passed; focused PumpSwap/bridge/graduated-exit/dashboard tests passed 19/19; platform suite passed 1,053/1,053. This verifies simulated quote parity for the fixture, not live transaction execution or the full Pump lifecycle.
+- Two follow-on reader regressions prove SDK parity with a nonzero creator fee and fail closed when effective virtual reserves exceed the executable raw quote vault. Engine build passed and the expanded platform suite passed 1,055/1,055.
 - `SRC-259` remains `PARTIAL_REVIEW`; its manifest integration status is still `NOT_REVIEWED` because this is not a complete upstream review or live execution integration.

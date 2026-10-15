@@ -282,7 +282,8 @@
         "isolated npm ci + TypeScript engine build; focused reader, bridge and dashboard regressions: 19 passed, 0 failed; full platform suite: 1,053 passed, 0 failed (2026-10-15)",
         "commit 8145fdf adds canonical PumpSwap vault ATA and token-authority checks; test rejects a correct-mint token account controlled by the wrong authority",
         "commit 7b93c57 adds raw/signed quote-reserve and fee-component propagation; deterministic sell regression exactly matches pinned SDK sellBaseInput() output",
-        "npm run build:engine passed; focused PumpSwap, bridge, graduated-exit and dashboard suite: 19 passed, 0 failed; npm run test:platform: 1,053 passed, 0 failed (2026-10-15)"
+        "npm run build:engine passed; focused PumpSwap, bridge, graduated-exit and dashboard suite: 19 passed, 0 failed; npm run test:platform: 1,053 passed, 0 failed (2026-10-15)",
+        "additional deterministic checks cover nonzero creator-fee parity and insufficient real quote-vault balance; isolated focused PumpSwap suite: 5/5 passed and full platform suite: 1,055/1,055 passed (2026-10-15)"
       ],
       "license": "NOT_REVIEWED",
       "decision": "CANONICAL_PUMPSWAP_SOL_POOL_READ_AND_SDK_ALIGNED_SIMULATED_SELL_QUOTE; LIVE_EXECUTION_REMAINS_UNVERIFIED"
