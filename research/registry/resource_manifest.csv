@@ -114,11 +114,11 @@ SRC-112,github_quant_ml_data,https://github.com/microsoft/qlib,source_or_documen
 SRC-113,github_quant_ml_data,https://github.com/lightgbm-org/LightGBM,source_or_document_review,P2,PARTIAL_REVIEW,SRC-113@5831ee577776949d26d21efa581ec904bda80483,5831ee577776949d26d21efa581ec904bda80483,MIT,OFFLINE_MODEL_CANDIDATE_AFTER_DATASET_INTEGRITY
 SRC-114,github_quant_ml_data,https://github.com/dmlc/xgboost,source_or_document_review,P2,PARTIAL_REVIEW,SRC-114@4d150b314992203ff8ef8f357deb97b0e27f0f34,4d150b314992203ff8ef8f357deb97b0e27f0f34,APACHE-2.0,OFFLINE_MODEL_CANDIDATE_ONLY
 SRC-115,github_quant_ml_data,https://github.com/catboost/catboost,source_or_document_review,P2,PARTIAL_REVIEW,SRC-115@dbc82f940f996340374817527a3f84decc8c8ac5,dbc82f940f996340374817527a3f84decc8c8ac5,APACHE-2.0,OFFLINE_MODEL_CANDIDATE_AFTER_LEAKAGE_AUDIT
-SRC-116,github_quant_ml_data,https://github.com/subsquid/pipes-sdk,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-117,github_quant_ml_data,https://github.com/dubzzz/fast-check,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-118,github_quant_ml_data,https://github.com/HypothesisWorks/hypothesis,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-119,github_quant_ml_data,https://github.com/scikit-learn-contrib/MAPIE,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-120,github_quant_ml_data,https://github.com/online-ml/river,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
+SRC-116,github_quant_ml_data,https://github.com/subsquid/pipes-sdk,source_or_document_review,P2,PARTIAL_REVIEW,SRC-116@b1d46a69dcfd264ad8ff5ceaca275e06e7920f2e,b1d46a69dcfd264ad8ff5ceaca275e06e7920f2e,Apache-2.0,HISTORICAL_PIPELINE_CANDIDATE_ONLY
+SRC-117,github_quant_ml_data,https://github.com/dubzzz/fast-check,source_or_document_review,P2,PARTIAL_REVIEW,SRC-117@87c51681b2740492fec7411fbdf1e14dd1f9d706,87c51681b2740492fec7411fbdf1e14dd1f9d706,MIT,TEST_TOOL_CANDIDATE; NO_RUNTIME_DEPENDENCY
+SRC-118,github_quant_ml_data,https://github.com/HypothesisWorks/hypothesis,source_or_document_review,P2,PARTIAL_REVIEW,SRC-118@6ec54d574182ae21b842bf480e59ce894fcb400e,6ec54d574182ae21b842bf480e59ce894fcb400e,MPL-2.0,PYTHON_RESEARCH_TEST_CANDIDATE_ONLY
+SRC-119,github_quant_ml_data,https://github.com/scikit-learn-contrib/MAPIE,source_or_document_review,P2,PARTIAL_REVIEW,SRC-119@2c678f523f3857a2d4290995b25f476cb94c0cb2,2c678f523f3857a2d4290995b25f476cb94c0cb2,BSD-3-Clause,OFFLINE_UNCERTAINTY_RESEARCH_ONLY
+SRC-120,github_quant_ml_data,https://github.com/online-ml/river,source_or_document_review,P2,PARTIAL_REVIEW,SRC-120@6af83abba269dbdaf38e9c0eaf61d82c451ad698,6af83abba269dbdaf38e9c0eaf61d82c451ad698,BSD-3-Clause,OFFLINE_EXPERIMENTATION_ONLY; NO_ONLINE_EXECUTION_MODEL
 SRC-121,github_quant_ml_data,https://github.com/deepcharles/ruptures,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-122,github_quant_ml_data,https://github.com/ranaroussi/quantstats,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-123,github_quant_ml_data,https://github.com/bashtage/arch,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED

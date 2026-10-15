@@ -8,7 +8,7 @@
     "worktreeHasPreexistingEdits": true
   },
   "sourceRecords": 15,
-  "directlyReviewed": 10,
+  "directlyReviewed": 15,
   "sources": [
     {
       "id": "SRC-106",
@@ -426,12 +426,13 @@
     {
       "id": "SRC-116",
       "url": "https://github.com/subsquid/pipes-sdk",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
+        "Pinned upstream commit b1d46a69dcfd264ad8ff5ceaca275e06e7920f2e; inspected repository README and root license at that revision on 2026-10-15.",
         "Official Subsquid Pipes SDK README and feature description"
       ],
       "discoveries": [
-        "SDK supports TypeScript pipelines for streaming multi-chain data and writes to Postgres, ClickHouse, BigQuery or Parquet.",
+        "README documents a TypeScript indexer pipeline with Solana decoding, offset tracking, and target rollback on chain reorganization; it also lists structured logging, profiling, and Prometheus metrics.",
         "It advertises reorg handling and Solana decoding, making cursor/reorg semantics relevant for historical data pipelines.",
         "Provider pipelines remain separate from SYLPH's canonical ingress and require independent coverage and provenance checks."
       ],
@@ -457,20 +458,24 @@
         "compare slot frontiers with independent finalized RPC"
       ],
       "evidence": [
+        "https://github.com/subsquid/pipes-sdk/tree/b1d46a69dcfd264ad8ff5ceaca275e06e7920f2e",
+        "https://github.com/subsquid/pipes-sdk/blob/b1d46a69dcfd264ad8ff5ceaca275e06e7920f2e/README.md",
+        "https://github.com/subsquid/pipes-sdk/blob/b1d46a69dcfd264ad8ff5ceaca275e06e7920f2e/LICENSE",
         "https://github.com/subsquid/pipes-sdk"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
+      "license": "Apache-2.0",
       "decision": "HISTORICAL_PIPELINE_CANDIDATE_ONLY"
     },
     {
       "id": "SRC-117",
       "url": "https://github.com/dubzzz/fast-check",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
+        "Pinned upstream commit 87c51681b2740492fec7411fbdf1e14dd1f9d706; inspected repository README and root license at that revision on 2026-10-15.",
         "Official fast-check README and TypeScript property-testing documentation"
       ],
       "discoveries": [
-        "fast-check provides property-based testing for JavaScript/TypeScript with generated inputs and shrinking.",
+        null,
         "Shrinking failing cases can produce compact regression fixtures for bigint math, parsers and state transitions.",
         "Property tests complement but do not replace protocol-specific golden fixtures."
       ],
@@ -497,6 +502,9 @@
         "combine with known chain fixtures and mutation tests"
       ],
       "evidence": [
+        "https://github.com/README documents JavaScript/TypeScript property assertions over generated inputs and shrinking that reduces failures to smaller counterexamples; this is directly usable in SYLPH’s existing Node/TypeScript test environment./tree/87c51681b2740492fec7411fbdf1e14dd1f9d706",
+        "https://github.com/README documents JavaScript/TypeScript property assertions over generated inputs and shrinking that reduces failures to smaller counterexamples; this is directly usable in SYLPH’s existing Node/TypeScript test environment./blob/87c51681b2740492fec7411fbdf1e14dd1f9d706/README.md",
+        "https://github.com/README documents JavaScript/TypeScript property assertions over generated inputs and shrinking that reduces failures to smaller counterexamples; this is directly usable in SYLPH’s existing Node/TypeScript test environment./blob/87c51681b2740492fec7411fbdf1e14dd1f9d706/LICENSE",
         "https://github.com/dubzzz/fast-check"
       ],
       "license": "MIT",
@@ -505,12 +513,13 @@
     {
       "id": "SRC-118",
       "url": "https://github.com/HypothesisWorks/hypothesis",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
+        "Pinned upstream commit 6ec54d574182ae21b842bf480e59ce894fcb400e; inspected repository README and root license at that revision on 2026-10-15.",
         "Official Hypothesis property-based testing README"
       ],
       "discoveries": [
-        "Hypothesis is a property-based testing library for Python with strategies for generated test inputs.",
+        null,
         "It is relevant to offline data/extraction scripts and ML feature validation if those paths are Python-based.",
         "It does not integrate directly into Node test suites without a separate Python harness."
       ],
@@ -536,7 +545,9 @@
         "pin Hypothesis version and deterministic profiles"
       ],
       "evidence": [
-        "https://github.com/HypothesisWorks/hypothesis"
+        "https://github.com/HypothesisWorks/hypothesis/tree/6ec54d574182ae21b842bf480e59ce894fcb400e",
+        "https://github.com/HypothesisWorks/hypothesis/blob/6ec54d574182ae21b842bf480e59ce894fcb400e/README.md",
+        "https://github.com/HypothesisWorks/hypothesis/blob/6ec54d574182ae21b842bf480e59ce894fcb400e/LICENSE.txt"
       ],
       "license": "MPL-2.0",
       "decision": "PYTHON_RESEARCH_TEST_CANDIDATE_ONLY"
@@ -544,12 +555,13 @@
     {
       "id": "SRC-119",
       "url": "https://github.com/scikit-learn-contrib/MAPIE",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
+        "Pinned upstream commit 2c678f523f3857a2d4290995b25f476cb94c0cb2; inspected repository README and root license at that revision on 2026-10-15.",
         "Official MAPIE README and project description"
       ],
       "discoveries": [
-        "MAPIE implements conformal prediction intervals and risk-control methods compatible with scikit-learn.",
+        null,
         "Prediction intervals can communicate uncertainty but do not guarantee calibration under changing token distributions or dependent samples.",
         "Uncertainty estimates must be evaluated on temporally held-out, point-in-time data."
       ],
@@ -575,20 +587,24 @@
         "label outputs advisory until risk controls independently validate"
       ],
       "evidence": [
+        "https://github.com/README describes conformal prediction intervals/sets and risk-control methods, and reports exchangeability tests intended to check whether application assumptions are plausible./tree/2c678f523f3857a2d4290995b25f476cb94c0cb2",
+        "https://github.com/README describes conformal prediction intervals/sets and risk-control methods, and reports exchangeability tests intended to check whether application assumptions are plausible./blob/2c678f523f3857a2d4290995b25f476cb94c0cb2/README.md",
+        "https://github.com/README describes conformal prediction intervals/sets and risk-control methods, and reports exchangeability tests intended to check whether application assumptions are plausible./blob/2c678f523f3857a2d4290995b25f476cb94c0cb2/LICENSE",
         "https://github.com/scikit-learn-contrib/MAPIE"
       ],
-      "license": "BSD-3-CLAUSE",
+      "license": "BSD-3-Clause",
       "decision": "OFFLINE_UNCERTAINTY_RESEARCH_ONLY"
     },
     {
       "id": "SRC-120",
       "url": "https://github.com/online-ml/river",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
+        "Pinned upstream commit 6af83abba269dbdaf38e9c0eaf61d82c451ad698; inspected repository README and root license at that revision on 2026-10-15.",
         "Official River README and online ML project description"
       ],
       "discoveries": [
-        "River provides incremental/online machine-learning tools for Python data streams.",
+        null,
         "Online updates introduce model state/versioning and feedback-loop risks, especially when labels arrive after token outcomes.",
         "Delayed, selected trading outcomes can bias model updates and require strict label provenance."
       ],
@@ -614,9 +630,12 @@
         "require independent review before any live model update"
       ],
       "evidence": [
+        "https://github.com/README describes online incremental learning, drift detectors, and progressive validation; it explicitly cautions that batch learning is often sufficient and asks whether online learning is actually needed./tree/6af83abba269dbdaf38e9c0eaf61d82c451ad698",
+        "https://github.com/README describes online incremental learning, drift detectors, and progressive validation; it explicitly cautions that batch learning is often sufficient and asks whether online learning is actually needed./blob/6af83abba269dbdaf38e9c0eaf61d82c451ad698/README.md",
+        "https://github.com/README describes online incremental learning, drift detectors, and progressive validation; it explicitly cautions that batch learning is often sufficient and asks whether online learning is actually needed./blob/6af83abba269dbdaf38e9c0eaf61d82c451ad698/LICENSE",
         "https://github.com/online-ml/river"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
+      "license": "BSD-3-Clause",
       "decision": "OFFLINE_EXPERIMENTATION_ONLY; NO_ONLINE_EXECUTION_MODEL"
     }
   ]
