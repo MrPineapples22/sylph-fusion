@@ -109,11 +109,11 @@ SRC-107,github_quant_ml_data,https://github.com/apache/arrow,source_or_document_
 SRC-108,github_quant_ml_data,https://github.com/apache/datafusion,source_or_document_review,P2,PARTIAL_REVIEW,SRC-108-PINNED-2026-10-14,e732212cabd030d500efc35049448b3714017c7b,Apache-2.0,OFFLINE_RESEARCH_ENGINE_REFERENCE_ONLY
 SRC-109,github_quant_ml_data,https://github.com/feast-dev/feast,source_or_document_review,P2,PARTIAL_REVIEW,SRC-109-PINNED-2026-10-14,2dfb9e6d1a37719fd11028d916094050f1cdd552,Apache-2.0,FEATURE_LINEAGE_PATTERN_ONLY_NO_DEPLOYMENT
 SRC-110,github_quant_ml_data,https://github.com/nautechsystems/nautilus_trader,source_or_document_review,P2,PARTIAL_REVIEW,SRC-110-PINNED-2026-10-14,ce453eb995731e3873f0267dda5e4c3a7c514ac6,LGPL-3.0-only_REVIEW_REQUIRED,BACKTEST_ACCOUNTING_PATTERN_ONLY_NO_ENGINE_DUPLICATION
-SRC-111,github_quant_ml_data,https://github.com/polakowo/vectorbt,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-112,github_quant_ml_data,https://github.com/microsoft/qlib,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-113,github_quant_ml_data,https://github.com/lightgbm-org/LightGBM,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-114,github_quant_ml_data,https://github.com/dmlc/xgboost,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-115,github_quant_ml_data,https://github.com/catboost/catboost,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
+SRC-111,github_quant_ml_data,https://github.com/polakowo/vectorbt,source_or_document_review,P2,PARTIAL_REVIEW,SRC-111@e9cd2b10987163123f52424710647855ed0dfad9,e9cd2b10987163123f52424710647855ed0dfad9,APACHE-2.0_WITH_COMMONS_CLAUSE_COMMERCIAL_RESTRICTION,HYPOTHESIS_SCREENING_ONLY_LICENSE_REVIEW_REQUIRED
+SRC-112,github_quant_ml_data,https://github.com/microsoft/qlib,source_or_document_review,P2,PARTIAL_REVIEW,SRC-112@54355232463878d2eebb91fe0ee5fa7fa1f5976c,54355232463878d2eebb91fe0ee5fa7fa1f5976c,MIT,RESEARCH_WORKFLOW_REFERENCE_ONLY_ARTIFACT_TRUST_BOUNDARY
+SRC-113,github_quant_ml_data,https://github.com/lightgbm-org/LightGBM,source_or_document_review,P2,PARTIAL_REVIEW,SRC-113@5831ee577776949d26d21efa581ec904bda80483,5831ee577776949d26d21efa581ec904bda80483,MIT,OFFLINE_MODEL_CANDIDATE_AFTER_DATASET_INTEGRITY
+SRC-114,github_quant_ml_data,https://github.com/dmlc/xgboost,source_or_document_review,P2,PARTIAL_REVIEW,SRC-114@4d150b314992203ff8ef8f357deb97b0e27f0f34,4d150b314992203ff8ef8f357deb97b0e27f0f34,APACHE-2.0,OFFLINE_MODEL_CANDIDATE_ONLY
+SRC-115,github_quant_ml_data,https://github.com/catboost/catboost,source_or_document_review,P2,PARTIAL_REVIEW,SRC-115@dbc82f940f996340374817527a3f84decc8c8ac5,dbc82f940f996340374817527a3f84decc8c8ac5,APACHE-2.0,OFFLINE_MODEL_CANDIDATE_AFTER_LEAKAGE_AUDIT
 SRC-116,github_quant_ml_data,https://github.com/subsquid/pipes-sdk,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-117,github_quant_ml_data,https://github.com/dubzzz/fast-check,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-118,github_quant_ml_data,https://github.com/HypothesisWorks/hypothesis,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED

@@ -36,7 +36,7 @@
 | 021 | 15 | SRC-214–228 | Solana transaction delivery, routers, venues and trading terminals |
 | 022 | 15 | SRC-229–243 | Token risk screening, transaction safety and custody/signing controls |
 | 023 | 9 | SRC-244–251, SRC-253 | Portfolio monitoring, REA references, graph tooling and GitHub source hosting |
-| **Total** | **288 / 288** | **100.00%** | **118 pinned source/document partial reviews and 170 catalog-triage-only records; none of this count means runtime integration** |
+| **Total** | **288 / 288** | **100.00%** | **123 pinned source/document partial reviews and 165 catalog-triage-only records; none of this count means runtime integration** |
 
 `PARTIAL_REVIEW` means pinned source/document inspection was performed; `CATALOG_TRIAGE` is a structured catalog note without direct inspection. Neither means exhaustive review or runtime integration. Research-only status never implies approval for runtime use.
 
@@ -46,7 +46,7 @@ REA is used out of band where the target type and authorization fit its supporte
 
 ## Resume
 
-All 288 records have a URL availability observation. 118 sources now have explicit partial source review status; 170 remain NOT_REVIEWED. Record coverage is complete; upstream research and implementation remain incomplete. Continue with concrete findings from each batch, inspect the current local source and pinned upstream documentation, reproduce behavior with focused deterministic tests, and make small patches. Preserve existing workspace changes and do not grant a source trading authority based on inclusion in the manifest.
+All 288 records have a URL availability observation. 123 sources now have explicit partial source review status; 165 remain NOT_REVIEWED. Record coverage is complete; upstream research and implementation remain incomplete. Continue with concrete findings from each batch, inspect the current local source and pinned upstream documentation, reproduce behavior with focused deterministic tests, and make small patches. Preserve existing workspace changes and do not grant a source trading authority based on inclusion in the manifest.
 ## Latest implementation verification (2026-10-14)
 
 - `npm run build:engine` — passed after the feed admission snapshot change.

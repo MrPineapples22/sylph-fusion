@@ -8,7 +8,7 @@
     "worktreeHasPreexistingEdits": true
   },
   "sourceRecords": 15,
-  "directlyReviewed": 5,
+  "directlyReviewed": 10,
   "sources": [
     {
       "id": "SRC-106",
@@ -217,17 +217,18 @@
     {
       "id": "SRC-111",
       "url": "https://github.com/polakowo/vectorbt",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
+        "Pinned upstream commit e9cd2b10987163123f52424710647855ed0dfad9; inspected repository README and root license at that revision on 2026-10-15.",
         "Official vectorbt README and project description"
       ],
       "discoveries": [
-        "vectorbt provides fast vectorized backtesting and portfolio analysis workflows.",
+        "README documents vectorized portfolio backtesting and interactive portfolio analytics, including fee-aware signal examples; it is a research/backtesting library, not a live execution adapter.",
         "Vectorized backtests can explore many hypotheses quickly but can conceal path-dependent execution, fill and fee constraints.",
         "No live trading capability or SYLPH compatibility was validated."
       ],
       "patterns": [
-        "screen parameter hypotheses with reproducible notebooks",
+        "Model fees, slippage, and sizing explicitly in offline experiments, then validate shortlisted hypotheses with event-level replay and realistic nonfills.",
         "model fees and slippage as explicit arrays",
         "follow vectorized screening with event-level replay"
       ],
@@ -238,35 +239,38 @@
       ],
       "overlap": "Potential offline research tool; does not replace execution-aware simulation.",
       "risks": [
-        "lookahead/survivorship bias",
+        "Commons Clause v1.0 expressly restricts selling the software or a service whose value substantially derives from it; do not infer a permissive commercial-use grant from the Apache-2.0 base license.",
         "unrealistic full fills",
         "vectorized assumptions ignore slot/transaction ordering"
       ],
       "validation": [
         "use walk-forward and token cohort splits",
         "include nonfills, adverse selection, fees and priority costs",
-        "compare results to event-driven replay"
+        "compare results to event-driven replay",
+        "Keep all model outputs advisory; they must not authorize signing, entry, sizing, or bypass existing risk gates."
       ],
       "evidence": [
+        "https://github.com/polakowo/vectorbt/tree/e9cd2b10987163123f52424710647855ed0dfad9",
         "https://github.com/polakowo/vectorbt"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "HYPOTHESIS_SCREENING_ONLY"
+      "license": "APACHE-2.0_WITH_COMMONS_CLAUSE_COMMERCIAL_RESTRICTION",
+      "decision": "HYPOTHESIS_SCREENING_ONLY_LICENSE_REVIEW_REQUIRED"
     },
     {
       "id": "SRC-112",
       "url": "https://github.com/microsoft/qlib",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
+        "Pinned upstream commit 54355232463878d2eebb91fe0ee5fa7fa1f5976c; inspected repository README and root license at that revision on 2026-10-15.",
         "Official Microsoft Qlib README and research framework description"
       ],
       "discoveries": [
-        "Qlib is an AI-oriented quant research platform supporting supervised, market-dynamics and reinforcement-learning workflows.",
+        "Qlib describes point-in-time database support and high-frequency data processing alongside AI/quant research workflows.",
         "Framework breadth does not solve market-specific label leakage, token survivorship or execution realism.",
         "Its equity-oriented conventions may need substantial adaptation for short-lived Solana launches."
       ],
       "patterns": [
-        "version datasets and experiment configs",
+        "Version point-in-time datasets and experiment inputs, enforce temporal splits, and explicitly review any trusted artifact-loading path.",
         "walk forward and compare baselines",
         "track data and model provenance"
       ],
@@ -277,35 +281,38 @@
       ],
       "overlap": "Potential research workflow reference, not an Engine runtime integration.",
       "risks": [
-        "equity domain assumptions",
+        "The pinned README identifies a backward-incompatible artifact-loading default: saved model/dataset recorder loads are restricted unless the caller opts into trusted loading; this should be reviewed before loading persisted artifacts.",
         "feature/label leakage",
         "complex ML infra before data quality"
       ],
       "validation": [
         "define token-specific point-in-time dataset",
         "compare simple baselines first",
-        "evaluate calibrated net return after costs on temporal holdout"
+        "evaluate calibrated net return after costs on temporal holdout",
+        "Keep all model outputs advisory; they must not authorize signing, entry, sizing, or bypass existing risk gates."
       ],
       "evidence": [
+        "https://github.com/microsoft/qlib/tree/54355232463878d2eebb91fe0ee5fa7fa1f5976c",
         "https://github.com/microsoft/qlib"
       ],
       "license": "MIT",
-      "decision": "RESEARCH_WORKFLOW_REFERENCE_ONLY"
+      "decision": "RESEARCH_WORKFLOW_REFERENCE_ONLY_ARTIFACT_TRUST_BOUNDARY"
     },
     {
       "id": "SRC-113",
       "url": "https://github.com/lightgbm-org/LightGBM",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
+        "Pinned upstream commit 5831ee577776949d26d21efa581ec904bda80483; inspected repository README and root license at that revision on 2026-10-15.",
         "Official LightGBM README and project description"
       ],
       "discoveries": [
-        "LightGBM is a gradient-boosted decision-tree framework for ranking, classification and regression.",
+        "The repository states that the official project moved from Microsoft to lightgbm-org in March 2026 and remains maintained by the same project maintainers.",
         "Model choice cannot compensate for contaminated labels, point-in-time leakage, or biased winner-only samples.",
         "It is a training/evaluation library, not a runtime signal source."
       ],
       "patterns": [
-        "establish simple baseline and temporal splits",
+        "Pin model/data/feature versions and evaluate a ranking or classification baseline on time-separated, leakage-audited data before considering adoption.",
         "calibrate probabilities and ranking output",
         "track model/data hashes"
       ],
@@ -316,16 +323,18 @@
       ],
       "overlap": "Could be an offline research candidate; no dependency required in live TypeScript core.",
       "risks": [
-        "overfit hyperparameter search",
+        "This is a gradient-boosted decision-tree library; the repository does not supply domain-valid token outcomes or executable trading labels.",
         "class imbalance and selection bias",
         "probability miscalibration"
       ],
       "validation": [
         "use nested walk-forward validation",
         "include losers/failed launches and net execution outcomes",
-        "monitor calibration and drift"
+        "monitor calibration and drift",
+        "Keep all model outputs advisory; they must not authorize signing, entry, sizing, or bypass existing risk gates."
       ],
       "evidence": [
+        "https://github.com/lightgbm-org/LightGBM/tree/5831ee577776949d26d21efa581ec904bda80483",
         "https://github.com/lightgbm-org/LightGBM"
       ],
       "license": "MIT",
@@ -334,17 +343,18 @@
     {
       "id": "SRC-114",
       "url": "https://github.com/dmlc/xgboost",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
+        "Pinned upstream commit 4d150b314992203ff8ef8f357deb97b0e27f0f34; inspected repository README and root license at that revision on 2026-10-15.",
         "Official XGBoost README and supported interfaces"
       ],
       "discoveries": [
-        "XGBoost provides scalable gradient-boosted trees across multiple languages and distributed platforms.",
+        "XGBoost describes an optimized distributed gradient-boosting library with interfaces usable across several distributed platforms.",
         "It supports ranking/classification/regression tasks but does not provide domain-valid Solana outcome labels.",
         "Model reproducibility requires pinned library, feature definitions, data split and random seeds."
       ],
       "patterns": [
-        "serialize model and training metadata",
+        "Keep training out of the live Engine and record the data split, random seed, package version, model hash, and execution-cost assumptions for each experiment.",
         "compare ranking to calibrated baselines",
         "keep training pipeline separate from execution process"
       ],
@@ -355,16 +365,18 @@
       ],
       "overlap": "Potential research model library only; no live integration warranted.",
       "risks": [
-        "data leakage and temporal overfit",
+        "The library offers general ML algorithms; source documentation does not establish Solana token predictive value, calibration, or net profitability.",
         "distributed nondeterminism/config drift",
         "training code sharing production secrets"
       ],
       "validation": [
         "walk-forward holdout and repeated seeds",
         "use realistic costs and failed orders",
-        "verify model output has no authority to bypass risk checks"
+        "verify model output has no authority to bypass risk checks",
+        "Keep all model outputs advisory; they must not authorize signing, entry, sizing, or bypass existing risk gates."
       ],
       "evidence": [
+        "https://github.com/dmlc/xgboost/tree/4d150b314992203ff8ef8f357deb97b0e27f0f34",
         "https://github.com/dmlc/xgboost"
       ],
       "license": "APACHE-2.0",
@@ -373,17 +385,18 @@
     {
       "id": "SRC-115",
       "url": "https://github.com/catboost/catboost",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
+        "Pinned upstream commit dbc82f940f996340374817527a3f84decc8c8ac5; inspected repository README and root license at that revision on 2026-10-15.",
         "Official CatBoost README and project description"
       ],
       "discoveries": [
-        "CatBoost implements gradient-boosted trees with support for categorical features and CPU/GPU training.",
+        "CatBoost describes gradient-boosted decision trees with numerical/categorical feature support and CPU/GPU training.",
         "Categorical handling may fit token/program/source identifiers, but high-cardinality identity features can create memorization/leakage.",
         "Library performance claims do not demonstrate prediction utility or net profitability."
       ],
       "patterns": [
-        "audit categorical feature leakage",
+        "Treat high-cardinality token, creator, and wallet identifiers as leakage/memorization risks; test future-time and token-family holdouts and report cost-adjusted outcomes.",
         "store model/version and data lineage",
         "compare probability calibration and decision utility"
       ],
@@ -393,19 +406,21 @@
       ],
       "overlap": "One possible offline modeling library; avoid multiple model stacks until dataset quality is established.",
       "risks": [
-        "token identity memorization",
+        "The pinned root LICENSE is Apache-2.0; the earlier catalog triage label of MIT was inaccurate and is corrected here.",
         "selection/survivorship bias",
         "CPU/GPU reproducibility differences"
       ],
       "validation": [
         "hold out future time windows and token families",
         "report net performance after realistic costs",
-        "test model degradation and calibration"
+        "test model degradation and calibration",
+        "Keep all model outputs advisory; they must not authorize signing, entry, sizing, or bypass existing risk gates."
       ],
       "evidence": [
+        "https://github.com/catboost/catboost/tree/dbc82f940f996340374817527a3f84decc8c8ac5",
         "https://github.com/catboost/catboost"
       ],
-      "license": "MIT",
+      "license": "APACHE-2.0",
       "decision": "OFFLINE_MODEL_CANDIDATE_AFTER_LEAKAGE_AUDIT"
     },
     {
