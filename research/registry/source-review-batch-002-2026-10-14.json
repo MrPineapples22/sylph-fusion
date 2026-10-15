@@ -118,47 +118,55 @@
       "url": "https://solana.com/docs/tools/production-readiness",
       "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Solana production readiness checklist",
+        "Official Solana production readiness guide opened 2026-10-14",
+        "Local Config, RpcPool, transaction-lifetime, Jupiter V0 simulation and live-readiness source inspection",
         "Project live-status and recovery evidence"
       ],
       "discoveries": [
-        "Solana publishes production checks across RPC usage, transactions, operations and monitoring; a reachable endpoint or successful build is not a production-readiness result. SYLPH's current recorded operational blockers include stale/overflowed Core feed, stale RPC evidence, duplicate legacy Terminal processes and unavailable configured adapters.",
-        "The project has an explicit Start SYLPH check and read-only live status audit, but existing listeners predate some source-level ownership fixes, so checkout state and running-process state must be reported separately.",
-        "The declared package manager is pnpm 11.19.0, but the checked-in pnpm lock omitted two direct package dependencies; the worktree node_modules junction also resolved Pump SDK 4.0.0 despite the project pinning 2.0.0, so a pinned scratch install was needed to establish build evidence."
+        "The official guide calls for redundant RPCs, confirmed blockhash plus lastValidBlockHeight tracking, explicit priority-fee and compute-limit instructions, simulation-derived compute estimates, retry/rebuild after expiry, transaction monitoring and load testing. It describes skipPreflight=true only after prior validation for low latency, not as a universal safe default.",
+        "SYLPH config requires two distinct RPC URLs for live mode; RpcPool tracks latency/failure/slot lag and fails over, while TransactionLifetimeAuthority models lastValidBlockHeight. Jupiter V0 instruction construction now simulates with verified lookup tables and uses a capped measured-CU priority fee for paper projections.",
+        "The execution builder explicitly asserts paper-only build authority and no production transaction submit path was found in src. Therefore these source checks and mocked simulation tests do not prove live endpoint redundancy, landing, confirmation, realized fees, load capacity or operational readiness."
       ],
       "patterns": [
-        "turn checklist items into observable gates",
-        "report process/build provenance",
-        "keep freshness, capacity, recovery and incident evidence distinct",
-        "fail closed on unknown runtime schema"
+        "translate checklist requirements into evidence-backed runtime gates",
+        "bind freshness, failover, transaction lifetime, confirmation and cost as separate observations",
+        "rebuild only after typed expiry evidence and retain idempotent transaction identity",
+        "keep simulation and PAPER evidence distinct from live submission or finalized settlement"
       ],
       "sylphModules": [
-        "start-app.mjs",
-        "docs/ECOSYSTEM_LIVE_STATUS_2026-10-14.md",
+        "src/config.ts",
         "src/rpc.ts",
-        "src/feed.ts",
-        "terminal/server.mjs"
+        "src/platform/execution/transaction-lifetime.ts",
+        "src/execution.ts",
+        "src/platform/execution/live-readiness.ts",
+        "docs/ECOSYSTEM_LIVE_STATUS_2026-10-14.md",
+        "start-app.mjs"
       ],
-      "overlap": "Current launcher check reports blockers and does not claim live readiness. Prior read-only observation found Engine PAPER/feed blocked and old Terminal processes; this batch did not start, stop or restart any service. A scratch clean install exposed stale pnpm/package-lock files and an external node_modules junction whose Pump SDK version does not match the declared pin. Both lockfiles were reconciled in the candidate branch; a pinned scratch install and engine build were then verified.",
+      "overlap": "Configuration and source contain redundant endpoint and readiness gates, transaction-lifetime checks, and the Jupiter V0 simulated paper builder. Current live-readiness/launcher status remains evidence-gated; this source inspection did not observe or change running services. No live transaction submission, end-to-end provider failover, production load run or finalized settlement was verified.",
       "risks": [
-        "new source code does not update already running processes",
-        "connectivity can be mistaken for durable capacity or chain completeness",
-        "a broad checklist can give false assurance without evidence binding",
-        "the user worktree's junction remains unmodified and local runtime modules may still differ from the lock until reinstalled"
+        "source checklists and local mocks do not establish live provider SLA or endpoint independence",
+        "skipPreflight guidance is conditional on prior simulation/revalidation and must not become a blanket bypass",
+        "processed/confirmed landing telemetry is not finalized settlement or realized net PnL",
+        "load and failure testing must not trigger live signing or capital movement without explicit separate authorization"
       ],
       "validation": [
-        "run a clean install using each documented package manager against its frozen/locked file",
-        "build with exact pinned dependencies rather than a shared node_modules junction",
-        "bind process identity, source build ID and status schema",
-        "test degraded/stale/unavailable endpoints",
-        "revalidate after operator-controlled runtime transition"
+        "fault-inject endpoint timeouts, 429s, stale slot reports and provider disagreement in deterministic tests",
+        "verify blockhash-expiry rebuild, simulation freshness, and idempotent resend behavior without broadcasting",
+        "bind process identity, source build ID, network identity and status schema in readiness evidence",
+        "measure finality-aware monitoring and actual fee/tip settlement against finalized fixtures",
+        "keep production load and endpoint qualification separate from local source tests"
       ],
       "evidence": [
         "https://solana.com/docs/tools/production-readiness",
+        "src/config.ts",
+        "src/rpc.ts",
+        "src/platform/execution/transaction-lifetime.ts",
+        "src/execution.ts",
+        "src/platform/execution/live-readiness.ts",
         "docs/ECOSYSTEM_LIVE_STATUS_2026-10-14.md"
       ],
       "license": "NOT_APPLICABLE_DOCUMENTATION",
-      "decision": "LOCKFILE_REPRODUCIBILITY_FIX_VERIFIED_IN_ISOLATED_SCRATCH; LIVE_READINESS_UNCHANGED"
+      "decision": "PARTIAL_READINESS_ALIGNMENT; PAPER_ONLY_NO_LIVE_EXECUTION_CERTIFICATION"
     }
   ],
   "safety": {

@@ -46,7 +46,7 @@ REA is used out of band where the target type and authorization fit its supporte
 
 ## Resume
 
-All 288 records have a URL availability observation. Thirteen sources now have explicit partial source review status; 275 remain `NOT_REVIEWED`. Record coverage is complete; upstream research and implementation remain incomplete. Continue with concrete findings from each batch, inspect the current local source and pinned upstream documentation, reproduce behavior with focused deterministic tests, and make small patches. Preserve existing workspace changes and do not grant a source trading authority based on inclusion in the manifest.
+All 288 records have a URL availability observation. Fourteen sources now have explicit partial source review status; 274 remain `NOT_REVIEWED`. Record coverage is complete; upstream research and implementation remain incomplete. Continue with concrete findings from each batch, inspect the current local source and pinned upstream documentation, reproduce behavior with focused deterministic tests, and make small patches. Preserve existing workspace changes and do not grant a source trading authority based on inclusion in the manifest.
 ## Latest implementation verification (2026-10-14)
 
 - `npm run build:engine` — passed after the feed admission snapshot change.
@@ -54,7 +54,7 @@ All 288 records have a URL availability observation. Thirteen sources now have e
 - `npm test` in `terminal/` — 475/475 passed, covering operator projections and UI-side research adapters. This verifies the local terminal suite, not the availability or correctness of all 288 upstream sources.
 - Feed/Yellowstone/backpressure regressions — 28/28 passed; the regressions include historical/live health isolation, required Census-R ordering, and admission-time input snapshots.
 
-These checks do not convert catalog triage into exhaustive upstream review or production integration. Registry coverage remains structurally complete (288 records), while all 288 batch records are bounded `PARTIAL_REVIEW` triage and the manifest distinguishes thirteen sources with direct source review from 275 still `NOT_REVIEWED`.
+These checks do not convert catalog triage into exhaustive upstream review or production integration. Registry coverage remains structurally complete (288 records), while all 288 batch records are bounded `PARTIAL_REVIEW` triage and the manifest distinguishes fourteen sources with direct source review from 274 still `NOT_REVIEWED`.
 
 ## Feed/replay follow-up (2026-10-15)
 
@@ -164,4 +164,11 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - `SRC-079`: reviewed LiteSVM commit `1dda337d22521a4310ec959ebabce0aa4910c497`: Rust 0.18.0/Apache-2.0 with Agave 4.3 compatibility and a Node N-API wrapper 1.6.0/MIT. Simulation, slot control and program loading are useful for real SBF programs, but arbitrary account writes and disabling signature verification are test setup bypasses.
 - SYLPH's `authority-kernel` is a host-side Rust library without a Solana entrypoint or deployable SBF artifact; there is no current program target for LiteSVM. No runtime dependency or harness was added.
 - `SRC-080`: Anchor-LiteSVM commit `0afefab1a2a97ccf9441099b19455f6cb1037617`, package 0.2.1/MIT, depends on LiteSVM `^0.3.3`; compatibility with current LiteSVM 0.18 and Node wrapper 1.6 is unverified. The project also has no Anchor/SBF target.
-- Registry validator now reports 275 `NOT_REVIEWED`, 13 `PARTIAL_REVIEW`. This is source review only; no LiteSVM program was run and no simulated state can advance SYLPH ingress or live-feed health.
+- At that review point, the registry validator reported 275 `NOT_REVIEWED`, 13 `PARTIAL_REVIEW`. This is source review only; no LiteSVM program was run and no simulated state can advance SYLPH ingress or live-feed health.
+
+
+## Solana production-readiness alignment (2026-10-14)
+
+- `SRC-256`: reviewed the official Solana checklist for redundant RPCs, confirmed blockhash/last-valid-height handling, compute-budget selection, retries, monitoring, security and load validation. The guide's low-latency `skipPreflight` recommendation is conditional on prior validation and is not treated as a universal bypass.
+- Local code has two-RPC live configuration, failover telemetry, transaction-lifetime checks and a simulated Jupiter V0 paper builder; no live transaction submission path was verified. Mocked/local evidence does not prove provider SLA, landing, finalized costs, operations or load readiness.
+- Manifest status is now 274 `NOT_REVIEWED`, 14 `PARTIAL_REVIEW`. No live service was changed or started.
