@@ -72,6 +72,8 @@ export class PostGraduationAmmBridge {
             poolEffectiveFeeBps: pool.effectiveFeeBps,
             poolSlot: pool.slot,
             poolObservedAtMs: pool.observedAtMs,
+            poolObservationAttemptedAtMs: pool.observedAtMs,
+            poolObservationError: undefined,
             // Do not trust the caller-supplied source string. Only the exact frozen
             // object produced by the canonical RPC reader can authorize an AMM buy.
             poolObservationSource: isCanonicalPumpSwapObservation(pool)
@@ -80,6 +82,44 @@ export class PostGraduationAmmBridge {
         };
         this.tokens.set(mint, state);
         return state;
+    }
+    recordPoolObservationFailure(mint, errorCode, attemptedAtMs = Date.now()) {
+        const existing = this.tokens.get(mint);
+        if (!existing || existing.status === 'BONDING_CURVE')
+            throw new Error('MIGRATION_NOT_REGISTERED');
+        if (!Number.isSafeInteger(attemptedAtMs) || attemptedAtMs <= 0 || attemptedAtMs > Date.now()) {
+            throw new Error('INVALID_AMM_OBSERVATION_ATTEMPT_TIME');
+        }
+        const safeCode = /^[A-Z][A-Z0-9_]{0,79}$/.test(errorCode) ? errorCode : 'PUMP_AMM_RPC_READ_FAILED';
+        const state = {
+            ...existing,
+            poolObservationAttemptedAtMs: attemptedAtMs,
+            poolObservationError: safeCode,
+        };
+        this.tokens.set(mint, state);
+        return state;
+    }
+    getObservationSummary(mint, nowMs = Date.now()) {
+        const state = this.tokens.get(mint);
+        if (!state)
+            return { status: 'NOT_MIGRATED' };
+        let status;
+        if (!state.poolAddress)
+            status = state.poolObservationError ? 'UNAVAILABLE' : 'WAITING';
+        else if (state.poolObservationSource !== 'CANONICAL_ON_CHAIN_RPC')
+            status = 'UNVERIFIED';
+        else
+            status = this.isPoolSnapshotFresh(state, nowMs) ? 'OBSERVED' : 'STALE';
+        return {
+            status,
+            venue: state.poolVenue,
+            poolAddress: state.poolAddress,
+            slot: state.poolSlot,
+            observedAtMs: state.poolObservedAtMs,
+            source: state.poolObservationSource,
+            lastAttemptAtMs: state.poolObservationAttemptedAtMs,
+            lastError: state.poolObservationError,
+        };
     }
     registerSniperDump(mint) {
         const existing = this.tokens.get(mint);

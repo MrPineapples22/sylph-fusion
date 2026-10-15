@@ -1003,6 +1003,7 @@ export class Engine {
       },
       positions: Object.values(this.state.positions ?? {}).map(p => {
         const mark = this.marks.get(p.mint) ?? null;
+        const marketEvidence = this.market?.ammBridge?.getObservationSummary?.(p.mint) ?? null;
         const currentValue = mark ? mark.value : null;
         const unrealizedPnl = mark ? String(BigInt(mark.value) - BigInt(p.cost)) : null;
         const peakMultiple = BigInt(p.cost) > 0n && p.peak ? (Number(p.peak) / Number(p.cost)).toFixed(2) : '1.00';
@@ -1022,6 +1023,7 @@ export class Engine {
           creator: p.creator,
           creatorTokens: p.creatorTokens,
           mark,
+          marketEvidence,
         };
       }),
       pending: this.state.pending ? { mint: this.state.pending.mint, side: this.state.pending.side, signature: this.state.pending.signature, created: this.state.pending.created, reason: this.state.pending.reason } : null,

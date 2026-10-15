@@ -102,11 +102,14 @@ test('PumpSwap reader verifies canonical pool, token-vault ownership, and signed
   bridge.registerMigration(f.mint.toBase58(), 100);
   bridge.registerAmmPool(f.mint.toBase58(), observation);
   assert.equal(bridge.canExecuteTrade(f.mint.toBase58(), 'BUY').allowed, true);
+  assert.equal(bridge.getObservationSummary(f.mint.toBase58()).status, 'OBSERVED');
+  assert.equal(bridge.getObservationSummary(f.mint.toBase58()).slot, 101);
 
   const spoofBridge = new PostGraduationAmmBridge({ sniperCooldownMs: 0, minAmmQuoteReserves: 1n });
   spoofBridge.registerMigration('spoof-mint', 100);
   spoofBridge.registerAmmPool('spoof-mint', { ...observation, source: 'CANONICAL_ON_CHAIN_RPC' });
   assert.equal(spoofBridge.canExecuteTrade('spoof-mint', 'BUY').allowed, false);
+  assert.equal(spoofBridge.getObservationSummary('spoof-mint').status, 'UNVERIFIED');
 });
 
 test('PumpSwap reader rejects a stale context and a vault owned by the wrong token program', async () => {
@@ -123,4 +126,14 @@ test('PumpSwap reader rejects a stale context and a vault owned by the wrong tok
     readCanonicalPumpSwapPool(wrongOwner.connection, wrongOwner.mint, { decoder }),
     /PUMP_QUOTE_VAULT_PROGRAM_MISMATCH/,
   );
+});
+
+test('AMM observation failure is visible as a bounded code without leaking provider details', () => {
+  const bridge = new PostGraduationAmmBridge();
+  bridge.registerMigration('failed-pool', 101);
+  bridge.recordPoolObservationFailure('failed-pool', 'https://rpc.example/?api-key=secret');
+  const summary = bridge.getObservationSummary('failed-pool');
+  assert.equal(summary.status, 'UNAVAILABLE');
+  assert.equal(summary.lastError, 'PUMP_AMM_RPC_READ_FAILED');
+  assert.equal(summary.lastAttemptAtMs > 0, true);
 });

@@ -128,8 +128,11 @@ export class Market {
                 snapshot.ammPoolObservationStatus = 'OBSERVED';
             }
             catch (error) {
+                const message = error instanceof Error ? error.message : '';
+                const errorCode = /^[A-Z][A-Z0-9_]{0,79}$/.test(message) ? message : 'PUMP_AMM_RPC_READ_FAILED';
+                this.ammBridge.recordPoolObservationFailure(mintString, errorCode);
                 snapshot.ammPoolObservationStatus = 'UNAVAILABLE';
-                snapshot.ammPoolObservationError = (error instanceof Error ? error.message : String(error)).replace(/[\r\n]/g, ' ').slice(0, 120);
+                snapshot.ammPoolObservationError = errorCode;
             }
         }
         return snapshot;

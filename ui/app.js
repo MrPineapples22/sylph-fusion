@@ -54,7 +54,21 @@ function render(s) {
     row.append(text('td', sol(p.cost))); const value = document.createElement('td');
     const fresh = p.mark && s.time - p.mark.at < 10000;
     value.append(text('span', p.mark ? sol(p.mark.value) : '—')); value.append(text('small', !p.mark ? 'Not yet quoted' : fresh ? 'Latest estimate' : 'Stale estimate')); row.append(value);
-    row.append(text('td', p.stage + ' / 5')); row.append(text('td', p.panic ? 'Exit requested' : 'Monitoring', p.panic ? 'negative' : 'positive'));
+    row.append(text('td', p.stage + ' / 5'));
+    const statusCell = document.createElement('td');
+    statusCell.append(text('span', p.panic ? 'Exit requested' : 'Monitoring', p.panic ? 'negative' : 'positive'));
+    const evidence = p.marketEvidence;
+    if (evidence) {
+      const evidenceLabels = {
+        NOT_MIGRATED: 'Bonding curve', WAITING: 'Waiting for canonical pool',
+        OBSERVED: `Canonical pool · slot ${evidence.slot ?? '—'}`,
+        UNAVAILABLE: `Pool read unavailable · ${evidence.lastError ?? 'unknown error'}`,
+        STALE: 'Pool observation is stale', UNVERIFIED: 'Pool data unverified',
+      };
+      const evidenceClass = evidence.status === 'OBSERVED' ? 'positive' : 'market-evidence-warning';
+      statusCell.append(text('small', evidenceLabels[evidence.status] ?? 'Market evidence unknown', evidenceClass));
+    }
+    row.append(statusCell);
     const action = document.createElement('td'); if (s.paperActive) { const b = text('button', 'Exit all'); b.className = 'paper-action'; b.addEventListener('click', async () => { b.disabled = true; try { render(await api('/api/paper', { action: 'sell', mint: p.mint, fraction: 10000 })); toast('Paper position exited'); } catch (e) { toast(e.message); b.disabled = false; } }); action.append(b); } else action.append(text('small', 'Engine managed')); row.append(action); $('positions-body').append(row);
   }
   const lane = $('pending'); if (lane) lane.replaceChildren(text('div', 'ORDER LANE', 'eyebrow'), text('strong', s.pending ? s.pending.side.toUpperCase() + ' · Awaiting chain outcome' : 'No pending order'), text('p', s.pending ? short(s.pending.mint) + ' · ' + Math.floor((s.time - s.pending.created) / 1000) + 's pending. ' + s.pending.reason : 'Ready for the next eligible execution.'));

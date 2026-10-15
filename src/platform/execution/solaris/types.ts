@@ -75,6 +75,8 @@ export interface GraduatedTokenState {
   readonly poolSlot?: number;
   readonly poolObservedAtMs?: number;
   readonly poolObservationSource?: AmmObservationSource;
+  readonly poolObservationAttemptedAtMs?: number;
+  readonly poolObservationError?: string;
   readonly sniperDumpObserved: boolean;
   readonly fairPriceSol?: number;
 }
