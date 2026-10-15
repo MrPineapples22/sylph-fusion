@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import bs58 from 'bs58';
-import { SubscribeUpdate } from '@triton-one/yellowstone-grpc';
+import { SubscribeRequest, SubscribeUpdate } from '@triton-one/yellowstone-grpc';
 import { Feed } from '../../dist/feed.js';
 import { config } from '../../dist/config.js';
 import { ProviderHealthTracker } from '../../dist/platform/ingestion/provider-health.js';
@@ -9,8 +9,10 @@ import { CensusRJournalAuthority } from '../../dist/platform/ingestion/census-r.
 import {
   capturedPayloadBytes,
   capturedTransactionObservation,
+  buildYellowstoneSubscriptionRequest,
   createCapturedResponseDeserializer,
   yellowstoneBackoffAfterSession,
+  YellowstoneReplayCursor,
 } from '../../dist/platform/ingestion/yellowstone-captured-client.js';
 
 function encodedUpdate({ slot = '123', signature = Buffer.alloc(64, 7), logs = ['Program log: observed'] } = {}) {
@@ -100,6 +102,41 @@ test('Yellowstone reconnect backoff resets only after a stable 30-second session
   assert.equal(yellowstoneBackoffAfterSession(8000, 30_000, true), 500);
   assert.equal(yellowstoneBackoffAfterSession(8000, 60_000, false), 8000, 'an idle stream closed by the watchdog does not reset');
   assert.equal(yellowstoneBackoffAfterSession(8000, Number.NaN, true), 8000);
+});
+
+test('Yellowstone reconnect replays from the last accepted slot and keeps replay historical through the confirmed boundary', () => {
+  const cursor = new YellowstoneReplayCursor();
+  assert.equal(cursor.prepareReconnect(105), undefined, 'a new stream has no local replay checkpoint');
+  cursor.recordAccepted(100);
+  const replay = cursor.prepareReconnect(105);
+  assert.deepEqual(replay, { fromSlot: '100', historicalThroughSlot: 105 });
+  const request = buildYellowstoneSubscriptionRequest({
+    accounts: {}, slots: {}, transactions: {}, transactionsStatus: {}, blocks: {}, blocksMeta: {}, entry: {},
+    accountsDataSlice: [], commitment: 1,
+  }, replay);
+  const requestBytes = SubscribeRequest.encode(SubscribeRequest.fromPartial(request)).finish();
+  assert.equal(SubscribeRequest.decode(requestBytes).fromSlot, '100', 'the pinned protobuf carries the replay cursor on wire');
+  assert.equal(buildYellowstoneSubscriptionRequest({ accounts: {}, slots: {}, transactions: {}, transactionsStatus: {}, blocks: {}, blocksMeta: {}, entry: {}, accountsDataSlice: [], commitment: 1 }, undefined).fromSlot, undefined,
+    'first connection stays a live subscription without a recovery cursor');
+  assert.equal(cursor.intentFor(100), 'HISTORICAL_REPAIR');
+  assert.equal(cursor.intentFor(105), 'HISTORICAL_REPAIR');
+  assert.equal(cursor.intentFor(106), 'LIVE', 'live-health handoff begins only after the sampled confirmed boundary');
+  cursor.recordAccepted(106);
+  assert.deepEqual(cursor.prepareReconnect(110), { fromSlot: '106', historicalThroughSlot: 110 });
+  assert.throws(() => cursor.prepareReconnect(105), /BEHIND_CURSOR/);
+});
+
+test('replayed Yellowstone captures enter canonical ingress as historical and cannot refresh live freshness', async () => {
+  let observed;
+  const feed = new Feed(config({ RPC_URLS: 'https://rpc.invalid', WS_URLS: [] }), {}, {
+    submit: async value => { observed = value; return { status: 'ACCEPTED', observationId: value.observationId }; },
+  });
+  const captured = createCapturedResponseDeserializer(SubscribeUpdate)(encodedUpdate({ slot: '789' }));
+  const receipt = await feed.acceptYellowstoneCapture(captured, 'HISTORICAL_REPAIR');
+  assert.equal(receipt.status, 'ACCEPTED');
+  assert.equal(observed.processingIntent, 'HISTORICAL_REPAIR');
+  assert.equal(feed.last, 0);
+  assert.equal(feed.slot, 0);
 });
 
 test('accepted Yellowstone observations update provider health without exposing endpoint credentials', async () => {

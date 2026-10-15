@@ -68,3 +68,11 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - The platform suite passed 1,045/1,045 before this last snapshot-field/UI assertion; focused dashboard tests passed afterward. Intelligence passed 777/777 and terminal passed 350/350.
 - The latest core suite result is 646/648. The two remaining cases reject the isolated worktree's `terminal/node_modules` junction as `TEST_RECEIPT_UNSAFE_SYMLINK`. The attempted junction removal and dependency copy was rejected by automatic safety review, so it was not retried or bypassed. Core is not green.
 - This is an isolated candidate branch only. Critical feed/ingress changes still require independent Astra review; no production/live readiness is established.
+
+
+## Yellowstone reconnect follow-up (2026-10-15)
+
+- SRC-028 upstream docs describe opt-in replay/dedup on reconnect; the pinned SYLPH protobuf schema 4.0.2 exposes SubscribeRequest.fromSlot. The schema field alone does not prove a server's retention window or replay guarantees.
+- SYLPH now reconnects inclusively from the latest canonical ACCEPTED/DUPLICATE slot, samples a confirmed boundary, classifies replay through that boundary as HISTORICAL_REPAIR, and advances live freshness only after the boundary. The replay cursor is checkpointed every 32 slots and exactly on clean shutdown; restart may replay older data, which is safer than skipping. This cursor is not a contiguous-chain certificate.
+- Build passed; focused feed/replay/checkpoint tests passed 30/30; the updated full platform suite passed 1,047/1,047. The core suite's latest result remains 646/648 due two receipt tests rejecting the isolated worktree's terminal/node_modules junction; core is not green.
+- Reconnect replay is not verified against a live Yellowstone server, including provider retention, OutOfRange recovery, or fork behavior. Astra critical review remains required. All 288 source records remain partial triage.

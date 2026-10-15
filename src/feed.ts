@@ -7,7 +7,7 @@ import { BoundedSet, log } from './core.js';
 import type { Config } from './config.js';
 import { IngestionGapReconciler } from './platform/ingestion/gap-reconciler.js';
 import { CensusRJournalAuthority, type BankIdentityStatus } from './platform/ingestion/census-r.js';
-import { capturedTransactionObservation, createCapturedSubscribeClient, yellowstoneBackoffAfterSession } from './platform/ingestion/yellowstone-captured-client.js';
+import { buildYellowstoneSubscriptionRequest, capturedTransactionObservation, createCapturedSubscribeClient, yellowstoneBackoffAfterSession, YellowstoneReplayCursor } from './platform/ingestion/yellowstone-captured-client.js';
 import type { RawObservationEnvelope, ProcessingIntent } from './platform/ingestion/types.js';
 import type { ObservationIngressPort, ObservationSource } from './platform/ingress/port.js';
 import { createUnvalidatedObservation } from './platform/ingress/observation-factory.js';
@@ -96,16 +96,20 @@ export class Feed implements ObservationSource {
   private stopTask: Promise<void> | null = null;
   private readonly pausedSockets = new Set<WebSocket>();
   private onFatalIngressFault?: (fault: FeedIngressFault) => Promise<void> | void;
-  private onCleanSessionClose?: () => Promise<void>;
+  private onCleanSessionClose?: (lastAcceptedYellowstoneSlot: number) => Promise<void>;
   private readonly shutdown = new AbortController();
   readonly gapReconciler = new IngestionGapReconciler();
+  private yellowstoneReplayCursor = new YellowstoneReplayCursor();
+  private lastPersistedYellowstoneSlot = 0;
+  private yellowstoneSubscribedOnce = false;
+  private onYellowstoneCheckpoint?: (slot: number) => Promise<void>;
   readonly censusJournal: CensusRJournalAuthority;
   private readonly providerHealth: ProviderHealthTracker;
   last = 0;
   slot = 0;
   readySince = 0;
 
-  constructor(private cfg: Config, _connection: Connection, ingress: ObservationIngressPort,
+  constructor(private cfg: Config, private readonly connection: Connection, ingress: ObservationIngressPort,
     private readonly yellowstoneClientFactory: YellowstoneClientFactory = createCapturedSubscribeClient,
     censusJournal?: CensusRJournalAuthority,
     providerHealth: ProviderHealthTracker = globalProviderHealthTracker,
@@ -143,7 +147,19 @@ export class Feed implements ObservationSource {
     }
   }
 
-  setCleanSessionCloseHandler(handler: () => Promise<void>): void {
+  setYellowstoneCheckpointHandler(handler: (slot: number) => Promise<void>): void {
+    if (this.onYellowstoneCheckpoint && this.onYellowstoneCheckpoint !== handler) throw new Error('YELLOWSTONE_CHECKPOINT_HANDLER_ALREADY_SET');
+    this.onYellowstoneCheckpoint = handler;
+  }
+
+  restoreYellowstoneReplayCursor(lastAcceptedSlot: number): void {
+    if (this.yellowstoneSubscribedOnce || this.yellowstoneReplayCursor.lastAcceptedSlot !== 0) throw new Error('YELLOWSTONE_REPLAY_CURSOR_ALREADY_STARTED');
+    this.yellowstoneReplayCursor = new YellowstoneReplayCursor(lastAcceptedSlot);
+    this.lastPersistedYellowstoneSlot = lastAcceptedSlot;
+    this.yellowstoneSubscribedOnce = lastAcceptedSlot > 0;
+  }
+
+  setCleanSessionCloseHandler(handler: (lastAcceptedYellowstoneSlot: number) => Promise<void>): void {
     if (this.onCleanSessionClose && this.onCleanSessionClose !== handler) throw new Error('FEED_SESSION_CLOSE_HANDLER_ALREADY_SET');
     this.onCleanSessionClose = handler;
   }
@@ -527,7 +543,7 @@ export class Feed implements ObservationSource {
     await this.ingressDrain;
     await Promise.allSettled([this.ingressFaultPersistence].filter((task): task is Promise<void> => !!task));
     if (!this.ingressFault && this.onCleanSessionClose) {
-      try { await this.onCleanSessionClose(); }
+      try { await this.onCleanSessionClose(this.yellowstoneReplayCursor.lastAcceptedSlot); }
       catch (error) {
         this.ingressFault = 'FEED_SESSION_CLOSE_FAILED';
         this.last = 0;
@@ -634,14 +650,18 @@ export class Feed implements ObservationSource {
           requestCodec: module.SubscribeRequest,
           responseCodec: module.SubscribeUpdate,
         });
+        const replay = this.yellowstoneSubscribedOnce && this.yellowstoneReplayCursor.lastAcceptedSlot > 0
+          ? this.yellowstoneReplayCursor.prepareReconnect(await this.connection.getSlot('confirmed'))
+          : undefined;
         const stream = client.subscribe();
         stream.on('error', () => {});
         if (this.stopped) { stream.destroy(); return; }
         this.grpcStream = stream;
         let last = Date.now();
         watchdog = setInterval(() => { if (Date.now() - last > 30_000) stream.destroy(); }, 5000);
-        const request = { accounts: {}, slots: {}, transactions: { pump: { vote: false, failed: false, accountInclude: [PUMP_PROGRAM_ID.toBase58()], accountExclude: [], accountRequired: [] } }, transactionsStatus: {}, blocks: {}, blocksMeta: {}, entry: {}, accountsDataSlice: [], commitment: module.CommitmentLevel.CONFIRMED };
+        const request = buildYellowstoneSubscriptionRequest({ accounts: {}, slots: {}, transactions: { pump: { vote: false, failed: false, accountInclude: [PUMP_PROGRAM_ID.toBase58()], accountExclude: [], accountRequired: [] } }, transactionsStatus: {}, blocks: {}, blocksMeta: {}, entry: {}, accountsDataSlice: [], commitment: module.CommitmentLevel.CONFIRMED }, replay);
         await new Promise<void>((resolve, reject) => stream.write(request, (e: Error | null) => e ? reject(e) : resolve()));
+        this.yellowstoneSubscribedOnce = true;
         this.providerHealth.recordTransportReachable('YELLOWSTONE_GRPC', true);
         sessionStartedAt = Date.now();
         log('yellowstone_subscribed');
@@ -651,7 +671,23 @@ export class Feed implements ObservationSource {
           if (this.stopped) break;
           const update = captured.update;
           if (update.ping) stream.write({ ...request, ping: { id: 1 } });
-          await this.acceptYellowstoneCapture(captured);
+          const transaction = capturedTransactionObservation(captured);
+          const receipt = await this.acceptYellowstoneCapture(captured,
+            transaction ? this.yellowstoneReplayCursor.intentFor(transaction.slot) : 'LIVE');
+          if (transaction && (receipt?.status === 'ACCEPTED' || receipt?.status === 'DUPLICATE')) {
+            this.yellowstoneReplayCursor.recordAccepted(transaction.slot);
+            if (this.onYellowstoneCheckpoint && this.yellowstoneReplayCursor.lastAcceptedSlot - this.lastPersistedYellowstoneSlot >= 32) {
+              try {
+                await this.onYellowstoneCheckpoint(this.yellowstoneReplayCursor.lastAcceptedSlot);
+                this.lastPersistedYellowstoneSlot = this.yellowstoneReplayCursor.lastAcceptedSlot;
+              } catch (error) {
+                this.latchIngressFault('FEED_YELLOWSTONE_CHECKPOINT_FAILURE', {
+                  slot: transaction.slot, signature: transaction.signature, transport: 'yellowstone.transaction.logs',
+                }, String(error).slice(0, 512));
+                break;
+              }
+            }
+          }
         }
       } catch {
         sessionFailure = true;
@@ -673,14 +709,15 @@ export class Feed implements ObservationSource {
       }
     }
   }
-  private async acceptYellowstoneCapture(captured: Parameters<typeof capturedTransactionObservation>[0]): Promise<void> {
+  private async acceptYellowstoneCapture(captured: Parameters<typeof capturedTransactionObservation>[0], processingIntent: ProcessingIntent = 'LIVE'): Promise<IngressReceipt | void> {
     const transaction = capturedTransactionObservation(captured);
-    if (!transaction) return;
-    await this.accept(transaction.signature, transaction.slot, transaction.logs, {
+    if (!transaction) return undefined;
+    return this.accept(transaction.signature, transaction.slot, transaction.logs, {
       sourceId: 'yellowstone-grpc',
       providerId: providerLabel(this.cfg.YELLOWSTONE_URL),
       transport: 'yellowstone.transaction.logs',
       commitment: 'confirmed',
+      processingIntent,
       rawPayload: transaction.rawPayload,
       rawPayloadEncoding: 'GRPC_PROTOBUF_MESSAGE_PAYLOAD_BYTES',
       capturedYellowstoneUpdate: captured,

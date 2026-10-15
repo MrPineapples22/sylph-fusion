@@ -5,7 +5,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { BoundedSet, log } from './core.js';
 import { IngestionGapReconciler } from './platform/ingestion/gap-reconciler.js';
 import { CensusRJournalAuthority } from './platform/ingestion/census-r.js';
-import { capturedTransactionObservation, createCapturedSubscribeClient, yellowstoneBackoffAfterSession } from './platform/ingestion/yellowstone-captured-client.js';
+import { buildYellowstoneSubscriptionRequest, capturedTransactionObservation, createCapturedSubscribeClient, yellowstoneBackoffAfterSession, YellowstoneReplayCursor } from './platform/ingestion/yellowstone-captured-client.js';
 import { createUnvalidatedObservation } from './platform/ingress/observation-factory.js';
 import { globalProviderHealthTracker } from './platform/ingestion/provider-health.js';
 function providerLabel(endpoint) {
@@ -66,6 +66,7 @@ function validateSource(source) {
 }
 export class Feed {
     cfg;
+    connection;
     yellowstoneClientFactory;
     webSocketFactory;
     // WebSocket providers can deliver a burst of already-buffered frames after
@@ -99,13 +100,18 @@ export class Feed {
     onCleanSessionClose;
     shutdown = new AbortController();
     gapReconciler = new IngestionGapReconciler();
+    yellowstoneReplayCursor = new YellowstoneReplayCursor();
+    lastPersistedYellowstoneSlot = 0;
+    yellowstoneSubscribedOnce = false;
+    onYellowstoneCheckpoint;
     censusJournal;
     providerHealth;
     last = 0;
     slot = 0;
     readySince = 0;
-    constructor(cfg, _connection, ingress, yellowstoneClientFactory = createCapturedSubscribeClient, censusJournal, providerHealth = globalProviderHealthTracker, webSocketFactory = (url, options) => new WebSocket(url, options)) {
+    constructor(cfg, connection, ingress, yellowstoneClientFactory = createCapturedSubscribeClient, censusJournal, providerHealth = globalProviderHealthTracker, webSocketFactory = (url, options) => new WebSocket(url, options)) {
         this.cfg = cfg;
+        this.connection = connection;
         this.yellowstoneClientFactory = yellowstoneClientFactory;
         this.webSocketFactory = webSocketFactory;
         if (typeof ingress === 'function' || !ingress || typeof ingress.submit !== 'function') {
@@ -134,6 +140,18 @@ export class Feed {
                     throw failure.reason;
             };
         }
+    }
+    setYellowstoneCheckpointHandler(handler) {
+        if (this.onYellowstoneCheckpoint && this.onYellowstoneCheckpoint !== handler)
+            throw new Error('YELLOWSTONE_CHECKPOINT_HANDLER_ALREADY_SET');
+        this.onYellowstoneCheckpoint = handler;
+    }
+    restoreYellowstoneReplayCursor(lastAcceptedSlot) {
+        if (this.yellowstoneSubscribedOnce || this.yellowstoneReplayCursor.lastAcceptedSlot !== 0)
+            throw new Error('YELLOWSTONE_REPLAY_CURSOR_ALREADY_STARTED');
+        this.yellowstoneReplayCursor = new YellowstoneReplayCursor(lastAcceptedSlot);
+        this.lastPersistedYellowstoneSlot = lastAcceptedSlot;
+        this.yellowstoneSubscribedOnce = lastAcceptedSlot > 0;
     }
     setCleanSessionCloseHandler(handler) {
         if (this.onCleanSessionClose && this.onCleanSessionClose !== handler)
@@ -497,7 +515,7 @@ export class Feed {
         await Promise.allSettled([this.ingressFaultPersistence].filter((task) => !!task));
         if (!this.ingressFault && this.onCleanSessionClose) {
             try {
-                await this.onCleanSessionClose();
+                await this.onCleanSessionClose(this.yellowstoneReplayCursor.lastAcceptedSlot);
             }
             catch (error) {
                 this.ingressFault = 'FEED_SESSION_CLOSE_FAILED';
@@ -621,6 +639,9 @@ export class Feed {
                     requestCodec: module.SubscribeRequest,
                     responseCodec: module.SubscribeUpdate,
                 });
+                const replay = this.yellowstoneSubscribedOnce && this.yellowstoneReplayCursor.lastAcceptedSlot > 0
+                    ? this.yellowstoneReplayCursor.prepareReconnect(await this.connection.getSlot('confirmed'))
+                    : undefined;
                 const stream = client.subscribe();
                 stream.on('error', () => { });
                 if (this.stopped) {
@@ -631,8 +652,9 @@ export class Feed {
                 let last = Date.now();
                 watchdog = setInterval(() => { if (Date.now() - last > 30_000)
                     stream.destroy(); }, 5000);
-                const request = { accounts: {}, slots: {}, transactions: { pump: { vote: false, failed: false, accountInclude: [PUMP_PROGRAM_ID.toBase58()], accountExclude: [], accountRequired: [] } }, transactionsStatus: {}, blocks: {}, blocksMeta: {}, entry: {}, accountsDataSlice: [], commitment: module.CommitmentLevel.CONFIRMED };
+                const request = buildYellowstoneSubscriptionRequest({ accounts: {}, slots: {}, transactions: { pump: { vote: false, failed: false, accountInclude: [PUMP_PROGRAM_ID.toBase58()], accountExclude: [], accountRequired: [] } }, transactionsStatus: {}, blocks: {}, blocksMeta: {}, entry: {}, accountsDataSlice: [], commitment: module.CommitmentLevel.CONFIRMED }, replay);
                 await new Promise((resolve, reject) => stream.write(request, (e) => e ? reject(e) : resolve()));
+                this.yellowstoneSubscribedOnce = true;
                 this.providerHealth.recordTransportReachable('YELLOWSTONE_GRPC', true);
                 sessionStartedAt = Date.now();
                 log('yellowstone_subscribed');
@@ -644,7 +666,23 @@ export class Feed {
                     const update = captured.update;
                     if (update.ping)
                         stream.write({ ...request, ping: { id: 1 } });
-                    await this.acceptYellowstoneCapture(captured);
+                    const transaction = capturedTransactionObservation(captured);
+                    const receipt = await this.acceptYellowstoneCapture(captured, transaction ? this.yellowstoneReplayCursor.intentFor(transaction.slot) : 'LIVE');
+                    if (transaction && (receipt?.status === 'ACCEPTED' || receipt?.status === 'DUPLICATE')) {
+                        this.yellowstoneReplayCursor.recordAccepted(transaction.slot);
+                        if (this.onYellowstoneCheckpoint && this.yellowstoneReplayCursor.lastAcceptedSlot - this.lastPersistedYellowstoneSlot >= 32) {
+                            try {
+                                await this.onYellowstoneCheckpoint(this.yellowstoneReplayCursor.lastAcceptedSlot);
+                                this.lastPersistedYellowstoneSlot = this.yellowstoneReplayCursor.lastAcceptedSlot;
+                            }
+                            catch (error) {
+                                this.latchIngressFault('FEED_YELLOWSTONE_CHECKPOINT_FAILURE', {
+                                    slot: transaction.slot, signature: transaction.signature, transport: 'yellowstone.transaction.logs',
+                                }, String(error).slice(0, 512));
+                                break;
+                            }
+                        }
+                    }
                 }
             }
             catch {
@@ -673,15 +711,16 @@ export class Feed {
             }
         }
     }
-    async acceptYellowstoneCapture(captured) {
+    async acceptYellowstoneCapture(captured, processingIntent = 'LIVE') {
         const transaction = capturedTransactionObservation(captured);
         if (!transaction)
-            return;
-        await this.accept(transaction.signature, transaction.slot, transaction.logs, {
+            return undefined;
+        return this.accept(transaction.signature, transaction.slot, transaction.logs, {
             sourceId: 'yellowstone-grpc',
             providerId: providerLabel(this.cfg.YELLOWSTONE_URL),
             transport: 'yellowstone.transaction.logs',
             commitment: 'confirmed',
+            processingIntent,
             rawPayload: transaction.rawPayload,
             rawPayloadEncoding: 'GRPC_PROTOBUF_MESSAGE_PAYLOAD_BYTES',
             capturedYellowstoneUpdate: captured,

@@ -11,7 +11,7 @@ import { getPumpProgram, PUMP_PROGRAM_ID } from '@pump-fun/pump-sdk';
 import { config } from '../dist/config.js';
 import { Feed } from '../dist/feed.js';
 import { ProviderHealthTracker } from '../dist/platform/ingestion/provider-health.js';
-import { beginFeedSession, closeFeedSession, feedSessionLatchLocation, persistFeedSessionIncident } from '../dist/platform/ingestion/feed-session-latch.js';
+import { beginFeedSession, closeFeedSession, feedSessionLatchLocation, persistFeedReplayCheckpoint, persistFeedSessionIncident } from '../dist/platform/ingestion/feed-session-latch.js';
 import { Engine } from '../dist/fusion.js';
 
 const cfg = () => config({ RPC_URLS: 'https://one.invalid,https://two.invalid', WS_URLS: 'wss://one.invalid' });
@@ -299,16 +299,18 @@ test('unclean ACTIVE marker becomes a durable startup hold until explicitly reso
   }
 });
 
-test('a cleanly drained session removes only its own ACTIVE marker', async () => {
+test('a cleanly drained session removes only its ACTIVE marker and retains the durable Yellowstone replay cursor', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'feed-session-close-'));
   const latchPath = join(directory, 'paper.sqlite.feed-session-latch.json');
   const dbIdentity = join(directory, 'paper.sqlite');
   try {
     const session = await beginFeedSession(latchPath, dbIdentity, dbIdentity, 1000);
-    await closeFeedSession(latchPath, session.sessionId);
+    await persistFeedReplayCheckpoint(latchPath, session.sessionId, 456, 1500);
+    await closeFeedSession(latchPath, session.sessionId, 512, 2000);
     const next = await beginFeedSession(latchPath, dbIdentity, dbIdentity, 2000);
     assert.ok(next.sessionId);
     assert.equal(next.incident, null);
+    assert.equal(next.lastAcceptedYellowstoneSlot, 512, 'clean restart resumes inclusively from the last durable accepted slot');
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

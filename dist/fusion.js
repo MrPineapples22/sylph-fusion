@@ -13,7 +13,7 @@ import { exitDecision, log, mulBps, settle, recordFailure, recordEquity, pruneRi
 import { startDashboard } from './dashboard.js';
 import { RpcPool } from './rpc.js';
 import { Feed } from './feed.js';
-import { beginFeedSession, closeFeedSession, feedSessionLatchLocation, persistFeedSessionIncident } from './platform/ingestion/feed-session-latch.js';
+import { beginFeedSession, closeFeedSession, feedSessionLatchLocation, persistFeedReplayCheckpoint, persistFeedSessionIncident } from './platform/ingestion/feed-session-latch.js';
 import { globalProviderHealthTracker } from './platform/ingestion/provider-health.js';
 import { createCanonicalSolanaIngress, StoreIngressJournal, isDurableCanonicalIngress, isDurableCanonicalIngressForStore } from './platform/ingress/canonical-ingress.js';
 import { RuntimeTelemetryExporter } from './platform/ingress/runtime-telemetry-exporter.js';
@@ -2289,12 +2289,14 @@ export async function runEngine(options = {}) {
         if (options.runtimeTelemetry)
             runtimeTelemetry = new RuntimeTelemetryExporter(ingress, options.runtimeTelemetry, code => log('runtime_telemetry_export_failed', { code }));
         const feed = new Feed(cfg, rpc.connection, ingress);
+        feed.restoreYellowstoneReplayCursor(feedSession.lastAcceptedYellowstoneSlot);
         if (feedSession.incident)
             feed.restoreIngressFault(feedSession.incident);
         else if (feedSession.sessionId) {
             const sessionId = feedSession.sessionId;
             feed.setFatalIngressFaultHandler(fault => persistFeedSessionIncident(feedSessionPath, sessionId, fault));
-            feed.setCleanSessionCloseHandler(() => closeFeedSession(feedSessionPath, sessionId));
+            feed.setYellowstoneCheckpointHandler(slot => persistFeedReplayCheckpoint(feedSessionPath, sessionId, slot));
+            feed.setCleanSessionCloseHandler(slot => closeFeedSession(feedSessionPath, sessionId, slot));
         }
         const paperRuntime = composePaperRuntime({
             context: { mode: 'PAPER' },

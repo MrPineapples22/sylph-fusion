@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-15T00:45:00Z",
+  "updatedAt": "2026-10-15T00:44:00Z",
   "interpretation": "Verified local implementation follow-ups linked to catalog source IDs. These records document changes and tests; they do not change source review status, grant integration authority, or establish profitability.",
   "followups": [
     {
@@ -579,12 +579,14 @@
         "discoveries": [
           "Feed admission is bounded by item count and bytes, snapshots mutable source data only after capacity is available, and shares an in-flight result for duplicate signatures.",
           "Provider health updates only after accepted LIVE canonical ingress and Census-R projection; HISTORICAL_REPAIR does not update live freshness or provider health.",
-          "A feed-session sidecar is written atomically and fsynced before subscription startup; unresolved ACTIVE/INCIDENT state restores an explicit hold on restart."
+          "A feed-session sidecar is written atomically and fsynced before subscription startup; unresolved ACTIVE/INCIDENT state restores an explicit hold on restart.",
+          "Yellowstone SubscribeRequest.fromSlot is used as an inclusive restart/reconnect cursor only after canonical ACCEPTED/DUPLICATE receipts; replay through the sampled confirmed boundary is marked HISTORICAL_REPAIR, and a coarse sidecar checkpoint survives clean restart. This cursor does not establish contiguous coverage."
         ],
         "patterns": [
           "Keep replay intent explicit and separate live-health state from historical coverage.",
           "Use bounded serial admission with backpressure, immutable queue snapshots, and drain-on-stop.",
-          "Persist recovery uncertainty independently of the main queue so storage pressure cannot erase the hold; gate entries until an operator-reviewed recovery clears it."
+          "Persist recovery uncertainty independently of the main queue so storage pressure cannot erase the hold; gate entries until an operator-reviewed recovery clears it.",
+          "Resume from a durable accepted slot inclusively; use canonical idempotency to absorb same-slot duplicates and keep coverage certificates distinct from transport replay checkpoints."
         ],
         "risks": [
           "This changes canonical ingestion and Engine entry gating, so independent Astra Architecture, Verification, Risk, and Certification review is required before merge or release.",
@@ -600,7 +602,7 @@
         "decision": "INTEGRATE_WITH_CRITICAL_REVIEW_GATE"
       },
       "implementation": {
-        "change": "Added bounded feed admission/backpressure and retryable Census-R projection behavior; separated historical/live health transitions; persisted feed-session incidents across restart; added Engine startup checks for ambiguous pending canonical ingress before feed startup; and added an atomic, bounded staging batch path for deterministic replay.",
+        "change": "Added bounded feed admission/backpressure and retryable Census-R projection behavior; separated historical/live health transitions; persisted feed-session incidents across restart; added Engine startup checks for ambiguous pending canonical ingress before feed startup; and added an atomic, bounded staging batch path for deterministic replay. Added Yellowstone fromSlot replay on reconnect/restart with a confirmed-slot historical/live handoff and restart-persistent cursor checkpoint.",
         "files": [
           "src/feed.ts",
           "src/fusion.ts",
@@ -618,19 +620,21 @@
           "test/platform/canonical-ingress-durability.test.mjs",
           "test/platform/staging-ingress-batch.test.mjs",
           "ui/app.js",
-          "test/dashboard.test.mjs"
+          "test/dashboard.test.mjs",
+          "src/platform/ingestion/yellowstone-captured-client.ts"
         ],
         "validation": {
-          "build": "npm run build:engine — passed after the feed incident snapshot was added.",
-          "focusedTests": "Feed/Yellowstone/backpressure: 28/28 passed; canonical crash recovery: 13/13 passed; canonical durability/Census-R/provider health/staging replay: 51/51 passed; dashboard snapshot and warning: 4/4 passed.",
-          "platformTests": "npm run test:platform — 1,045/1,045 passed before the final dashboard snapshot field change; dashboard regression passed afterward.",
+          "build": "npm run build:engine — passed after the reconnect/restart cursor and confirmed-boundary handoff changes.",
+          "focusedTests": "Yellowstone capture/cursor, historical/live health isolation, feed backpressure, and durable checkpoint restart: 30/30 passed.",
+          "platformTests": "npm run test:platform — 1,047/1,047 passed on the updated branch.",
           "intelligenceTests": "npm run test:intelligence — 777/777 passed.",
           "terminalTests": "npm run test:terminal — 350/350 passed with the local terminal dependency junction present.",
-          "coreTests": "npm run test:core — 646/648 after restoring the ignored scorecard fixture. Two test-receipt cases failed because the isolated worktree terminal/node_modules junction is rejected by the test inventory as TEST_RECEIPT_UNSAFE_SYMLINK. The junction removal/copy attempt was rejected by the automatic safety review; no bypass was attempted. Core suite is not green.",
-          "liveRuntime": "No live provider connection, signing, broadcast, capital, or production runtime test was performed."
+          "coreTests": "Latest known npm run test:core result remains 646/648. Two receipt tests reject the isolated worktree terminal/node_modules junction as TEST_RECEIPT_UNSAFE_SYMLINK. Core suite is not green.",
+          "liveRuntime": "No live provider connection, signing, broadcast, capital, or production runtime test was performed.",
+          "yellowstoneReplayTests": "Pinned SubscribeRequest fromSlot wire roundtrip; inclusive replay cursor and confirmed boundary; HISTORICAL_REPAIR freshness isolation; clean restart checkpoint recovery. Included in the 30/30 focused run."
         },
         "authorityImpact": "Tightens entry eligibility after feed/recovery incidents. Does not add signer, custody, broadcast, or capital authorization. Requires independent critical-change review before merge/release.",
-        "status": "VERIFIED_TARGETED_AND_PLATFORM_TESTS_PENDING_CORE_ENVIRONMENT_AND_INDEPENDENT_CRITICAL_REVIEW"
+        "status": "VERIFIED_BUILD_AND_PLATFORM_TESTS_PENDING_CORE_ENVIRONMENT_AND_INDEPENDENT_CRITICAL_REVIEW"
       },
       "evidence": [
         "https://github.com/rpcpool/yellowstone-grpc",
@@ -641,7 +645,10 @@
         "test/platform/canonical-ingress-durability.test.mjs",
         "test/platform/staging-ingress-batch.test.mjs",
         "test/dashboard.test.mjs",
-        "ui/app.js"
+        "ui/app.js",
+        "https://github.com/rpcpool/yellowstone-grpc/blob/master/examples/typescript/README.md",
+        "https://github.com/rpcpool/yellowstone-grpc/blob/master/CHANGELOG.md",
+        "test/platform/yellowstone-captured-client.test.mjs"
       ]
     }
   ]

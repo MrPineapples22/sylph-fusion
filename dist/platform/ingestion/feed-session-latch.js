@@ -83,10 +83,44 @@ async function readRecord(path) {
         throw error;
     }
 }
+function replayCheckpointPath(path) {
+    return path.endsWith('.json') ? `${path.slice(0, -5)}.replay-checkpoint.json` : `${path}.replay-checkpoint.json`;
+}
+async function readReplayCheckpoint(path, databaseIdentity, canonicalDatabasePath) {
+    try {
+        const value = JSON.parse(await readFile(path, 'utf8'));
+        if (!value || value.version !== 1 || value.databaseIdentity !== databaseIdentity ||
+            value.canonicalDatabasePath !== canonicalDatabasePath || !Number.isSafeInteger(value.lastAcceptedYellowstoneSlot) ||
+            value.lastAcceptedYellowstoneSlot < 0 || !Number.isSafeInteger(value.updatedAtMs) || value.updatedAtMs < 0) {
+            throw new Error('FEED_REPLAY_CHECKPOINT_INVALID');
+        }
+        return value.lastAcceptedYellowstoneSlot;
+    }
+    catch (error) {
+        if (error.code === 'ENOENT')
+            return 0;
+        throw error;
+    }
+}
+/** Persist a coarse replay cursor while ACTIVE; old cursors only cause safe duplicate replay. */
+export async function persistFeedReplayCheckpoint(path, sessionId, slot, now = Date.now()) {
+    if (!Number.isSafeInteger(slot) || slot < 0 || !Number.isSafeInteger(now) || now < 0)
+        throw new Error('FEED_REPLAY_CHECKPOINT_INVALID');
+    const current = await readRecord(path);
+    if (!current || current.status !== 'ACTIVE' || current.sessionId !== sessionId)
+        throw new Error('FEED_SESSION_LATCH_OWNERSHIP_MISMATCH');
+    const checkpointPath = replayCheckpointPath(path);
+    const priorSlot = await readReplayCheckpoint(checkpointPath, current.databaseIdentity, current.canonicalDatabasePath);
+    if (slot < priorSlot)
+        throw new Error('FEED_REPLAY_CHECKPOINT_REGRESSION');
+    await writeAtomic(checkpointPath, Object.freeze({ version: 1, databaseIdentity: current.databaseIdentity,
+        canonicalDatabasePath: current.canonicalDatabasePath, lastAcceptedYellowstoneSlot: slot, updatedAtMs: now }));
+}
 /** Create a durable ACTIVE sentinel before opening provider subscriptions. Any old sentinel is unresolved. */
 export async function beginFeedSession(path, databaseIdentity, canonicalDatabasePath, now = Date.now()) {
     if (typeof databaseIdentity !== 'string' || !databaseIdentity || typeof canonicalDatabasePath !== 'string' || !canonicalDatabasePath)
         throw new Error('FEED_SESSION_DATABASE_IDENTITY_REQUIRED');
+    const lastAcceptedYellowstoneSlot = await readReplayCheckpoint(replayCheckpointPath(path), databaseIdentity, canonicalDatabasePath);
     const prior = await readRecord(path);
     if (prior) {
         if (prior.databaseIdentity !== databaseIdentity)
@@ -95,11 +129,11 @@ export async function beginFeedSession(path, databaseIdentity, canonicalDatabase
             detail: `Previous feed session ${prior.sessionId} did not close cleanly`, observedAtMs: now });
         await writeAtomic(path, { version: 1, databaseIdentity, canonicalDatabasePath: prior.canonicalDatabasePath,
             status: 'INCIDENT', sessionId: prior.sessionId, openedAtMs: prior.openedAtMs, incident });
-        return { sessionId: null, incident };
+        return { sessionId: null, incident, lastAcceptedYellowstoneSlot };
     }
     const sessionId = randomUUID();
     await writeAtomic(path, { version: 1, databaseIdentity, canonicalDatabasePath, status: 'ACTIVE', sessionId, openedAtMs: now });
-    return { sessionId, incident: null };
+    return { sessionId, incident: null, lastAcceptedYellowstoneSlot };
 }
 /** Replace the ACTIVE sentinel before Store persistence; this latch survives Store queue/disk failures. */
 export async function persistFeedSessionIncident(path, sessionId, incident) {
@@ -109,12 +143,14 @@ export async function persistFeedSessionIncident(path, sessionId, incident) {
     await writeAtomic(path, { ...current, status: 'INCIDENT', incident: Object.freeze({ ...incident }) });
 }
 /** Remove only this session's clean ACTIVE marker, after Feed has drained admitted ingress. */
-export async function closeFeedSession(path, sessionId) {
+export async function closeFeedSession(path, sessionId, lastAcceptedYellowstoneSlot, now = Date.now()) {
     const current = await readRecord(path);
     if (!current)
         return;
     if (current.status !== 'ACTIVE' || current.sessionId !== sessionId)
         throw new Error('FEED_SESSION_LATCH_NOT_CLEAN_ACTIVE');
+    if (lastAcceptedYellowstoneSlot !== undefined)
+        await persistFeedReplayCheckpoint(path, sessionId, lastAcceptedYellowstoneSlot, now);
     await unlink(path);
     await syncDirectory(path);
 }
