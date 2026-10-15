@@ -27,7 +27,7 @@ SRC-025,github_streaming_rpc,https://github.com/0xfnzero/sol-shred-sdk,source_or
 SRC-026,github_streaming_rpc,https://github.com/solsonar/solana-shred-parser,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-027,github_streaming_rpc,https://github.com/solana-foundation/solana-microscope,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-028,github_streaming_rpc,https://github.com/rpcpool/yellowstone-grpc,source_or_document_review,P0,PARTIAL_REVIEW,YELLOWSTONE-GRPC-2026-10-14,93db7c58a0b559fa53abf10b99be9d026e3f04e3,AGPL-3.0_REVIEW_REQUIRED,PARTIAL_REPLAY_PROTOCOL_REVIEW_NO_SERVER_DEPENDENCY_OR_AUTHORITY_CHANGE
-SRC-029,github_streaming_rpc,https://github.com/helius-labs/yellowstone-grpc,source_or_document_review,P0,NOT_REVIEWED,,,,UNASSESSED
+SRC-029,github_streaming_rpc,https://github.com/helius-labs/yellowstone-grpc,source_or_document_review,P0,PARTIAL_REVIEW,HELIUS-YELLOWSTONE-FORK-2026-10-14,968ba93eb0d98bd3f691019800161dcdece0fe2c,AGPL-3.0_REVIEW_REQUIRED,FORK_REFERENCE_ONLY_STALE_PROTOCOL_NO_INDEPENDENT_TRUTH
 SRC-030,github_streaming_rpc,https://github.com/jito-foundation/solana-accountsdb-connector,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-031,github_streaming_rpc,https://github.com/solana-foundation/rpc-latency-monitor,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-032,github_parsers_sdks,https://github.com/codama-idl/codama,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED

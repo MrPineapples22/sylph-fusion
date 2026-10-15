@@ -46,7 +46,7 @@ REA is used out of band where the target type and authorization fit its supporte
 
 ## Resume
 
-All 288 records have a URL availability observation. Ten sources now have explicit partial source review status; 278 remain `NOT_REVIEWED`. Record coverage is complete; upstream research and implementation remain incomplete. Continue with concrete findings from each batch, inspect the current local source and pinned upstream documentation, reproduce behavior with focused deterministic tests, and make small patches. Preserve existing workspace changes and do not grant a source trading authority based on inclusion in the manifest.
+All 288 records have a URL availability observation. Eleven sources now have explicit partial source review status; 277 remain `NOT_REVIEWED`. Record coverage is complete; upstream research and implementation remain incomplete. Continue with concrete findings from each batch, inspect the current local source and pinned upstream documentation, reproduce behavior with focused deterministic tests, and make small patches. Preserve existing workspace changes and do not grant a source trading authority based on inclusion in the manifest.
 ## Latest implementation verification (2026-10-14)
 
 - `npm run build:engine` — passed after the feed admission snapshot change.
@@ -54,7 +54,7 @@ All 288 records have a URL availability observation. Ten sources now have explic
 - `npm test` in `terminal/` — 475/475 passed, covering operator projections and UI-side research adapters. This verifies the local terminal suite, not the availability or correctness of all 288 upstream sources.
 - Feed/Yellowstone/backpressure regressions — 28/28 passed; the regressions include historical/live health isolation, required Census-R ordering, and admission-time input snapshots.
 
-These checks do not convert catalog triage into exhaustive upstream review or production integration. Registry coverage remains structurally complete (288 records), while all 288 batch records are bounded `PARTIAL_REVIEW` triage and the manifest distinguishes ten sources with direct source review from 278 still `NOT_REVIEWED`.
+These checks do not convert catalog triage into exhaustive upstream review or production integration. Registry coverage remains structurally complete (288 records), while all 288 batch records are bounded `PARTIAL_REVIEW` triage and the manifest distinguishes eleven sources with direct source review from 277 still `NOT_REVIEWED`.
 
 ## Feed/replay follow-up (2026-10-15)
 
@@ -150,3 +150,10 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - `SRC-028`: reviewed the official repository at `93db7c58a0b559fa53abf10b99be9d026e3f04e3`, including its Geyser protobuf and changelog. The current schema places optional `from_slot` at field 11; the changelog documents server replay fixes for sealed processed banks, empty replay streams and block-filter replay.
 - SYLPH's pinned client encodes `fromSlot` and its reconnect path uses a confirmed boundary, historical replay intent, canonical acceptance receipts and conservative checkpointing. The upstream processed-bank behavior does not prove the configured server's retention, fork handling or runtime behavior.
 - No dependency or network endpoint was changed. The repository license is AGPL-3.0 and remains a review requirement for adoption. Manifest status is now 278 `NOT_REVIEWED`, 10 `PARTIAL_REVIEW`; this is not a complete Yellowstone production certification.
+
+
+## Helius Yellowstone fork review (2026-10-14)
+
+- `SRC-029`: inspected fork commit `968ba93eb0d98bd3f691019800161dcdece0fe2c` (2025-11-18). The fork includes `from_slot`, but its plugin/proto crates are version 10.0.1 and its schema lacks newer upstream fields such as `block_footer` and token-account expansion controls.
+- The workspace license is AGPL-3.0; the proto crate is separately Apache-2.0. SYLPH does not depend on or run this server fork. It is not an independent protocol source for quorum or chain verification.
+- Decision: reference-only for fork comparison; no dependency, authority or runtime endpoint change. Manifest status is now 277 `NOT_REVIEWED`, 11 `PARTIAL_REVIEW`.
