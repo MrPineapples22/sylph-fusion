@@ -119,11 +119,11 @@ SRC-117,github_quant_ml_data,https://github.com/dubzzz/fast-check,source_or_docu
 SRC-118,github_quant_ml_data,https://github.com/HypothesisWorks/hypothesis,source_or_document_review,P2,PARTIAL_REVIEW,SRC-118@6ec54d574182ae21b842bf480e59ce894fcb400e,6ec54d574182ae21b842bf480e59ce894fcb400e,MPL-2.0,PYTHON_RESEARCH_TEST_CANDIDATE_ONLY
 SRC-119,github_quant_ml_data,https://github.com/scikit-learn-contrib/MAPIE,source_or_document_review,P2,PARTIAL_REVIEW,SRC-119@2c678f523f3857a2d4290995b25f476cb94c0cb2,2c678f523f3857a2d4290995b25f476cb94c0cb2,BSD-3-Clause,OFFLINE_UNCERTAINTY_RESEARCH_ONLY
 SRC-120,github_quant_ml_data,https://github.com/online-ml/river,source_or_document_review,P2,PARTIAL_REVIEW,SRC-120@6af83abba269dbdaf38e9c0eaf61d82c451ad698,6af83abba269dbdaf38e9c0eaf61d82c451ad698,BSD-3-Clause,OFFLINE_EXPERIMENTATION_ONLY; NO_ONLINE_EXECUTION_MODEL
-SRC-121,github_quant_ml_data,https://github.com/deepcharles/ruptures,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-122,github_quant_ml_data,https://github.com/ranaroussi/quantstats,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-123,github_quant_ml_data,https://github.com/bashtage/arch,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-124,github_quant_ml_data,https://github.com/sktime/sktime,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-125,github_quant_ml_data,https://github.com/pymc-devs/pymc,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
+SRC-121,github_quant_ml_data,https://github.com/deepcharles/ruptures,source_or_document_review,P2,PARTIAL_REVIEW,SRC-121-PINNED-SOURCE-2026-10-14,ee1c8ff8a548d54c641b2bb471562165931f31c7,BSD-2-Clause (LICENSE at pinned commit),RESEARCH_ONLY
+SRC-122,github_quant_ml_data,https://github.com/ranaroussi/quantstats,source_or_document_review,P2,PARTIAL_REVIEW,SRC-122-PINNED-SOURCE-2026-10-14,9ef4c6d0a4ffe7831f6ebba6a5824fd33a90c05a,Apache-2.0 (LICENSE.txt at pinned commit),RESEARCH_ONLY
+SRC-123,github_quant_ml_data,https://github.com/bashtage/arch,source_or_document_review,P2,PARTIAL_REVIEW,SRC-123-PINNED-SOURCE-2026-10-14,72bb33821b7c45f431defab3043aca424d89a58c,BSD-3-Clause-style terms (LICENSE.md at pinned commit; repository API does not classify license),RESEARCH_ONLY
+SRC-124,github_quant_ml_data,https://github.com/sktime/sktime,source_or_document_review,P2,PARTIAL_REVIEW,SRC-124-PINNED-SOURCE-2026-10-14,e1a1fc34c56478f0280a8518165a5be56e8a8dee,BSD-3-Clause (LICENSE at pinned commit),RESEARCH_ONLY
+SRC-125,github_quant_ml_data,https://github.com/pymc-devs/pymc,source_or_document_review,P2,PARTIAL_REVIEW,SRC-125-PINNED-SOURCE-2026-10-14,91e6da316d1139aff21dc6b7dd2e562b62cca311,Apache-2.0; repository notes included AePPL code under MIT (LICENSE at pinned commit),RESEARCH_ONLY
 SRC-126,github_quant_ml_data,https://github.com/SeldonIO/alibi-detect,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-127,github_formal_correctness,https://github.com/tlaplus/tlaplus,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-128,github_formal_correctness,https://github.com/apalache-mc/apalache,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
