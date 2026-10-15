@@ -2,7 +2,7 @@ id,category,url,default_method,priority,review_status,evidence_id,commit_or_capt
 SRC-001,github_streaming_rpc,https://github.com/anza-xyz/jetstreamer,source_or_document_review,P1,PARTIAL_REVIEW,JETSTREAMER-SOURCE-2026-10-15,ce2f3678d78ce4a430f63621301b78d914d76a8a,MIT_OR_APACHE-2.0,STAGING_HISTORICAL_RESEARCH_ONLY_NO_LIVE_FEED_AUTHORITY
 SRC-002,github_streaming_rpc,https://github.com/rpcpool/yellowstone-thorofare,source_or_document_review,P1,PARTIAL_REVIEW,YELLOWSTONE-THOROFARE-2026-10-15,582bdd06e1309d8fe686f34e0a53d074ee96bea6,Apache-2.0,BOUNDED_HEALTH_METRIC_PATTERN_ADAPTED_NO_RUNTIME_DEPENDENCY
 SRC-003,github_streaming_rpc,https://github.com/jito-foundation/geyser-grpc-plugin,source_or_document_review,P1,PARTIAL_REVIEW,JITO-GEYSER-GRPC-PLUGIN-2026-10-15,c9a99618303ccbbea32989088fa3b1523b43979b,Apache-2.0,NO_ADOPTION_VALIDATOR_SIDE_REFERENCE_DROPPED_QUEUE_RISK
-SRC-004,github_streaming_rpc,https://github.com/blockworks-foundation/quic_geyser_plugin,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
+SRC-004,github_streaming_rpc,https://github.com/blockworks-foundation/quic_geyser_plugin,source_or_document_review,P1,PARTIAL_REVIEW,QUIC-GEYSER-PLUGIN-2026-10-15,6195338e16104d89dfd8ba9263191118535d584b,AGPL-3.0_REVIEW_REQUIRED,NO_ADOPTION_VALIDATOR_SIDE_BENCHMARK_REFERENCE_ONLY
 SRC-005,github_streaming_rpc,https://github.com/blockworks-foundation/geyser-grpc-connector,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-006,github_streaming_rpc,https://github.com/streamingfast/firehose-solana,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-007,github_streaming_rpc,https://github.com/streamingfast/substreams-solana,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
