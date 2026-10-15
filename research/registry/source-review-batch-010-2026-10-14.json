@@ -2,13 +2,13 @@
   "batchId": "source-review-batch-010-2026-10-14",
   "reviewedAt": "2026-10-14",
   "repository": {
-    "localHead": "85bb405",
-    "remoteHead": "85bb405",
+    "localHead": "6b3a3b2",
+    "remoteHead": "6b3a3b2",
     "mainAndTaskBranchMatch": true,
     "worktreeHasPreexistingEdits": true
   },
   "sourceRecords": 15,
-  "directlyReviewed": 12,
+  "directlyReviewed": 15,
   "sources": [
     {
       "id": "SRC-048",
@@ -509,19 +509,20 @@
     {
       "id": "SRC-060",
       "url": "https://github.com/franco-bianco/solanaswap-go",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official repository README and project description"
+        "Go README, module metadata and transaction parser sample",
+        "Pinned repository commit 7f093fbce751dd5af51efaa12c463370fc961924"
       ],
       "discoveries": [
-        "Repository provides Go-oriented Solana swap functionality and is an example implementation rather than protocol authority.",
-        "Its exact DEX coverage, current API compatibility and execution controls were not fully established in this bounded review.",
-        "SYLPH has no Go runtime component for direct adoption."
+        "Parser advertises several DEX protocols and derives swap data from events, token transfers or instruction bytes depending on venue",
+        "example requests finalized/confirmed transaction data with supported transaction version 0",
+        "no root LICENSE was found."
       ],
       "patterns": [
-        "encapsulate route/provider clients behind adapters",
-        "test token/program identity before constructing swaps",
-        "surface fees and slippage separately"
+        "Keep venue-specific extraction paths separate",
+        "retain exact transaction signature/version/slot with decoded swap evidence",
+        "distinguish transaction fee metadata from total trading cost."
       ],
       "sylphModules": [
         "src/platform/execution/solaris/amm-bridge.ts",
@@ -530,37 +531,40 @@
       ],
       "overlap": "Potential comparative implementation only; current source is insufficient to recommend integration.",
       "risks": [
-        "unverified maintenance and licensing",
-        "unknown signing/broadcast defaults",
-        "Go stack duplication"
+        "Coverage claims are not completeness evidence",
+        "parser depends on provider-returned transaction metadata",
+        "no root LICENSE",
+        "not a live quoting/execution interface."
       ],
       "validation": [
-        "inspect pinned source and package license",
-        "trace transaction construction and signing boundary",
-        "compare quotes against official venue APIs"
+        "pin parser and protocol version; use stored offline transaction fixtures",
+        "never run trading examples or provide funded-wallet material",
+        "review credential custody and licensing before any code reuse"
       ],
       "evidence": [
-        "https://github.com/franco-bianco/solanaswap-go"
+        "https://github.com/franco-bianco/solanaswap-go",
+        "https://github.com/franco-bianco/solanaswap-go/tree/7f093fbce751dd5af51efaa12c463370fc961924"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "NO_ADOPTION_PENDING_SOURCE_AUDIT"
+      "license": "LICENSE_NOT_FOUND_REVIEW_REQUIRED",
+      "decision": "OFFLINE_PARSE_REFERENCE_ONLY_NO_LIVE_ADOPTION"
     },
     {
       "id": "SRC-061",
       "url": "https://github.com/mooncitydev/solana-copytrading-bot",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official repository README and feature description"
+        "Rust README, Cargo manifest and Jito transaction sender source",
+        "Pinned repository commit e17988b2281d25ab3a7b364cfe64aa42929c87b9"
       ],
       "discoveries": [
-        "Project advertises automatic wallet copy trading across Pump.fun/Raydium with Jito MEV protection and configurable fees/slippage.",
-        "Copy trading inherits signal-wallet timing, sizing, hidden transfers and adverse selection; it is not evidence of profitable wallet behavior.",
-        "It includes automatic execution capability and is not suitable for unreviewed integration."
+        "Bot describes target-wallet WebSocket monitoring and automated Pump/Raydium copying",
+        "source loads a Keypair, submits a Jito bundle and polls confirmation",
+        "README claims MIT but the pinned tree has no LICENSE file."
       ],
       "patterns": [
-        "separate observed wallet events from desired strategy",
-        "track decision delay and price impact",
-        "report realized net performance including fees and failed sends"
+        "Separate observed-wallet event from strategy decision",
+        "track signal-to-send delay and bundle outcome independently",
+        "measure realized fills including priority/tip and failed transactions."
       ],
       "sylphModules": [
         "src/platform/execution/authority.ts",
@@ -569,37 +573,39 @@
       ],
       "overlap": "Wallet research exists separately; no automatic copy-trade authority should be added based on this example.",
       "risks": [
-        "automatic signing/broadcast",
-        "wallet identity/copy latency errors",
-        "MEV/price impact and survivorship bias"
+        "Unverified license",
+        "automatic signing/broadcast and copy-trading risks",
+        "bundle submission/confirmation logic is not a SYLPH execution pattern to transplant."
       ],
       "validation": [
-        "do not run with funded wallet",
-        "audit code and signing keys statically",
-        "backtest with time-bounded data and counterfactual execution costs"
+        "pin parser and protocol version; use stored offline transaction fixtures",
+        "never run trading examples or provide funded-wallet material",
+        "review credential custody and licensing before any code reuse"
       ],
       "evidence": [
-        "https://github.com/mooncitydev/solana-copytrading-bot"
+        "https://github.com/mooncitydev/solana-copytrading-bot",
+        "https://github.com/mooncitydev/solana-copytrading-bot/tree/e17988b2281d25ab3a7b364cfe64aa42929c87b9"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "NO_EXECUTION; COPYTRADING_RESEARCH_ONLY"
+      "license": "README_CLAIMS_MIT_LICENSE_FILE_NOT_FOUND",
+      "decision": "NO_COPY_TRADING_ADOPTION; LICENSE_UNVERIFIED"
     },
     {
       "id": "SRC-062",
       "url": "https://github.com/TreeCityWes/Pump-Fun-Trading-Bot-Solana",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official repository README and project description"
+        "Pump bot README, script.mjs and sell.js source",
+        "Pinned repository commit f21cbaabbf73d1af68314142fa8c055ddf645206"
       ],
       "discoveries": [
-        "Repository is an open-source Pump.fun sniper/trading bot example.",
-        "Bot examples encode assumptions about launch timing, slippage, fee policy and protocol state that may become stale quickly.",
-        "No strategy profitability, safety, or current program compatibility was verified."
+        "Scripts load a local private key and send its encoded form in a third-party trade API request",
+        "README proposes market-cap/bonding-curve triggers with staged exits and 10% stop loss",
+        "configured slippage is 5%."
       ],
       "patterns": [
-        "test launch lifecycle state transitions",
-        "measure net fill rather than signal-only returns",
-        "keep launch detection distinct from signing authority"
+        "Keep strategy thresholds separate from execution authority",
+        "explicitly model stop/partial-exit state transitions",
+        "route credentials only through approved local custody/signing boundaries."
       ],
       "sylphModules": [
         "src/market.ts",
@@ -609,20 +615,22 @@
       ],
       "overlap": "Pump curve support exists in SYLPH; an external sniper implementation would duplicate and risk bypassing controls.",
       "risks": [
-        "sniping implies automated execution",
-        "protocol and program ID drift",
-        "unrealistic backtests ignore failed transactions and costs"
+        "Credential is transmitted to external API by the example",
+        "no root LICENSE",
+        "strategy is not evidence of performance",
+        "code was inspected but never run."
       ],
       "validation": [
-        "static inspection only; never run against funded wallet",
-        "test against local fixtures and current official program IDs",
-        "include failed tx fees, priority fees, impact and non-fills in evaluation"
+        "pin parser and protocol version; use stored offline transaction fixtures",
+        "never run trading examples or provide funded-wallet material",
+        "review credential custody and licensing before any code reuse"
       ],
       "evidence": [
-        "https://github.com/TreeCityWes/Pump-Fun-Trading-Bot-Solana"
+        "https://github.com/TreeCityWes/Pump-Fun-Trading-Bot-Solana",
+        "https://github.com/TreeCityWes/Pump-Fun-Trading-Bot-Solana/tree/f21cbaabbf73d1af68314142fa8c055ddf645206"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "NO_BOT_ADOPTION; LIFECYCLE_FIXTURE_REFERENCE_ONLY"
+      "license": "LICENSE_NOT_FOUND_REVIEW_REQUIRED",
+      "decision": "REJECT_CREDENTIAL_FORWARDING_PATTERN; NO_EXECUTION"
     }
   ]
 }

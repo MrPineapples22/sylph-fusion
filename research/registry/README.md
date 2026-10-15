@@ -379,3 +379,11 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - SRC-058 Meteora dynamic-fee-sharing is pinned at 3e327c1ab085246612d28da21e1a78c7008119fe. Source defines fee vault/authority PDAs and claim events; package says ISC but no root LICENSE was found. Claims are custody accounting, not swap quote fees.
 - SRC-059 Sol Trade SDK is pinned at 4f2bd75c60ceea128ec773db533068c14a55c1fa (MIT). Inspected source accepts signing keys and has multi-DEX trade construction; reviewed for boundary risks only, never executed or integrated.
 - Registry status: 72 direct source inspections and 216 catalog-triage records. No credentials, signing, quote or broadcast integration was exercised.
+
+
+## Transaction parsing and automated bot safety follow-up (2026-10-14)
+
+- SRC-060 solanaswap-go is pinned at 7f093fbce751dd5af51efaa12c463370fc961924. It derives swap data using venue-specific event, transfer, or instruction paths; it requests transaction version 0 in its example. No root LICENSE found; offline parser comparison only.
+- SRC-061 Solana Copy Trading Bot is pinned at e17988b2281d25ab3a7b364cfe64aa42929c87b9. Inspected source loads a signer, submits Jito bundles and polls confirmation; README claims MIT but the pinned tree lacks LICENSE. No reuse or execution.
+- SRC-062 Pump trading bot is pinned at f21cbaabbf73d1af68314142fa8c055ddf645206. Its scripts include staged exit rules and 5% slippage, but also send an encoded private key in a request to a third-party trading API. Inspected only; never run.
+- Registry status: 75 direct source inspections and 213 catalog-triage records. No bot, key-handling flow, or execution logic was adopted.
