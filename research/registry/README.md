@@ -36,7 +36,7 @@
 | 021 | 15 | SRC-214–228 | Solana transaction delivery, routers, venues and trading terminals |
 | 022 | 15 | SRC-229–243 | Token risk screening, transaction safety and custody/signing controls |
 | 023 | 9 | SRC-244–251, SRC-253 | Portfolio monitoring, REA references, graph tooling and GitHub source hosting |
-| **Total** | **288 / 288** | **100.00%** | **53 pinned source/document partial reviews and 235 catalog-triage-only records; none of this count means runtime integration** |
+| **Total** | **288 / 288** | **100.00%** | **57 pinned source/document partial reviews and 231 catalog-triage-only records; none of this count means runtime integration** |
 
 `PARTIAL_REVIEW` means pinned source/document inspection was performed; `CATALOG_TRIAGE` is a structured catalog note without direct inspection. Neither means exhaustive review or runtime integration. Research-only status never implies approval for runtime use.
 
@@ -46,7 +46,7 @@ REA is used out of band where the target type and authorization fit its supporte
 
 ## Resume
 
-All 288 records have a URL availability observation. Fifty-three sources now have explicit partial source review status; 235 remain NOT_REVIEWED. Record coverage is complete; upstream research and implementation remain incomplete. Continue with concrete findings from each batch, inspect the current local source and pinned upstream documentation, reproduce behavior with focused deterministic tests, and make small patches. Preserve existing workspace changes and do not grant a source trading authority based on inclusion in the manifest.
+All 288 records have a URL availability observation. Fifty-seven sources now have explicit partial source review status; 231 remain NOT_REVIEWED. Record coverage is complete; upstream research and implementation remain incomplete. Continue with concrete findings from each batch, inspect the current local source and pinned upstream documentation, reproduce behavior with focused deterministic tests, and make small patches. Preserve existing workspace changes and do not grant a source trading authority based on inclusion in the manifest.
 ## Latest implementation verification (2026-10-14)
 
 - `npm run build:engine` — passed after the feed admission snapshot change.
@@ -336,3 +336,12 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - SRC-039 Firedancer solana_dissector is pinned at 1341a3a3d25d14dc9313c1ec2a9f5478abcde934 (GPL-2.0). The Wireshark plugin documents hard-coded/incomplete port and transaction-variant coverage; authorized manual diagnostics only.
 - SRC-040 Codama Umi renderer is pinned at 2f8b2c58671f3431966d7be9c7e06d5b8017a5bd (MIT). It validates the IDL before output but cleans the configured directory by default; no second SDK runtime is proposed.
 - Registry status: 53 direct source inspections and 235 catalog-triage records; no runtime dependency or trading authority changed.
+
+
+## Solana parser and replay follow-up (2026-10-14)
+
+- SRC-041 Codama Spec is pinned at ef6742ddc3d14915aa799e809d9ceb92c39a829e (MIT). Its conventions normalize absent arrays, preserve declared attribute order when writing, and identify the checked-in JSON Schema as a placeholder; spec version must be tracked separately from package version.
+- SRC-042 Rust Sol Parser is pinned at 1a21a76352055589e62aaa4b8b3376dfcefb4a21 (MIT). The bounded Yellowstone queue counts/logs drops, and ordered buffers warn on late-event continuity breaks; benchmark claims were not reproduced and source completeness is not guaranteed. No duplicate parser runtime is proposed.
+- SRC-043 tkhq/solana-parser is pinned at ac15e1d94ac7725ba31c5f3e79ceb4dc8a6354d4 (Apache-2.0). It accepts legacy/v0 messages, rejects unsupported versions, and does not resolve ALT references. Fixture reference only.
+- SRC-044 Node Sol Parser is pinned at dfdb0e07d38c7611326e5ccf23617c6b9111fd4c (MIT). It exposes queue-drop and replay-continuity counters, but defaults to dropping on queue overflow; fromSlot replay is provider-dependent, and cold ALT misses are skipped/countable. Preserve SYLPH’s fail-closed overflow latch.
+- Registry status: 57 direct source inspections and 231 catalog-triage records. No parser dependency or trade behavior changed.

@@ -39,10 +39,10 @@ SRC-037,github_parsers_sdks,https://github.com/anza-xyz/wincode,source_or_docume
 SRC-038,github_parsers_sdks,https://github.com/debridge-finance/evm-sol-serializer,source_or_document_review,P1,PARTIAL_REVIEW,DEBRIDGE-EVM-SOL-SERIALIZER-2026-10-14,71dc19675996ab6c5b537a3072c2386aaff45fe4,LGPL-3.0-only,OUT_OF_SCOPE_SOLANA_ONLY_PATH_NO_INTEGRATION
 SRC-039,github_parsers_sdks,https://github.com/firedancer-io/solana_dissector,source_or_document_review,P1,PARTIAL_REVIEW,FIREDANCER-DISSECTOR-2026-10-14,1341a3a3d25d14dc9313c1ec2a9f5478abcde934,GPL-2.0,AUTHORIZED_MANUAL_DIAGNOSTICS_ONLY_NO_RUNTIME_INGESTION
 SRC-040,github_parsers_sdks,https://github.com/codama-idl/renderers-js-umi,source_or_document_review,P1,PARTIAL_REVIEW,CODAMA-UMI-RENDERER-2026-10-14,2f8b2c58671f3431966d7be9c7e06d5b8017a5bd,MIT,ISOLATED_UMI_CODEGEN_REFERENCE_NO_SECOND_RUNTIME_SDK
-SRC-041,github_parsers_sdks,https://github.com/codama-idl/spec,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-042,github_parsers_sdks,https://github.com/0xfnzero/sol-parser-sdk,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-043,github_parsers_sdks,https://github.com/tkhq/solana-parser,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-044,github_parsers_sdks,https://github.com/0xfnzero/sol-parser-sdk-nodejs,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
+SRC-041,github_parsers_sdks,https://github.com/codama-idl/spec,source_or_document_review,P1,PARTIAL_REVIEW,CODAMA-SPEC-2026-10-14,ef6742ddc3d14915aa799e809d9ceb92c39a829e,MIT,VERSIONED_SCHEMA_REFERENCE_ONLY_NO_RUNTIME_DEPENDENCY
+SRC-042,github_parsers_sdks,https://github.com/0xfnzero/sol-parser-sdk,source_or_document_review,P1,PARTIAL_REVIEW,SOL-PARSER-RUST-2026-10-14,1a21a76352055589e62aaa4b8b3376dfcefb4a21,MIT,DIFFERENTIAL_PARSER_AND_QUEUE_INTEGRITY_REFERENCE_NO_SECOND_RUNTIME
+SRC-043,github_parsers_sdks,https://github.com/tkhq/solana-parser,source_or_document_review,P1,PARTIAL_REVIEW,TKHQ-SOLANA-PARSER-2026-10-14,ac15e1d94ac7725ba31c5f3e79ceb4dc8a6354d4,Apache-2.0,LEGACY_AND_V0_ENVELOPE_FIXTURE_REFERENCE_NO_RUNTIME_DEPENDENCY
+SRC-044,github_parsers_sdks,https://github.com/0xfnzero/sol-parser-sdk-nodejs,source_or_document_review,P1,PARTIAL_REVIEW,SOL-PARSER-NODE-2026-10-14,dfdb0e07d38c7611326e5ccf23617c6b9111fd4c,MIT,QUEUE_AND_REPLAY_DIFFERENTIAL_REFERENCE_PRESERVE_FAIL_CLOSED_OVERFLOW
 SRC-045,github_parsers_sdks,https://github.com/0xfnzero/sol-parser-sdk-python,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-046,github_parsers_sdks,https://github.com/0xfnzero/sol-parser-sdk-golang,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-047,github_parsers_sdks,https://github.com/cxcx-ai/solana-dex-parser,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
