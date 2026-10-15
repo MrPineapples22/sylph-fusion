@@ -8,7 +8,7 @@
     "worktreeHasPreexistingEdits": true
   },
   "sourceRecords": 15,
-  "directlyReviewed": 8,
+  "directlyReviewed": 15,
   "sources": [
     {
       "id": "SRC-091",
@@ -136,273 +136,289 @@
     {
       "id": "SRC-094",
       "url": "https://github.com/wormhole-foundation/wormhole",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Wormhole repository description and protocol docs links"
+        "Pinned Wormhole main-branch commit bb5957f321b0a9d168f52e906699ee77baa82a28; inspected root README, LICENSE, SECURITY.md reference, and repository tree on 2026-10-15."
       ],
       "discoveries": [
-        "Wormhole repository is a reference implementation of a cross-chain interoperability protocol.",
-        "Cross-chain message verification, guardians/relayers and destination execution introduce trust and settlement delays distinct from Solana-native swaps.",
-        "No cross-chain asset path is established in SYLPH's current Solana trading scope."
+        "The repository describes itself as a reference implementation of a multi-chain interoperability protocol and includes chain-specific components such as Solana.",
+        "The README points builders to live contract addresses and security/audit material, and explicitly frames the system as complex and high risk.",
+        "The source is licensed Apache-2.0; no SYLPH-compatible Solana meme-token swap path was established by this review."
       ],
       "patterns": [
-        "track source and destination finality separately",
-        "verify message attestation and replay protection",
-        "account for bridge latency and fees"
+        "Keep bridge attestations and cross-chain settlement in a separate subsystem from local Solana market state.",
+        "Pin protocol deployment addresses and chain/finality context before interpreting an external message.",
+        "Treat bridge/provider observations as evidence requiring independent confirmation, not as trade authorization."
       ],
       "sylphModules": [
+        "src/platform/ingress/canonical-ingress.ts",
         "src/platform/execution/authority.ts",
-        "src/platform/ingestion/truth-x.ts",
-        "src/platform/ingress/canonical-ingress.ts"
+        "research/registry/"
       ],
-      "overlap": "No direct current need; cross-chain execution would be a separate risk domain.",
+      "overlap": "Cross-chain interoperability reference only; SYLPH’s current research objective is local Solana token discovery, quoting, execution accounting, and recovery.",
       "risks": [
-        "bridge contract and guardian trust",
-        "message replay/ordering",
-        "settlement finality across chains"
+        "Bridge security and cross-chain finality add a large asynchronous trust surface.",
+        "The README’s own warning does not establish the safety of any deployment.",
+        "No integration, contract deployment, or bridge transaction was tested."
       ],
       "validation": [
-        "review specific chain and contract deployments",
-        "test attestation and replay cases",
-        "do not include cross-chain routes in current trade authority"
+        "Require an explicit cross-chain product requirement before implementation.",
+        "If later needed, verify chain IDs, canonical contracts, message replay protection, finality, and destination settlement independently.",
+        "Keep bridge results outside the trading authority and reconcile any movement from finalized chain state."
       ],
       "evidence": [
-        "https://github.com/wormhole-foundation/wormhole"
+        "https://github.com/wormhole-foundation/wormhole/tree/bb5957f321b0a9d168f52e906699ee77baa82a28",
+        "https://github.com/wormhole-foundation/wormhole/blob/bb5957f321b0a9d168f52e906699ee77baa82a28/README.md",
+        "https://github.com/wormhole-foundation/wormhole/blob/bb5957f321b0a9d168f52e906699ee77baa82a28/LICENSE"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "OUT_OF_SCOPE; NO_CROSS_CHAIN_EXECUTION"
+      "license": "Apache-2.0",
+      "decision": "REFERENCE_ONLY_NO_CROSS_CHAIN_EXECUTION"
     },
     {
       "id": "SRC-095",
       "url": "https://github.com/wormhole-foundation/wormhole-connect",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Wormhole Connect repository README and widget description"
+        "Pinned Wormhole Connect development-branch commit 267c9a649c74097cdbf5096d1d37cb45e7695a5b; inspected README, package entry guidance, configuration section, and LICENSE on 2026-10-15."
       ],
       "discoveries": [
-        "Wormhole Connect is an application/widget integration layer for Wormhole bridging functionality.",
-        "UI convenience does not remove bridge message, custody, fee or settlement risks.",
-        "This is not a Solana DEX quote/router client."
+        "Wormhole Connect is a customizable React widget for cross-chain asset transfers, powered by the Wormhole TypeScript SDK.",
+        "The README documents both a React component and a hosted embedding path, with configuration and theme controls.",
+        "The repository is Apache-2.0 licensed; it is a front-end bridge widget rather than a SYLPH market-data or execution adapter."
       ],
       "patterns": [
-        "show source/destination chain and asset clearly",
-        "surface transfer fees and expected time",
-        "distinguish submitted transfer from destination completion"
+        "Keep optional external financial workflows modular and visually distinct from the core trading terminal.",
+        "Make supported networks and RPC configuration explicit at the UI boundary.",
+        "Use integration-level tests for embedded widgets and preserve a clear handoff to the canonical provider flow."
       ],
       "sylphModules": [
-        "terminal/src/",
-        "src/platform/execution/authority.ts"
+        "terminal/",
+        "ui/",
+        "research/registry/"
       ],
-      "overlap": "No current cross-chain UX requirement; adding a bridge widget would expand product scope and funds movement.",
+      "overlap": "UI integration pattern only; no current SYLPH cross-chain transfer requirement or bridge authority is established.",
       "risks": [
-        "cross-chain asset movement",
-        "widget dependency/security changes",
-        "transfer status ambiguity"
+        "A widget can obscure third-party signing and settlement steps if embedded without clear origin and state boundaries.",
+        "Displayed transfer progress is not proof of destination-chain finality.",
+        "Adding a large React bridge dependency to the terminal would create maintenance and UX surface without demonstrated need."
       ],
       "validation": [
-        "inspect integration security model and deployment config",
-        "test complete transfer lifecycle",
-        "do not expose to users without explicit product and custody review"
+        "Do not add the widget absent an explicit product requirement.",
+        "If adopted later, test supported-chain restrictions, URL/origin handling, loading/error states, and signing handoff.",
+        "Reconcile completion using destination-chain confirmed transactions rather than widget state."
       ],
       "evidence": [
-        "https://github.com/wormhole-foundation/wormhole-connect"
+        "https://github.com/wormhole-foundation/wormhole-connect/tree/267c9a649c74097cdbf5096d1d37cb45e7695a5b",
+        "https://github.com/wormhole-foundation/wormhole-connect/blob/267c9a649c74097cdbf5096d1d37cb45e7695a5b/README.md",
+        "https://github.com/wormhole-foundation/wormhole-connect/blob/267c9a649c74097cdbf5096d1d37cb45e7695a5b/LICENSE"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "NO_UI_INTEGRATION; CROSS_CHAIN_REFERENCE_ONLY"
+      "license": "Apache-2.0",
+      "decision": "NO_UI_INTEGRATION_CROSS_CHAIN_REFERENCE_ONLY"
     },
     {
       "id": "SRC-096",
       "url": "https://github.com/wormhole-foundation/wormhole-circle-integration",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Wormhole/Circle integration repository description"
+        "Pinned Wormhole Circle Integration main-branch commit 234202543cc96ba593449ca1b9d7cb2b9499668d; inspected README, design/security file references, EVM directory, and LICENSE on 2026-10-15."
       ],
       "discoveries": [
-        "Repository concerns integrating Circle-related cross-chain flows with Wormhole.",
-        "Stablecoin bridging is a distinct product and compliance/custody risk from Solana meme-token trading.",
-        "No such settlement or stablecoin feature is in the reviewed SYLPH runtime path."
+        "The repository pairs Circle Cross-Chain Transfer Protocol with Wormhole generic messaging in smart contracts.",
+        "Its README states that the documented CCTP integration supports Ethereum and Avalanche, not Solana.",
+        "The repository is Apache-2.0 licensed and requires EVM/Foundry tooling for its described contract workflows."
       ],
       "patterns": [
-        "account separately for source burn and destination mint",
-        "verify message completion and token denomination",
-        "keep cross-chain settlement outside native swap ledger until final"
+        "Record protocol and network capability as an explicit matrix rather than inferring support from a shared ecosystem brand.",
+        "Keep mint/asset identity distinct across chains and require canonical mapping evidence.",
+        "Model cross-chain transfers as asynchronous lifecycle state with separate source and destination confirmations."
       ],
       "sylphModules": [
+        "src/platform/ingress/canonical-ingress.ts",
         "src/platform/execution/authority.ts",
-        "src/platform/ingestion/truth-x.ts"
+        "research/registry/"
       ],
-      "overlap": "No current overlap other than potential future treasury settlement.",
+      "overlap": "No applicable Solana trading integration was demonstrated; this source is a bounded reference for cross-chain lifecycle separation.",
       "risks": [
-        "bridge and issuer dependencies",
-        "cross-chain finality asymmetry",
-        "regulatory and operational scope"
+        "The README’s stated network support excludes Solana for this integration.",
+        "Cross-chain asset mapping can create symbol/mint confusion and settlement delay.",
+        "A contract source review does not certify deployed addresses or external bridge security."
       ],
       "validation": [
-        "review exact contracts, API and issuer rules",
-        "test partial/failed transfer cases",
-        "keep excluded from current trading execution"
+        "Do not represent this repository as a Solana CCTP adapter.",
+        "If cross-chain support becomes a requirement, verify current official network support and deployment addresses.",
+        "Test timeout, replay, duplicate delivery, and both-chain reconciliation before any integration."
       ],
       "evidence": [
-        "https://github.com/wormhole-foundation/wormhole-circle-integration"
+        "https://github.com/wormhole-foundation/wormhole-circle-integration/tree/234202543cc96ba593449ca1b9d7cb2b9499668d",
+        "https://github.com/wormhole-foundation/wormhole-circle-integration/blob/234202543cc96ba593449ca1b9d7cb2b9499668d/README.md",
+        "https://github.com/wormhole-foundation/wormhole-circle-integration/blob/234202543cc96ba593449ca1b9d7cb2b9499668d/LICENSE"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "OUT_OF_SCOPE; NO_STABLECOIN_BRIDGE_INTEGRATION"
+      "license": "Apache-2.0",
+      "decision": "NO_CIRCLE_BRIDGE_INTEGRATION_OUT_OF_SCOPE"
     },
     {
       "id": "SRC-097",
       "url": "https://github.com/debridge-finance/meta-aggregation-api",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official deBridge Meta Aggregation API repository description"
+        "Pinned deBridge Meta Aggregation API main-branch commit c3f3028809a7d146620612c9d0ec7c7b7183cef1; inspected README, supported-router list, service architecture, provider extension notes, and MIT license on 2026-10-15."
       ],
       "discoveries": [
-        "Meta Aggregation API wraps multiple DEX aggregators and selects among their quotes behind one interface.",
-        "A quote aggregator's best-price result is only as reliable as underlying providers, timestamp, fees, and executable transaction path.",
-        "It creates another routing layer alongside Jupiter rather than solving accounting or finality by itself."
+        "The API aggregates quotes from 1inch v5, 0x, Paraswap, Kyberswap, and Openocean, and describes a FastAPI view-service-provider architecture.",
+        "The repository documents chain/provider configuration and provider-specific adapters with error handling; its described router list is EVM-focused.",
+        "The repository states MIT licensing, but neither Solana support nor a current SYLPH-compatible API contract was established."
       ],
       "patterns": [
-        "normalize provider-specific route schemas",
-        "preserve underlying quote provenance",
-        "compare net executable proceeds, not headline output"
+        "Keep provider-specific quote parsing behind small adapters and normalize outputs at a versioned interface.",
+        "Report provider errors and partial router availability explicitly instead of hiding failed sources.",
+        "Treat a best-quote aggregator as advisory; compare executable output and fees at the target chain."
       ],
       "sylphModules": [
-        "src/execution.ts",
-        "src/platform/execution/solaris/amm-bridge.ts",
-        "terminal/jupiter-research.mjs"
+        "src/platform/execution/",
+        "src/market.ts",
+        "docs/ECOSYSTEM_INTEGRATION_AUDIT_2026-10-12.md"
       ],
-      "overlap": "Potential cross-router comparison, but current project has a bounded Jupiter adapter and no need for duplicate aggregator by default.",
+      "overlap": "Generic aggregator architecture overlaps with SYLPH’s router abstraction, but the README lists EVM routers and no verified Solana route.",
       "risks": [
-        "provider/source concentration",
-        "quote expiry and fees",
-        "extra API trust/dependency"
+        "A quote aggregator can return a route that is stale or not executable under local signing/risk limits.",
+        "The source relies on external APIs and chain metadata; provider errors and compatibility drift are expected.",
+        "Adding a Python service would add another runtime and authority boundary without a demonstrated Solana capability."
       ],
       "validation": [
-        "pin API version and supported venues",
-        "compare exact routes against direct venue quotes",
-        "simulate and reconcile net fills before any adoption"
+        "Do not add it as a Solana quote source based on the generic “multi-chain” description.",
+        "If reconsidered, verify a supported Solana router, request/response schema, freshness, fee semantics, and transaction provenance.",
+        "Differential-test normalized outputs against direct official router APIs and local simulation."
       ],
       "evidence": [
-        "https://github.com/debridge-finance/meta-aggregation-api"
+        "https://github.com/debridge-finance/meta-aggregation-api/tree/c3f3028809a7d146620612c9d0ec7c7b7183cef1",
+        "https://github.com/debridge-finance/meta-aggregation-api/blob/c3f3028809a7d146620612c9d0ec7c7b7183cef1/readme.md",
+        "https://github.com/debridge-finance/meta-aggregation-api/blob/c3f3028809a7d146620612c9d0ec7c7b7183cef1/LICENSE.md"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "NO_ROUTER_ADDITION; COMPARISON_CANDIDATE_ONLY"
+      "license": "MIT",
+      "decision": "NO_SOLANA_ROUTER_INTEGRATION_REFERENCE_ONLY"
     },
     {
       "id": "SRC-098",
       "url": "https://github.com/debridge-finance/desdk",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official deBridge SDK README and lifecycle description"
+        "Pinned deBridge deSDK master-branch commit ab7d59d45fb001696d7918e0928bb440c37d5b13; inspected README message/claim lifecycle and LICENSE on 2026-10-15."
       ],
       "discoveries": [
-        "SDK sends, tracks and claims arbitrary cross-chain messages through deBridge.",
-        "Send, source confirmation, destination fulfillment and claim are distinct lifecycle states.",
-        "This is cross-chain execution capability and outside current Solana-only trading scope."
+        "deSDK provides typed EVM message construction and helpers for tracking submissions, checking required confirmations, checking claim signatures, and checking whether a claim executed.",
+        "The README explicitly warns callers to sanity-check the expected number of submissions returned for a transaction.",
+        "The repository is LGPL-3.0 licensed; the documented examples submit EVM deBridge messages and do not expose a Solana meme-token execution adapter."
       ],
       "patterns": [
-        "model cross-chain lifecycle explicitly",
-        "keep source/destination transaction IDs",
-        "require destination confirmation before accounting as settled"
+        "Use typed boundary objects rather than passing loosely structured cross-chain message payloads.",
+        "Check cardinality and expected identities when one transaction may contain multiple submissions.",
+        "Separate source confirmation, message attestation, destination claim readiness, and claim execution in lifecycle state."
       ],
       "sylphModules": [
-        "src/platform/ingestion/truth-x.ts",
+        "src/platform/ingress/canonical-ingress.ts",
         "src/platform/execution/authority.ts",
-        "src/platform/ingress/canonical-ingress.ts"
+        "research/registry/"
       ],
-      "overlap": "No current use case; would require an independent settlement subsystem.",
+      "overlap": "A lifecycle and validation reference only; its supported EVM operations do not overlap the local Solana execution path.",
       "risks": [
-        "funds movement",
-        "message replay/expiry",
-        "destination-side failure and recovery"
+        "Cross-chain submissions are asynchronous and can be confused with final settlement.",
+        "The example includes RPC-provider configuration and signing/claim workflow concerns beyond SYLPH’s current scope.",
+        "LGPL-3.0 obligations require review before any code reuse or package adoption."
       ],
       "validation": [
-        "review current protocol contracts and SDK",
-        "test timeout/refund/claim paths",
-        "do not add to current trade flow"
+        "Do not add the SDK to the live process for a hypothetical bridge path.",
+        "If reused, review LGPL-3.0 compatibility and isolate RPC, message, and claim states.",
+        "Require finalized source and destination transaction evidence plus exact submission identity before reconciliation."
       ],
       "evidence": [
-        "https://github.com/debridge-finance/desdk"
+        "https://github.com/debridge-finance/desdk/tree/ab7d59d45fb001696d7918e0928bb440c37d5b13",
+        "https://github.com/debridge-finance/desdk/blob/ab7d59d45fb001696d7918e0928bb440c37d5b13/README.md",
+        "https://github.com/debridge-finance/desdk/blob/ab7d59d45fb001696d7918e0928bb440c37d5b13/LICENSE"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "OUT_OF_SCOPE; NO_CROSS_CHAIN_SDK"
+      "license": "LGPL-3.0",
+      "decision": "NO_CROSS_CHAIN_SDK_INTEGRATION"
     },
     {
       "id": "SRC-099",
       "url": "https://github.com/debridge-finance/dln-contracts",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official deBridge DLN contracts repository"
+        "Pinned deBridge DLN contracts main-branch commit d54e94f2b5102bff89a4df506404bb77f3edc148; inspected README order lifecycle, deployment-chain list, contract layout, and LICENSE on 2026-10-15."
       ],
       "discoveries": [
-        "DLN repository contains on-chain contracts for cross-chain order execution.",
-        "Contract code is a custody/settlement boundary, not an off-chain quote provider.",
-        "No bridge contract deployment or chain configuration was validated for SYLPH."
+        "DLN describes cross-chain limit orders with maker funds locked on the source chain and a taker fulfilling the requested amount on the destination chain.",
+        "Completion includes a cross-chain message returning to the source chain to unlock funds, so order creation and settlement are distinct events.",
+        "The root LICENSE is Business Source License 1.1; source availability does not mean the repository is permissively licensed."
       ],
       "patterns": [
-        "bind order IDs to source and destination chain",
-        "verify contract and deployment bytecode",
-        "separate order intent from completed settlement"
+        "Represent asynchronous order states explicitly and do not equate accepted/created with filled/settled.",
+        "Keep maker intent, taker fulfillment, and final source-chain unlock as separate evidence milestones.",
+        "Record protocol licensing and change-of-license constraints before any reuse."
       ],
       "sylphModules": [
         "src/platform/execution/authority.ts",
-        "src/platform/ingestion/truth-x.ts",
-        "RELEASE_CERTIFICATION.md"
+        "src/platform/pipeline/runtime-divergence.ts",
+        "research/registry/"
       ],
-      "overlap": "None for current Solana-only trading; integrating contracts would require critical review and distinct accounting.",
+      "overlap": "No local Solana DEX integration was established; its cross-chain limit-order lifecycle is reference material only.",
       "risks": [
-        "smart contract and bridge risk",
-        "cross-chain order fulfillment",
-        "license/chain deployment scope"
+        "Destination fulfillment and source unlock are asynchronous and can remain incomplete.",
+        "The repo lists deployed addresses across EVM and other networks; those addresses must not be assumed canonical or current without official deployment verification.",
+        "BUSL-1.1 restrictions and change-date terms require legal review before reuse."
       ],
       "validation": [
-        "audit exact contracts and deployed code",
-        "test cancellation/refund/partial fulfillment",
-        "do not add cross-chain authorization"
+        "Do not add these contracts or addresses to SYLPH execution.",
+        "If studied further, verify deployment addresses from official current docs and inspect audit scope for the pinned code.",
+        "Use state-machine tests for delayed, duplicate, failed, and reordered fulfillment/unlock events."
       ],
       "evidence": [
-        "https://github.com/debridge-finance/dln-contracts"
+        "https://github.com/debridge-finance/dln-contracts/tree/d54e94f2b5102bff89a4df506404bb77f3edc148",
+        "https://github.com/debridge-finance/dln-contracts/blob/d54e94f2b5102bff89a4df506404bb77f3edc148/README.md",
+        "https://github.com/debridge-finance/dln-contracts/blob/d54e94f2b5102bff89a4df506404bb77f3edc148/LICENSE"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "NO_CONTRACT_INTEGRATION; REFERENCE_ONLY"
+      "license": "BUSL-1.1",
+      "decision": "NO_CONTRACT_INTEGRATION_REFERENCE_ONLY"
     },
     {
       "id": "SRC-100",
       "url": "https://github.com/solana-program/token-wrap",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Solana Program Library token-wrap repository description"
+        "Pinned Solana Program Library token-wrap main-branch commit 590639171b85447583c4e7b4da9cbefe7137e0c8; inspected README operation descriptions, token-program compatibility notes, audit references, and LICENSE on 2026-10-15."
       ],
       "discoveries": [
-        "Repository contains the SPL Token Wrap program and clients for wrapped token representations.",
-        "Wrapping introduces a program/account authority and mint relationship that must be validated independently from token symbol metadata.",
-        "No token-wrap operation is used by current SYLPH trading path."
+        "The program creates deterministic wrapped-mint relationships using PDAs and keeps a backpointer to the original mint.",
+        "Wrapping escrows the source tokens and mints an equivalent amount; unwrapping burns the wrapped amount and releases escrowed tokens.",
+        "The README documents Token-2022 extension behavior, transfer-hook compatibility, and preservation of an underlying freeze authority; it is Apache-2.0 licensed."
       ],
       "patterns": [
-        "verify mint and underlying asset relationship",
-        "validate authority and supply invariants",
-        "include wrap/unwrap fees and state changes in accounting"
+        "Bind token identity to the full mint address and token program, never symbol or display metadata.",
+        "Model wrapped supply against escrow backing and fail closed on incompatible token extensions.",
+        "Treat freeze authority and extension configuration as explicit risk features rather than a green scanner result."
       ],
       "sylphModules": [
         "src/market.ts",
-        "src/platform/ingestion/truth-x.ts",
-        "src/platform/execution/authority.ts"
+        "src/platform/ingestion/",
+        "src/platform/execution/solaris/amm-bridge.ts"
       ],
-      "overlap": "Could inform token identity and wrapped asset research; no current wrap/unwrap feature.",
+      "overlap": "Relevant as a Token Program/Token-2022 compatibility reference; SYLPH does not need to wrap assets to trade ordinary token mints.",
       "risks": [
-        "mint/underlying mismatch",
-        "program authority compromise",
-        "accounting supply discrepancies"
+        "Permissionless creation means a wrapped mint is not inherently canonical or endorsed.",
+        "Underlying freeze authority is preserved, so wrapped representation does not remove token controls.",
+        "Extension and escrow details can make simple token-account assumptions invalid; README-level review is not an audit of the program."
       ],
       "validation": [
-        "inspect current program ID and source build",
-        "test wrap/unwrap amount and authority invariants",
-        "keep any interaction read-only until authorized"
+        "Use this source to inform mint/program identity checks, not to label wrapped mints trusted.",
+        "If wrapping support is ever added, verify PDA derivation, escrow invariants, extension compatibility, and supply conservation with pinned program tests.",
+        "Keep all existing entry gates and signing restrictions intact."
       ],
       "evidence": [
-        "https://github.com/solana-program/token-wrap"
+        "https://github.com/solana-program/token-wrap/tree/590639171b85447583c4e7b4da9cbefe7137e0c8",
+        "https://github.com/solana-program/token-wrap/blob/590639171b85447583c4e7b4da9cbefe7137e0c8/README.md",
+        "https://github.com/solana-program/token-wrap/blob/590639171b85447583c4e7b4da9cbefe7137e0c8/LICENSE"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "TOKEN_IDENTITY_REFERENCE_ONLY"
+      "license": "Apache-2.0",
+      "decision": "TOKEN_PROGRAM_COMPATIBILITY_REFERENCE_ONLY"
     },
     {
       "id": "SRC-101",
