@@ -1,24 +1,607 @@
 {
   "batch": 16,
   "date": "2026-10-14",
-  "sourceRecords":15,"directlyReviewed":0,
+  "sourceRecords": 15,
+  "directlyReviewed": 15,
   "scope": "Fuzzing, observability, telemetry, durable workflows and streaming data systems",
-  "method": "Official repository descriptions and README material checked for these sources where available; broad architecture notes only. No packages installed, REA run, source patch, build or SYLPH runtime test in this batch.",
+  "method": "Pinned official repository README and license/source-path inspection with upstream HEAD revisions recorded. Findings are bounded research notes; no REA execution, package installation, SYLPH code patch, build, or runtime test was performed.",
   "sources": [
-    {"id":"SRC-136","url":"https://github.com/rust-fuzz/cargo-fuzz","status":"CATALOG_TRIAGE","provenance":["Official cargo-fuzz repository README; accessed 2026-10-14."],"discoveries":["Cargo subcommand for libFuzzer-based Rust fuzz targets.","README documents nightly Rust and LLVM sanitizer requirements and says native Windows is unsupported."],"patterns":["Fuzz binary parsers and protocol adapters at isolated Rust boundaries.","Preserve minimized crashing inputs as permanent regression fixtures."],"sylphModules":["src/platform/ingestion/truth-x.ts","src/platform/ingress/canonical-ingress.ts"],"overlap":["Fuzzing strategy is useful; cargo-fuzz does not exercise the current TypeScript implementation."],"risks":["Host platform/toolchain constraints.","A Rust harness does not establish TypeScript parser safety."],"validation":["Use the existing TS runtime to test equivalent malformed inputs.","If Rust code is later added, run on supported Unix CI and retain corpus."],"evidence":["https://github.com/rust-fuzz/cargo-fuzz"],"license":"MIT (repository metadata)","decision":"PATTERN_ONLY"},
-    {"id":"SRC-137","url":"https://github.com/grafana/loki","status":"CATALOG_TRIAGE","provenance":["Official Grafana Loki repository README; accessed 2026-10-14."],"discoveries":["Horizontally scalable log aggregation with labels indexed rather than full log contents.","Official README identifies Alloy as the collection agent replacing Promtail for ongoing log collection."],"patterns":["Use bounded-cardinality labels such as service, environment and component.","Keep sensitive payloads and wallet data out of logs."],"sylphModules":["src/platform/pipeline/runtime-divergence.ts","operations and incident diagnostics"],"overlap":["Would complement application logs; current registry does not establish a Loki deployment."],"risks":["High-cardinality labels inflate storage and query cost.","Repository states AGPL-3.0-only, requiring license review before adoption."],"validation":["Prototype using synthetic logs only.","Verify redaction, retention, access controls and label cardinality."],"evidence":["https://github.com/grafana/loki"],"license":"AGPL-3.0-only (README)","decision":"RESEARCH_ONLY"},
-    {"id":"SRC-138","url":"https://github.com/grafana/tempo","status":"CATALOG_TRIAGE","provenance":["Official Grafana Tempo repository description; accessed 2026-10-14."],"discoveries":["Distributed tracing backend designed for high-volume traces and object-storage-based operation.","Integrates with Grafana, Prometheus and Loki for trace/metrics/log correlation."],"patterns":["Propagate correlation IDs across ingest, recovery and dashboard requests.","Record provider/slot span attributes without putting secrets in trace baggage."],"sylphModules":["src/platform/ingress/canonical-ingress.ts","src/platform/ingestion/gap-reconciler.ts","src/dashboard.ts"],"overlap":["Tracing can make existing boundaries observable without adding a second state authority."],"risks":["Unbounded trace attributes can expose sensitive data and create cost.","AGPL-3.0 license requires review."],"validation":["Use synthetic requests to verify trace continuity and redaction.","Measure sampling and retention behavior before production."],"evidence":["https://github.com/grafana/tempo"],"license":"AGPL-3.0 (repository metadata)","decision":"RESEARCH_ONLY"},
-    {"id":"SRC-139","url":"https://github.com/grafana/k6","status":"CATALOG_TRIAGE","provenance":["Official k6 repository README; accessed 2026-10-14."],"discoveries":["Developer-focused performance testing with JavaScript scenarios and HTTP, WebSocket and gRPC support.","Supports thresholds and workload scenarios suitable for expressing service-level expectations."],"patterns":["Load test read-only dashboard and ingestion mocks with explicit thresholds.","Simulate realistic bursts and reconnect patterns, not live trades."],"sylphModules":["src/dashboard.ts","src/platform/ingress/canonical-ingress.ts"],"overlap":["External test tooling; no runtime integration required."],"risks":["Load generation against real providers can incur cost or trigger abuse controls.","AGPL-3.0 license; extension and deployment requirements need review."],"validation":["Only target local or explicitly authorized staging endpoints.","Record script, thresholds, environment and result artifacts."],"evidence":["https://github.com/grafana/k6"],"license":"AGPL-3.0 (README)","decision":"RESEARCH_ONLY"},
-    {"id":"SRC-140","url":"https://github.com/grafana/pyroscope","status":"CATALOG_TRIAGE","provenance":["Official Grafana Pyroscope repository; accessed 2026-10-14."],"discoveries":["Continuous profiling system for analyzing CPU and memory behavior over time.","Profiling complements request traces by identifying resource hotspots."],"patterns":["Profile local/staging parsers and backfills under representative synthetic load.","Compare profiles across revisions rather than relying on anecdotal latency."],"sylphModules":["src/platform/ingestion/truth-x.ts","src/platform/ingestion/gap-reconciler.ts"],"overlap":["Observability aid only; does not change ingestion decisions."],"risks":["Profiles can capture sensitive strings or identifiers.","License and deployment requirements should be checked at a pinned revision."],"validation":["Use non-sensitive fixtures and redact symbols/labels where needed.","Establish reproducible baselines and quantify overhead."],"evidence":["https://github.com/grafana/pyroscope"],"license":"Not independently verified in this review","decision":"RESEARCH_ONLY"},
-    {"id":"SRC-141","url":"https://github.com/grafana/alloy","status":"CATALOG_TRIAGE","provenance":["Official Grafana Alloy repository and Loki README reference; accessed 2026-10-14."],"discoveries":["Grafana identifies Alloy as an observability collector/agent for gathering and forwarding telemetry.","Loki README says Alloy is the recommended successor for log collection as Promtail is feature complete."],"patterns":["Centralize telemetry collection configuration and apply redaction before export.","Keep collection pipeline config version-controlled."],"sylphModules":["operations and telemetry export","src/platform/pipeline/runtime-divergence.ts"],"overlap":["Collector can route existing signals; it should not become a source of trading state."],"risks":["Collector configuration can leak data or create high-cardinality telemetry.","Licensing, supported components and upgrade path require revision-specific review."],"validation":["Test redaction and delivery failure behavior using synthetic data.","Pin collector version and configuration digest."],"evidence":["https://github.com/grafana/alloy","https://github.com/grafana/loki"],"license":"Not independently verified in this review","decision":"RESEARCH_ONLY"},
-    {"id":"SRC-142","url":"https://github.com/prometheus/prometheus","status":"CATALOG_TRIAGE","provenance":["Official Prometheus repository README and getting-started documentation; accessed 2026-10-14."],"discoveries":["Metrics system uses labeled time series, PromQL, pull-based scraping and rule evaluation.","The repository cautions that the main Prometheus codebase is a standalone server, not a supported general-purpose library."],"patterns":["Expose health, lag, retry, recovery coverage and execution-cost metrics with bounded labels.","Alert on SLO violations rather than raw noisy events."],"sylphModules":["src/feed.ts","src/platform/ingress/canonical-ingress.ts","src/platform/ingestion/gap-reconciler.ts","src/platform/execution/authority.ts"],"overlap":["Metrics export complements current state snapshots; no need to embed Prometheus into the engine."],"risks":["High-cardinality token/wallet labels can overwhelm storage.","Prometheus project is not intended as an embedded library."],"validation":["Check metric naming, cardinality and counter reset semantics.","Verify alerts against injected stale-feed and ingress-failure scenarios."],"evidence":["https://github.com/prometheus/prometheus","https://github.com/prometheus/prometheus/blob/main/docs/getting_started.md"],"license":"Apache-2.0 (README)","decision":"RESEARCH_ONLY"},
-    {"id":"SRC-143","url":"https://github.com/open-telemetry/opentelemetry-collector","status":"CATALOG_TRIAGE","provenance":["Official OpenTelemetry Collector repository; accessed 2026-10-14."],"discoveries":["Collector is an extensible vendor-neutral pipeline for receiving, processing and exporting telemetry.","Component availability and stability vary by distribution and individual receiver/exporter."],"patterns":["Separate instrumentation from backend choice through a collector boundary.","Apply filtering, batching and redaction in explicit pipeline stages."],"sylphModules":["src/platform/pipeline/runtime-divergence.ts","operations and telemetry export"],"overlap":["Could export engine metrics/traces without coupling the engine to a backend."],"risks":["Collector components may have different stability levels.","Misconfiguration may drop signals or export sensitive payloads."],"validation":["Pin distro and component versions; test loss/retry behavior.","Verify no private keys, authorization headers or raw sensitive payloads enter telemetry."],"evidence":["https://github.com/open-telemetry/opentelemetry-collector"],"license":"Apache-2.0 (repository metadata)","decision":"RESEARCH_ONLY"},
-    {"id":"SRC-144","url":"https://github.com/temporalio/temporal","status":"CATALOG_TRIAGE","provenance":["Official Temporal server repository README; accessed 2026-10-14."],"discoveries":["Temporal server provides durable workflow execution with retries across intermittent failures.","Server repository is distinct from language SDKs used to author workflows."],"patterns":["For future long-running historical backfills, model idempotent work units and durable checkpoints.","Keep recovery workflows separate from live trade execution workflows."],"sylphModules":["src/platform/ingestion/gap-reconciler.ts","historical recovery tooling"],"overlap":["Existing gap reconciler and checkpointing already own recovery semantics; Temporal is not justified without a concrete orchestration gap."],"risks":["Retries can duplicate side effects unless activities are idempotent.","Adding distributed orchestration expands operational complexity."],"validation":["Prototype against local test server and idempotent test activities only.","Prove retries cannot invoke signing or broadcast paths."],"evidence":["https://github.com/temporalio/temporal"],"license":"MIT (README)","decision":"RESEARCH_ONLY"},
-    {"id":"SRC-145","url":"https://github.com/nats-io/nats-server","status":"CATALOG_TRIAGE","provenance":["Official NATS server repository; accessed 2026-10-14."],"discoveries":["NATS server is a messaging system supporting publish/subscribe and request/reply patterns.","Durability/stream semantics depend on configured NATS capabilities and deployment."],"patterns":["Use message IDs, explicit acknowledgements and replay-safe consumers for internal event transport.","Preserve canonical source sequence/slot metadata through transport."],"sylphModules":["src/platform/ingress/canonical-ingress.ts","src/platform/ingestion/gap-reconciler.ts"],"overlap":["Potential transport pattern only; current ingress path remains source of truth."],"risks":["At-most/at-least-once semantics differ and can create gaps or duplicates.","Broker availability and persistence become operational dependencies."],"validation":["Inject disconnect, duplicate, out-of-order and restart scenarios in an isolated harness.","Verify idempotency and checkpoint recovery before considering production."],"evidence":["https://github.com/nats-io/nats-server"],"license":"Apache-2.0 (repository metadata)","decision":"RESEARCH_ONLY"},
-    {"id":"SRC-146","url":"https://github.com/redpanda-data/redpanda","status":"CATALOG_TRIAGE","provenance":["Official Redpanda repository; accessed 2026-10-14."],"discoveries":["Redpanda is a Kafka API-compatible streaming data platform.","Its use implies broker-backed event persistence and separate operational provisioning."],"patterns":["Use append-only event logs and replayable consumers for analytics pipelines.","Keep source event identity and processing intent in the message envelope."],"sylphModules":["historical data ingestion","offline analytics pipeline"],"overlap":["Not needed to duplicate in-process canonical ingress; relevant only for scale-out analytics."],"risks":["Kafka compatibility is not identical behavior for every feature.","Operational footprint and ordering/retention configuration can affect correctness."],"validation":["Test ordering, retention, replay and consumer offset recovery with local fixtures.","Do not route broker events directly into signing authority."],"evidence":["https://github.com/redpanda-data/redpanda"],"license":"BSL-1.1 (repository metadata; verify use rights)","decision":"RESEARCH_ONLY"},
-    {"id":"SRC-147","url":"https://github.com/risingwavelabs/risingwave","status":"CATALOG_TRIAGE","provenance":["Official RisingWave repository description; accessed 2026-10-14."],"discoveries":["RisingWave is a streaming database for SQL processing over continuously arriving data.","Materialized views can expose continuously updated derived results."],"patterns":["Build monitoring aggregates from immutable normalized events.","Track event-time versus processing-time and late-data policy explicitly."],"sylphModules":["offline historical analytics","src/platform/ingestion/gap-reconciler.ts"],"overlap":["A separate analytics layer could complement source event storage but must not replace authoritative engine state."],"risks":["Late or duplicated events can change aggregates.","Database consistency and recovery behavior must be tested for chosen deployment."],"validation":["Replay deterministic event sequences including duplicates and late arrivals.","Compare query outputs with a reference implementation."],"evidence":["https://github.com/risingwavelabs/risingwave"],"license":"Apache-2.0 (repository metadata)","decision":"RESEARCH_ONLY"},
-    {"id":"SRC-148","url":"https://github.com/MaterializeInc/materialize","status":"CATALOG_TRIAGE","provenance":["Official Materialize repository; accessed 2026-10-14."],"discoveries":["Materialize provides streaming SQL and incrementally maintained materialized views.","The repository is a database system rather than a drop-in library."],"patterns":["Derive dashboards and research aggregates from versioned event streams.","Keep time semantics and source provenance visible in derived views."],"sylphModules":["offline analytics","src/dashboard.ts (read-only derived data only)"],"overlap":["Would be an external analytical store, not an alternate execution or health authority."],"risks":["External system adds consistency, access-control and operational concerns.","License and product terms require review at selected version."],"validation":["Compare incremental results with batch recomputation on fixtures.","Exercise restart and late-event cases."],"evidence":["https://github.com/MaterializeInc/materialize"],"license":"Not independently verified in this review","decision":"RESEARCH_ONLY"},
-    {"id":"SRC-149","url":"https://github.com/timescale/timescaledb","status":"CATALOG_TRIAGE","provenance":["Official TimescaleDB repository description and quick-start docs; accessed 2026-10-14."],"discoveries":["PostgreSQL extension focused on time-series and event analytics.","Hypertables and columnar storage support time-partitioned analytical workloads."],"patterns":["Store immutable timestamped observations and execution records with explicit source IDs.","Separate retention/aggregation policies from canonical evidence retention."],"sylphModules":["historical data analysis","audit/accounting persistence"],"overlap":["Potential storage technology, but SYLPH's current files/database layout must be assessed before introducing another datastore."],"risks":["Schema/index/retention errors can compromise audit completeness.","Extension compatibility and deployment version must be pinned."],"validation":["Test deterministic migrations, backup/restore, duplicate handling and time-zone semantics.","Reconcile stored fills and fees against canonical records."],"evidence":["https://github.com/timescale/timescaledb"],"license":"Apache-2.0 (repository metadata)","decision":"RESEARCH_ONLY"},
-    {"id":"SRC-150","url":"https://github.com/influxdata/influxdb","status":"CATALOG_TRIAGE","provenance":["Official InfluxDB repository README; accessed 2026-10-14."],"discoveries":["Current main README describes InfluxDB 3 Core, an event/time-series database built around Arrow, DataFusion and Parquet.","Repository documents versioned branches/APIs for v1, v2 and v3; compatibility is not a single interchangeable interface."],"patterns":["Use time-series storage for operational metrics and low-latency analytical views.","Pin server generation, write protocol and query API in deployment contracts."],"sylphModules":["operations telemetry","historical analytics"],"overlap":["Potential external store only; not an engine-state replacement."],"risks":["Version/API differences across branches can break ingestion assumptions.","README claims should be benchmarked against local workload and retention needs."],"validation":["Test write/query round trips, timestamp precision, retention and restart behavior.","Never use dashboards as authoritative fill or health evidence without reconciliation."],"evidence":["https://github.com/influxdata/influxdb"],"license":"MIT OR Apache-2.0 (README)","decision":"RESEARCH_ONLY"}
+    {
+      "id": "SRC-136",
+      "url": "https://github.com/rust-fuzz/cargo-fuzz",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official README and license files inspected at pinned commit bf2fc668dafda5295aa6fd01825ee67b885f0f2b (main); accessed 2026-10-14."
+      ],
+      "discoveries": [
+        "cargo-fuzz is a Cargo subcommand for libFuzzer fuzz targets and supports corpus minimization and coverage.",
+        "The README requires nightly Rust and LLVM sanitizer support and states native Windows is unsupported."
+      ],
+      "patterns": [
+        "Fuzz binary parsers and protocol adapters at isolated Rust boundaries.",
+        "Preserve minimized crashing inputs as permanent regression fixtures."
+      ],
+      "sylphModules": [
+        "src/platform/ingestion/truth-x.ts",
+        "src/platform/ingress/canonical-ingress.ts"
+      ],
+      "overlap": [
+        "Fuzzing strategy is useful; cargo-fuzz does not exercise the current TypeScript implementation."
+      ],
+      "risks": [
+        "Host platform and toolchain constraints are significant.",
+        "This Rust tool does not fuzz the current TypeScript implementation."
+      ],
+      "validation": [
+        "Use the existing TypeScript runtime to test equivalent malformed inputs.",
+        "If Rust code is added, run on supported Unix CI and retain corpus/seed artifacts."
+      ],
+      "evidence": [
+        "Official README and license files inspected at pinned commit bf2fc668dafda5295aa6fd01825ee67b885f0f2b (main); accessed 2026-10-14.",
+        "https://github.com/rust-fuzz/cargo-fuzz"
+      ],
+      "license": "MIT OR Apache-2.0 (README)",
+      "decision": "PATTERN_ONLY",
+      "pinnedRevision": "bf2fc668dafda5295aa6fd01825ee67b885f0f2b"
+    },
+    {
+      "id": "SRC-137",
+      "url": "https://github.com/grafana/loki",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official README and repository license metadata inspected at pinned commit 5fcd99aa6dea4bc139097527901f6c25a52baca5 (main); accessed 2026-10-14."
+      ],
+      "discoveries": [
+        "Loki is a log storage/query service using multidimensional labels and push-based log delivery.",
+        "The current README identifies Grafana Alloy as the collection agent and says Promtail is feature complete.",
+        "Loki can add operational log search but does not provide canonical evidence or execution truth."
+      ],
+      "patterns": [
+        "Use bounded-cardinality labels such as service, environment, and component.",
+        "Keep wallet secrets, raw keys, and high-volume transaction payloads out of logs; correlate by safe request/event IDs."
+      ],
+      "sylphModules": [
+        "src/platform/pipeline/runtime-divergence.ts",
+        "operations and incident diagnostics"
+      ],
+      "overlap": [
+        "Would complement application logs; current registry does not establish a Loki deployment."
+      ],
+      "risks": [
+        "High-cardinality labels increase storage/query cost.",
+        "The repository is AGPL-3.0; deployment and licensing requirements need review.",
+        "Logs must not become a mutable source of truth for fills or feed readiness."
+      ],
+      "validation": [
+        "Prototype with synthetic logs only.",
+        "Verify redaction, retention, access controls, and label cardinality before any deployment."
+      ],
+      "evidence": [
+        "Official README and repository license metadata inspected at pinned commit 5fcd99aa6dea4bc139097527901f6c25a52baca5 (main); accessed 2026-10-14.",
+        "https://github.com/grafana/loki"
+      ],
+      "license": "AGPL-3.0 (repository metadata)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "5fcd99aa6dea4bc139097527901f6c25a52baca5"
+    },
+    {
+      "id": "SRC-138",
+      "url": "https://github.com/grafana/tempo",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official README and LICENSING.md references inspected at pinned commit c478488929811c041227991f1b0601864dab7c8c (main); accessed 2026-10-14."
+      ],
+      "discoveries": [
+        "Tempo is a high-volume distributed tracing backend compatible with Jaeger, Zipkin, Kafka, and OpenTelemetry formats.",
+        "Trace receiver/wire/storage formats build on OpenTelemetry standards and can store to object storage or local disk.",
+        "Tempo repository license is AGPL-3.0-only with separately documented Apache-2.0 exceptions."
+      ],
+      "patterns": [
+        "Propagate safe correlation IDs across ingress, recovery, projection, and dashboard requests.",
+        "Record provider, slot, queue-depth, and phase timing as bounded span attributes; avoid secrets and raw wallet data."
+      ],
+      "sylphModules": [
+        "src/platform/ingress/canonical-ingress.ts",
+        "src/platform/ingestion/gap-reconciler.ts",
+        "src/dashboard.ts"
+      ],
+      "overlap": [
+        "Tracing can make existing boundaries observable without adding a second state authority."
+      ],
+      "risks": [
+        "Unbounded trace attributes can expose sensitive values and create storage cost.",
+        "A tracing backend is observational only and cannot certify state correctness.",
+        "License exceptions require file/component-level review."
+      ],
+      "validation": [
+        "Use synthetic requests to verify trace continuity and redaction.",
+        "Measure sampling, retention, and loss behavior; separately compare traces with journal evidence."
+      ],
+      "evidence": [
+        "Official README and LICENSING.md references inspected at pinned commit c478488929811c041227991f1b0601864dab7c8c (main); accessed 2026-10-14.",
+        "https://github.com/grafana/tempo"
+      ],
+      "license": "AGPL-3.0-only; Apache-2.0 exceptions documented in LICENSING.md",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "c478488929811c041227991f1b0601864dab7c8c"
+    },
+    {
+      "id": "SRC-139",
+      "url": "https://github.com/grafana/k6",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official README and license section inspected at pinned commit 3e09090df7bab6a01016d54bb359e16a4fa3648c (master); accessed 2026-10-14."
+      ],
+      "discoveries": [
+        "k6 is a Go-based load-testing tool with an embedded JavaScript API and HTTP, WebSocket, gRPC, browser, and other protocol support.",
+        "Tests as code can define staged workloads and thresholds such as percentile response-time objectives.",
+        "The repository is AGPL-3.0; using the CLI as a test tool does not mean it should be embedded into the Engine."
+      ],
+      "patterns": [
+        "Load-test local ingestion mocks and read-only dashboard endpoints using explicit thresholds.",
+        "Simulate bursts, reconnects, and slow consumers without sending trades."
+      ],
+      "sylphModules": [
+        "src/dashboard.ts",
+        "src/platform/ingress/canonical-ingress.ts"
+      ],
+      "overlap": [
+        "External test tooling; no runtime integration required."
+      ],
+      "risks": [
+        "Load against real providers can incur costs or trigger rate limits.",
+        "A load test against mocks does not establish production provider throughput.",
+        "AGPL-3.0 licensing needs review for any distributed service integration."
+      ],
+      "validation": [
+        "Target local or explicitly authorized staging endpoints only.",
+        "Record script, threshold, environment, and results; verify request bodies cannot invoke live signing or broadcast."
+      ],
+      "evidence": [
+        "Official README and license section inspected at pinned commit 3e09090df7bab6a01016d54bb359e16a4fa3648c (master); accessed 2026-10-14.",
+        "https://github.com/grafana/k6"
+      ],
+      "license": "AGPL-3.0 (README)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "3e09090df7bab6a01016d54bb359e16a4fa3648c"
+    },
+    {
+      "id": "SRC-140",
+      "url": "https://github.com/grafana/pyroscope",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official README and repository license metadata inspected at pinned commit 9fd22405bb330c6c600d0d2e5ed4806102516636 (main); accessed 2026-10-14."
+      ],
+      "discoveries": [
+        "Pyroscope is a continuous profiling platform for CPU, memory, and I/O bottleneck analysis.",
+        "Its current 2.0 architecture writes profiles to object storage; SDKs, Alloy, and OTLP/eBPF are described as ingestion options.",
+        "Profiling can help isolate event-lane latency regressions but is not itself a monitoring or safety authority."
+      ],
+      "patterns": [
+        "Profile local/staging parsers, projection commits, and backfills under representative synthetic load.",
+        "Compare profiles across revisions and redact or avoid sensitive labels."
+      ],
+      "sylphModules": [
+        "src/platform/ingestion/truth-x.ts",
+        "src/platform/ingestion/gap-reconciler.ts"
+      ],
+      "overlap": [
+        "Observability aid only; does not change ingestion decisions."
+      ],
+      "risks": [
+        "Profiles may expose identifiers or application values depending on instrumentation.",
+        "A server deployment adds storage/operational complexity; AGPL-3.0 terms and exceptions require review."
+      ],
+      "validation": [
+        "Use synthetic data and verify redaction.",
+        "Compare CPU/memory profiles with measured throughput, queue growth, and event loss counters."
+      ],
+      "evidence": [
+        "Official README and repository license metadata inspected at pinned commit 9fd22405bb330c6c600d0d2e5ed4806102516636 (main); accessed 2026-10-14.",
+        "https://github.com/grafana/pyroscope"
+      ],
+      "license": "AGPL-3.0 (repository metadata)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "9fd22405bb330c6c600d0d2e5ed4806102516636"
+    },
+    {
+      "id": "SRC-141",
+      "url": "https://github.com/grafana/alloy",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official README and repository license metadata inspected at pinned commit 5dba56afa5e0def9745c042de0b996274a430d0c (main); accessed 2026-10-14."
+      ],
+      "discoveries": [
+        "Grafana Alloy is an OpenTelemetry Collector distribution with programmable pipelines and built-in Prometheus components.",
+        "The README lists metrics, logs, traces, and profiles and integration components for Prometheus, Loki, and Pyroscope.",
+        "Alloy is a telemetry collection/processing layer, not an application-state or feed-health authority."
+      ],
+      "patterns": [
+        "Use an external collector boundary for telemetry transport and redaction.",
+        "Keep the engine’s canonical status and readiness predicates inside SYLPH; export only bounded low-cardinality observations."
+      ],
+      "sylphModules": [
+        "operations and telemetry export",
+        "src/platform/pipeline/runtime-divergence.ts"
+      ],
+      "overlap": [
+        "Collector can route existing signals; it should not become a source of trading state."
+      ],
+      "risks": [
+        "Pipeline transformations may drop or alter telemetry; collectors are not a canonical evidence journal.",
+        "Adding a separate collector deployment increases operational and configuration surface."
+      ],
+      "validation": [
+        "Use synthetic telemetry to validate routing, backpressure, and redaction.",
+        "Compare exported counters with Engine snapshots without using collector availability to declare feed health."
+      ],
+      "evidence": [
+        "Official README and repository license metadata inspected at pinned commit 5dba56afa5e0def9745c042de0b996274a430d0c (main); accessed 2026-10-14.",
+        "https://github.com/grafana/alloy",
+        "https://github.com/grafana/loki"
+      ],
+      "license": "Apache-2.0 (repository metadata)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "5dba56afa5e0def9745c042de0b996274a430d0c"
+    },
+    {
+      "id": "SRC-142",
+      "url": "https://github.com/prometheus/prometheus",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official repository README and Apache-2.0 license metadata inspected at pinned commit 6e69e843b38d22ded60a13e0163f6326136f59fa (main); accessed 2026-10-14."
+      ],
+      "discoveries": [
+        "Prometheus is a monitoring system and time-series database with its own scrape, query, and alerting workflows.",
+        "The repository supports configurable service-discovery plugins and build/test/vet commands.",
+        "Prometheus metrics can characterize queue depth, event throughput, reconnects, and commit latency but do not prove persisted journal state."
+      ],
+      "patterns": [
+        "Expose bounded-cardinality counters and histograms for admitted/rejected events, queue depth, projection latency, reconnects, and gap detection.",
+        "Keep dimensions bounded; use slot/tx IDs in traces or logs rather than metric labels."
+      ],
+      "sylphModules": [
+        "src/feed.ts",
+        "src/platform/ingress/canonical-ingress.ts",
+        "src/platform/ingestion/gap-reconciler.ts",
+        "src/platform/execution/authority.ts"
+      ],
+      "overlap": [
+        "Metrics export complements current state snapshots; no need to embed Prometheus into the engine."
+      ],
+      "risks": [
+        "High-cardinality labels can overwhelm time-series storage.",
+        "Metrics are sampled/observational and may be delayed or unavailable; do not make readiness depend solely on them."
+      ],
+      "validation": [
+        "Compare metrics with deterministic event/journal counts and restart recovery.",
+        "Test stale scrape and collector failure without changing the Engine’s fail-closed readiness."
+      ],
+      "evidence": [
+        "Official repository README and Apache-2.0 license metadata inspected at pinned commit 6e69e843b38d22ded60a13e0163f6326136f59fa (main); accessed 2026-10-14.",
+        "https://github.com/prometheus/prometheus",
+        "https://github.com/prometheus/prometheus/blob/main/docs/getting_started.md"
+      ],
+      "license": "Apache-2.0 (repository metadata)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "6e69e843b38d22ded60a13e0163f6326136f59fa"
+    },
+    {
+      "id": "SRC-143",
+      "url": "https://github.com/open-telemetry/opentelemetry-collector",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official README and repository license metadata inspected at pinned commit 46a0454806fd024159597fe651a16defb666e672 (main); accessed 2026-10-14."
+      ],
+      "discoveries": [
+        "OpenTelemetry Collector source is organized around receivers, processors, exporters, pipelines, and service configuration.",
+        "The upstream project documents signed container image verification using Sigstore Cosign.",
+        "Collector pipelines transport and transform telemetry; they are distinct from source-of-truth trade/recovery state."
+      ],
+      "patterns": [
+        "Use a small, explicitly configured telemetry pipeline and verify component compatibility.",
+        "Verify signed release images and pin distribution/version when deploying."
+      ],
+      "sylphModules": [
+        "src/platform/pipeline/runtime-divergence.ts",
+        "operations and telemetry export"
+      ],
+      "overlap": [
+        "Could export engine metrics/traces without coupling the engine to a backend."
+      ],
+      "risks": [
+        "Unverified or excessive components expand supply-chain and operational risk.",
+        "Processor configuration can alter/drop data; telemetry delivery is not equivalent to durable canonical journaling."
+      ],
+      "validation": [
+        "Test collector configs with synthetic data and assert expected redaction/outputs.",
+        "Verify image signatures and pinned versions; inject exporter outage and inspect loss/retry behavior."
+      ],
+      "evidence": [
+        "Official README and repository license metadata inspected at pinned commit 46a0454806fd024159597fe651a16defb666e672 (main); accessed 2026-10-14.",
+        "https://github.com/open-telemetry/opentelemetry-collector"
+      ],
+      "license": "Apache-2.0 (repository metadata)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "46a0454806fd024159597fe651a16defb666e672"
+    },
+    {
+      "id": "SRC-144",
+      "url": "https://github.com/temporalio/temporal",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official README and MIT license inspected at pinned commit 1872297dceb4f82309ef3ba0922c688212417e34 (main); accessed 2026-10-14."
+      ],
+      "discoveries": [
+        "Temporal server durably executes application Workflows and automatically handles intermittent failures and retries.",
+        "The server repository is distinct from the language SDKs used to author Workflows, Activities, and Workers.",
+        "Workflow retries can replay Activities; side effects therefore require idempotency and an explicit activity boundary."
+      ],
+      "patterns": [
+        "For long-running historical backfills, model idempotent work units, durable checkpoints, and explicit retry policy.",
+        "Keep recovery orchestration separate from live trading workflows and signing authority."
+      ],
+      "sylphModules": [
+        "src/platform/ingestion/gap-reconciler.ts",
+        "historical recovery tooling"
+      ],
+      "overlap": [
+        "Existing gap reconciler and checkpointing already own recovery semantics; Temporal is not justified without a concrete orchestration gap."
+      ],
+      "risks": [
+        "Retries can duplicate side effects unless activities are idempotent.",
+        "A distributed workflow engine expands operational complexity and can cause unexpected external calls if not strictly scoped."
+      ],
+      "validation": [
+        "Prototype against a local test server with idempotent test-only activities.",
+        "Prove retries cannot invoke signing, broadcast, or capital-moving paths."
+      ],
+      "evidence": [
+        "Official README and MIT license inspected at pinned commit 1872297dceb4f82309ef3ba0922c688212417e34 (main); accessed 2026-10-14.",
+        "https://github.com/temporalio/temporal"
+      ],
+      "license": "MIT (repository README)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "1872297dceb4f82309ef3ba0922c688212417e34"
+    },
+    {
+      "id": "SRC-145",
+      "url": "https://github.com/nats-io/nats-server",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official repository README and Apache-2.0 license metadata inspected at pinned commit 64dda80fdd87b41b2afcdc5faf5d846db6c189b0 (main); accessed 2026-10-14."
+      ],
+      "discoveries": [
+        "NATS Server is a messaging system supporting publish/subscribe and request/reply patterns.",
+        "Durability and replay behavior depend on selected/configured NATS capabilities and deployment, not just a subject subscription.",
+        "Broker transport would be an internal distribution layer and must not replace SYLPH canonical ingress receipts."
+      ],
+      "patterns": [
+        "Use stable message IDs, explicit acknowledgements, replay-safe consumers, and preserve source slot/intent metadata.",
+        "Keep broker consumers idempotent and separate analytics events from execution-control messages."
+      ],
+      "sylphModules": [
+        "src/platform/ingress/canonical-ingress.ts",
+        "src/platform/ingestion/gap-reconciler.ts"
+      ],
+      "overlap": [
+        "Potential transport pattern only; current ingress path remains source of truth."
+      ],
+      "risks": [
+        "At-most-once and at-least-once paths differ and can create gaps or duplicates.",
+        "Broker persistence, retention, and availability become operational dependencies."
+      ],
+      "validation": [
+        "Inject disconnect, duplicate, out-of-order, and restart scenarios in an isolated harness.",
+        "Verify idempotency, offset/checkpoint recovery, and no path to signing or broadcast."
+      ],
+      "evidence": [
+        "Official repository README and Apache-2.0 license metadata inspected at pinned commit 64dda80fdd87b41b2afcdc5faf5d846db6c189b0 (main); accessed 2026-10-14.",
+        "https://github.com/nats-io/nats-server"
+      ],
+      "license": "Apache-2.0 (repository metadata)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "64dda80fdd87b41b2afcdc5faf5d846db6c189b0"
+    },
+    {
+      "id": "SRC-146",
+      "url": "https://github.com/redpanda-data/redpanda",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official repository README and root-license path checked against pinned default-branch commit 4254992f6115e92c1dbd86f90bb0aee0b869f15e; accessed 2026-10-15. The root LICENSE path returned 404, so repository-wide licensing was not inferred."
+      ],
+      "discoveries": [
+        "Redpanda describes itself as a Kafka-compatible streaming data platform with connectors and configurable tiered storage.",
+        "Kafka API compatibility is a product-level description, not proof that every Kafka semantic, ordering, or recovery behavior matches SYLPH requirements.",
+        "The inspected repository root did not expose a LICENSE file; licensing of source components remains unresolved from this inspection."
+      ],
+      "patterns": [
+        "Consider broker-backed append/replay only for a separately operated analytics or backfill pipeline.",
+        "Carry immutable event IDs, processing intent, source slot, and consumer checkpoint in any event envelope."
+      ],
+      "sylphModules": [
+        "offline historical analytics",
+        "src/platform/ingestion/gap-reconciler.ts (recovery concepts only)"
+      ],
+      "overlap": [
+        "A broker could support downstream analytics but would duplicate canonical ingress if inserted in the Engine path."
+      ],
+      "risks": [
+        "Kafka API compatibility does not establish exactly-once delivery, source ordering, or replay completeness for a particular configuration.",
+        "No root license was found at the pinned revision; source and dependency license obligations need per-component verification before reuse or deployment.",
+        "An external broker would add an operational dependency and a second checkpoint/retention boundary."
+      ],
+      "validation": [
+        "If evaluated, test duplicates, out-of-order delivery, retention expiry, checkpoint recovery, and consumer replays against an immutable reference ledger.",
+        "Keep broker consumers downstream of canonical ingress and outside signing or entry authorization."
+      ],
+      "evidence": [
+        "https://github.com/redpanda-data/redpanda/tree/4254992f6115e92c1dbd86f90bb0aee0b869f15e",
+        "https://raw.githubusercontent.com/redpanda-data/redpanda/4254992f6115e92c1dbd86f90bb0aee0b869f15e/LICENSE (404 at inspected root path)"
+      ],
+      "license": "Root LICENSE not present at pinned revision; component licensing unresolved",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "4254992f6115e92c1dbd86f90bb0aee0b869f15e"
+    },
+    {
+      "id": "SRC-147",
+      "url": "https://github.com/risingwavelabs/risingwave",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official RisingWave README and repository license metadata inspected at pinned default-branch commit 1d1c04166fda93756acb1454450d44d69f4434c6; accessed 2026-10-15."
+      ],
+      "discoveries": [
+        "RisingWave presents an event-streaming platform that ingests from databases, brokers, webhooks, and historical sources.",
+        "Its continuously maintained materialized views are served through SQL, creating an analytical serving layer rather than canonical chain evidence.",
+        "The repository advertises Apache-2.0 licensing."
+      ],
+      "patterns": [
+        "Model event time and processing time separately, with explicit handling for late and duplicate observations.",
+        "Compare incremental aggregates with deterministic batch recomputation."
+      ],
+      "sylphModules": [
+        "offline historical analytics",
+        "read-only dashboards"
+      ],
+      "overlap": [
+        "Could derive analytics from a downstream normalized event stream; it is not required to repair the in-process feed queue or canonical journal."
+      ],
+      "risks": [
+        "Incremental results depend on source ordering, watermark, retention, and recovery semantics that need configuration-level validation.",
+        "A derived view must not be treated as authoritative feed health, position, or fill state."
+      ],
+      "validation": [
+        "Replay duplicates, late events, restart, and source recovery using deterministic fixtures; compare with a reference batch calculation.",
+        "Keep any prototype read-only and downstream of canonical event persistence."
+      ],
+      "evidence": [
+        "https://github.com/risingwavelabs/risingwave/tree/1d1c04166fda93756acb1454450d44d69f4434c6",
+        "https://github.com/risingwavelabs/risingwave/blob/1d1c04166fda93756acb1454450d44d69f4434c6/LICENSE"
+      ],
+      "license": "Apache-2.0 (repository metadata)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "1d1c04166fda93756acb1454450d44d69f4434c6"
+    },
+    {
+      "id": "SRC-148",
+      "url": "https://github.com/MaterializeInc/materialize",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official Materialize README and license statement inspected at pinned default-branch commit 1f24515fd7955dc2fb0840b40fedc300fe712c50; accessed 2026-10-15."
+      ],
+      "discoveries": [
+        "Materialize incrementally maintains SQL views over changing upstream data and supports PostgreSQL protocol reads plus streaming subscriptions.",
+        "The README describes query offload, integration-hub, and operational-data-mesh patterns; these are external serving architectures, not drop-in SYLPH libraries.",
+        "The standalone database engine is under BSL 1.1 and converts to Apache-2.0 after four years; its README says single-node use is free forever."
+      ],
+      "patterns": [
+        "Use derived SQL views for read-only dashboards and analysis while preserving the canonical journal as the source of truth.",
+        "Document data freshness and source version for materialized results."
+      ],
+      "sylphModules": [
+        "read-only dashboard projections",
+        "offline analytics"
+      ],
+      "overlap": [
+        "Potential external read/query layer over persisted events; overlaps with existing projections and would add a separate service."
+      ],
+      "risks": [
+        "BSL 1.1 terms are not equivalent to Apache-2.0 before the stated conversion date; deployment/use rights need review.",
+        "Materialized consistency guarantees do not certify source completeness, live feed health, or trading readiness.",
+        "Additional service, schema, and upstream lag create another operational boundary."
+      ],
+      "validation": [
+        "Verify license against the exact intended use and revision before deployment.",
+        "Compare incremental outputs against deterministic recomputation through restart, duplicate, late-event, and correction scenarios."
+      ],
+      "evidence": [
+        "https://github.com/MaterializeInc/materialize/tree/1f24515fd7955dc2fb0840b40fedc300fe712c50",
+        "https://github.com/MaterializeInc/materialize/blob/1f24515fd7955dc2fb0840b40fedc300fe712c50/README.md#license"
+      ],
+      "license": "BSL-1.1; README states conversion to Apache-2.0 after four years; single-node use stated free forever",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "1f24515fd7955dc2fb0840b40fedc300fe712c50"
+    },
+    {
+      "id": "SRC-149",
+      "url": "https://github.com/timescale/timescaledb",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official TimescaleDB README, LICENSE, and LICENSE-APACHE inspected at pinned default-branch commit cc75200f4f106615d3f8ee65fcd931334b9db120; accessed 2026-10-15."
+      ],
+      "discoveries": [
+        "TimescaleDB is a PostgreSQL extension for time-series and event analytics, including hypertables and columnar storage.",
+        "The root LICENSE says source is variously Apache-2.0, Apache-compatible, or Timescale License; it identifies the tsl directory as Timescale-licensed unless a file says otherwise.",
+        "The README presents a local quick start for development/testing and points production deployments to separate installation guidance."
+      ],
+      "patterns": [
+        "For audit analytics, store source IDs, event timestamps, and immutable record identity; make retention policy distinct from canonical evidence retention.",
+        "Benchmark time-partitioned queries using representative event volumes before adopting a separate database."
+      ],
+      "sylphModules": [
+        "offline historical analytics",
+        "read-only reporting"
+      ],
+      "overlap": [
+        "Could support analytics, but adds a database and does not replace the current Engine persistence or accounting reconciliation."
+      ],
+      "risks": [
+        "License obligations differ by directory and produced shared object; repository-level Apache metadata alone is incomplete.",
+        "Database migrations, retention, and backup restoration affect audit completeness.",
+        "The README explicitly limits its one-line local installer to development and testing."
+      ],
+      "validation": [
+        "Review file/component and binary licensing for the exact deployed feature set.",
+        "Test migrations, backup/restore, duplicate handling, UTC boundaries, and reconciliation against canonical fills and fees."
+      ],
+      "evidence": [
+        "https://github.com/timescale/timescaledb/tree/cc75200f4f106615d3f8ee65fcd931334b9db120",
+        "https://raw.githubusercontent.com/timescale/timescaledb/cc75200f4f106615d3f8ee65fcd931334b9db120/LICENSE",
+        "https://raw.githubusercontent.com/timescale/timescaledb/cc75200f4f106615d3f8ee65fcd931334b9db120/LICENSE-APACHE"
+      ],
+      "license": "Mixed: Apache-2.0 outside tsl by default; Timescale License in tsl unless file overrides; verify exact components",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "cc75200f4f106615d3f8ee65fcd931334b9db120"
+    },
+    {
+      "id": "SRC-150",
+      "url": "https://github.com/influxdata/influxdb",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official InfluxDB README and license files inspected at pinned main-branch commit 06200ef96ba82c5f6727e5038a83af8e722c6875; accessed 2026-10-15."
+      ],
+      "discoveries": [
+        "The current main branch documents InfluxDB 3 Core, using Arrow, DataFusion, and Parquet for event/time-series analytics.",
+        "The README lists line-protocol writes and SQL, InfluxQL, and Flight SQL query paths, and distinguishes v3 main from v2 and v1 branches.",
+        "The README states the open-source code is offered under MIT or Apache-2.0 at the user’s choice."
+      ],
+      "patterns": [
+        "Pin the server generation, write protocol, and query API in any analytics integration contract.",
+        "Use time-series storage for operational telemetry or research queries, with bounded labels and explicit retention."
+      ],
+      "sylphModules": [
+        "operations telemetry",
+        "offline historical analytics"
+      ],
+      "overlap": [
+        "Potential external observability/analytics store only; it is not canonical fill, paper recovery, or Engine health evidence."
+      ],
+      "risks": [
+        "API and query semantics differ across major version branches.",
+        "Fast query/ingest claims require workload-specific benchmarking and do not imply durable trading-accounting guarantees.",
+        "Adding a second store expands backup, authorization, and retention obligations."
+      ],
+      "validation": [
+        "Test write/query precision, restart, retention, and export/reconciliation against a deterministic fixture dataset.",
+        "Never use its dashboard values as authoritative execution or health state without reconciliation to canonical records."
+      ],
+      "evidence": [
+        "https://github.com/influxdata/influxdb/tree/06200ef96ba82c5f6727e5038a83af8e722c6875",
+        "https://github.com/influxdata/influxdb/blob/06200ef96ba82c5f6727e5038a83af8e722c6875/README.md#license"
+      ],
+      "license": "MIT OR Apache-2.0 (README states user’s choice; both license files present)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "06200ef96ba82c5f6727e5038a83af8e722c6875"
+    }
   ]
 }

@@ -134,21 +134,21 @@ SRC-132,github_formal_correctness,https://github.com/proptest-rs/proptest,source
 SRC-133,github_formal_correctness,https://github.com/tokio-rs/loom,source_or_document_review,P2,PARTIAL_REVIEW,SRC-133-PINNED-SOURCE-2026-10-14,948c8cc78b178ede6eeff3afc7d97f2f4ea08559,MIT (LICENSE at pinned commit),NO_DIRECT_INTEGRATION
 SRC-134,github_formal_correctness,https://github.com/jepsen-io/jepsen,source_or_document_review,P2,PARTIAL_REVIEW,SRC-134-PINNED-SOURCE-2026-10-14,d41e66f67929212648c00aafe18c2d1983e2123e,No root license file found in inspected repository listing; licensing unverified,PATTERN_ONLY
 SRC-135,github_formal_correctness,https://github.com/quint-co/quint,source_or_document_review,P2,PARTIAL_REVIEW,SRC-135-PINNED-SOURCE-2026-10-14,b6db567bd555c8dff2efdd726d6beb309cdffef6,Apache-2.0 (repository metadata and README),RESEARCH_ONLY
-SRC-136,github_formal_correctness,https://github.com/rust-fuzz/cargo-fuzz,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-137,github_data_observability_ops,https://github.com/grafana/loki,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-138,github_data_observability_ops,https://github.com/grafana/tempo,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-139,github_data_observability_ops,https://github.com/grafana/k6,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-140,github_data_observability_ops,https://github.com/grafana/pyroscope,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-141,github_data_observability_ops,https://github.com/grafana/alloy,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-142,github_data_observability_ops,https://github.com/prometheus/prometheus,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-143,github_data_observability_ops,https://github.com/open-telemetry/opentelemetry-collector,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-144,github_data_observability_ops,https://github.com/temporalio/temporal,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-145,github_data_observability_ops,https://github.com/nats-io/nats-server,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-146,github_data_observability_ops,https://github.com/redpanda-data/redpanda,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-147,github_data_observability_ops,https://github.com/risingwavelabs/risingwave,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-148,github_data_observability_ops,https://github.com/MaterializeInc/materialize,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-149,github_data_observability_ops,https://github.com/timescale/timescaledb,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-150,github_data_observability_ops,https://github.com/influxdata/influxdb,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
+SRC-136,github_formal_correctness,https://github.com/rust-fuzz/cargo-fuzz,source_or_document_review,P2,PARTIAL_REVIEW,SRC-136-PINNED-SOURCE-2026-10-14,bf2fc668dafda5295aa6fd01825ee67b885f0f2b,MIT OR Apache-2.0 (README),PATTERN_ONLY
+SRC-137,github_data_observability_ops,https://github.com/grafana/loki,source_or_document_review,P2,PARTIAL_REVIEW,SRC-137-PINNED-SOURCE-2026-10-14,5fcd99aa6dea4bc139097527901f6c25a52baca5,AGPL-3.0 (repository metadata),RESEARCH_ONLY
+SRC-138,github_data_observability_ops,https://github.com/grafana/tempo,source_or_document_review,P2,PARTIAL_REVIEW,SRC-138-PINNED-SOURCE-2026-10-14,c478488929811c041227991f1b0601864dab7c8c,AGPL-3.0-only; Apache-2.0 exceptions documented in LICENSING.md,RESEARCH_ONLY
+SRC-139,github_data_observability_ops,https://github.com/grafana/k6,source_or_document_review,P2,PARTIAL_REVIEW,SRC-139-PINNED-SOURCE-2026-10-14,3e09090df7bab6a01016d54bb359e16a4fa3648c,AGPL-3.0 (README),RESEARCH_ONLY
+SRC-140,github_data_observability_ops,https://github.com/grafana/pyroscope,source_or_document_review,P2,PARTIAL_REVIEW,SRC-140-PINNED-SOURCE-2026-10-14,9fd22405bb330c6c600d0d2e5ed4806102516636,AGPL-3.0 (repository metadata),RESEARCH_ONLY
+SRC-141,github_data_observability_ops,https://github.com/grafana/alloy,source_or_document_review,P2,PARTIAL_REVIEW,SRC-141-PINNED-SOURCE-2026-10-14,5dba56afa5e0def9745c042de0b996274a430d0c,Apache-2.0 (repository metadata),RESEARCH_ONLY
+SRC-142,github_data_observability_ops,https://github.com/prometheus/prometheus,source_or_document_review,P2,PARTIAL_REVIEW,SRC-142-PINNED-SOURCE-2026-10-14,6e69e843b38d22ded60a13e0163f6326136f59fa,Apache-2.0 (repository metadata),RESEARCH_ONLY
+SRC-143,github_data_observability_ops,https://github.com/open-telemetry/opentelemetry-collector,source_or_document_review,P2,PARTIAL_REVIEW,SRC-143-PINNED-SOURCE-2026-10-14,46a0454806fd024159597fe651a16defb666e672,Apache-2.0 (repository metadata),RESEARCH_ONLY
+SRC-144,github_data_observability_ops,https://github.com/temporalio/temporal,source_or_document_review,P2,PARTIAL_REVIEW,SRC-144-PINNED-SOURCE-2026-10-14,1872297dceb4f82309ef3ba0922c688212417e34,MIT (repository README),RESEARCH_ONLY
+SRC-145,github_data_observability_ops,https://github.com/nats-io/nats-server,source_or_document_review,P2,PARTIAL_REVIEW,SRC-145-PINNED-SOURCE-2026-10-14,64dda80fdd87b41b2afcdc5faf5d846db6c189b0,Apache-2.0 (repository metadata),RESEARCH_ONLY
+SRC-146,github_data_observability_ops,https://github.com/redpanda-data/redpanda,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-146-2026-10-15,4254992f6115e92c1dbd86f90bb0aee0b869f15e,Root LICENSE not present at pinned revision; component licensing unresolved,RESEARCH_ONLY
+SRC-147,github_data_observability_ops,https://github.com/risingwavelabs/risingwave,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-147-2026-10-15,1d1c04166fda93756acb1454450d44d69f4434c6,Apache-2.0 (repository metadata),RESEARCH_ONLY
+SRC-148,github_data_observability_ops,https://github.com/MaterializeInc/materialize,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-148-2026-10-15,1f24515fd7955dc2fb0840b40fedc300fe712c50,BSL-1.1; README states conversion to Apache-2.0 after four years; single-node use stated free forever,RESEARCH_ONLY
+SRC-149,github_data_observability_ops,https://github.com/timescale/timescaledb,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-149-2026-10-15,cc75200f4f106615d3f8ee65fcd931334b9db120,Mixed: Apache-2.0 outside tsl by default; Timescale License in tsl unless file overrides; verify exact components,RESEARCH_ONLY
+SRC-150,github_data_observability_ops,https://github.com/influxdata/influxdb,source_or_document_review,P2,PARTIAL_REVIEW,SRC-REVIEW-SRC-150-2026-10-15,06200ef96ba82c5f6727e5038a83af8e722c6875,MIT OR Apache-2.0 (README states user’s choice; both license files present),RESEARCH_ONLY
 SRC-151,github_data_observability_ops,https://github.com/VictoriaMetrics/VictoriaMetrics,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-152,github_data_observability_ops,https://github.com/questdb/questdb,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-153,github_data_observability_ops,https://github.com/signoz/signoz,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
