@@ -2,13 +2,13 @@
   "batchId": "source-review-batch-013-2026-10-14",
   "reviewedAt": "2026-10-14",
   "repository": {
-    "localHead": "923d300",
-    "remoteHead": "923d300",
+    "localHead": "f6acee9",
+    "remoteHead": "f6acee9",
     "mainAndTaskBranchMatch": true,
     "worktreeHasPreexistingEdits": true
   },
   "sourceRecords": 15,
-  "directlyReviewed": 5,
+  "directlyReviewed": 8,
   "sources": [
     {
       "id": "SRC-091",
@@ -448,19 +448,20 @@
     {
       "id": "SRC-102",
       "url": "https://github.com/Infisical/infisical",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Infisical repository README and product description"
+        "Infisical README, root LICENSE and package metadata",
+        "Pinned repository commit 2ba797a20a8b504ae5d17fee977ac90ad56a2f66"
       ],
       "discoveries": [
-        "Infisical describes a platform for secrets, certificates, access and AI agent controls.",
-        "Secrets-platform integration would change credential delivery and operational access, not trading logic.",
-        "No local Infisical deployment, credentials, or compatibility with current SYLPH config was examined."
+        "Platform provides secrets/configuration synchronization, versioning and rotation workflows.",
+        "Root license says non-ee content is MIT while ee directories use a separate license.",
+        "Root package declares ISC, so package metadata and repository license need scope-aware interpretation."
       ],
       "patterns": [
-        "use centralized secret injection instead of checked-in credentials",
-        "scope secrets per service/environment",
-        "audit and rotate credential access"
+        "Scope secret-access policy per environment and workload.",
+        "Use rotation/version history and audit events instead of static shared secrets.",
+        "Keep secret values out of logs and build artifacts."
       ],
       "sylphModules": [
         "src/config.ts",
@@ -469,20 +470,21 @@
       ],
       "overlap": "Potential deployment-level secret management; current project secrets must stay unopened during this research task.",
       "risks": [
-        "access policy misconfiguration",
-        "service availability dependency",
-        "broad feature set and supply-chain scope"
+        "Mixed licensing requires path-specific review.",
+        "Secret-sync misconfiguration can propagate leaked credentials.",
+        "No Infisical service, account or secret was accessed."
       ],
       "validation": [
-        "review deployment security and license",
-        "test least-privilege rotation with dummy credentials",
-        "never export secrets into logs/analyzer artifacts"
+        "Resolve repository path-specific license and exact release before reuse.",
+        "Use least-privilege workload identities and rotation policies.",
+        "Do not access secret values or change signing/custody configuration during research."
       ],
       "evidence": [
-        "https://github.com/Infisical/infisical"
+        "https://github.com/Infisical/infisical",
+        "https://github.com/Infisical/infisical/tree/2ba797a20a8b504ae5d17fee977ac90ad56a2f66"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "NO_CONFIGURATION_CHANGE; DEPLOYMENT_RESEARCH_ONLY"
+      "license": "MIT_WITH_EE_LICENSE_EXCEPTION",
+      "decision": "SECRET_POLICY_REFERENCE_ONLY_NO_SERVICE_ACCESS"
     },
     {
       "id": "SRC-103",
@@ -528,19 +530,20 @@
     {
       "id": "SRC-104",
       "url": "https://github.com/smallstep/certificates",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Smallstep Certificates repository description"
+        "Smallstep certificates README, root license and Go module",
+        "Pinned repository commit 74be79c6f93c8f1b30212551b4d9d12fb12e48be"
       ],
       "discoveries": [
-        "Smallstep Certificates provides private certificate authority and ACME functionality for X.509/SSH certificate lifecycle.",
-        "It can support service identity and TLS automation, but does not manage Solana signing keys or transaction authority.",
-        "No certificate infrastructure is part of the current research registry change."
+        "step-ca is an online certificate authority for automated certificate management.",
+        "Repository is a server counterpart to the step CLI and manages certificate/key workflows.",
+        "Pinned Go module targets Go 1.26.0."
       ],
       "patterns": [
-        "use short-lived service certificates",
-        "automate rotation with explicit identity policy",
-        "separate TLS identity from wallet signer identity"
+        "Use short-lived workload certificates for service identity where infrastructure supports them.",
+        "Keep certificate issuance policy separate from application trading authorization.",
+        "Record identity and certificate rotation events without storing private key material."
       ],
       "sylphModules": [
         "src/rpc.ts",
@@ -549,37 +552,39 @@
       ],
       "overlap": "Potential operations hardening for RPC/dashboard transport, unrelated to on-chain signing.",
       "risks": [
-        "CA compromise",
-        "certificate renewal outage",
-        "confusion between service identity and financial signer"
+        "CA deployment is security-critical and not suitable as a dependency shortcut.",
+        "Go/tooling compatibility must be checked before deployment.",
+        "No CA was launched and no certificate was issued."
       ],
       "validation": [
-        "review current deployment and TLS termination",
-        "test renewal/revocation in staging",
-        "keep signer boundary separate"
+        "Resolve repository path-specific license and exact release before reuse.",
+        "Use least-privilege workload identities and rotation policies.",
+        "Do not access secret values or change signing/custody configuration during research."
       ],
       "evidence": [
-        "https://github.com/smallstep/certificates"
+        "https://github.com/smallstep/certificates",
+        "https://github.com/smallstep/certificates/tree/74be79c6f93c8f1b30212551b4d9d12fb12e48be"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "OPERATIONS_REFERENCE_ONLY"
+      "license": "Apache-2.0",
+      "decision": "IDENTITY_INFRASTRUCTURE_REFERENCE_ONLY_NO_DEPLOYMENT"
     },
     {
       "id": "SRC-105",
       "url": "https://github.com/spiffe/spire",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official SPIRE repository and SPIFFE Runtime Environment description"
+        "SPIRE README, root license and Go module",
+        "Pinned repository commit 6d10e93a4eef9b270cba5dc6082f1c3c5bd99879"
       ],
       "discoveries": [
-        "SPIRE implements workload identity issuance/attestation for SPIFFE identities.",
-        "Workload identity can reduce long-lived service credentials but does not itself authorize transaction signing.",
-        "Deploying it would be an infrastructure architecture change not required for source research."
+        "SPIRE attests workloads and issues SPIFFE IDs/SVIDs through the Workload API.",
+        "Workloads can use identities to establish mTLS or authenticate to secret stores.",
+        "Pinned module is an infrastructure server/toolchain, not an application library."
       ],
       "patterns": [
-        "bind service identity to workload attestation",
-        "use short-lived identity credentials",
-        "separate workload authentication from financial authorization"
+        "Authenticate service-to-service access by workload identity rather than long-lived API tokens.",
+        "Separate workload identity from trading-account authority.",
+        "Rotate identity credentials and log attestation decisions."
       ],
       "sylphModules": [
         "src/platform/signing/",
@@ -589,20 +594,21 @@
       ],
       "overlap": "Potential future RPC/service identity control; current app capability remains constrained by its own authority checks.",
       "risks": [
-        "attestation and identity policy complexity",
-        "control-plane availability",
-        "mistaking authenticated service identity for user/capital authority"
+        "SPIRE deployment and trust roots require infrastructure/security ownership.",
+        "Workload attestation does not authorize financial actions by itself.",
+        "No SPIRE server or identity provider was configured."
       ],
       "validation": [
-        "review deployment threat model",
-        "test revocation and workload replacement",
-        "ensure no signer bypass through identity claims"
+        "Resolve repository path-specific license and exact release before reuse.",
+        "Use least-privilege workload identities and rotation policies.",
+        "Do not access secret values or change signing/custody configuration during research."
       ],
       "evidence": [
-        "https://github.com/spiffe/spire"
+        "https://github.com/spiffe/spire",
+        "https://github.com/spiffe/spire/tree/6d10e93a4eef9b270cba5dc6082f1c3c5bd99879"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "NO_DEPLOYMENT_CHANGE; IDENTITY_PATTERN_REFERENCE_ONLY"
+      "license": "Apache-2.0",
+      "decision": "WORKLOAD_IDENTITY_PATTERN_ONLY_NO_DEPLOYMENT"
     }
   ]
 }

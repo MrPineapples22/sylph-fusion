@@ -1,19 +1,19 @@
 {
-  "generatedAt": "2026-10-15T04:36:02.796Z",
+  "generatedAt": "2026-10-15T04:36:47.836Z",
   "manifestRows": 288,
   "uniqueManifestIds": 288,
   "batchFiles": 23,
   "catalogRecords": 288,
   "uniqueCatalogIds": 288,
-  "directlyReviewedRecords": 103,
-  "triageOnlyRecords": 185,
+  "directlyReviewedRecords": 106,
+  "triageOnlyRecords": 182,
   "manifestReviewStatusCounts": {
-    "PARTIAL_REVIEW": 103,
-    "NOT_REVIEWED": 185
+    "PARTIAL_REVIEW": 106,
+    "NOT_REVIEWED": 182
   },
   "batchStatusCounts": {
-    "PARTIAL_REVIEW": 103,
-    "CATALOG_TRIAGE": 185
+    "PARTIAL_REVIEW": 106,
+    "CATALOG_TRIAGE": 182
   },
   "distinctDecisionCount": 169,
   "topDecisionCounts": [

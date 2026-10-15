@@ -455,3 +455,11 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - SRC-101 HashiCorp Vault is pinned at 54e4149458609ce5535df65be3bf2ddac0ebaeaa. It is a secrets product, not an importable Go library; licensing is not treated as open-source approval. No server or secret was accessed.
 - SRC-103 SOPS is pinned at e39ca97b6209f9132ea40d22beb37d796060cb32 (MPL-2.0). Its key-service interfaces support explicit KMS/decryption configuration; no key service or encrypted file was accessed.
 - Registry status: 103 direct source inspections and 185 catalog-triage records. No credential, signer, custody or deploy path was exercised.
+
+
+## Workload identity and secret lifecycle references (2026-10-14)
+
+- SRC-102 Infisical is pinned at 2ba797a20a8b504ae5d17fee977ac90ad56a2f66. Root LICENSE makes non-ee content MIT while ee paths have separate terms; root package declares ISC. Treat license scope as unresolved until exact paths are reviewed. No service or secret was accessed.
+- SRC-104 Smallstep certificates is pinned at 74be79c6f93c8f1b30212551b4d9d12fb12e48be (Apache-2.0). It is CA infrastructure for managed certificate issuance; no CA was launched.
+- SRC-105 SPIRE is pinned at 6d10e93a4eef9b270cba5dc6082f1c3c5bd99879 (Apache-2.0). Its Workload API issues identities for mTLS/service authentication; this does not itself authorize financial actions. No server was configured.
+- Registry status: 106 direct source inspections and 182 catalog-triage records. No credentials, signing configuration, CA or workload identity was touched.
