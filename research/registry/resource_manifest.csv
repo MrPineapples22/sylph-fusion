@@ -129,11 +129,11 @@ SRC-127,github_formal_correctness,https://github.com/tlaplus/tlaplus,source_or_d
 SRC-128,github_formal_correctness,https://github.com/apalache-mc/apalache,source_or_document_review,P2,PARTIAL_REVIEW,SRC-128-PINNED-SOURCE-2026-10-14,9a13950e0ebddcb3d7a79cb9e854b0866e1c5712,Apache-2.0 (repository metadata and README),RESEARCH_ONLY
 SRC-129,github_formal_correctness,https://github.com/AlloyTools/org.alloytools.alloy,source_or_document_review,P2,PARTIAL_REVIEW,SRC-129-PINNED-SOURCE-2026-10-14,ed89fdb16c58aea17a55e312c44f99e31aa63ee1,Unclear at repository level: LICENSE says code is currently under MIT but also contains Apache-2.0 text; verify file/package scope,RESEARCH_ONLY
 SRC-130,github_formal_correctness,https://github.com/Z3Prover/z3,source_or_document_review,P2,PARTIAL_REVIEW,SRC-130-PINNED-SOURCE-2026-10-14,ee33c3f646241e2eceeb398fedac7ae3670d7bc3,MIT (README and LICENSE.txt),RESEARCH_ONLY
-SRC-131,github_formal_correctness,https://github.com/pschanely/crosshair,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-132,github_formal_correctness,https://github.com/proptest-rs/proptest,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-133,github_formal_correctness,https://github.com/tokio-rs/loom,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-134,github_formal_correctness,https://github.com/jepsen-io/jepsen,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-135,github_formal_correctness,https://github.com/quint-co/quint,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
+SRC-131,github_formal_correctness,https://github.com/pschanely/crosshair,source_or_document_review,P2,PARTIAL_REVIEW,SRC-131-PINNED-SOURCE-2026-10-14,35e504cc5b09846242e9ac67d10219b67d587a65,MIT (LICENSE at pinned commit),NO_DIRECT_INTEGRATION
+SRC-132,github_formal_correctness,https://github.com/proptest-rs/proptest,source_or_document_review,P2,PARTIAL_REVIEW,SRC-132-PINNED-SOURCE-2026-10-14,70cf37d46b7d83393b6ed94c611f8c52209f585d,MIT OR Apache-2.0 (Cargo.toml at pinned commit),PATTERN_ONLY
+SRC-133,github_formal_correctness,https://github.com/tokio-rs/loom,source_or_document_review,P2,PARTIAL_REVIEW,SRC-133-PINNED-SOURCE-2026-10-14,948c8cc78b178ede6eeff3afc7d97f2f4ea08559,MIT (LICENSE at pinned commit),NO_DIRECT_INTEGRATION
+SRC-134,github_formal_correctness,https://github.com/jepsen-io/jepsen,source_or_document_review,P2,PARTIAL_REVIEW,SRC-134-PINNED-SOURCE-2026-10-14,d41e66f67929212648c00aafe18c2d1983e2123e,No root license file found in inspected repository listing; licensing unverified,PATTERN_ONLY
+SRC-135,github_formal_correctness,https://github.com/quint-co/quint,source_or_document_review,P2,PARTIAL_REVIEW,SRC-135-PINNED-SOURCE-2026-10-14,b6db567bd555c8dff2efdd726d6beb309cdffef6,Apache-2.0 (repository metadata and README),RESEARCH_ONLY
 SRC-136,github_formal_correctness,https://github.com/rust-fuzz/cargo-fuzz,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-137,github_data_observability_ops,https://github.com/grafana/loki,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-138,github_data_observability_ops,https://github.com/grafana/tempo,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
