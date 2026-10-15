@@ -32,15 +32,16 @@
       "url": "https://github.com/rpcpool/yellowstone-grpc",
       "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official upstream README",
-        "Official upstream changelog",
+        "Read-only official rpcpool/yellowstone-grpc checkout at 93db7c58a0b559fa53abf10b99be9d026e3f04e3",
+        "Official upstream README and CHANGELOG.md at that revision",
+        "yellowstone-grpc-proto/proto/geyser.proto at that revision",
         "Local SYLPH source review",
         "Pinned local @triton-one/yellowstone-grpc 4.0.2 SubscribeRequest type and wire codec inspection (read-only)"
       ],
       "discoveries": [
         "Upstream exposes streams for slots, blocks, transactions, deshred transactions and account updates; replay, bank identity, and complete canonical block evidence are distinct capabilities.",
-        "Upstream changelog entries through 2026-10-12 describe opt-in reconnect, bank-aware partial-slot discard/dedup, and `from_slot` behavior that is sealed-only; the TS example warns it is illustrative. These newest behaviors do not automatically apply to SYLPH’s pinned Node package or its server endpoint.",
-        "The pinned local @triton-one/yellowstone-grpc 4.0.2 schema contains SubscribeRequest.fromSlot. SYLPH uses an inclusive cursor advanced only by canonical ACCEPTED/DUPLICATE receipts, marks replay through a sampled confirmed boundary HISTORICAL_REPAIR, and persists a conservative restart cursor; provider retention and replay guarantees remain unverified."
+        "At upstream revision 93db7c58, SubscribeRequest.from_slot is optional field 11. The 2026-10-12 changelog says processed replay now returns an in-progress bank whole when sealed and that empty replay does not terminate the stream; a separate earlier fix restored replayed Block messages for block-filter subscriptions.",
+        "SYLPH's installed 4.0.2 client encodes fromSlot, and local code resumes inclusively from canonical ACCEPTED/DUPLICATE slots, classifies through a sampled confirmed boundary as historical, and persists a conservative checkpoint. The runtime subscribes at confirmed commitment, so the upstream processed-bank behavior is not proof of current SYLPH endpoint behavior or gap-free replay."
       ],
       "patterns": [
         "separate replay and live-tail reconciliation",
@@ -61,7 +62,8 @@
         "upstream client and server versions may diverge",
         "replay payloads may duplicate or conflict across providers/forks",
         "BlockMeta reconstruction has upstream caveats",
-        "transport freshness must not be substituted for finalized completeness"
+        "transport freshness must not be substituted for finalized completeness",
+        "current upstream main license is AGPL-3.0; the exact license of any separately distributed server/client component must be checked before dependency or code adoption"
       ],
       "validation": [
         "pin server/client/proto versions",
@@ -73,12 +75,15 @@
         "prove replay does not update live freshness/provider health and only canonical accepted receipts advance the cursor"
       ],
       "evidence": [
-        "https://github.com/rpcpool/yellowstone-grpc/blob/master/README.md",
-        "https://github.com/rpcpool/yellowstone-grpc/blob/master/CHANGELOG.md",
-        "https://github.com/rpcpool/yellowstone-grpc/blob/master/examples/typescript/README.md"
+        "https://github.com/rpcpool/yellowstone-grpc/tree/93db7c58a0b559fa53abf10b99be9d026e3f04e3",
+        "https://github.com/rpcpool/yellowstone-grpc/blob/93db7c58a0b559fa53abf10b99be9d026e3f04e3/yellowstone-grpc-proto/proto/geyser.proto",
+        "https://github.com/rpcpool/yellowstone-grpc/blob/93db7c58a0b559fa53abf10b99be9d026e3f04e3/CHANGELOG.md",
+        "src/platform/ingestion/yellowstone-captured-client.ts",
+        "test/platform/yellowstone-captured-client.test.mjs"
       ],
-      "license": "NOT_REVIEWED",
-      "decision": "RESEARCH_ONLY_NO_DEPENDENCY_OR_AUTHORITY_CHANGE"
+      "upstreamRevision": "93db7c58a0b559fa53abf10b99be9d026e3f04e3",
+      "license": "AGPL-3.0_REVIEW_REQUIRED",
+      "decision": "PARTIAL_REPLAY_PROTOCOL_REVIEW_NO_SERVER_DEPENDENCY_OR_AUTHORITY_CHANGE"
     },
     {
       "id": "SRC-177",
