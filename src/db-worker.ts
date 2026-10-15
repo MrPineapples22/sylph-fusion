@@ -559,14 +559,15 @@ parentPort!.on('message', (m: { id: number; op: string; body?: string; event?: s
         if (earlierUnresolved) throw new Error('ENGINE_PROJECTION_BLOCKED_BY_EARLIER_DELIVERY');
         db.prepare(`INSERT INTO canonical_ingress_engine_projection_v1(id,sequence,observation_id,entry_hash,projection_json,projection_hash,state_json,state_hash)
           VALUES(1,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET sequence=excluded.sequence,observation_id=excluded.observation_id,
-          entry_hash=excluded.entry_hash,projection_json=excluded.projection_json,projection_hash=excluded.projection_hash,
-          state_json=excluded.state_json,state_hash=excluded.state_hash`).run(input.sequence,input.observationId,input.entryHash,
+          entry_hash=excluded.entry_hash,projection_json=excluded.projection_json,projection_hash=excluded.projection_hash`).run(input.sequence,input.observationId,input.entryHash,
             input.projectionJson,projectionHash,input.stateJson,stateHash);
+        db.prepare(`UPDATE canonical_ingress_engine_projection_v1 SET state_json=?,state_hash=?
+          WHERE id=1 AND state_hash<>?`).run(input.stateJson,stateHash,stateHash);
         db.prepare(`INSERT INTO canonical_ingress_projection_history_v1(
           sequence,observation_id,entry_hash,previous_sequence,previous_projection_hash,canonical_revision,projection_hash,state_hash,committed_at_ms
         ) VALUES(?,?,?,?,?,?,?,?,?)`).run(input.sequence,input.observationId,input.entryHash,existing?.sequence ?? null,
           existing?.projection_hash ?? null,projection.canonicalState.revision,projectionHash,stateHash,Date.now());
-        db.prepare('INSERT INTO state VALUES(1,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body').run(input.stateJson);
+        db.prepare('INSERT INTO state VALUES(1,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body WHERE state.body<>excluded.body').run(input.stateJson);
         db.prepare(`UPDATE canonical_ingress_delivery_v1 SET acknowledged_at_ms=?,delivery_status='ACKNOWLEDGED'
           WHERE observation_id=? AND delivery_status='PENDING'`).run(Date.now(),input.observationId);
         const prior = db.prepare('SELECT event_hash FROM audit_event_dedupe WHERE event_id=?').get(ackEventId) as { event_hash: string } | undefined;

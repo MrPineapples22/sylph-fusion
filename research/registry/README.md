@@ -46,7 +46,7 @@ REA is used out of band where the target type and authorization fit its supporte
 
 ## Resume
 
-All 288 records have a URL availability observation. Twenty-one sources now have explicit partial source review status; 267 remain NOT_REVIEWED. Record coverage is complete; upstream research and implementation remain incomplete. Continue with concrete findings from each batch, inspect the current local source and pinned upstream documentation, reproduce behavior with focused deterministic tests, and make small patches. Preserve existing workspace changes and do not grant a source trading authority based on inclusion in the manifest.
+All 288 records have a URL availability observation. Thirty-one sources now have explicit partial source review status; 257 remain NOT_REVIEWED. Record coverage is complete; upstream research and implementation remain incomplete. Continue with concrete findings from each batch, inspect the current local source and pinned upstream documentation, reproduce behavior with focused deterministic tests, and make small patches. Preserve existing workspace changes and do not grant a source trading authority based on inclusion in the manifest.
 ## Latest implementation verification (2026-10-14)
 
 - `npm run build:engine` — passed after the feed admission snapshot change.
@@ -249,3 +249,34 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - SRC-010 was inspected at da7262b05bc297e89ad42cdfdf055f2121eb7d40; the workspace declares Apache-2.0 and includes Solana modules despite the root README’s shorter current-implementations list.
 - Source inspection found filter semantics that require fixtures before reuse: blocks_without_votes also removes failed/incomplete transactions, while program_ids_without_votes does not explicitly exclude vote transactions. The README also marks a costUnits schema boundary requiring historical reprocessing.
 - No runtime dependency was added. Keep these as offline analytics patterns only; registry now has 25 partial reviews and 263 not reviewed.
+
+## Substreams cursor protocol and Rust SDK review (2026-10-15)
+
+- `SRC-011` was inspected at `7712e950fd48ce09877a044c9f06ddd44d6fe6cd`. Its RPC v2 proto explicitly requires atomic persistence of processed output with the resume cursor; fork undo removes reversible records above the declared ancestor and persists `last_valid_cursor`, while `final_block_height` marks irreversible data.
+- This is a useful rollback/checkpoint contract for historical indexing. It is not a Solana slot certificate, and SYLPH already has Census-R fork rollback plus a separate coarse Yellowstone replay checkpoint. No Substreams adapter was found, so no runtime dependency or migration was justified.
+- `SRC-012` was inspected at `b429b0d576cf06675c5fb24e5bae13fb0c6a26fa`. The Apache-2.0 0.8.0 Rust workspace (Rust 1.83) provides a WASM-oriented module SDK and host imports, not a Solana RPC client or chain-completeness/settlement authority.
+- Manifest and detailed batch records are reconciled at 27 direct partial reviews and 261 not reviewed. This does not mean 27 integrations or exhaustive reviews.
+
+## Firehose Core persistence-failure review (2026-10-15)
+
+- `SRC-013` was inspected at `aea8a96de398f4e893e34b1786d8bab79605387a`. The current changelog says index-store read errors must not be treated as empty state and failed index writes must stop indexing; silently skipping a write creates a persistent gap.
+- This is a directly relevant fail-closed pattern for SYLPH's replay/checkpoint boundary. Firehose Core is a broad Go service stack and delegates chain behavior to separate adapters; no runtime dependency was added.
+- The manifest and review batch now agree at 28 direct partial reviews and 260 not reviewed. Registry validation confirms complete ID/URL coverage and zero structural defects; it does not certify runtime behavior.
+
+## Bstream fork-aware cursor review (2026-10-15)
+
+- `SRC-014` was inspected at `71724f9213e7bcd830f8d7188da138d7b9d2dcac`. Its Firehose cursor carries block and head identities plus LIB and processing-step context; fork resolution emits undo blocks and replays canonical blocks, failing when ancestry cannot be linked.
+- SYLPH's Yellowstone resume checkpoint is intentionally slot-based because the provider API resumes by slot. The Firehose cursor is not portable, but it highlights a future validation target: identity-bind any richer replay checkpoint without weakening duplicate-safe recovery. No dependency was added.
+- Registry progress is now 29 direct partial reviews and 259 not reviewed; the 288-row coverage check is structural only.
+
+## Dstore adapter durability review (2026-10-15)
+
+- `SRC-015` was inspected at `6c74c85f222277bab06fc13212cb4e49927cc254`. Local writes use a temporary sibling file and rename, with `.tmp` files excluded from listing. The README provides MinIO/Ceph/fake-GCS emulator tests and separately requires credentials for real cloud backends.
+- SYLPH already uses atomic local replacement for the feed latch/checkpoint. The useful carry-forward is backend-specific crash testing and honest reporting of skipped provider tests; no Go storage dependency was added.
+- Progress is now 30 direct partial reviews and 258 not reviewed. Source coverage is structurally complete, but ecosystem review/integration is not.
+
+## Metaplex DAS API review (2026-10-15)
+
+- `SRC-016` was inspected at `9c7e1b6bb97962acba17b62e522e18b9cb3abc4f`. The DAS repository builds NFT/compressed-asset ingestion and query infrastructure; the inspected API enforces cursor/page mode and stable ID ordering constraints. Its root license is AGPL-3.0.
+- The pagination pattern is useful for derived-data APIs, but DAS does not supply fungible token liquidity or executable trade evidence. No dependency/code reuse is planned; Windows MAX_PATH prevented a complete fixture checkout, so this remains a bounded partial review.
+- Registry progress is 31 direct partial reviews and 257 not reviewed. This count reflects review entries, not integrations.

@@ -1,13 +1,13 @@
 {
-  "generatedAt": "2026-10-15T03:45:39.706Z",
+  "generatedAt": "2026-10-15T03:56:55.012Z",
   "manifestRows": 288,
   "uniqueManifestIds": 288,
   "batchFiles": 23,
   "batchReviewRecords": 288,
   "uniqueReviewedIds": 288,
   "manifestReviewStatusCounts": {
-    "PARTIAL_REVIEW": 25,
-    "NOT_REVIEWED": 263
+    "PARTIAL_REVIEW": 31,
+    "NOT_REVIEWED": 257
   },
   "batchStatusCounts": {
     "PARTIAL_REVIEW": 288
@@ -55,11 +55,11 @@
       "count": 2
     },
     {
-      "decision": "ARCHITECTURE_REFERENCE_ONLY",
+      "decision": "ASSURANCE_ONLY_UNTIL_INDEPENDENTLY_VERIFIED",
       "count": 1
     },
     {
-      "decision": "ASSURANCE_ONLY_UNTIL_INDEPENDENTLY_VERIFIED",
+      "decision": "AVAILABLE_FOR_BOUNDED_PASSIVE_DIAGNOSIS_ONLY",
       "count": 1
     }
   ],

@@ -612,6 +612,68 @@ test('Engine restores canonical state and active candidate projection before ing
   } finally { await store.close(); }
 });
 
+test('Engine projection skips unchanged state payload writes but persists state changes', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'engine-projection-state-write-elision-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const dbPath = join(dir, 'state.sqlite');
+  const cfg = { MODE: 'paper_standard', MAX_TRACKED: 20, MAX_AGE_MS: 300_000, MIN_AGE_MS: 1_000,
+    MIN_BUYERS: 2, MIN_BUY_SELL_RATIO_BPS: 1_000, POLL_MS: 10, CHECKPOINT_INTERVAL_MS: 60_000 };
+  const state = { version: 1, wallet: 'projection-write-elision-wallet', mode: 'paper_standard', positions: {}, closed: {},
+    pending: null, cash: '1000000000', day: new Date().toISOString().slice(0, 10), dayPnl: '0', halted: false };
+  const store = new Store(dbPath);
+  const ingress = createCanonicalSolanaIngress({ journal: new StoreIngressJournal(store) });
+  let engine;
+  const fakeFeed = {
+    isIngressBound: port => port === ingress,
+    gapReconciler: { setRecoveryCertificateJournal() {} },
+    run: async () => {}, stop() {}, healthy: () => false, last: 0, slot: 0,
+  };
+  try {
+    await store.save(state);
+    engine = new Engine(cfg, { connection: {} }, {}, {}, store, state, undefined, undefined,
+      'deterministic_only', undefined, undefined, undefined, ingress, fakeFeed);
+    assert.equal((await ingress.submit(createValidProjectionObservation('projection-state-write-1', 'projection-state-write-1'))).status, 'ACCEPTED');
+
+    const db = new DatabaseSync(dbPath);
+    try {
+      db.exec(`CREATE TABLE projection_write_counts(name TEXT PRIMARY KEY,count INTEGER NOT NULL DEFAULT 0);
+        CREATE TRIGGER count_state_body_update AFTER UPDATE OF body ON state BEGIN
+          INSERT INTO projection_write_counts(name,count) VALUES('state',1)
+          ON CONFLICT(name) DO UPDATE SET count=count+1;
+        END;
+        CREATE TRIGGER count_projection_state_update AFTER UPDATE OF state_json,state_hash ON canonical_ingress_engine_projection_v1 BEGIN
+          INSERT INTO projection_write_counts(name,count) VALUES('projection_state',1)
+          ON CONFLICT(name) DO UPDATE SET count=count+1;
+        END;
+        CREATE TRIGGER count_projection_row_update AFTER UPDATE ON canonical_ingress_engine_projection_v1 BEGIN
+          INSERT INTO projection_write_counts(name,count) VALUES('projection_row',1)
+          ON CONFLICT(name) DO UPDATE SET count=count+1;
+        END;`);
+    } finally { db.close(); }
+
+    assert.equal((await ingress.submit(createValidProjectionObservation('projection-state-write-2', 'projection-state-write-2'))).status, 'ACCEPTED');
+    const unchangedDb = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      const counts = Object.fromEntries(unchangedDb.prepare('SELECT name,count FROM projection_write_counts').all().map(row => [row.name, row.count]));
+      assert.equal(counts.state ?? 0, 0, 'identical serialized state must not rewrite the state row');
+      assert.equal(counts.projection_state ?? 0, 0, 'identical serialized state must not rewrite the projection state payload');
+      assert.equal(counts.projection_row, 1, 'the new projection identity and sequence must still be committed');
+    } finally { unchangedDb.close(); }
+
+    state.operatorPaused = true;
+    assert.equal((await ingress.submit(createValidProjectionObservation('projection-state-write-3', 'projection-state-write-3'))).status, 'ACCEPTED');
+    const changedDb = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      const counts = Object.fromEntries(changedDb.prepare('SELECT name,count FROM projection_write_counts').all().map(row => [row.name, row.count]));
+      assert.equal(counts.state, 1, 'a changed state value must update the state row');
+      assert.equal(counts.projection_state, 1, 'a changed state value must update the projection state payload and hash');
+      const row = changedDb.prepare('SELECT state_json,state_hash FROM canonical_ingress_engine_projection_v1 WHERE id=1').get();
+      assert.equal(JSON.parse(row.state_json).operatorPaused, true);
+      assert.match(row.state_hash, /^[a-f0-9]{64}$/);
+    } finally { changedDb.close(); }
+  } finally { await store.close(); }
+});
+
 test('unreviewed adapter crash after in-memory effect retains legacy replay semantics', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'ingress-crash-before-commit-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
