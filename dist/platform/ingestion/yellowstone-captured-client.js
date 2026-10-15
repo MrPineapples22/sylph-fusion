@@ -52,6 +52,50 @@ export function createCapturedResponseDeserializer(codec) {
 export function yellowstoneBackoffAfterSession(currentBackoffMs, sessionDurationMs, receivedUpdate) {
     return receivedUpdate && Number.isFinite(sessionDurationMs) && sessionDurationMs >= 30_000 ? 500 : currentBackoffMs;
 }
+/**
+ * Tracks only Yellowstone transactions that completed canonical ingress. On a
+ * reconnect, replay the last accepted slot inclusively (a slot can contain
+ * multiple transactions) and keep every observation through the sampled
+ * confirmed boundary historical. This is a transport recovery cursor, not a
+ * contiguous-chain coverage certificate.
+ */
+export class YellowstoneReplayCursor {
+    lastAcceptedSlotValue = 0;
+    historicalThroughSlot;
+    constructor(initialAcceptedSlot = 0) {
+        if (!Number.isSafeInteger(initialAcceptedSlot) || initialAcceptedSlot < 0)
+            throw new Error('YELLOWSTONE_REPLAY_SLOT_INVALID');
+        this.lastAcceptedSlotValue = initialAcceptedSlot;
+    }
+    get lastAcceptedSlot() { return this.lastAcceptedSlotValue; }
+    prepareReconnect(confirmedBoundarySlot) {
+        if (this.lastAcceptedSlotValue === 0)
+            return undefined;
+        if (!Number.isSafeInteger(confirmedBoundarySlot) || confirmedBoundarySlot < 1) {
+            throw new Error('YELLOWSTONE_REPLAY_BOUNDARY_INVALID');
+        }
+        if (confirmedBoundarySlot < this.lastAcceptedSlotValue) {
+            throw new Error('YELLOWSTONE_REPLAY_BOUNDARY_BEHIND_CURSOR');
+        }
+        this.historicalThroughSlot = confirmedBoundarySlot;
+        return Object.freeze({ fromSlot: String(this.lastAcceptedSlotValue), historicalThroughSlot: confirmedBoundarySlot });
+    }
+    intentFor(slot) {
+        if (!Number.isSafeInteger(slot) || slot < 0)
+            throw new Error('YELLOWSTONE_REPLAY_SLOT_INVALID');
+        return this.historicalThroughSlot !== undefined && slot <= this.historicalThroughSlot
+            ? 'HISTORICAL_REPAIR'
+            : 'LIVE';
+    }
+    recordAccepted(slot) {
+        if (!Number.isSafeInteger(slot) || slot < 0)
+            throw new Error('YELLOWSTONE_REPLAY_SLOT_INVALID');
+        this.lastAcceptedSlotValue = Math.max(this.lastAcceptedSlotValue, slot);
+    }
+}
+export function buildYellowstoneSubscriptionRequest(request, replay) {
+    return Object.freeze({ ...request, ...(replay ? { fromSlot: replay.fromSlot } : {}) });
+}
 /** Builds only the existing bidi Subscribe method; callers retain SDK auth/TLS semantics. */
 export function createCapturedSubscribeClient(args) {
     const endpointURL = new URL(args.endpoint);

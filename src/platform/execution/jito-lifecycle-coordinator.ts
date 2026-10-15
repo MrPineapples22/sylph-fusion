@@ -16,6 +16,7 @@ export type JitoBundleStatus =
   | 'AUCTION_LOST'
   | 'SIMULATION_FAILED'
   | 'BUNDLE_LANDED'
+  | 'STATUS_NOT_RETAINED'
   | 'EXPIRED'
   | 'UNKNOWN';
 
@@ -35,7 +36,7 @@ export interface JitoRpcResponse {
     bundle_id: string;
     status: 'Invalid' | 'Pending' | 'Failed' | 'Landed';
     landed_slot?: number;
-  }>;
+  }> | null;
 }
 
 export class JitoLifecycleCoordinator {
@@ -77,9 +78,17 @@ export class JitoLifecycleCoordinator {
         const payload = await resp.json() as { jsonrpc?: unknown; id?: unknown; error?: unknown; result?: JitoRpcResponse };
         if (!payload || payload.jsonrpc !== '2.0' || payload.id !== 1 || payload.error != null) return unknown('JSON_RPC_RESPONSE_INVALID');
         const values = payload?.result?.value;
+        // Jito retains inflight statuses for five minutes. null/empty and
+        // Invalid mean no retained outcome, not that the relay failed or the
+        // transaction failed. Chain reconciliation remains authoritative.
+        if (values === null || (Array.isArray(values) && values.length === 0)) return {
+          bundleId, signature, status: 'STATUS_NOT_RETAINED', failureReason: 'BUNDLE_NOT_FOUND_IN_INFLIGHT_WINDOW',
+          latencyMs: Date.now() - started, terminal: false,
+        };
         if (!Array.isArray(values)) return unknown('STATUS_RESPONSE_INVALID');
         const item = values[0];
-        if (!item) return { bundleId, signature, status: 'INFLIGHT_PENDING', latencyMs: Date.now() - started, terminal: false };
+        if (!item) return { bundleId, signature, status: 'STATUS_NOT_RETAINED', failureReason: 'BUNDLE_NOT_FOUND_IN_INFLIGHT_WINDOW',
+          latencyMs: Date.now() - started, terminal: false };
         if (item.bundle_id !== bundleId) return unknown('BUNDLE_ID_MISMATCH');
         if (item.status === 'Landed') {
           if (!Number.isSafeInteger(item.landed_slot) || item.landed_slot! <= 0) return unknown('LANDED_SLOT_INVALID');
@@ -88,8 +97,8 @@ export class JitoLifecycleCoordinator {
         }
         if (item.status === 'Failed') return { bundleId, signature, status: 'AUCTION_LOST',
           failureReason: 'BUNDLE_DROPPED_BY_LEADER', latencyMs: Date.now() - started, terminal: true };
-        if (item.status === 'Invalid') return { bundleId, signature, status: 'RELAY_UNAVAILABLE',
-          failureReason: 'BUNDLE_DROPPED_BY_JITO_RELAY_NON_TERMINAL', latencyMs: Date.now() - started, terminal: false };
+        if (item.status === 'Invalid') return { bundleId, signature, status: 'STATUS_NOT_RETAINED',
+          failureReason: 'BUNDLE_NOT_FOUND_IN_INFLIGHT_WINDOW', latencyMs: Date.now() - started, terminal: false };
         if (item.status === 'Pending') return { bundleId, signature, status: 'INFLIGHT_PENDING', latencyMs: Date.now() - started, terminal: false };
         return unknown('BUNDLE_STATUS_INVALID');
       } finally { clearTimeout(timeout); }

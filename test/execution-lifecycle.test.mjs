@@ -44,6 +44,7 @@ test('SimulatedEngine executes through all 6 lifecycle stages: IDLE -> VALIDATIN
     assert.ok(stages.includes('SUBMITTING'), 'Should include SUBMITTING stage');
     assert.ok(stages.includes('SETTLED'), 'Should include SETTLED stage');
     assert.equal(result.report.currentStage, 'SETTLED');
+    assert.equal(result.report.priorityFeeLamports, 50_000n);
   } else {
     assert.ok(stages.includes('REJECTED') || stages.includes('EXPIRED'), 'Should include terminal failure stage');
   }

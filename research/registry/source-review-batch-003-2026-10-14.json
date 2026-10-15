@@ -1,0 +1,100 @@
+{
+  "batchId": "source-review-batch-003-2026-10-14",
+  "reviewedAt": "2026-10-14",
+  "repositoryHead": "f5c31177f2b8d79cdf5e3662e4049ac44b9562b2",
+  "sourceRecords":4,"directlyReviewed":4,
+  "sources": [
+    {
+      "id": "SRC-063",
+      "url": "https://github.com/raydium-io/raydium-sdk-V2",
+      "status": "PARTIAL_REVIEW",
+      "provenance": ["Read-only official Raydium SDK V2 checkout at e2e8bcd865189c994682a9477ec8eaf1e2da8aaf", "src/common/programId.ts", "src/api/api.ts", "src/common/transfer.ts", "Raydium GitHub license metadata", "Local SYLPH DEX envelope and deterministic regression test"],
+      "discoveries": [
+        "The pinned SDK source defines distinct mainnet program IDs for AMM v4, stable AMM, CLMM, CPMM and Launchpad; its API pool lookup returns indexed metadata, while swap instructions are built by product-family-specific paths.",
+        "The SDK's Token-2022 transfer-fee helper selects the older or newer fee schedule using the observed epoch, applies ceiling division and caps fees at the configured maximum; this requires mint-extension and epoch evidence for any quote.",
+        "SYLPH previously classified only Raydium AMM v4 in its research-only DEX envelope. It now recognizes four additional exact Raydium program IDs while still reporting NOT_DECODED and leaving trade fields null."
+      ],
+      "patterns": ["identify venue by exact program ID and keep product families distinct", "keep API/indexer pool metadata distinct from canonical on-chain state", "derive Token-2022 transfer fees from the epoch-selected schedule and cap rather than assuming a flat fee"],
+      "sylphModules": ["src/platform/ingestion/dex-stream-parser.ts", "test/platform/upstream-pattern-adaptations.test.mjs", "src/platform/ingestion/dual-path-reconciler.ts", "src/market.ts", "src/platform/execution/solaris/amm-bridge.ts"],
+      "overlap": "The research envelope now classifies AMM v4, stable AMM, CLMM, CPMM and Launchpad by exact program ID but intentionally does not decode trades. Dual-path reconciliation and the graduated AMM bridge still lack Raydium-family canonical account decoders; no SDK dependency or transaction builder is present.",
+      "risks": ["GPL-3.0 dependency has licensing implications that have not been reviewed", "API TVL is not executable liquidity", "SDK transaction builders can create signed-ready material and must remain behind the existing authorization boundary", "pool programs and account layouts need versioning"],
+      "validation": ["license review before dependency adoption or code reuse", "verify program IDs and account layouts against a pinned upstream revision", "compare API pool rows against independently fetched on-chain accounts", "add quote fixtures by pool type, Token-2022 extension, epoch-selected fee, and state slot", "keep any future unsigned build output outside research/authority layers"],
+      "evidence": ["https://github.com/raydium-io/raydium-sdk-V2/tree/e2e8bcd865189c994682a9477ec8eaf1e2da8aaf", "https://github.com/raydium-io/raydium-sdk-V2/blob/e2e8bcd865189c994682a9477ec8eaf1e2da8aaf/src/common/programId.ts", "https://github.com/raydium-io/raydium-sdk-V2/blob/e2e8bcd865189c994682a9477ec8eaf1e2da8aaf/src/api/api.ts", "https://github.com/raydium-io/raydium-sdk-V2/blob/e2e8bcd865189c994682a9477ec8eaf1e2da8aaf/src/common/transfer.ts", "src/platform/ingestion/dex-stream-parser.ts", "test/platform/upstream-pattern-adaptations.test.mjs"],
+      "upstreamRevision": "e2e8bcd865189c994682a9477ec8eaf1e2da8aaf",
+      "license": "GPL-3.0_REVIEW_REQUIRED",
+      "decision": "PARTIAL_RUNTIME_CLASSIFICATION_ONLY_NO_SDK_INSTALL"
+    },
+    {
+      "id": "SRC-076",
+      "url": "https://github.com/jito-labs/searcher-examples",
+      "status": "PARTIAL_REVIEW",
+      "provenance": ["Official Jito Searcher Examples README", "Official Jito low-latency transaction docs", "Read-only checkout at f710c30b0ec7449b5122f827b0997218ab1a0315 including searcher_client/src/lib.rs, token_authenticator.rs, cli/src/main.rs, and pinned mev-protos submodule c9614089ef48fb83f01767d87e8f73e6c2e59c0b", "Local SYLPH Jito probe module"],
+      "discoveries": [
+        "Searcher auth signs the challenge string `<pubkey>-<challenge>`, exchanges the signature for access/refresh tokens, and refreshes access tokens before expiry; this protocol is distinct from the JSON-RPC x-jito-auth UUID header.",
+        "The sample captures every transaction signature before bundle send, subscribes to bundle acceptance/rejection results, then checks each signature through processed-commitment RPC after a bounded wait. Its processed result is useful landing telemetry but is not finalized settlement proof.",
+        "The CLI learns the next connected leader and tip accounts, builds the tip transfer into transactions, and sends at most five transactions per bundle; those signing/submission examples require a funded local keypair and authenticated Block Engine access and were not executed."
+      ],
+      "patterns": ["use challenge-response for authenticated searcher gRPC channels and keep it distinct from HTTP UUID auth", "snapshot all transaction signatures before submission", "track subscription acceptance/rejections and processed RPC status as diagnostics, then wait for finalized canonical chain evidence before settlement"],
+      "sylphModules": ["terminal/jito-block-engine-health.mjs", "terminal/jito-tip-floor-research.mjs", "src/platform/execution/authority.ts", "src/platform/execution/finalized-settlement*"],
+      "overlap": "Health/tip research and inflight JSON-RPC status checks exist; Jito searcher gRPC auth/submission and streamed bundle-result handling are not integrated. The local status remains advisory and finalized multi-RPC reconciliation remains authoritative. No SDK or key material was added.",
+      "risks": ["sample code has signing, fees and tip requirements", "bundle subscription may time out or return rejected/dropped outcomes", "an accepted bundle is not confirmed settlement", "upstream examples may age with protobuf/API changes"],
+      "validation": ["pin repo revision/protobuf before adapter work", "never run sample submission with user credentials absent separate authorization", "exercise mock acceptance/rejection/timeout in deterministic tests", "treat processed RPC evidence as provisional and reconcile finalized chain state plus actual fee/tip account deltas"],
+      "evidence": ["https://github.com/jito-labs/searcher-examples", "https://github.com/jito-labs/searcher-examples/blob/master/searcher_client/src/lib.rs", "https://github.com/jito-labs/searcher-examples/blob/master/searcher_client/src/token_authenticator.rs", "https://github.com/jito-labs/searcher-examples/blob/master/jito_protos/protos/searcher.proto", "https://docs.jito.wtf/lowlatencytxnsend/"],
+      "license": "Apache-2.0",
+      "decision": "RESEARCH_ONLY_NO_AUTH_OR_SUBMISSION_CHANGE"
+    },
+    {
+      "id": "SRC-079",
+      "url": "https://github.com/LiteSVM/litesvm",
+      "status": "PARTIAL_REVIEW",
+      "provenance": ["Read-only official LiteSVM checkout at 1dda337d22521a4310ec959ebabce0aa4910c497", "Workspace Cargo.toml and README.md", "crates/node-litesvm/Cargo.toml and README.md", "Local SYLPH Cargo workspace and authority-kernel source inventory"],
+      "discoveries": [
+        "The pinned current Rust workspace is LiteSVM 0.18.0 (Apache-2.0, Rust 1.97.1 minimum, Agave 4.3 dependencies) and offers program loading, dry-run simulation, slot/sysvar control, compute budgets and transaction history.",
+        "The same repository now includes a Node N-API crate (`litesvm-node` 1.6.0, MIT) with a JS package README. Its API example uses Anza Kit. The separate `anchor-litesvm` checkout is at 0afefab and npm 0.2.1 still depends on `litesvm` ^0.3.3 and Anchor/web3.js v1, so it does not directly target current Rust LiteSVM 0.18.",
+        "SYLPH's Rust `authority-kernel` is a host-side deterministic library with no Solana program entrypoint, `cdylib` or deployable SBF target; SYLPH therefore has no concrete program to load into LiteSVM today."
+      ],
+      "patterns": ["use an in-process VM for deterministic program-level fixtures", "separate test state mutation from production RPC evidence", "test runtime errors and transaction state changes rather than trusting mocks alone"],
+      "sylphModules": ["test/platform/veritas-wire-decoder.test.mjs", "test/platform/truth-x.test.mjs", "test/finalized-pump-event-cpi.test.mjs", "src/platform/simulation/"],
+      "overlap": "SYLPH has deterministic Node/host-Rust tests and an existing risk/simulation harness, but its `authority-kernel` is not an on-chain program. Current LiteSVM's Node binding is a potential test-only path if SYLPH later owns a deployable program; the Anchor adapter's pinned LiteSVM range is substantially older and should not be assumed compatible.",
+      "risks": ["account writes or disabled sigverify can produce invalid confidence if mistaken for production behavior", "runtime feature and program versions may differ from mainnet", "adding Rust toolchain/runtime adds maintenance and platform cost"],
+      "validation": ["prove a concrete on-chain program test target before adoption", "pin Agave/runtime feature set, Node binding version and program binary hashes", "keep test account writes and disabled signature verification in isolated harnesses", "differentially compare critical state transitions to finalized fixtures"],
+      "evidence": ["https://github.com/LiteSVM/litesvm/tree/1dda337d22521a4310ec959ebabce0aa4910c497", "https://github.com/LiteSVM/litesvm/blob/1dda337d22521a4310ec959ebabce0aa4910c497/crates/node-litesvm/README.md", "https://github.com/LiteSVM/litesvm/blob/1dda337d22521a4310ec959ebabce0aa4910c497/crates/node-litesvm/Cargo.toml", "authority-kernel/Cargo.toml", "authority-kernel/src/lib.rs"],
+      "upstreamRevision": "1dda337d22521a4310ec959ebabce0aa4910c497",
+      "license": "Apache-2.0",
+      "decision": "NO_DIRECT_RUNTIME_INTEGRATION; CONSIDER_ONLY_FOR_PROGRAM_TESTS"
+    },
+    {
+      "id": "SRC-080",
+      "url": "https://github.com/LiteSVM/anchor-litesvm",
+      "status": "PARTIAL_REVIEW",
+      "provenance": ["Read-only official anchor-litesvm checkout at 0afefab1a2a97ccf9441099b19455f6cb1037617", "package.json and README.md", "Local SYLPH Cargo workspace and Anchor dependency inventory"],
+      "discoveries": [
+        "Anchor-LiteSVM 0.2.1 supplies an Anchor-compatible provider/context that runs Anchor tests without RPC-backed validator infrastructure; the package declares MIT.",
+        "Its package depends on `litesvm` ^0.3.3 and `@coral-xyz/anchor` ^0.31.1 with web3.js v1, unlike current LiteSVM Rust 0.18 / Node wrapper 1.6; compatibility with the current Node API is not established.",
+        "SYLPH's authority-kernel is a host-side Rust library, not an Anchor/SBF program, and its root Node package does not include Anchor-LiteSVM; there is no current project target for this adapter."
+      ],
+      "patterns": ["reuse IDL-generated clients in local integration fixtures", "test account deserialization and event parsing in the same harness as instruction outcomes", "keep local VM results labeled simulated"],
+      "sylphModules": ["test/platform/truth-x.test.mjs", "test/platform/yellowstone-truth-bridge.test.mjs", "src/platform/ingestion/truth-x.ts"],
+      "overlap": "SYLPH currently verifies decoder/event paths using deterministic Node fixtures; no direct Anchor-LiteSVM dependency or on-chain Anchor program exists locally.",
+      "risks": ["simulation can diverge from the current validator feature set", "a local VM's fabricated state must not advance canonical ingress or live-feed health", "introducing Anchor/Rust test toolchain may duplicate existing fixture paths"],
+      "validation": ["identify an actual Anchor program/binary and exact test objective", "bind test results to program and runtime hashes", "assert simulated fixtures cannot mutate production/canonical state", "compare outputs against independent finalized transaction/account fixtures"],
+      "evidence": ["https://github.com/LiteSVM/anchor-litesvm/tree/0afefab1a2a97ccf9441099b19455f6cb1037617", "https://github.com/LiteSVM/anchor-litesvm/blob/0afefab1a2a97ccf9441099b19455f6cb1037617/package.json", "authority-kernel/Cargo.toml", "authority-kernel/src/lib.rs"],
+      "upstreamRevision": "0afefab1a2a97ccf9441099b19455f6cb1037617",
+      "license": "MIT",
+      "decision": "NO_DIRECT_INTEGRATION_UNTIL_ANCHOR_PROGRAM_TEST_TARGET_EXISTS"
+    }
+  ],
+  "verification": {
+    "commands": ["node --test terminal/test/raydium-pool-research.test.mjs terminal/test/jito-block-engine-health.test.mjs"],
+    "passed": 5,
+    "failed": 0,
+    "notes": "The 4 Raydium and 1 Jito tests verify local read-only identity/connectivity boundaries. They do not validate LiteSVM or any external SDK code."
+  },
+  "safety": {
+    "external_repositories_cloned_or_executed": false,
+    "signingOrBroadcastChanged": false,
+    "capitalAuthorizationChanged": false,
+    "riskLimitsChanged": false,
+    "servicesStartedStoppedOrRestarted": false
+  }
+}

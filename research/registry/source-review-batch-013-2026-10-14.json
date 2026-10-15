@@ -1,0 +1,630 @@
+{
+  "batchId": "source-review-batch-013-2026-10-14",
+  "reviewedAt": "2026-10-14",
+  "repository": {
+    "localHead": "f6acee9",
+    "remoteHead": "f6acee9",
+    "mainAndTaskBranchMatch": true,
+    "worktreeHasPreexistingEdits": true
+  },
+  "sourceRecords": 15,
+  "directlyReviewed": 15,
+  "sources": [
+    {
+      "id": "SRC-091",
+      "url": "https://github.com/Squads-Protocol/smart-account-program",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Squads smart-account README, root license, Anchor source and error definitions",
+        "Pinned repository commit 80bf1f7ad28fd1176c364879776982730b8e9c80"
+      ],
+      "discoveries": [
+        "Program models proposals and governed smart-account transactions.",
+        "Source validates signer threshold and rejects execution below consensus threshold.",
+        "Errors distinguish invalid proposal status, duplicate approval and transaction mismatch."
+      ],
+      "patterns": [
+        "Keep proposal creation, approval, threshold and execution as separate states.",
+        "Bind approvals to the exact transaction payload.",
+        "Fail closed when signer count or consensus threshold is insufficient."
+      ],
+      "sylphModules": [
+        "src/platform/execution/authority.ts",
+        "src/platform/signing/",
+        "RELEASE_CERTIFICATION.md"
+      ],
+      "overlap": "Conceptually relevant for future treasury custody; current SYLPH remains paper-only and has no smart-account dependency.",
+      "risks": [
+        "AGPL-3.0 requires review.",
+        "This program controls funds and privileges.",
+        "No deployed program identity or runtime equivalence was verified."
+      ],
+      "validation": [
+        "Pin source and deployed program/release before interpreting policy behavior.",
+        "Use deterministic offline fixtures for state/serialization boundaries.",
+        "Do not read or write credentials, sign transactions, or deploy custody software during research."
+      ],
+      "evidence": [
+        "https://github.com/Squads-Protocol/smart-account-program",
+        "https://github.com/Squads-Protocol/smart-account-program/tree/80bf1f7ad28fd1176c364879776982730b8e9c80"
+      ],
+      "license": "AGPL-3.0_REVIEW_REQUIRED",
+      "decision": "AUTHORIZATION_PATTERN_ONLY_AGPL_NO_CUSTODY_INTEGRATION"
+    },
+    {
+      "id": "SRC-092",
+      "url": "https://github.com/Squads-Protocol/v4-examples",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Squads v4 examples repository inventory and package metadata",
+        "Pinned repository commit 292304d7404a94156db3375ac0dbc8d428679069"
+      ],
+      "discoveries": [
+        "Repository contains TypeScript and Rust Anchor CPI example directories.",
+        "Pinned root package has no declared dependencies or README.",
+        "No root LICENSE file was found in the inspected tree."
+      ],
+      "patterns": [
+        "Keep client examples separate from authorization policy.",
+        "Pin SDK and program versions in multisig examples.",
+        "Do not infer deployed behavior from example code."
+      ],
+      "sylphModules": [
+        "src/platform/signing/",
+        "src/platform/execution/authority.ts",
+        "RELEASE_CERTIFICATION.md"
+      ],
+      "overlap": "Potential future multisig integration patterns only; no need to add V4 code to current trading path.",
+      "risks": [
+        "No license evidence.",
+        "Bounded inventory does not establish example correctness or compatibility.",
+        "No example was executed."
+      ],
+      "validation": [
+        "Pin source and deployed program/release before interpreting policy behavior.",
+        "Use deterministic offline fixtures for state/serialization boundaries.",
+        "Do not read or write credentials, sign transactions, or deploy custody software during research."
+      ],
+      "evidence": [
+        "https://github.com/Squads-Protocol/v4-examples",
+        "https://github.com/Squads-Protocol/v4-examples/tree/292304d7404a94156db3375ac0dbc8d428679069"
+      ],
+      "license": "LICENSE_NOT_FOUND_REVIEW_REQUIRED",
+      "decision": "EXAMPLE_INDEX_ONLY_NO_LICENSE_CLEARANCE"
+    },
+    {
+      "id": "SRC-093",
+      "url": "https://github.com/Squads-Protocol/squads-multisig-batch-optimizer",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Squads batch optimizer README, package metadata and index.ts",
+        "Pinned repository commit 863482ed7626c532ff858bbc7105af35da12fa78"
+      ],
+      "discoveries": [
+        "Optimizer groups instruction buckets while preserving atomic instruction groups.",
+        "It serializes candidate versioned transactions using lookup tables to enforce a size ceiling.",
+        "If a bucket cannot fit, it rolls back that insertion and reports failed bucket indexes."
+      ],
+      "patterns": [
+        "Treat dependent instructions as indivisible buckets.",
+        "Measure serialized transaction size after ALT compression.",
+        "Report unplaced instruction groups explicitly rather than silently dropping them."
+      ],
+      "sylphModules": [
+        "src/platform/signing/",
+        "src/execution.ts",
+        "src/platform/execution/authority.ts"
+      ],
+      "overlap": "No current multisig execution path; future transaction batching would be a critical authority change.",
+      "risks": [
+        "Batch sizing is not proof that the resulting governance proposal is valid.",
+        "Priority-fee constants and transaction limits may become stale.",
+        "No signing/submission was performed."
+      ],
+      "validation": [
+        "Pin source and deployed program/release before interpreting policy behavior.",
+        "Use deterministic offline fixtures for state/serialization boundaries.",
+        "Do not read or write credentials, sign transactions, or deploy custody software during research."
+      ],
+      "evidence": [
+        "https://github.com/Squads-Protocol/squads-multisig-batch-optimizer",
+        "https://github.com/Squads-Protocol/squads-multisig-batch-optimizer/tree/863482ed7626c532ff858bbc7105af35da12fa78"
+      ],
+      "license": "MIT",
+      "decision": "SERIALIZATION_PATTERN_ONLY_NO_MULTISIG_RUNTIME_CHANGE"
+    },
+    {
+      "id": "SRC-094",
+      "url": "https://github.com/wormhole-foundation/wormhole",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Pinned Wormhole main-branch commit bb5957f321b0a9d168f52e906699ee77baa82a28; inspected root README, LICENSE, SECURITY.md reference, and repository tree on 2026-10-15."
+      ],
+      "discoveries": [
+        "The repository describes itself as a reference implementation of a multi-chain interoperability protocol and includes chain-specific components such as Solana.",
+        "The README points builders to live contract addresses and security/audit material, and explicitly frames the system as complex and high risk.",
+        "The source is licensed Apache-2.0; no SYLPH-compatible Solana meme-token swap path was established by this review."
+      ],
+      "patterns": [
+        "Keep bridge attestations and cross-chain settlement in a separate subsystem from local Solana market state.",
+        "Pin protocol deployment addresses and chain/finality context before interpreting an external message.",
+        "Treat bridge/provider observations as evidence requiring independent confirmation, not as trade authorization."
+      ],
+      "sylphModules": [
+        "src/platform/ingress/canonical-ingress.ts",
+        "src/platform/execution/authority.ts",
+        "research/registry/"
+      ],
+      "overlap": "Cross-chain interoperability reference only; SYLPH’s current research objective is local Solana token discovery, quoting, execution accounting, and recovery.",
+      "risks": [
+        "Bridge security and cross-chain finality add a large asynchronous trust surface.",
+        "The README’s own warning does not establish the safety of any deployment.",
+        "No integration, contract deployment, or bridge transaction was tested."
+      ],
+      "validation": [
+        "Require an explicit cross-chain product requirement before implementation.",
+        "If later needed, verify chain IDs, canonical contracts, message replay protection, finality, and destination settlement independently.",
+        "Keep bridge results outside the trading authority and reconcile any movement from finalized chain state."
+      ],
+      "evidence": [
+        "https://github.com/wormhole-foundation/wormhole/tree/bb5957f321b0a9d168f52e906699ee77baa82a28",
+        "https://github.com/wormhole-foundation/wormhole/blob/bb5957f321b0a9d168f52e906699ee77baa82a28/README.md",
+        "https://github.com/wormhole-foundation/wormhole/blob/bb5957f321b0a9d168f52e906699ee77baa82a28/LICENSE"
+      ],
+      "license": "Apache-2.0",
+      "decision": "REFERENCE_ONLY_NO_CROSS_CHAIN_EXECUTION"
+    },
+    {
+      "id": "SRC-095",
+      "url": "https://github.com/wormhole-foundation/wormhole-connect",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Pinned Wormhole Connect development-branch commit 267c9a649c74097cdbf5096d1d37cb45e7695a5b; inspected README, package entry guidance, configuration section, and LICENSE on 2026-10-15."
+      ],
+      "discoveries": [
+        "Wormhole Connect is a customizable React widget for cross-chain asset transfers, powered by the Wormhole TypeScript SDK.",
+        "The README documents both a React component and a hosted embedding path, with configuration and theme controls.",
+        "The repository is Apache-2.0 licensed; it is a front-end bridge widget rather than a SYLPH market-data or execution adapter."
+      ],
+      "patterns": [
+        "Keep optional external financial workflows modular and visually distinct from the core trading terminal.",
+        "Make supported networks and RPC configuration explicit at the UI boundary.",
+        "Use integration-level tests for embedded widgets and preserve a clear handoff to the canonical provider flow."
+      ],
+      "sylphModules": [
+        "terminal/",
+        "ui/",
+        "research/registry/"
+      ],
+      "overlap": "UI integration pattern only; no current SYLPH cross-chain transfer requirement or bridge authority is established.",
+      "risks": [
+        "A widget can obscure third-party signing and settlement steps if embedded without clear origin and state boundaries.",
+        "Displayed transfer progress is not proof of destination-chain finality.",
+        "Adding a large React bridge dependency to the terminal would create maintenance and UX surface without demonstrated need."
+      ],
+      "validation": [
+        "Do not add the widget absent an explicit product requirement.",
+        "If adopted later, test supported-chain restrictions, URL/origin handling, loading/error states, and signing handoff.",
+        "Reconcile completion using destination-chain confirmed transactions rather than widget state."
+      ],
+      "evidence": [
+        "https://github.com/wormhole-foundation/wormhole-connect/tree/267c9a649c74097cdbf5096d1d37cb45e7695a5b",
+        "https://github.com/wormhole-foundation/wormhole-connect/blob/267c9a649c74097cdbf5096d1d37cb45e7695a5b/README.md",
+        "https://github.com/wormhole-foundation/wormhole-connect/blob/267c9a649c74097cdbf5096d1d37cb45e7695a5b/LICENSE"
+      ],
+      "license": "Apache-2.0",
+      "decision": "NO_UI_INTEGRATION_CROSS_CHAIN_REFERENCE_ONLY"
+    },
+    {
+      "id": "SRC-096",
+      "url": "https://github.com/wormhole-foundation/wormhole-circle-integration",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Pinned Wormhole Circle Integration main-branch commit 234202543cc96ba593449ca1b9d7cb2b9499668d; inspected README, design/security file references, EVM directory, and LICENSE on 2026-10-15."
+      ],
+      "discoveries": [
+        "The repository pairs Circle Cross-Chain Transfer Protocol with Wormhole generic messaging in smart contracts.",
+        "Its README states that the documented CCTP integration supports Ethereum and Avalanche, not Solana.",
+        "The repository is Apache-2.0 licensed and requires EVM/Foundry tooling for its described contract workflows."
+      ],
+      "patterns": [
+        "Record protocol and network capability as an explicit matrix rather than inferring support from a shared ecosystem brand.",
+        "Keep mint/asset identity distinct across chains and require canonical mapping evidence.",
+        "Model cross-chain transfers as asynchronous lifecycle state with separate source and destination confirmations."
+      ],
+      "sylphModules": [
+        "src/platform/ingress/canonical-ingress.ts",
+        "src/platform/execution/authority.ts",
+        "research/registry/"
+      ],
+      "overlap": "No applicable Solana trading integration was demonstrated; this source is a bounded reference for cross-chain lifecycle separation.",
+      "risks": [
+        "The README’s stated network support excludes Solana for this integration.",
+        "Cross-chain asset mapping can create symbol/mint confusion and settlement delay.",
+        "A contract source review does not certify deployed addresses or external bridge security."
+      ],
+      "validation": [
+        "Do not represent this repository as a Solana CCTP adapter.",
+        "If cross-chain support becomes a requirement, verify current official network support and deployment addresses.",
+        "Test timeout, replay, duplicate delivery, and both-chain reconciliation before any integration."
+      ],
+      "evidence": [
+        "https://github.com/wormhole-foundation/wormhole-circle-integration/tree/234202543cc96ba593449ca1b9d7cb2b9499668d",
+        "https://github.com/wormhole-foundation/wormhole-circle-integration/blob/234202543cc96ba593449ca1b9d7cb2b9499668d/README.md",
+        "https://github.com/wormhole-foundation/wormhole-circle-integration/blob/234202543cc96ba593449ca1b9d7cb2b9499668d/LICENSE"
+      ],
+      "license": "Apache-2.0",
+      "decision": "NO_CIRCLE_BRIDGE_INTEGRATION_OUT_OF_SCOPE"
+    },
+    {
+      "id": "SRC-097",
+      "url": "https://github.com/debridge-finance/meta-aggregation-api",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Pinned deBridge Meta Aggregation API main-branch commit c3f3028809a7d146620612c9d0ec7c7b7183cef1; inspected README, supported-router list, service architecture, provider extension notes, and MIT license on 2026-10-15."
+      ],
+      "discoveries": [
+        "The API aggregates quotes from 1inch v5, 0x, Paraswap, Kyberswap, and Openocean, and describes a FastAPI view-service-provider architecture.",
+        "The repository documents chain/provider configuration and provider-specific adapters with error handling; its described router list is EVM-focused.",
+        "The repository states MIT licensing, but neither Solana support nor a current SYLPH-compatible API contract was established."
+      ],
+      "patterns": [
+        "Keep provider-specific quote parsing behind small adapters and normalize outputs at a versioned interface.",
+        "Report provider errors and partial router availability explicitly instead of hiding failed sources.",
+        "Treat a best-quote aggregator as advisory; compare executable output and fees at the target chain."
+      ],
+      "sylphModules": [
+        "src/platform/execution/",
+        "src/market.ts",
+        "docs/ECOSYSTEM_INTEGRATION_AUDIT_2026-10-12.md"
+      ],
+      "overlap": "Generic aggregator architecture overlaps with SYLPH’s router abstraction, but the README lists EVM routers and no verified Solana route.",
+      "risks": [
+        "A quote aggregator can return a route that is stale or not executable under local signing/risk limits.",
+        "The source relies on external APIs and chain metadata; provider errors and compatibility drift are expected.",
+        "Adding a Python service would add another runtime and authority boundary without a demonstrated Solana capability."
+      ],
+      "validation": [
+        "Do not add it as a Solana quote source based on the generic “multi-chain” description.",
+        "If reconsidered, verify a supported Solana router, request/response schema, freshness, fee semantics, and transaction provenance.",
+        "Differential-test normalized outputs against direct official router APIs and local simulation."
+      ],
+      "evidence": [
+        "https://github.com/debridge-finance/meta-aggregation-api/tree/c3f3028809a7d146620612c9d0ec7c7b7183cef1",
+        "https://github.com/debridge-finance/meta-aggregation-api/blob/c3f3028809a7d146620612c9d0ec7c7b7183cef1/readme.md",
+        "https://github.com/debridge-finance/meta-aggregation-api/blob/c3f3028809a7d146620612c9d0ec7c7b7183cef1/LICENSE.md"
+      ],
+      "license": "MIT",
+      "decision": "NO_SOLANA_ROUTER_INTEGRATION_REFERENCE_ONLY"
+    },
+    {
+      "id": "SRC-098",
+      "url": "https://github.com/debridge-finance/desdk",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Pinned deBridge deSDK master-branch commit ab7d59d45fb001696d7918e0928bb440c37d5b13; inspected README message/claim lifecycle and LICENSE on 2026-10-15."
+      ],
+      "discoveries": [
+        "deSDK provides typed EVM message construction and helpers for tracking submissions, checking required confirmations, checking claim signatures, and checking whether a claim executed.",
+        "The README explicitly warns callers to sanity-check the expected number of submissions returned for a transaction.",
+        "The repository is LGPL-3.0 licensed; the documented examples submit EVM deBridge messages and do not expose a Solana meme-token execution adapter."
+      ],
+      "patterns": [
+        "Use typed boundary objects rather than passing loosely structured cross-chain message payloads.",
+        "Check cardinality and expected identities when one transaction may contain multiple submissions.",
+        "Separate source confirmation, message attestation, destination claim readiness, and claim execution in lifecycle state."
+      ],
+      "sylphModules": [
+        "src/platform/ingress/canonical-ingress.ts",
+        "src/platform/execution/authority.ts",
+        "research/registry/"
+      ],
+      "overlap": "A lifecycle and validation reference only; its supported EVM operations do not overlap the local Solana execution path.",
+      "risks": [
+        "Cross-chain submissions are asynchronous and can be confused with final settlement.",
+        "The example includes RPC-provider configuration and signing/claim workflow concerns beyond SYLPH’s current scope.",
+        "LGPL-3.0 obligations require review before any code reuse or package adoption."
+      ],
+      "validation": [
+        "Do not add the SDK to the live process for a hypothetical bridge path.",
+        "If reused, review LGPL-3.0 compatibility and isolate RPC, message, and claim states.",
+        "Require finalized source and destination transaction evidence plus exact submission identity before reconciliation."
+      ],
+      "evidence": [
+        "https://github.com/debridge-finance/desdk/tree/ab7d59d45fb001696d7918e0928bb440c37d5b13",
+        "https://github.com/debridge-finance/desdk/blob/ab7d59d45fb001696d7918e0928bb440c37d5b13/README.md",
+        "https://github.com/debridge-finance/desdk/blob/ab7d59d45fb001696d7918e0928bb440c37d5b13/LICENSE"
+      ],
+      "license": "LGPL-3.0",
+      "decision": "NO_CROSS_CHAIN_SDK_INTEGRATION"
+    },
+    {
+      "id": "SRC-099",
+      "url": "https://github.com/debridge-finance/dln-contracts",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Pinned deBridge DLN contracts main-branch commit d54e94f2b5102bff89a4df506404bb77f3edc148; inspected README order lifecycle, deployment-chain list, contract layout, and LICENSE on 2026-10-15."
+      ],
+      "discoveries": [
+        "DLN describes cross-chain limit orders with maker funds locked on the source chain and a taker fulfilling the requested amount on the destination chain.",
+        "Completion includes a cross-chain message returning to the source chain to unlock funds, so order creation and settlement are distinct events.",
+        "The root LICENSE is Business Source License 1.1; source availability does not mean the repository is permissively licensed."
+      ],
+      "patterns": [
+        "Represent asynchronous order states explicitly and do not equate accepted/created with filled/settled.",
+        "Keep maker intent, taker fulfillment, and final source-chain unlock as separate evidence milestones.",
+        "Record protocol licensing and change-of-license constraints before any reuse."
+      ],
+      "sylphModules": [
+        "src/platform/execution/authority.ts",
+        "src/platform/pipeline/runtime-divergence.ts",
+        "research/registry/"
+      ],
+      "overlap": "No local Solana DEX integration was established; its cross-chain limit-order lifecycle is reference material only.",
+      "risks": [
+        "Destination fulfillment and source unlock are asynchronous and can remain incomplete.",
+        "The repo lists deployed addresses across EVM and other networks; those addresses must not be assumed canonical or current without official deployment verification.",
+        "BUSL-1.1 restrictions and change-date terms require legal review before reuse."
+      ],
+      "validation": [
+        "Do not add these contracts or addresses to SYLPH execution.",
+        "If studied further, verify deployment addresses from official current docs and inspect audit scope for the pinned code.",
+        "Use state-machine tests for delayed, duplicate, failed, and reordered fulfillment/unlock events."
+      ],
+      "evidence": [
+        "https://github.com/debridge-finance/dln-contracts/tree/d54e94f2b5102bff89a4df506404bb77f3edc148",
+        "https://github.com/debridge-finance/dln-contracts/blob/d54e94f2b5102bff89a4df506404bb77f3edc148/README.md",
+        "https://github.com/debridge-finance/dln-contracts/blob/d54e94f2b5102bff89a4df506404bb77f3edc148/LICENSE"
+      ],
+      "license": "BUSL-1.1",
+      "decision": "NO_CONTRACT_INTEGRATION_REFERENCE_ONLY"
+    },
+    {
+      "id": "SRC-100",
+      "url": "https://github.com/solana-program/token-wrap",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Pinned Solana Program Library token-wrap main-branch commit 590639171b85447583c4e7b4da9cbefe7137e0c8; inspected README operation descriptions, token-program compatibility notes, audit references, and LICENSE on 2026-10-15."
+      ],
+      "discoveries": [
+        "The program creates deterministic wrapped-mint relationships using PDAs and keeps a backpointer to the original mint.",
+        "Wrapping escrows the source tokens and mints an equivalent amount; unwrapping burns the wrapped amount and releases escrowed tokens.",
+        "The README documents Token-2022 extension behavior, transfer-hook compatibility, and preservation of an underlying freeze authority; it is Apache-2.0 licensed."
+      ],
+      "patterns": [
+        "Bind token identity to the full mint address and token program, never symbol or display metadata.",
+        "Model wrapped supply against escrow backing and fail closed on incompatible token extensions.",
+        "Treat freeze authority and extension configuration as explicit risk features rather than a green scanner result."
+      ],
+      "sylphModules": [
+        "src/market.ts",
+        "src/platform/ingestion/",
+        "src/platform/execution/solaris/amm-bridge.ts"
+      ],
+      "overlap": "Relevant as a Token Program/Token-2022 compatibility reference; SYLPH does not need to wrap assets to trade ordinary token mints.",
+      "risks": [
+        "Permissionless creation means a wrapped mint is not inherently canonical or endorsed.",
+        "Underlying freeze authority is preserved, so wrapped representation does not remove token controls.",
+        "Extension and escrow details can make simple token-account assumptions invalid; README-level review is not an audit of the program."
+      ],
+      "validation": [
+        "Use this source to inform mint/program identity checks, not to label wrapped mints trusted.",
+        "If wrapping support is ever added, verify PDA derivation, escrow invariants, extension compatibility, and supply conservation with pinned program tests.",
+        "Keep all existing entry gates and signing restrictions intact."
+      ],
+      "evidence": [
+        "https://github.com/solana-program/token-wrap/tree/590639171b85447583c4e7b4da9cbefe7137e0c8",
+        "https://github.com/solana-program/token-wrap/blob/590639171b85447583c4e7b4da9cbefe7137e0c8/README.md",
+        "https://github.com/solana-program/token-wrap/blob/590639171b85447583c4e7b4da9cbefe7137e0c8/LICENSE"
+      ],
+      "license": "Apache-2.0",
+      "decision": "TOKEN_PROGRAM_COMPATIBILITY_REFERENCE_ONLY"
+    },
+    {
+      "id": "SRC-101",
+      "url": "https://github.com/hashicorp/vault",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "HashiCorp Vault repository README, module and licensing metadata",
+        "Pinned repository commit 54e4149458609ce5535df65be3bf2ddac0ebaeaa"
+      ],
+      "discoveries": [
+        "Vault is a secrets-management product with a non-importable Go module.",
+        "Pinned source must be evaluated under its repository license rather than as an embeddable library.",
+        "Repository documents a security reporting process."
+      ],
+      "patterns": [
+        "Keep signing secrets behind a dedicated, least-privilege custody boundary.",
+        "Separate secret storage policy from application authorization.",
+        "Audit secret access without logging secret values."
+      ],
+      "sylphModules": [
+        "src/platform/signing/",
+        "src/platform/execution/authority.ts",
+        "AGENTS.md"
+      ],
+      "overlap": "Key-management design is adjacent to signer hardening; no Vault client integration was verified.",
+      "risks": [
+        "Business Source License terms require legal/product review.",
+        "Deployment and policy misconfiguration can expose credentials.",
+        "No Vault server was launched and no secret was read or written."
+      ],
+      "validation": [
+        "Pin source and deployed program/release before interpreting policy behavior.",
+        "Use deterministic offline fixtures for state/serialization boundaries.",
+        "Do not read or write credentials, sign transactions, or deploy custody software during research."
+      ],
+      "evidence": [
+        "https://github.com/hashicorp/vault",
+        "https://github.com/hashicorp/vault/tree/54e4149458609ce5535df65be3bf2ddac0ebaeaa"
+      ],
+      "license": "BUSINESS_SOURCE_LICENSE_REVIEW_REQUIRED",
+      "decision": "CUSTODY_ARCHITECTURE_REFERENCE_ONLY_NO_DEPLOYMENT"
+    },
+    {
+      "id": "SRC-102",
+      "url": "https://github.com/Infisical/infisical",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Infisical README, root LICENSE and package metadata",
+        "Pinned repository commit 2ba797a20a8b504ae5d17fee977ac90ad56a2f66"
+      ],
+      "discoveries": [
+        "Platform provides secrets/configuration synchronization, versioning and rotation workflows.",
+        "Root license says non-ee content is MIT while ee directories use a separate license.",
+        "Root package declares ISC, so package metadata and repository license need scope-aware interpretation."
+      ],
+      "patterns": [
+        "Scope secret-access policy per environment and workload.",
+        "Use rotation/version history and audit events instead of static shared secrets.",
+        "Keep secret values out of logs and build artifacts."
+      ],
+      "sylphModules": [
+        "src/config.ts",
+        "src/platform/signing/",
+        "AGENTS.md"
+      ],
+      "overlap": "Potential deployment-level secret management; current project secrets must stay unopened during this research task.",
+      "risks": [
+        "Mixed licensing requires path-specific review.",
+        "Secret-sync misconfiguration can propagate leaked credentials.",
+        "No Infisical service, account or secret was accessed."
+      ],
+      "validation": [
+        "Resolve repository path-specific license and exact release before reuse.",
+        "Use least-privilege workload identities and rotation policies.",
+        "Do not access secret values or change signing/custody configuration during research."
+      ],
+      "evidence": [
+        "https://github.com/Infisical/infisical",
+        "https://github.com/Infisical/infisical/tree/2ba797a20a8b504ae5d17fee977ac90ad56a2f66"
+      ],
+      "license": "MIT_WITH_EE_LICENSE_EXCEPTION",
+      "decision": "SECRET_POLICY_REFERENCE_ONLY_NO_SERVICE_ACCESS"
+    },
+    {
+      "id": "SRC-103",
+      "url": "https://github.com/getsops/sops",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "SOPS repository license, Go module and key-service source interfaces",
+        "Pinned repository commit e39ca97b6209f9132ea40d22beb37d796060cb32"
+      ],
+      "discoveries": [
+        "SOPS supports pluggable key services and KMS-backed decryption workflows.",
+        "Go module is versioned under github.com/getsops/sops/v3.",
+        "The inspected common package models multiple key services and decryption order."
+      ],
+      "patterns": [
+        "Keep encrypted configuration in source control and decrypt only at runtime boundaries.",
+        "Treat KMS/key-service selection and order as explicit configuration.",
+        "Never bypass integrity/MAC validation for convenience."
+      ],
+      "sylphModules": [
+        ".gitignore",
+        "src/config.ts",
+        "scripts/"
+      ],
+      "overlap": "Could be deployment hygiene; not needed for the read-only registry and no repo config change was made.",
+      "risks": [
+        "MPL-2.0 obligations apply to source reuse.",
+        "Decrypting secrets in build or diagnostic logs can expose them.",
+        "No key service or encrypted file was accessed."
+      ],
+      "validation": [
+        "Pin source and deployed program/release before interpreting policy behavior.",
+        "Use deterministic offline fixtures for state/serialization boundaries.",
+        "Do not read or write credentials, sign transactions, or deploy custody software during research."
+      ],
+      "evidence": [
+        "https://github.com/getsops/sops",
+        "https://github.com/getsops/sops/tree/e39ca97b6209f9132ea40d22beb37d796060cb32"
+      ],
+      "license": "MPL-2.0",
+      "decision": "SECRET_HANDLING_PATTERN_ONLY_NO_CREDENTIAL_ACCESS"
+    },
+    {
+      "id": "SRC-104",
+      "url": "https://github.com/smallstep/certificates",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Smallstep certificates README, root license and Go module",
+        "Pinned repository commit 74be79c6f93c8f1b30212551b4d9d12fb12e48be"
+      ],
+      "discoveries": [
+        "step-ca is an online certificate authority for automated certificate management.",
+        "Repository is a server counterpart to the step CLI and manages certificate/key workflows.",
+        "Pinned Go module targets Go 1.26.0."
+      ],
+      "patterns": [
+        "Use short-lived workload certificates for service identity where infrastructure supports them.",
+        "Keep certificate issuance policy separate from application trading authorization.",
+        "Record identity and certificate rotation events without storing private key material."
+      ],
+      "sylphModules": [
+        "src/rpc.ts",
+        "terminal/server.mjs",
+        "src/platform/signing/"
+      ],
+      "overlap": "Potential operations hardening for RPC/dashboard transport, unrelated to on-chain signing.",
+      "risks": [
+        "CA deployment is security-critical and not suitable as a dependency shortcut.",
+        "Go/tooling compatibility must be checked before deployment.",
+        "No CA was launched and no certificate was issued."
+      ],
+      "validation": [
+        "Resolve repository path-specific license and exact release before reuse.",
+        "Use least-privilege workload identities and rotation policies.",
+        "Do not access secret values or change signing/custody configuration during research."
+      ],
+      "evidence": [
+        "https://github.com/smallstep/certificates",
+        "https://github.com/smallstep/certificates/tree/74be79c6f93c8f1b30212551b4d9d12fb12e48be"
+      ],
+      "license": "Apache-2.0",
+      "decision": "IDENTITY_INFRASTRUCTURE_REFERENCE_ONLY_NO_DEPLOYMENT"
+    },
+    {
+      "id": "SRC-105",
+      "url": "https://github.com/spiffe/spire",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "SPIRE README, root license and Go module",
+        "Pinned repository commit 6d10e93a4eef9b270cba5dc6082f1c3c5bd99879"
+      ],
+      "discoveries": [
+        "SPIRE attests workloads and issues SPIFFE IDs/SVIDs through the Workload API.",
+        "Workloads can use identities to establish mTLS or authenticate to secret stores.",
+        "Pinned module is an infrastructure server/toolchain, not an application library."
+      ],
+      "patterns": [
+        "Authenticate service-to-service access by workload identity rather than long-lived API tokens.",
+        "Separate workload identity from trading-account authority.",
+        "Rotate identity credentials and log attestation decisions."
+      ],
+      "sylphModules": [
+        "src/platform/signing/",
+        "src/rpc.ts",
+        "terminal/server.mjs",
+        "AGENTS.md"
+      ],
+      "overlap": "Potential future RPC/service identity control; current app capability remains constrained by its own authority checks.",
+      "risks": [
+        "SPIRE deployment and trust roots require infrastructure/security ownership.",
+        "Workload attestation does not authorize financial actions by itself.",
+        "No SPIRE server or identity provider was configured."
+      ],
+      "validation": [
+        "Resolve repository path-specific license and exact release before reuse.",
+        "Use least-privilege workload identities and rotation policies.",
+        "Do not access secret values or change signing/custody configuration during research."
+      ],
+      "evidence": [
+        "https://github.com/spiffe/spire",
+        "https://github.com/spiffe/spire/tree/6d10e93a4eef9b270cba5dc6082f1c3c5bd99879"
+      ],
+      "license": "Apache-2.0",
+      "decision": "WORKLOAD_IDENTITY_PATTERN_ONLY_NO_DEPLOYMENT"
+    }
+  ]
+}

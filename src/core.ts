@@ -58,6 +58,8 @@ export type State = {
   reconciliationBlocked?: ReconciliationBlock;
   /** Known research journal/audit loss; absence does not certify complete capture. */
   researchEvidenceLoss?: ResearchEvidenceLoss;
+  /** Durable operator hold created when canonical feed admission overflows. */
+  feedIngressFault?: { reason: string; detail?: string; slot?: number; signature?: string; transport?: string; observedAtMs: number };
 };
 export const mulBps = (x: bigint, bps: number) => x * BigInt(bps) / 10_000n;
 export const ceilDiv = (a: bigint, b: bigint) => (a + b - 1n) / b;

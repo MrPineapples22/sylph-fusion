@@ -15,7 +15,11 @@ export type ProviderServiceRole =
   | 'DISCOVERY_STREAM'    // PumpPortal WS
   | 'MARKET_ENRICHMENT'   // DexScreener API
   | 'SECURITY_RISK'       // RugCheck API
-  | 'EXECUTION_ROUTING'   // Jupiter API
+  | 'QUOTE_RESEARCH'      // Jupiter Swap V2 quote-only research; no transaction execution
+  | 'CROSS_CHAIN_QUOTE'   // Mayan quote-only research
+  | 'MARKET_RESEARCH'     // Birdeye manual research
+  | 'TIP_FLOOR_RESEARCH'  // Jito public landed-tip statistics
+  | 'LOCKUP_RESEARCH'     // Streamflow schedule research
   | 'BUNDLE_DELIVERY'     // Jito Block Engine
   | 'ON_CHAIN_TRUTH'      // Solana RPC / WSS
   | 'GEYSER_STREAM'       // Yellowstone gRPC
@@ -56,6 +60,10 @@ export interface ProviderCapabilityStatus {
   readonly authenticated: boolean;
   readonly capabilityAvailable: boolean;
   readonly observationValidated: boolean;
+  /** True only when evidence proves this provider's capability, not just connectivity. */
+  readonly capabilityValidated: boolean;
+  /** False distinguishes a configured provider that has not yet been polled. */
+  readonly attempted: boolean;
   readonly freshness: 'FRESH' | 'DEGRADED' | 'STALE' | 'UNKNOWN';
   readonly slotLag: number | null;
   readonly latency: number;
@@ -72,6 +80,11 @@ export interface ProviderMetricEntry extends ProviderCapabilityStatus {
   readonly isAuthoritative: boolean;
   readonly lastSuccessTimestampMs: number;
   readonly avgLatencyMs: number;
+  /** Nearest-rank percentiles from the bounded rolling window of measured successful samples. */
+  readonly latencyP50Ms: number;
+  readonly latencyP90Ms: number;
+  readonly latencyP99Ms: number;
+  readonly latencySampleCount: number;
   readonly errorRatePct: number;
   readonly totalRequestsCount: number;
   readonly totalErrorsCount: number;
@@ -81,6 +94,12 @@ export interface ProviderMetricEntry extends ProviderCapabilityStatus {
   readonly failoverProviderId?: string;
   readonly endpointUrlSanitized: string;
   readonly rateLimitedUntilMs?: number;
+}
+
+function nearestRankLatencyPercentile(sortedLatencyMs: readonly number[], percentile: number): number {
+  if (sortedLatencyMs.length === 0) return 0;
+  const rank = Math.max(1, Math.ceil((percentile / 100) * sortedLatencyMs.length));
+  return sortedLatencyMs[Math.min(sortedLatencyMs.length, rank) - 1];
 }
 
 export interface ProviderHealthReport {
@@ -113,6 +132,7 @@ interface ProviderInternalState {
   authenticated: boolean;
   transportReachable: boolean;
   observationValidated: boolean;
+  capabilityValidated: boolean;
   sanitizedUrl: string;
   currentEndpointUrl: string;
 
@@ -162,7 +182,26 @@ export class ProviderHealthTracker {
       { id: 'PUMPPORTAL_WS', role: 'DISCOVERY_STREAM', authoritative: true, configured: false, enabled: false, authenticated: false, url: 'wss://pumpportal.fun/api/data' },
       { id: 'DEXSCREENER_API', role: 'MARKET_ENRICHMENT', authoritative: false, configured: false, enabled: false, authenticated: false, url: 'https://api.dexscreener.com/latest/dex' },
       { id: 'RUGCHECK_API', role: 'SECURITY_RISK', authoritative: true, configured: false, enabled: false, authenticated: false, url: 'https://api.rugcheck.xyz/v1/tokens' },
-      { id: 'JUPITER_QUOTE', role: 'EXECUTION_ROUTING', authoritative: false, configured: false, enabled: false, authenticated: false, url: 'https://api.jup.ag/swap/v2/order' },
+      { id: 'GOPLUS_SOLANA_SECURITY', role: 'SECURITY_RISK', authoritative: false, configured: false, enabled: false, authenticated: false, url: 'https://api.gopluslabs.io/api/v1/solana/token_security' },
+      { id: 'JUPITER_QUOTE', role: 'QUOTE_RESEARCH', authoritative: false, configured: false, enabled: false, authenticated: false, url: 'https://api.jup.ag/swap/v2/order' },
+      { id: 'MAYAN_QUOTE', role: 'CROSS_CHAIN_QUOTE', authoritative: false, configured: false, enabled: false, authenticated: false, url: 'https://price-api.mayan.finance/v3/quote' },
+      { id: 'BIRDEYE_API', role: 'MARKET_RESEARCH', authoritative: false, configured: false, enabled: false, authenticated: false, url: 'https://public-api.birdeye.so/defi/token_overview' },
+      { id: 'RAYDIUM_API_V3', role: 'MARKET_RESEARCH', authoritative: false, configured: false, enabled: false, authenticated: false, url: 'https://api-v3.raydium.io/pools/info/list-v2' },
+      { id: 'METEORA_DLMM_API', role: 'MARKET_RESEARCH', authoritative: false, configured: false, enabled: false, authenticated: false, url: 'https://dlmm.datapi.meteora.ag/pools' },
+      { id: 'GECKOTERMINAL_API_V2', role: 'MARKET_RESEARCH', authoritative: false, configured: false, enabled: false, authenticated: false, url: 'https://api.geckoterminal.com/api/v2/networks/solana/tokens' },
+      { id: 'SHYFT_TOKEN_INFO', role: 'MARKET_RESEARCH', authoritative: false, configured: false, enabled: false, authenticated: false, url: 'https://api.shyft.to/sol/v1/token/get_info' },
+      { id: 'CIELO_SOLANA_FEED', role: 'MARKET_RESEARCH', authoritative: false, configured: false, enabled: false, authenticated: false, url: 'https://feed-api.cielo.finance/api/v1/feed' },
+      // These research adapters are not polled by the Core Engine. The
+      // separate research surface must register them only when it actually
+      // performs a provider request; otherwise they create permanent false
+      // critical alerts in this process.
+      { id: 'POLYMARKET_GAMMA', role: 'MARKET_RESEARCH', authoritative: false, configured: false, enabled: false, authenticated: false, url: 'https://gamma-api.polymarket.com/public-search' },
+      { id: 'POLYMARKET_CLOB', role: 'MARKET_RESEARCH', authoritative: false, configured: false, enabled: false, authenticated: false, url: 'https://clob.polymarket.com/midpoints' },
+      { id: 'AAVE_V3_GRAPHQL', role: 'MARKET_RESEARCH', authoritative: false, configured: false, enabled: false, authenticated: false, url: 'https://api.v3.aave.com/graphql' },
+      { id: 'MORPHO_GRAPHQL', role: 'MARKET_RESEARCH', authoritative: false, configured: false, enabled: false, authenticated: false, url: 'https://api.morpho.org/graphql' },
+      { id: 'SCALLOP_SDK_INDEXER', role: 'MARKET_RESEARCH', authoritative: false, configured: false, enabled: false, authenticated: false, url: 'https://sdk.api.scallop.io/api/market/migrate' },
+      { id: 'JITO_TIP_FLOOR', role: 'TIP_FLOOR_RESEARCH', authoritative: false, configured: false, enabled: false, authenticated: false, url: 'https://bundles.jito.wtf/api/v1/bundles/tip_floor' },
+      { id: 'STREAMFLOW_RPC', role: 'LOCKUP_RESEARCH', authoritative: false, configured: false, enabled: false, authenticated: false, url: 'https://streamflow.invalid/rpc-research' },
       { id: 'JITO_BLOCK_ENGINE', role: 'BUNDLE_DELIVERY', authoritative: false, configured: false, enabled: false, authenticated: false, url: 'https://mainnet.block-engine.jito.wtf/api/v1/bundles' },
       { id: 'YELLOWSTONE_GRPC', role: 'GEYSER_STREAM', authoritative: false, configured: false, enabled: false, authenticated: false, url: 'https://yellowstone-grpc.invalid' },
       { id: 'SOLANA_RPC', role: 'ON_CHAIN_TRUTH', authoritative: true, configured: false, enabled: false, authenticated: false, url: 'https://api.mainnet-beta.solana.com' },
@@ -181,6 +220,7 @@ export class ProviderHealthTracker {
         authenticated: d.authenticated,
         transportReachable: false,
         observationValidated: false,
+        capabilityValidated: false,
         sanitizedUrl: d.url,
         currentEndpointUrl: d.url,
         lastAttemptMs: 0,
@@ -255,6 +295,7 @@ export class ProviderHealthTracker {
     entry.lastValidatedObservationMs = now;
     entry.transportReachable = true;
     entry.observationValidated = true;
+    entry.capabilityValidated = true;
     entry.totalRequests++;
     entry.lastFailureReason = null;
     entry.rateLimitedUntilMs = 0;
@@ -294,6 +335,14 @@ export class ProviderHealthTracker {
   public recordSuccess(providerId: string, latencyMs: number, slotLag?: number, now = Date.now()): void {
     // Default success records validated observation for backward compatibility
     this.recordValidatedObservation(providerId, latencyMs, slotLag, now);
+  }
+
+  /** Records a validated endpoint check without claiming the provider's named service capability. */
+  public recordConnectivityObservation(providerId: string, latencyMs: number, now = Date.now()): void {
+    if (!Number.isFinite(latencyMs) || latencyMs < 0) return;
+    this.recordValidatedObservation(providerId, latencyMs, undefined, now);
+    const entry = this.metrics.get(providerId);
+    if (entry && entry.lastAttemptMs === now) entry.capabilityValidated = false;
   }
 
   public recordFailure(providerId: string, reason = 'TRANSPORT_OR_DECODE_FAILURE', now = Date.now()): void {
@@ -418,13 +467,17 @@ export class ProviderHealthTracker {
   }
 
   public isMarketFeedStale(now = Date.now(), thresholdMs = 10_000): boolean {
-    // Only check active, configured, authoritative discovery and RPC feeds
+    // Discovery can arrive through PumpPortal or the Engine's own Solana
+    // websocket. Require at least one configured, authenticated, fresh source
+    // instead of treating optional PumpPortal as mandatory.
     const pump = this.metrics.get('PUMPPORTAL_WS');
-    if (!pump || !pump.configured || !pump.enabled || !authSatisfied(pump.authenticationRequirement, pump.authenticated) || !pump.observationValidated || !pump.transportReachable ||
-      pump.lastSuccessMs === 0 ||
-        now - pump.lastSuccessMs > thresholdMs ||
-        pump.circuitState === 'OPEN' ||
-        pump.rateLimitedUntilMs > now) return true;
+    const wss = this.metrics.get('SOLANA_WSS');
+    const discoverySources = [pump, wss].filter((source): source is ProviderInternalState => Boolean(source?.configured && source.enabled));
+    const hasFreshDiscovery = discoverySources.some(source =>
+      authSatisfied(source.authenticationRequirement, source.authenticated) &&
+      source.observationValidated && source.transportReachable && source.lastSuccessMs > 0 &&
+      now - source.lastSuccessMs <= thresholdMs && source.circuitState !== 'OPEN' && source.rateLimitedUntilMs <= now);
+    if (!hasFreshDiscovery) return true;
 
     const rpc = this.metrics.get('SOLANA_RPC');
     if (!rpc || !rpc.configured || !rpc.enabled || !authSatisfied(rpc.authenticationRequirement, rpc.authenticated) || !rpc.observationValidated || !rpc.transportReachable ||
@@ -448,26 +501,32 @@ export class ProviderHealthTracker {
         providers[id] = {
           providerId: id,
           role: m.role,
-          configured: false,
-          enabled: false,
-          authenticationRequirement: 'UNKNOWN',
+          configured: m.configured,
+          enabled: m.enabled,
+          authenticationRequirement: m.configured ? m.authenticationRequirement : 'UNKNOWN',
           transportReachable: false,
           authenticated: false,
           capabilityAvailable: false,
           observationValidated: false,
+          capabilityValidated: false,
+          attempted: m.lastAttemptMs > 0,
           freshness: 'UNKNOWN',
           slotLag: null,
           latency: 0,
           rateLimited: false,
           circuitState: 'CLOSED',
-          lastAttempt: 0,
-          lastSuccess: 0,
-          lastValidatedObservation: 0,
-          failureReason: 'PROVIDER_NOT_CONFIGURED',
+          lastAttempt: m.lastAttemptMs,
+          lastSuccess: m.lastSuccessMs,
+          lastValidatedObservation: m.lastValidatedObservationMs,
+          failureReason: m.configured ? (m.enabled ? 'NOT_YET_OBSERVED' : 'PROVIDER_DISABLED') : 'PROVIDER_NOT_CONFIGURED',
           state: 'OFFLINE',
           isAuthoritative: m.isAuthoritative,
           lastSuccessTimestampMs: 0,
           avgLatencyMs: 0,
+          latencyP50Ms: 0,
+          latencyP90Ms: 0,
+          latencyP99Ms: 0,
+          latencySampleCount: 0,
           errorRatePct: 0,
           totalRequestsCount: 0,
           totalErrorsCount: 0,
@@ -481,9 +540,13 @@ export class ProviderHealthTracker {
 
       const feedAgeMs = Math.max(0, now - m.lastSuccessMs);
       const successfulSamples = m.samples.filter(s => s.success && s.latencyMs > 0);
+      const sortedLatencyMs = successfulSamples.map(s => s.latencyMs).sort((a, b) => a - b);
       const avgLatency = successfulSamples.length
         ? Math.round(successfulSamples.reduce((a, b) => a + b.latencyMs, 0) / successfulSamples.length)
         : 0;
+      const latencyP50Ms = nearestRankLatencyPercentile(sortedLatencyMs, 50);
+      const latencyP90Ms = nearestRankLatencyPercentile(sortedLatencyMs, 90);
+      const latencyP99Ms = nearestRankLatencyPercentile(sortedLatencyMs, 99);
       const recentErrors = m.samples.filter(s => !s.success).length;
       const errorRate = m.samples.length > 0 ? (recentErrors / m.samples.length) * 100 : 0;
 
@@ -502,10 +565,11 @@ export class ProviderHealthTracker {
       let state: ProviderHealthState = 'OPTIMAL';
       if (now < m.rateLimitedUntilMs) {
         state = 'RATE_LIMITED';
-        if (m.isAuthoritative) criticalCount++;
+        const globallyCritical = id === 'SOLANA_RPC';
+        if (globallyCritical) criticalCount++;
         else degradedCount++;
         activeAlerts.push({
-          severity: m.isAuthoritative ? 'CRITICAL' : 'WARNING',
+          severity: globallyCritical ? 'CRITICAL' : 'WARNING',
           source: id,
           message: `Provider ${id} rate limited (HTTP 429). Backing off for ${Math.round((m.rateLimitedUntilMs - now) / 1000)}s.`,
           timestampMs: now,
@@ -513,9 +577,11 @@ export class ProviderHealthTracker {
         });
       } else if (m.circuitState === 'OPEN') {
         state = 'CIRCUIT_OPEN';
-        criticalCount++;
+        const globallyCritical = id === 'SOLANA_RPC';
+        if (globallyCritical) criticalCount++;
+        else degradedCount++;
         activeAlerts.push({
-          severity: 'CRITICAL',
+          severity: globallyCritical ? 'CRITICAL' : 'WARNING',
           source: id,
           message: `Circuit breaker tripped for ${id}. Excessive rolling failure rate (${errorRate.toFixed(1)}%).`,
           timestampMs: now,
@@ -523,14 +589,17 @@ export class ProviderHealthTracker {
         });
       } else if (m.lastSuccessMs === 0) {
         state = 'OFFLINE';
-        if (m.isAuthoritative) criticalCount++;
-        else degradedCount++;
-        activeAlerts.push({
-          severity: m.isAuthoritative ? 'CRITICAL' : 'WARNING',
-          source: id,
-          message: `No successful provider observation has been received for ${id}.`,
-          timestampMs: now,
-        });
+        if (m.lastAttemptMs > 0) {
+          const globallyCritical = id === 'SOLANA_RPC';
+          if (globallyCritical) criticalCount++;
+          else degradedCount++;
+          activeAlerts.push({
+            severity: globallyCritical ? 'CRITICAL' : 'WARNING',
+            source: id,
+            message: `Provider ${id} has been attempted but has no successful observation.`,
+            timestampMs: now,
+          });
+        }
       } else if (!m.transportReachable) {
         state = 'RECONNECTING';
         degradedCount++;
@@ -543,10 +612,11 @@ export class ProviderHealthTracker {
         });
       } else if (freshness === 'STALE') {
         state = 'STALE';
-        if (m.isAuthoritative) criticalCount++;
+        const globallyCritical = id === 'SOLANA_RPC';
+        if (globallyCritical) criticalCount++;
         else degradedCount++;
         activeAlerts.push({
-          severity: m.isAuthoritative ? 'CRITICAL' : 'WARNING',
+          severity: globallyCritical ? 'CRITICAL' : 'WARNING',
           source: id,
           message: `Feed data for ${id} is stale (${Math.round(feedAgeMs / 1000)}s since last tick).`,
           timestampMs: now,
@@ -576,8 +646,10 @@ export class ProviderHealthTracker {
         authenticationRequirement: m.authenticationRequirement,
         transportReachable: m.transportReachable,
         authenticated: m.authenticated,
-        capabilityAvailable: m.configured && m.enabled && authSatisfied(m.authenticationRequirement, m.authenticated) && m.transportReachable && m.observationValidated && freshness === 'FRESH' && m.circuitState !== 'OPEN' && now >= m.rateLimitedUntilMs,
+        capabilityAvailable: m.configured && m.enabled && authSatisfied(m.authenticationRequirement, m.authenticated) && m.transportReachable && m.observationValidated && m.capabilityValidated && freshness === 'FRESH' && m.circuitState !== 'OPEN' && now >= m.rateLimitedUntilMs,
         observationValidated: m.observationValidated,
+        capabilityValidated: m.capabilityValidated,
+        attempted: m.lastAttemptMs > 0,
         freshness,
         slotLag: m.slotLag,
         latency: avgLatency,
@@ -586,11 +658,15 @@ export class ProviderHealthTracker {
         lastAttempt: m.lastAttemptMs,
         lastSuccess: m.lastSuccessMs,
         lastValidatedObservation: m.lastValidatedObservationMs,
-        failureReason: m.lastFailureReason,
+        failureReason: m.lastFailureReason ?? (m.lastAttemptMs === 0 ? 'NOT_YET_OBSERVED' : null),
         state,
         isAuthoritative: m.isAuthoritative,
         lastSuccessTimestampMs: m.lastSuccessMs,
         avgLatencyMs: avgLatency,
+        latencyP50Ms,
+        latencyP90Ms,
+        latencyP99Ms,
+        latencySampleCount: sortedLatencyMs.length,
         errorRatePct: Number(errorRate.toFixed(1)),
         totalRequestsCount: m.totalRequests,
         totalErrorsCount: m.totalErrors,
@@ -604,6 +680,15 @@ export class ProviderHealthTracker {
     }
 
     const marketFeedStale = this.isMarketFeedStale(now);
+    if (marketFeedStale) {
+      activeAlerts.push({
+        severity: 'CRITICAL',
+        source: 'MARKET_FEED_GATE',
+        message: 'Required fresh discovery and SOLANA_RPC observations are not both available.',
+        timestampMs: now,
+        actionRequired: 'Restore a configured fresh discovery source and a fresh SOLANA_RPC observation.',
+      });
+    }
     let overall: ProviderHealthReport['overallSystemState'] = 'NOMINAL';
     if (criticalCount > 0 || marketFeedStale) overall = 'CRITICAL';
     else if (degradedCount > 1) overall = 'RESTRICTED';

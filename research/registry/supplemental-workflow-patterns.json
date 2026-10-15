@@ -1,0 +1,30 @@
+{
+  "title": "Supplemental workflow-pattern references",
+  "scope": "References outside the fixed 288-source manifest; not counted as catalog rows or runtime integrations.",
+  "sources": [
+    {
+      "name": "tox",
+      "url": "https://github.com/tox-dev/tox",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official tox README and GitHub license metadata inspected; upstream HEAD d947dd4e43388f727bb534c3f0ad7997d76b4767; accessed 2026-10-15."
+      ],
+      "discoveries": [
+        "tox standardizes repeatable development tasks and test runs across isolated environments; repository includes tox.toml and a dedicated test suite.",
+        "Useful transferable pattern is one named, deterministic validation entry point for local and CI workflows, with environment/dependency isolation.",
+        "tox is Python tooling, so it does not fit SYLPH’s TypeScript runtime and would add no trading capability."
+      ],
+      "sylphUse": "Pattern reference only: express named checks using existing package scripts and CI rather than installing tox or introducing a Python dependency.",
+      "decision": "WORKFLOW_PATTERN_REFERENCE_ONLY_NO_INSTALL_NO_RUNTIME_DEPENDENCY",
+      "license": "MIT (repository metadata)",
+      "validation": [
+        "If adapting the pattern, preserve the existing TypeScript toolchain and verify local/CI commands produce equivalent results."
+      ],
+      "evidence": [
+        "https://github.com/tox-dev/tox/tree/d947dd4e43388f727bb534c3f0ad7997d76b4767",
+        "https://github.com/tox-dev/tox/blob/d947dd4e43388f727bb534c3f0ad7997d76b4767/README.md",
+        "https://github.com/tox-dev/tox/blob/d947dd4e43388f727bb534c3f0ad7997d76b4767/tox.toml"
+      ]
+    }
+  ]
+}

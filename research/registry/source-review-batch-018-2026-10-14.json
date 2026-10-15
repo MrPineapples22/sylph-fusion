@@ -1,0 +1,610 @@
+{
+  "batch": 18,
+  "date": "2026-10-14",
+  "sourceRecords": 15,
+  "directlyReviewed": 5,
+  "scope": "Software supply-chain controls and Solana client/indexing compatibility",
+  "method": "Pinned official repository README and license/source inspection with upstream HEAD revisions recorded. Findings are bounded research notes; no REA execution, packages installed, SYLPH code patch, build, or runtime test was performed.",
+  "sources": [
+    {
+      "id": "SRC-166",
+      "url": "https://github.com/semgrep/semgrep",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official Semgrep README and repository license metadata inspected at pinned develop commit 51602ad27f09ef9342a5620601de5ef8f572fbc6; accessed 2026-10-15."
+      ],
+      "discoveries": [
+        "Semgrep is a pattern-based static analysis tool that supports many languages and can run locally, in pre-commit, or CI.",
+        "The README warns that Community Edition has single-function/file scope and can miss security findings requiring cross-file or cross-function analysis.",
+        "The repository is LGPL-2.1; commercial platform features and rules are distinct from the open-source engine and need separate scope review."
+      ],
+      "patterns": [
+        "Add local static checks for risky source patterns around authorization, secret logging, unchecked parsing, and unsafe state transitions.",
+        "Treat clean scans as incomplete evidence; combine with tests, code review, and dependency/security analysis."
+      ],
+      "sylphModules": [
+        "src/",
+        "test/",
+        "CI security checks"
+      ],
+      "overlap": [
+        "Adds static-analysis coverage but does not replace TypeScript compiler, tests, or independent safety review."
+      ],
+      "risks": [
+        "Community Edition has documented analysis limitations and may miss interprocedural issues.",
+        "False positives require triage; findings do not establish exploitability.",
+        "LGPL and paid platform/rule scope require license review before adoption."
+      ],
+      "validation": [
+        "Run locally/CI without credentials; define reviewed rules and test each against positive and negative snippets.",
+        "Track known coverage boundaries and require existing deterministic regression suites for critical behavior."
+      ],
+      "evidence": [
+        "https://github.com/semgrep/semgrep/tree/51602ad27f09ef9342a5620601de5ef8f572fbc6",
+        "https://github.com/semgrep/semgrep/blob/51602ad27f09ef9342a5620601de5ef8f572fbc6/README.md"
+      ],
+      "license": "LGPL-2.1 (repository metadata; platform/rule licensing may differ)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "51602ad27f09ef9342a5620601de5ef8f572fbc6"
+    },
+    {
+      "id": "SRC-167",
+      "url": "https://github.com/stryker-mutator/stryker-js",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official StrykerJS README and Apache license metadata inspected at pinned master commit c931a93237816901f1e9f48da411170beeb3dfca; accessed 2026-10-15."
+      ],
+      "discoveries": [
+        "StrykerJS performs mutation testing for JavaScript/TypeScript by altering production code and checking whether the test suite detects those changes.",
+        "Mutation score is a measure of test sensitivity to generated mutations, not correctness or safety certification.",
+        "The repository declares Apache-2.0 licensing."
+      ],
+      "patterns": [
+        "Use targeted mutation testing on high-value pure functions and gates to find tests that pass even when a guard or comparison is removed.",
+        "Record surviving mutants and review whether they expose a test gap or an intentional equivalent mutation."
+      ],
+      "sylphModules": [
+        "test/",
+        "src/platform/ingress/canonical-ingress.ts",
+        "src/platform/execution/authority.ts (test-only coverage analysis)"
+      ],
+      "overlap": [
+        "Complements deterministic tests; no runtime integration."
+      ],
+      "risks": [
+        "Full-suite mutation runs can be expensive and noisy.",
+        "Mutation tools can miss semantic faults outside the mutation operators.",
+        "A high score must not be represented as proof of financial safety."
+      ],
+      "validation": [
+        "Pilot against isolated pure functions and thresholds; verify known mutants are killed and equivalent mutants are documented.",
+        "Do not run against live processes or alter production artifacts."
+      ],
+      "evidence": [
+        "https://github.com/stryker-mutator/stryker-js/tree/c931a93237816901f1e9f48da411170beeb3dfca",
+        "https://github.com/stryker-mutator/stryker-js/blob/c931a93237816901f1e9f48da411170beeb3dfca/README.md"
+      ],
+      "license": "Apache-2.0 (repository metadata)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "c931a93237816901f1e9f48da411170beeb3dfca"
+    },
+    {
+      "id": "SRC-168",
+      "url": "https://github.com/renovatebot/renovate",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official Renovate README and license metadata inspected at pinned main commit 20767551404255f954569588dc1db726dfe791d6; accessed 2026-10-15."
+      ],
+      "discoveries": [
+        "Renovate is a dependency-update automation CLI that can propose version changes across multiple package managers.",
+        "Its repository is AGPL-3.0; configuration and self-hosted/service use should be reviewed against license requirements.",
+        "Automated update PRs still need lockfile, build, tests, and vulnerability review; version automation itself is not compatibility evidence."
+      ],
+      "patterns": [
+        "Use scheduled, grouped dependency update proposals with explicit package allowlists, version constraints, and CI verification.",
+        "Separate direct dependency changes from transitive lockfile churn to make review and rollback easier."
+      ],
+      "sylphModules": [
+        "package.json",
+        "package-lock.json",
+        "release and CI workflows"
+      ],
+      "overlap": [
+        "Can complement existing dependency maintenance; no runtime module should call Renovate."
+      ],
+      "risks": [
+        "AGPL-3.0 terms apply to the tool; hosted service terms may differ.",
+        "Broad automation can introduce breaking or compromised updates if reviews/checks are bypassed.",
+        "Automated merge is inappropriate for dependencies that affect signing, execution, or safety boundaries."
+      ],
+      "validation": [
+        "Test in a draft configuration against a non-production branch; require CI and human review for all updates.",
+        "Pin update workflow permissions to least privilege and avoid auto-merge on safety-critical dependencies."
+      ],
+      "evidence": [
+        "https://github.com/renovatebot/renovate/tree/20767551404255f954569588dc1db726dfe791d6",
+        "https://github.com/renovatebot/renovate/blob/20767551404255f954569588dc1db726dfe791d6/readme.md"
+      ],
+      "license": "AGPL-3.0 (repository metadata)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "20767551404255f954569588dc1db726dfe791d6"
+    },
+    {
+      "id": "SRC-169",
+      "url": "https://github.com/sigstore/cosign",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official Cosign README and Apache license metadata inspected at pinned main commit 63d9aa14a70c03e73c7b2a2a9a6501566194f5f4; accessed 2026-10-15."
+      ],
+      "discoveries": [
+        "Cosign signs and verifies container images and other artifacts, including keyless signing with Fulcio certificates and Rekor transparency log integration.",
+        "The README also lists hardware/KMS and key-pair signing methods; keyless artifact verification does not grant or use SYLPH wallet authority.",
+        "The repository declares Apache-2.0 licensing."
+      ],
+      "patterns": [
+        "Verify release artifacts against pinned publisher identity and expected source before packaging or deployment.",
+        "Record artifact digest, signature identity, certificate, transparency evidence, and verifier version in release attestations."
+      ],
+      "sylphModules": [
+        "release build and distribution workflows",
+        "RELEASE_CERTIFICATION.md"
+      ],
+      "overlap": [
+        "Supply-chain artifact assurance can complement existing release certification; it does not certify runtime state or a trade."
+      ],
+      "risks": [
+        "Signing identity policy and trust roots must be configured correctly; a valid signature alone does not prove a safe artifact.",
+        "Keyless verification depends on certificate identity and transparency evidence validation.",
+        "Do not conflate software artifact signing with wallet transaction signing."
+      ],
+      "validation": [
+        "Verify known-good and tampered test artifacts with pinned identity constraints and expected transparency evidence.",
+        "Keep signing keys and credentials outside source control and avoid introducing wallet/key access."
+      ],
+      "evidence": [
+        "https://github.com/sigstore/cosign/tree/63d9aa14a70c03e73c7b2a2a9a6501566194f5f4",
+        "https://github.com/sigstore/cosign/blob/63d9aa14a70c03e73c7b2a2a9a6501566194f5f4/README.md"
+      ],
+      "license": "Apache-2.0 (repository metadata)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "63d9aa14a70c03e73c7b2a2a9a6501566194f5f4"
+    },
+    {
+      "id": "SRC-170",
+      "url": "https://github.com/sigstore/rekor",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official Rekor README and Apache license metadata inspected at pinned main commit 774b191f9f761b3def5808bcd54b48ad88de5f89; accessed 2026-10-15."
+      ],
+      "discoveries": [
+        "Rekor is a software-supply-chain transparency log intended to record and search signed artifact metadata.",
+        "Cosign documents Rekor as part of its keyless-signing flow; Rekor entries add public provenance evidence but do not independently establish publisher trust.",
+        "The repository declares Apache-2.0 licensing."
+      ],
+      "patterns": [
+        "Store verifiable build/release attestations for shipped SYLPH artifacts and bind them to immutable content digests.",
+        "Verify inclusion/proof and expected signer identity rather than relying on a log lookup or URL alone."
+      ],
+      "sylphModules": [
+        "release certification and artifact provenance",
+        "CI/CD attestations"
+      ],
+      "overlap": [
+        "Pairs with Cosign and overlaps with other catalog supply-chain tools; no application runtime integration required."
+      ],
+      "risks": [
+        "Transparency log inclusion does not itself guarantee the artifact is benign or source-complete.",
+        "Verifier trust policy and identity allowlists must be explicit.",
+        "External log/network availability should not affect Engine runtime or trading readiness."
+      ],
+      "validation": [
+        "Test inclusion proof verification, digest mismatch rejection, wrong signer identity, and unavailable-log/offline behavior in release CI.",
+        "Preserve verification output with the artifact manifest and pinned verifier version."
+      ],
+      "evidence": [
+        "https://github.com/sigstore/rekor/tree/774b191f9f761b3def5808bcd54b48ad88de5f89",
+        "https://github.com/sigstore/rekor/blob/774b191f9f761b3def5808bcd54b48ad88de5f89/README.md"
+      ],
+      "license": "Apache-2.0 (repository metadata)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "774b191f9f761b3def5808bcd54b48ad88de5f89"
+    },
+    {
+      "id": "SRC-171",
+      "url": "https://github.com/aquasecurity/trivy",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official Trivy README and license metadata inspected at pinned main commit 088b9706d7e3af33ef1a8d2dee305370df714293; accessed 2026-10-15."
+      ],
+      "discoveries": [
+        "Trivy scans filesystems, remote Git repositories, images, VMs and Kubernetes for vulnerabilities, misconfigurations, secrets, SBOM and license data.",
+        "Its scanners cover OS and language dependencies; results depend on target, selected scanners and vulnerability database state.",
+        "The repository documents Apache-2.0 licensing and warns that per-main-push canary builds may contain critical bugs and are not recommended for production."
+      ],
+      "patterns": [
+        "Scan the pinned source tree, lockfiles and any release image in CI using a pinned stable scanner and recorded database metadata.",
+        "Retain machine-readable findings and triage them with code review; a clean scan is not proof of security or exploitability."
+      ],
+      "sylphModules": [
+        "package manifests and lockfiles",
+        "release pipeline",
+        "CI security checks"
+      ],
+      "overlap": [
+        "Complements source review and dependency audits; no runtime role."
+      ],
+      "risks": [
+        "Database freshness and scanner coverage affect findings.",
+        "Canary builds are explicitly not recommended for production.",
+        "Scanner findings require triage and do not prove exploitability."
+      ],
+      "validation": [
+        "Use a pinned stable version against known vulnerable and clean fixtures.",
+        "Record database metadata and review ignored paths, severities and image/source scope."
+      ],
+      "evidence": [
+        "https://github.com/aquasecurity/trivy/tree/088b9706d7e3af33ef1a8d2dee305370df714293",
+        "https://github.com/aquasecurity/trivy/blob/088b9706d7e3af33ef1a8d2dee305370df714293/README.md"
+      ],
+      "license": "Apache-2.0 (repository metadata)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "088b9706d7e3af33ef1a8d2dee305370df714293"
+    },
+    {
+      "id": "SRC-172",
+      "url": "https://github.com/google/osv-scanner",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official OSV-Scanner README and license metadata inspected at pinned main commit f455353546889009663c1f8b640d5880a01c889a; accessed 2026-10-15."
+      ],
+      "discoveries": [
+        "OSV-Scanner maps supported dependency manifests and package ecosystems to vulnerability records in the OSV database.",
+        "Its README documents package-manager and container scanning plus guided dependency remediation; results inform maintenance but do not make upgrades safe automatically.",
+        "The repository declares Apache-2.0 licensing and uses OSV-Scalibr for package and project-type analysis."
+      ],
+      "patterns": [
+        "Include a pinned scanner invocation in CI and archive machine-readable findings plus database/version context.",
+        "Review direct and transitive advisories and run regression/build checks before applying any suggested dependency upgrade."
+      ],
+      "sylphModules": [
+        "package.json and lockfile",
+        "CI dependency review",
+        "release manifests"
+      ],
+      "overlap": [
+        "Supply-chain review only; does not affect runtime decisions."
+      ],
+      "risks": [
+        "Advisory matching and package/version data may be incomplete or ambiguous.",
+        "Suggested upgrades can change behavior and must be tested before merge.",
+        "Scanner or database versions can change results."
+      ],
+      "validation": [
+        "Test against known vulnerable and clean lockfile fixtures.",
+        "Record scanner version, advisory data timestamp and accepted exceptions."
+      ],
+      "evidence": [
+        "https://github.com/google/osv-scanner/tree/f455353546889009663c1f8b640d5880a01c889a",
+        "https://github.com/google/osv-scanner/blob/f455353546889009663c1f8b640d5880a01c889a/README.md"
+      ],
+      "license": "Apache-2.0 (repository metadata)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "f455353546889009663c1f8b640d5880a01c889a"
+    },
+    {
+      "id": "SRC-173",
+      "url": "https://github.com/gitleaks/gitleaks",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official Gitleaks README and MIT license metadata inspected at pinned master commit b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b; accessed 2026-10-15."
+      ],
+      "discoveries": [
+        "Gitleaks scans files, Git history and stdin for credential-like secrets, with pre-commit and CI integration documented.",
+        "The README marks the project feature-complete and says future releases are security patches only, directing new feature work toward Betterleaks.",
+        "Its rules, baselines and allowlists affect coverage; scan reports may contain sensitive matched material and require restricted handling."
+      ],
+      "patterns": [
+        "Run a pinned secret scan on diffs and repository history with reports kept access-controlled and redacted before sharing.",
+        "Treat any suspected real match as a secret-handling incident; the scanner cannot revoke or rotate credentials."
+      ],
+      "sylphModules": [
+        "repository history",
+        "CI security checks",
+        "credential handling"
+      ],
+      "overlap": [
+        "Potential CI tool only; no credential or signer integration."
+      ],
+      "risks": [
+        "False positives and allowlists can hide real secrets.",
+        "Reports may expose matching secret values.",
+        "Project is feature-complete with security-patch-only future releases."
+      ],
+      "validation": [
+        "Use fabricated dummy secrets and expected nonmatches in isolated fixtures.",
+        "Review allowlist edits and protect generated reports."
+      ],
+      "evidence": [
+        "https://github.com/gitleaks/gitleaks/tree/b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b",
+        "https://github.com/gitleaks/gitleaks/blob/b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b/README.md"
+      ],
+      "license": "MIT (repository metadata)",
+      "decision": "RESEARCH_ONLY_SECURITY_PATCHES_ONLY",
+      "pinnedRevision": "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b"
+    },
+    {
+      "id": "SRC-174",
+      "url": "https://github.com/open-policy-agent/opa",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official OPA README and Apache license metadata inspected at pinned main commit 89d111ce4b45c3af9b79ac1137efe2e9aab6cc92; accessed 2026-10-15."
+      ],
+      "discoveries": [
+        "OPA is a general-purpose policy engine; policy authors express context-aware decisions in Rego against caller-supplied input.",
+        "OPA provides local CLI and integration/deployment paths; application code remains responsible for consuming and enforcing decisions.",
+        "The repository declares Apache-2.0 licensing; this review does not establish an external policy service as suitable for SYLPH capital or signing authority."
+      ],
+      "patterns": [
+        "Use policy-as-code for offline release/deployment checks with explicit input schemas and fail-closed handling.",
+        "Keep the trusted in-process execution authority as the enforcement boundary; policy output can only add a restriction, never grant bypass authority."
+      ],
+      "sylphModules": [
+        "release certification",
+        "CI deployment gates",
+        "src/platform/execution/authority.ts (review reference only)"
+      ],
+      "overlap": [
+        "Could model static release predicates, but no OPA process or policy is added to the runtime."
+      ],
+      "risks": [
+        "Incomplete input or a mistaken default can yield an unsafe allow.",
+        "Service outages or policy bundle drift must not bypass trusted local restrictions.",
+        "Policy checks do not replace authorization and capital controls."
+      ],
+      "validation": [
+        "Test allow/deny, missing-field, malformed-input and timeout cases.",
+        "Prove policy failure cannot skip existing execution authority."
+      ],
+      "evidence": [
+        "https://github.com/open-policy-agent/opa/tree/89d111ce4b45c3af9b79ac1137efe2e9aab6cc92",
+        "https://github.com/open-policy-agent/opa/blob/89d111ce4b45c3af9b79ac1137efe2e9aab6cc92/README.md"
+      ],
+      "license": "Apache-2.0 (repository metadata)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "89d111ce4b45c3af9b79ac1137efe2e9aab6cc92"
+    },
+    {
+      "id": "SRC-175",
+      "url": "https://github.com/github/codeql",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official CodeQL query/library README and repository license inspected at pinned main commit dd4405c2c2a8cd5ee7d200e7230ab8dd52e13dc6; accessed 2026-10-15."
+      ],
+      "discoveries": [
+        "The repository contains standard CodeQL libraries and queries used by GitHub code scanning and application-security products.",
+        "The query/library repository is MIT-licensed, while the CodeQL CLI and analysis engine are in another repository and separately licensed.",
+        "The README states that use of the CodeQL CLI to analyze closed-source code requires a separate commercial license."
+      ],
+      "patterns": [
+        "Use supported code scanning for source-level security queries only after confirming licensing and language support.",
+        "Add custom queries only with reviewed positive/negative test fixtures and treat findings as signals for human review."
+      ],
+      "sylphModules": [
+        "src/platform/execution/authority.ts",
+        "src/runtime-composition.ts",
+        "CI security checks"
+      ],
+      "overlap": [
+        "Static analysis can complement tests and reviews; the query repo alone does not supply an unrestricted scanner license."
+      ],
+      "risks": [
+        "CLI/engine licensing differs from the MIT query/library repository.",
+        "Findings need triage and do not prove the absence of vulnerabilities.",
+        "Language and query coverage may not include every relevant TypeScript behavior."
+      ],
+      "validation": [
+        "Verify code-scanning entitlement for the repository and intended use.",
+        "Test custom query matches and nonmatches on minimal fixtures; preserve tool version and results."
+      ],
+      "evidence": [
+        "https://github.com/github/codeql/tree/dd4405c2c2a8cd5ee7d200e7230ab8dd52e13dc6",
+        "https://github.com/github/codeql/blob/dd4405c2c2a8cd5ee7d200e7230ab8dd52e13dc6/README.md"
+      ],
+      "license": "MIT (query/library repository); CodeQL CLI/engine separately licensed, including closed-source analysis entitlement",
+      "decision": "RESEARCH_ONLY_LICENSE_CHECK_REQUIRED",
+      "pinnedRevision": "dd4405c2c2a8cd5ee7d200e7230ab8dd52e13dc6"
+    },
+    {
+      "id": "SRC-178",
+      "url": "https://github.com/solana-program/token-2022",
+      "status": "CATALOG_TRIAGE",
+      "provenance": [
+        "Official Solana Program Library Token-2022 repository and docs; accessed 2026-10-14."
+      ],
+      "discoveries": [
+        "Token-2022 program supports extensions that alter token-account or mint behavior.",
+        "Integrators need to inspect enabled extensions rather than assume legacy SPL Token semantics.",
+        "The canonical TransferFee.calculate_fee uses ceiling division for fractional raw units, then caps the result at maximum_fee; floor-based calculations understate some fees."
+      ],
+      "patterns": [
+        "Parse token program ID and extension state before modeling transfer semantics.",
+        "Use checked arithmetic and explicit transfer-fee accounting where applicable.",
+        "Mirror the canonical ceil-rounding and maximum-fee cap with raw-unit boundary fixtures."
+      ],
+      "sylphModules": [
+        "src/market.ts",
+        "src/platform/ingestion/truth-x.ts",
+        "src/platform/execution/solaris/amm-bridge.ts",
+        "src/platform/security/token-semantics.ts",
+        "src/platform/truth/token-semantic-root.ts"
+      ],
+      "overlap": [
+        "Extends existing token compatibility; no broad integration without extension-specific needs."
+      ],
+      "risks": [
+        "Unsupported extensions can invalidate quote, transfer or net-PnL assumptions.",
+        "Program upgrades and SDK versions require pinning."
+      ],
+      "validation": [
+        "Build fixtures for supported/unsupported extension combinations.",
+        "Compare quote, simulation and confirmed transfer amounts.",
+        "Test fractional one-unit fees, maximum-fee caps, zero and 10000 bps against pinned Token-2022 semantics."
+      ],
+      "evidence": [
+        "https://github.com/solana-program/token-2022",
+        "https://github.com/solana-program/token-2022/blob/main/interface/src/extension/transfer_fee/mod.rs"
+      ],
+      "license": "Apache-2.0 (repository metadata)",
+      "decision": "RESEARCH_ONLY"
+    },
+    {
+      "id": "SRC-179",
+      "url": "https://github.com/Blockdaemon/solana-accountsdb-plugin-kafka",
+      "status": "CATALOG_TRIAGE",
+      "provenance": [
+        "Official Blockdaemon AccountsDB Kafka plugin repository; accessed 2026-10-14."
+      ],
+      "discoveries": [
+        "Validator AccountsDB plugin exports account updates to Kafka.",
+        "It is infrastructure-side account streaming, distinct from ordinary client RPC polling."
+      ],
+      "patterns": [
+        "Preserve slot, write version and account identity in streamed records.",
+        "Use consumer checkpoints and gap reconciliation for restart recovery."
+      ],
+      "sylphModules": [
+        "src/platform/ingestion/yellowstone-captured-client.ts",
+        "src/platform/ingestion/gap-reconciler.ts",
+        "src/platform/ingress/canonical-ingress.ts"
+      ],
+      "overlap": [
+        "Alternative upstream data transport; overlaps at the account-event ingestion boundary."
+      ],
+      "risks": [
+        "Requires validator/plugin access and Kafka operations.",
+        "Account update delivery alone may not supply full transaction semantics."
+      ],
+      "validation": [
+        "Test ordering, duplicate, disconnect and restart behavior on isolated fixtures.",
+        "Reconcile sampled account state against canonical RPC reads."
+      ],
+      "evidence": [
+        "https://github.com/Blockdaemon/solana-accountsdb-plugin-kafka"
+      ],
+      "license": "Not independently verified in this review",
+      "decision": "RESEARCH_ONLY"
+    },
+    {
+      "id": "SRC-180",
+      "url": "https://github.com/solana-foundation/solana-web3.js",
+      "status": "CATALOG_TRIAGE",
+      "provenance": [
+        "Official Solana Foundation solana-web3.js repository; accessed 2026-10-14."
+      ],
+      "discoveries": [
+        "Current repository describes a v3+ pnpm workspace, while legacy v1.x is on a maintenance branch with critical fixes only.",
+        "Packages are independently versioned; root workspace is orchestration rather than the published client package."
+      ],
+      "patterns": [
+        "Pin exact client major/version and test RPC serialization behavior.",
+        "Treat migration between v1 and v3 as an explicit compatibility project."
+      ],
+      "sylphModules": [
+        "src/rpc.ts",
+        "src/platform/ingestion/yellowstone-captured-client.ts",
+        "transaction compatibility"
+      ],
+      "overlap": [
+        "Client SDK choice must align with existing interfaces; avoid duplicate Solana client abstraction without a concrete migration need."
+      ],
+      "risks": [
+        "Major version behavior and types may differ.",
+        "Incompatible transaction serialization can break signing/fee accounting."
+      ],
+      "validation": [
+        "Test transaction/message serialization, RPC errors and versioned transaction fixtures.",
+        "Keep signer/custody restrictions unchanged during any upgrade."
+      ],
+      "evidence": [
+        "https://github.com/solana-foundation/solana-web3.js"
+      ],
+      "license": "MIT (repository metadata)",
+      "decision": "RESEARCH_ONLY"
+    },
+    {
+      "id": "SRC-182",
+      "url": "https://github.com/MeteoraAg/dynamic-bonding-curve-sdk",
+      "status": "CATALOG_TRIAGE",
+      "provenance": [
+        "Official Meteora DBC SDK repository and developer guide; accessed 2026-10-14."
+      ],
+      "discoveries": [
+        "SDK targets Meteora Dynamic Bonding Curve launch pools, quoting/trading helpers and migration lifecycle.",
+        "Official developer guide describes migration of completed DBC pools to DAMM v2 and separate program/account flows."
+      ],
+      "patterns": [
+        "Model launch state and graduation destination explicitly per mint/pool.",
+        "Keep quote math and lifecycle transitions versioned by program/SDK revision."
+      ],
+      "sylphModules": [
+        "src/market.ts",
+        "src/platform/execution/solaris/amm-bridge.ts",
+        "src/platform/ingestion/truth-x.ts"
+      ],
+      "overlap": [
+        "Adds venue-specific lifecycle coverage to existing AMM bridge; avoid generic assumptions that every token graduates to one venue."
+      ],
+      "risks": [
+        "Program IDs, account layouts, fees and migration behavior can change.",
+        "Transfer hooks/extensions may affect executable quotes."
+      ],
+      "validation": [
+        "Use official fixtures/program IDs and test lifecycle transitions on local/test environments.",
+        "Compare SDK quote results with on-chain simulation and confirmed amounts."
+      ],
+      "evidence": [
+        "https://github.com/MeteoraAg/dynamic-bonding-curve-sdk",
+        "https://github.com/MeteoraAg/docs/blob/main/developer-guides/dbc/index.mdx"
+      ],
+      "license": "Not independently verified in this review",
+      "decision": "RESEARCH_ONLY"
+    },
+    {
+      "id": "SRC-183",
+      "url": "https://github.com/sevenlabs-hq/carbon",
+      "status": "CATALOG_TRIAGE",
+      "provenance": [
+        "Official Carbon repository and documentation; accessed 2026-10-14."
+      ],
+      "discoveries": [
+        "Carbon is an indexing framework for decoding Solana transactions/accounts into data pipelines.",
+        "Decoders and datasource transports are composable, so versioned program decoders can be isolated."
+      ],
+      "patterns": [
+        "Use independently tested decoders per program and retain raw event provenance.",
+        "Separate ingestion transport from protocol-specific decoding."
+      ],
+      "sylphModules": [
+        "src/platform/ingestion/truth-x.ts",
+        "src/platform/ingress/canonical-ingress.ts",
+        "src/platform/ingestion/yellowstone-captured-client.ts"
+      ],
+      "overlap": [
+        "Conceptually overlaps the current canonical ingress and decoders; adopt patterns, not a parallel ingestion engine."
+      ],
+      "risks": [
+        "Decoder coverage may lag protocol changes.",
+        "Third-party index outputs are not canonical state without reconciliation."
+      ],
+      "validation": [
+        "Test decoders with captured versioned transactions and malformed inputs.",
+        "Compare decoded events to RPC/account state and source receipts."
+      ],
+      "evidence": [
+        "https://github.com/sevenlabs-hq/carbon"
+      ],
+      "license": "Not independently verified in this review",
+      "decision": "PATTERN_ONLY"
+    }
+  ]
+}

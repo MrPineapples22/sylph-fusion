@@ -1,0 +1,178 @@
+{
+  "batchId": "source-review-batch-002-2026-10-14",
+  "reviewedAt": "2026-10-14",
+  "repositoryHead": "f5c31177f2b8d79cdf5e3662e4049ac44b9562b2",
+  "sourceRecords":3,"directlyReviewed":3,
+  "sources": [
+    {
+      "id": "SRC-254",
+      "url": "https://solana.com/docs/core/fees/compute-budget",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official Solana fee documentation",
+        "Local Veritas wire decoder source",
+        "Official Solana Foundation transaction-v1-examples at commit baa8b2654d1695d62c17dd8a0d2ef775ef45ad14; fixture generated with @solana/kit 8.4.0"
+      ],
+      "discoveries": [
+        "For legacy/v0 transactions, priority fees are charged from requested compute-unit limit times CU price, not actual consumed compute; overspecified CU limits cost money.",
+        "Official docs and examples describe active V1 messages with the 0x81 prefix; configuration carries total priority fee and resource limits, and ComputeBudget instructions do not configure V1.",
+        "Duplicate instructions of the same compute-budget variant cause transaction failure for legacy/v0 processing; execution budget also has a 1.4M CU cap."
+      ],
+      "patterns": [
+        "make fee parser transaction-version aware",
+        "distinguish requested CU limit from consumed units",
+        "derive fee estimate from exact message/runtime version and reconcile to finalized meta.fee"
+      ],
+      "sylphModules": [
+        "src/platform/signing/veritas-wire-decoder.ts",
+        "src/platform/ingestion/truth-x.ts",
+        "src/platform/ingress/types.ts",
+        "src/platform/pipeline/execution-economics.ts"
+      ],
+      "overlap": "Veritas now bounded-parses the V1 header, config mask, inline addresses, and instruction boundaries. It exposes priorityFeeLamports, computeUnitLimit, loadedAccountsDataSizeLimit, and requestedHeapSize for diagnostics. All V1 instructions remain UNKNOWN and complete is always false, so SigningFirewall rejects the message as TRANSACTION_DECODER_INCOMPLETE. Canonical transaction meta.fee remains realized-fee authority.",
+      "risks": [
+        "V1 output is diagnostic only: instruction semantics, address authorization, and signature binding are not complete, so signing remains rejected.",
+        "The message priority-fee config is not the realized total transaction fee; base/signature fees and finalized meta.fee reconciliation remain outside this decoder.",
+        "The custom parser has bounded structural validation but is not a Solana runtime validator; protocol-version semantic checks and adversarial review remain required."
+      ],
+      "validation": [
+        "Use an official SDK-generated V1 wire fixture and compare all decoded config fields and message identities.",
+        "Exercise malformed masks, truncated fields, invalid account/program indexes, trailing bytes, and size bounds.",
+        "Keep every V1 result incomplete and prove SigningFirewall rejects it; do not enable V1 signing without independent protocol/security review and complete effects/signature binding.",
+        "Compare message estimates to confirmed meta.fee including failed transactions; canonical fee remains authoritative."
+      ],
+      "evidence": [
+        "https://solana.com/docs/core/fees/compute-budget",
+        "https://solana.com/docs/core/transactions/versioned-transactions",
+        "src/platform/signing/veritas-wire-decoder.ts",
+        "test/platform/veritas-wire-decoder.test.mjs",
+        "src/platform/ingestion/truth-x.ts",
+        "https://github.com/solana-foundation/transaction-v1-examples/tree/baa8b2654d1695d62c17dd8a0d2ef775ef45ad14"
+      ],
+      "license": "NOT_APPLICABLE_DOCUMENTATION",
+      "decision": "READ_ONLY_V1_CONFIGURATION_DECODING; SIGNING_AND_REALIZED_FEE_RECONCILIATION_OPEN"
+    },
+    {
+      "id": "SRC-255",
+      "url": "https://solana.com/docs/core/fees/fee-structure",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official Solana fee documentation",
+        "Local Truth-X and execution economics source review"
+      ],
+      "discoveries": [
+        "The documented network fee is base signature fee plus prioritization fee, and is charged whether a transaction succeeds or fails.",
+        "Base fee counts transaction signatures and supported precompile signatures; priority fee formula rounds micro-lamports up, while v1 stores an absolute total priority fee in the message.",
+        "Jito tips and venue/protocol fees are separate economic components; net outcome accounting should not collapse them into one network-fee field."
+      ],
+      "patterns": [
+        "store observed total fee and version-specific fee components separately",
+        "record failed attempt fees",
+        "reconcile estimates against chain-reported metadata",
+        "keep tips and venue fees distinct"
+      ],
+      "sylphModules": [
+        "src/platform/ingestion/truth-x.ts",
+        "src/platform/pipeline/execution-economics.ts",
+        "src/platform/ledger/clearing.ts",
+        "src/platform/paper/executable-paper-simulator.ts"
+      ],
+      "overlap": "Truth-X captures raw transaction `meta.fee`; execution economics exposes base/priority/tip components; paper simulator uses independent configured values. EconomicDeltaEngine now derives base fee as observed total fee minus an explicitly observed priority fee and rejects a reported burned component larger than that base fee. A missing priority-fee observation leaves the base-fee component unknown. The separate Version 1 signing-wire decoder and end-to-end reconciliation across failed trades, tips and venue fees remain incomplete. A new cross-venue paper-accounting patch models one 5,000-lamport signature base fee in addition to priority fee and Jito tip for filled simulated transactions in CommandGateway, the terminal reducer/bridge, and the paper adapter; rejected pre-landing attempts do not receive this assumed base fee. This is a fixed one-signature simulation assumption, not version-aware finalized fee reconciliation. The Veritas V1 decoder now exposes the message-declared total priority fee as a diagnostic field, but does not infer base/signature fees or claim that field equals realized meta.fee; fee reconciliation remains open.",
+      "risks": [
+        "estimated fee and realized network fee can diverge",
+        "unsuccessful transactions still incur network fees",
+        "fee schema may not represent future transaction versions"
+      ],
+      "validation": [
+        "test feeBurnedLamports <= feeLamports - priorityFeeLamports when both components are present",
+        "keep base fee unknown when priority fee is absent",
+        "fixture success and failure fees, signature/precompile counts, v0 and v1 fee models",
+        "regress different transaction fee payer vs observed wallet and preserve gross delta",
+        "reconcile separate Jito tip transfers and venue fees to account deltas",
+        "prove all-in net PnL has no double count or omission",
+        "focused regression covers buy cost basis, sell realized PnL, gateway fee report, and terminal fee display; engine build and terminal production build passed; actual finalized meta.fee reconciliation and multisignature/version-aware fee decomposition remain open",
+        "V1 message fee config is diagnostic only; verify actual total fees using confirmed transaction metadata for successful and failed transactions."
+      ],
+      "evidence": [
+        "https://solana.com/docs/core/fees/fee-structure",
+        "https://solana.com/docs/core/transactions/versioned-transactions",
+        "src/platform/ingestion/truth-x.ts",
+        "src/platform/pipeline/execution-economics.ts",
+        "src/platform/execution/asset-delta-engine.ts",
+        "test/core.test.mjs",
+        "src/execution-engine.ts",
+        "src/command-gateway.ts",
+        "src/terminal-reducer-handlers.ts",
+        "terminal/src/execution-bridge.js",
+        "terminal/src/terminal-reducer-handlers.js",
+        "src/adapters/paper-execution-adapter.js",
+        "test/command-gateway-and-axiom.test.mjs",
+        "test/execution-bridge.test.mjs",
+        "test/execution-parity.test.mjs"
+      ],
+      "license": "NOT_APPLICABLE_DOCUMENTATION",
+      "decision": "RESEARCH_ONLY_OPEN_RECONCILIATION_VALIDATION"
+    },
+    {
+      "id": "SRC-256",
+      "url": "https://solana.com/docs/tools/production-readiness",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official Solana production readiness guide opened 2026-10-14",
+        "Local Config, RpcPool, transaction-lifetime, Jupiter V0 simulation and live-readiness source inspection",
+        "Project live-status and recovery evidence"
+      ],
+      "discoveries": [
+        "The official guide calls for redundant RPCs, confirmed blockhash plus lastValidBlockHeight tracking, explicit priority-fee and compute-limit instructions, simulation-derived compute estimates, retry/rebuild after expiry, transaction monitoring and load testing. It describes skipPreflight=true only after prior validation for low latency, not as a universal safe default.",
+        "SYLPH config requires two distinct RPC URLs for live mode; RpcPool tracks latency/failure/slot lag and fails over, while TransactionLifetimeAuthority models lastValidBlockHeight. Jupiter V0 instruction construction now simulates with verified lookup tables and uses a capped measured-CU priority fee for paper projections.",
+        "The execution builder explicitly asserts paper-only build authority and no production transaction submit path was found in src. Therefore these source checks and mocked simulation tests do not prove live endpoint redundancy, landing, confirmation, realized fees, load capacity or operational readiness."
+      ],
+      "patterns": [
+        "translate checklist requirements into evidence-backed runtime gates",
+        "bind freshness, failover, transaction lifetime, confirmation and cost as separate observations",
+        "rebuild only after typed expiry evidence and retain idempotent transaction identity",
+        "keep simulation and PAPER evidence distinct from live submission or finalized settlement"
+      ],
+      "sylphModules": [
+        "src/config.ts",
+        "src/rpc.ts",
+        "src/platform/execution/transaction-lifetime.ts",
+        "src/execution.ts",
+        "src/platform/execution/live-readiness.ts",
+        "docs/ECOSYSTEM_LIVE_STATUS_2026-10-14.md",
+        "start-app.mjs"
+      ],
+      "overlap": "Configuration and source contain redundant endpoint and readiness gates, transaction-lifetime checks, and the Jupiter V0 simulated paper builder. Current live-readiness/launcher status remains evidence-gated; this source inspection did not observe or change running services. No live transaction submission, end-to-end provider failover, production load run or finalized settlement was verified.",
+      "risks": [
+        "source checklists and local mocks do not establish live provider SLA or endpoint independence",
+        "skipPreflight guidance is conditional on prior simulation/revalidation and must not become a blanket bypass",
+        "processed/confirmed landing telemetry is not finalized settlement or realized net PnL",
+        "load and failure testing must not trigger live signing or capital movement without explicit separate authorization"
+      ],
+      "validation": [
+        "fault-inject endpoint timeouts, 429s, stale slot reports and provider disagreement in deterministic tests",
+        "verify blockhash-expiry rebuild, simulation freshness, and idempotent resend behavior without broadcasting",
+        "bind process identity, source build ID, network identity and status schema in readiness evidence",
+        "measure finality-aware monitoring and actual fee/tip settlement against finalized fixtures",
+        "keep production load and endpoint qualification separate from local source tests"
+      ],
+      "evidence": [
+        "https://solana.com/docs/tools/production-readiness",
+        "src/config.ts",
+        "src/rpc.ts",
+        "src/platform/execution/transaction-lifetime.ts",
+        "src/execution.ts",
+        "src/platform/execution/live-readiness.ts",
+        "docs/ECOSYSTEM_LIVE_STATUS_2026-10-14.md"
+      ],
+      "license": "NOT_APPLICABLE_DOCUMENTATION",
+      "decision": "PARTIAL_READINESS_ALIGNMENT; PAPER_ONLY_NO_LIVE_EXECUTION_CERTIFICATION"
+    }
+  ],
+  "safety": {
+    "signingOrBroadcastChanged": false,
+    "capitalAuthorizationChanged": false,
+    "riskLimitsChanged": false,
+    "servicesStartedStoppedOrRestarted": false
+  }
+}

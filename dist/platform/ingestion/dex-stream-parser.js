@@ -8,6 +8,10 @@ export class DEXStreamParser {
     static PROGRAMS = {
         '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P': 'PUMP_FUN',
         '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8': 'RAYDIUM_AMM_V4',
+        '5quBtoiQqxF9Jv6KYKctB59NT3gtJD2Y65kdnB1Uev3h': 'RAYDIUM_AMM_STABLE',
+        'CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK': 'RAYDIUM_CLMM',
+        'CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C': 'RAYDIUM_CPMM',
+        'LanMV9sAd7wArD4vJFi2qDdfnVhFxYSUg6eADduJ3uj': 'RAYDIUM_LAUNCHPAD',
         'LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo': 'METEORA_DLMM',
         'whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc': 'WHIRLPOOL_ORCA',
     };

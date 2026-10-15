@@ -227,7 +227,7 @@ test('SOLARIS BimodalExecutionRouter: abstains when fee evidence is not observed
 test('SOLARIS PostGraduationAmmBridge: Enforces 30s sniper dump cooldown while allowing sell exits', () => {
   const bridge = new PostGraduationAmmBridge({
     sniperCooldownMs: 50, // fast 50ms cooldown for deterministic testing
-    minRaydiumSolReserves: 5_000_000_000n,
+    minAmmQuoteReserves: 5_000_000_000n,
   });
 
   const mint = 'GraduatedTokenMint1111111111111111111111111';
@@ -238,7 +238,7 @@ test('SOLARIS PostGraduationAmmBridge: Enforces 30s sniper dump cooldown while a
   assert.equal(initialCheck.status, 'BONDING_CURVE');
 
   // 2. Migration triggered -> MIGRATION_PENDING (buys blocked, sells allowed)
-  bridge.registerMigration(mint, 250_000, 85_000_000_000n);
+  bridge.registerMigration(mint, 250_000);
   const buyPending = bridge.canExecuteTrade(mint, 'BUY');
   assert.equal(buyPending.allowed, false);
   assert.equal(buyPending.status, 'MIGRATION_PENDING');
@@ -246,33 +246,59 @@ test('SOLARIS PostGraduationAmmBridge: Enforces 30s sniper dump cooldown while a
   const sellPending = bridge.canExecuteTrade(mint, 'SELL');
   assert.equal(sellPending.allowed, true); // Capital exit always permitted
 
-  // 3. Raydium pool created -> enters SNIPER_COOLDOWN
-  bridge.registerRaydiumPool(mint, 'RaydiumPoolAddress123', 85_000_000_000n);
+  // 3. PumpSwap pool with observed reserves and fee enters SNIPER_COOLDOWN.
+  const pool = { venue: 'PUMPSWAP', source: 'CANONICAL_ON_CHAIN_RPC', poolAddress: 'PumpSwapPoolAddress123',
+    quoteMint: 'So11111111111111111111111111111111111111112',
+    quoteReserves: 85_000_000_000n, tokenReserves: 206_900_000_000_000n, effectiveFeeBps: 25, slot: 250_001, observedAtMs: Date.now() };
+  bridge.registerAmmPool(mint, pool);
   const buyCooldown = bridge.canExecuteTrade(mint, 'BUY');
   assert.equal(buyCooldown.allowed, false);
   assert.equal(buyCooldown.status, 'SNIPER_COOLDOWN');
   assert.match(buyCooldown.reason, /Sniper stabilization cooldown active/);
 
-  // 4. Wait for cooldown to expire -> RAYDIUM_ACTIVE
+  const cooldownDeadline = bridge.getGraduatedState(mint).sniperCooldownExpiresAtMs;
+  bridge.registerMigration(mint, 250_002); // repeated complete-curve observation must be idempotent
+  assert.equal(bridge.getGraduatedState(mint).sniperCooldownExpiresAtMs, cooldownDeadline);
+  assert.equal(bridge.getGraduatedState(mint).poolAddress, pool.poolAddress);
+
+  // 4. Wait for cooldown to expire -> AMM_ACTIVE
   return new Promise((resolve) => {
     setTimeout(() => {
       const buyActive = bridge.canExecuteTrade(mint, 'BUY');
-      assert.equal(buyActive.allowed, true);
-      assert.equal(buyActive.status, 'RAYDIUM_ACTIVE');
+      assert.equal(buyActive.allowed, false);
+      assert.equal(buyActive.status, 'AMM_ACTIVE');
+      assert.match(buyActive.reason, /not canonical RPC evidence/);
 
       const state = bridge.getGraduatedState(mint);
-      assert.equal(state?.status, 'RAYDIUM_ACTIVE');
-      assert.equal(state?.raydiumPoolAddress, 'RaydiumPoolAddress123');
+      assert.equal(state?.status, 'AMM_ACTIVE');
+      assert.equal(state?.poolVenue, 'PUMPSWAP');
+      assert.equal(state?.poolObservationSource, 'UNVERIFIED_CALLER');
+      assert.equal(state?.poolAddress, pool.poolAddress);
 
       // 5. If pool reserves drop below safety floor -> buys blocked
-      bridge.registerRaydiumPool(mint, 'RaydiumPoolAddress123', 1_000_000_000n); // 1 SOL < 5 SOL floor
+      bridge.registerAmmPool(mint, { ...pool, quoteReserves: 1_000_000_000n, slot: 250_003 }); // 1 SOL < 5 SOL floor
       const buyDrained = bridge.canExecuteTrade(mint, 'BUY');
       assert.equal(buyDrained.allowed, false);
-      assert.match(buyDrained.reason, /reserves below safety floor/);
+      assert.match(buyDrained.reason, /not canonical RPC evidence/);
 
       resolve();
     }, 60);
   });
+});
+
+test('SOLARIS PostGraduationAmmBridge: caller-supplied canonical label cannot authorize an AMM buy', () => {
+  const bridge = new PostGraduationAmmBridge({ sniperCooldownMs: 0 });
+  const mint = 'UNVERIFIED_AMM_TOKEN';
+  bridge.registerMigration(mint, 300_000);
+  bridge.registerAmmPool(mint, {
+    venue: 'PUMPSWAP', source: 'CANONICAL_ON_CHAIN_RPC', poolAddress: 'unverified-pool',
+    quoteMint: 'So11111111111111111111111111111111111111112',
+    quoteReserves: 85_000_000_000n, tokenReserves: 200_000_000_000_000n,
+    effectiveFeeBps: 25, slot: 300_001, observedAtMs: Date.now(),
+  });
+  const buy = bridge.canExecuteTrade(mint, 'BUY');
+  assert.equal(buy.allowed, false);
+  assert.match(buy.reason, /not canonical RPC evidence/);
 });
 
 test('SOLARIS IngestionGapReconciler: Detects slot gaps, triggers backfill, and resolves circular buffer', async () => {
@@ -381,8 +407,10 @@ test('SOLARIS End-to-End System Integration: CommandGateway and ProjectionServic
   assert.equal(gradState.status, 'MIGRATION_PENDING');
   assert.equal(gradState.migrationTriggeredAtSlot, 250_000);
 
-  // Register Raydium pool and verify sniper cooldown gating
-  market.ammBridge.registerRaydiumPool('GRAD_TOKEN_X', 'RAY_POOL_X', 85_000_000_000n);
+  // Register explicit PumpSwap pool state and verify sniper cooldown gating.
+  market.ammBridge.registerAmmPool('GRAD_TOKEN_X', { venue: 'PUMPSWAP', source: 'CANONICAL_ON_CHAIN_RPC', poolAddress: 'PUMP_POOL_X',
+    quoteMint: 'So11111111111111111111111111111111111111112', quoteReserves: 85_000_000_000n,
+    tokenReserves: 206_900_000_000_000n, effectiveFeeBps: 25, slot: 250_000, observedAtMs: Date.now() });
   const tradeCheck = market.ammBridge.canExecuteTrade('GRAD_TOKEN_X', 'BUY');
   assert.equal(tradeCheck.allowed, false);
   assert.equal(tradeCheck.status, 'SNIPER_COOLDOWN');

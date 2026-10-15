@@ -16,7 +16,11 @@ test('dashboard protects reads and writes, validates actions and serves local as
     assert.ok(page.headers.get('content-security-policy').includes("frame-ancestors 'none'"));
     const script = await fetch(server.url + '/app.js');
     assert.equal(script.status, 200);
-    assert.match(await script.text(), /renderProviderHealth/);
+    const appScript = await script.text();
+    assert.match(appScript, /renderProviderHealth/);
+    assert.match(appScript, /FEED RECOVERY HOLD/);
+    assert.match(appScript, /marketEvidence/);
+    assert.match(appScript, /Waiting for canonical pool/);
     assert.match(html, /Engine provider health/);
     assert.equal((await fetch(server.url + '/api/state')).status, 403);
     assert.equal((await fetch(server.url + '/api/state', { headers: { 'x-dashboard-token': 'é'.repeat(64) } })).status, 403);
@@ -50,10 +54,24 @@ test.after(async () => {
 const cfg = config({ RPC_URLS: 'https://one.invalid,https://two.invalid', WS_URLS: 'wss://one.invalid', JITO_AUTH: 'SECRET_AUTH', YELLOWSTONE_TOKEN: 'SECRET_GRPC', KEYPAIR_PATH: 'SECRET_PATH' });
 function fixture() { return { version: 1, mode: 'paper', wallet: PublicKey.default.toBase58(), positions: {}, cash: '1', dayPnl: '0', day: '2026-09-14', halted: true, closed: {}, pending: { signature: 'public-signature', wire: 'SECRET_SIGNED_WIRE', mint: 'mint', side: 'buy', created: Date.now(), reason: 'test' } }; }
 test('dashboard snapshot excludes credentials and signed transaction bytes', () => {
-  const engine = new Engine(cfg, { connection: {} }, {}, {}, dashboardStore, fixture());
+  const state = fixture();
+  state.feedIngressFault = { reason: 'FEED_INGRESS_QUEUE_OVERFLOW', observedAtMs: Date.now() };
+  const engine = new Engine(cfg, { connection: {} }, {}, {}, dashboardStore, state);
   const snapshot = engine.snapshot();
   assert.ok(snapshot.providerHealth.providers.YELLOWSTONE_GRPC);
+  assert.equal(snapshot.feed.ingressFault.reason, 'FEED_INGRESS_QUEUE_OVERFLOW');
   const value = JSON.stringify(snapshot); assert.ok(!value.includes('SECRET')); assert.ok(value.includes('public-signature'));
+});
+test('dashboard snapshot exposes bounded graduated-market evidence for each position', () => {
+  const mint = PublicKey.default.toBase58();
+  const evidence = { status: 'UNAVAILABLE', venue: 'PUMPSWAP', lastAttemptAtMs: 1_800_000_000_000, lastError: 'PUMP_CANONICAL_POOL_NOT_FOUND' };
+  const state = fixture(); state.pending = null; state.positions = { [mint]: {
+    mint, qty: '10', initialQty: '10', cost: '100', peak: '100', stage: 0,
+    opened: Date.now(), panic: false, reserve: '0', creator: '', creatorTokens: '0',
+  } };
+  const market = { ammBridge: { getObservationSummary: () => evidence } };
+  const snapshot = new Engine(cfg, { connection: {} }, market, {}, dashboardStore, state).snapshot();
+  assert.deepEqual(snapshot.positions[0].marketEvidence, evidence);
 });
 test('operator resume persists without clearing a safety halt', async () => {
   let saved;

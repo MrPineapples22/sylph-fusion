@@ -1,0 +1,613 @@
+{
+  "batch": 17,
+  "date": "2026-10-14",
+  "sourceRecords": 15,
+  "directlyReviewed": 15,
+  "scope": "Time-series observability and wallet/token relationship graph analytics",
+  "method": "Pinned official repository README and license/source inspection with upstream HEAD revisions recorded. Findings are bounded research notes; no REA execution, packages installed, SYLPH code patch, build, or runtime test was performed.",
+  "sources": [
+    {
+      "id": "SRC-151",
+      "url": "https://github.com/VictoriaMetrics/VictoriaMetrics",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official VictoriaMetrics README and license metadata inspected at pinned default-branch commit 665c4f7e36fc017eb3451f1a7022ac3b98cc6713; accessed 2026-10-15."
+      ],
+      "discoveries": [
+        "VictoriaMetrics provides single-node and cluster time-series monitoring services, with PromQL/MetricsQL and multiple ingestion formats including Prometheus remote write and OpenTelemetry metrics.",
+        "The README describes open-source single-node and cluster variants under Apache-2.0 and separately identifies enterprise-only features.",
+        "Metrics retention, backup, and downsampling are observability features; they do not provide canonical event or trade accounting."
+      ],
+      "patterns": [
+        "Export bounded-cardinality queue depth, accepted/committed rates, socket lifecycle, reconnects, and durable projection latency as metrics.",
+        "Keep measurement labels to stable dimensions such as component, provider class, and outcome; never label by mint or signature at high event volume."
+      ],
+      "sylphModules": [
+        "src/feed.ts",
+        "src/platform/ingress/canonical-ingress.ts",
+        "src/db-worker.ts (telemetry only)"
+      ],
+      "overlap": [
+        "Useful as a downstream metrics backend; overlaps with existing metrics/logging and must not become feed-health authority."
+      ],
+      "risks": [
+        "Prometheus-style labels can create unbounded cardinality and cost.",
+        "Enterprise feature set and retention options differ from the Apache-2.0 core; confirm exact edition.",
+        "Metrics are sampled/aggregated evidence and cannot replace the durable journal."
+      ],
+      "validation": [
+        "Use synthetic load only to verify exported queue, ingress, and projection-latency metrics match internal counters.",
+        "Inject missed scrapes and stale samples; verify UI continues to show canonical Engine status rather than inferred metric health."
+      ],
+      "evidence": [
+        "https://github.com/VictoriaMetrics/VictoriaMetrics/tree/665c4f7e36fc017eb3451f1a7022ac3b98cc6713",
+        "https://github.com/VictoriaMetrics/VictoriaMetrics/blob/665c4f7e36fc017eb3451f1a7022ac3b98cc6713/README.md"
+      ],
+      "license": "Apache-2.0 (single-node and cluster as described by README; enterprise features are separately identified)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "665c4f7e36fc017eb3451f1a7022ac3b98cc6713"
+    },
+    {
+      "id": "SRC-152",
+      "url": "https://github.com/questdb/questdb",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official QuestDB README and repository license metadata inspected at pinned default-branch commit ea37707be291b24a353ed2f56411fba297f4fb74; accessed 2026-10-15."
+      ],
+      "discoveries": [
+        "QuestDB is a time-series database with a write-ahead log, time-partitioned column storage, SQL, and Parquet-based data paths.",
+        "The current README describes QWP as a binary columnar WebSocket protocol for writes and Arrow query streaming; it also lists a separate line protocol path.",
+        "QuestDB is a database product rather than an in-process journal adapter, and published throughput numbers are upstream benchmarks rather than SYLPH measurements."
+      ],
+      "patterns": [
+        "Benchmark telemetry or historical market-data analytics with representative event shapes and retention before choosing a separate analytical store.",
+        "Keep write path and analytics query path downstream of canonical ingress so database latency cannot delay or gate live observation handling."
+      ],
+      "sylphModules": [
+        "offline historical analytics",
+        "operations telemetry"
+      ],
+      "overlap": [
+        "Could be a separate analytics store; current canonical journal and SQLite projection handle Engine durability and should not be replaced by a second authority."
+      ],
+      "risks": [
+        "A new database introduces its own WAL, backup, retention, and schema migration obligations.",
+        "QWP and other protocol compatibility must be version-pinned; benchmark claims are not evidence of SYLPH end-to-end throughput."
+      ],
+      "validation": [
+        "If evaluated, compare read-after-write, restart recovery, duplicate handling, and time partition boundaries against a deterministic fixture.",
+        "Use synthetic/local data only and reconcile any execution-derived analytics to canonical fill and fee evidence."
+      ],
+      "evidence": [
+        "https://github.com/questdb/questdb/tree/ea37707be291b24a353ed2f56411fba297f4fb74",
+        "https://github.com/questdb/questdb/blob/ea37707be291b24a353ed2f56411fba297f4fb74/README.md"
+      ],
+      "license": "Apache-2.0 (repository metadata; confirm third-party and feature-specific terms before distribution)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "ea37707be291b24a353ed2f56411fba297f4fb74"
+    },
+    {
+      "id": "SRC-153",
+      "url": "https://github.com/signoz/signoz",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official SigNoz README and root LICENSE inspected at pinned default-branch commit 375b3f8305720b236a83b50955269c60d96e1f9e; accessed 2026-10-15."
+      ],
+      "discoveries": [
+        "SigNoz is an OpenTelemetry-native observability platform that correlates logs, metrics, traces, alerts, and dashboards.",
+        "The README describes community self-hosting and separately available enterprise/cloud offerings with different operational capabilities.",
+        "The root LICENSE grants MIT terms outside the `ee/` and `cmd/enterprise/` areas, which have separate license terms; the repo should not be labeled uniformly MIT without scope."
+      ],
+      "patterns": [
+        "Instrument with OpenTelemetry once and correlate ingress-to-projection spans using non-sensitive request and observation IDs.",
+        "Separate alerting thresholds from the Engine’s own fail-closed readiness predicate."
+      ],
+      "sylphModules": [
+        "src/platform/ingress/canonical-ingress.ts",
+        "src/platform/ingestion/gap-reconciler.ts",
+        "src/dashboard.ts"
+      ],
+      "overlap": [
+        "Potential external view over telemetry; would duplicate pieces of the Grafana/OpenTelemetry observability resources already in the catalog."
+      ],
+      "risks": [
+        "License is directory/component scoped; inspect enterprise and third-party terms before reusing or deploying those parts.",
+        "Telemetry export failure must not block journal commit or alter health/capital state.",
+        "Trace fields can expose wallet, mint, or provider data if not explicitly redacted."
+      ],
+      "validation": [
+        "Use synthetic events to verify trace continuity, secret redaction, and behavior when collector/backend is unavailable.",
+        "Compare alerts to deterministic incident fixtures; prove alert state cannot flip Engine readiness."
+      ],
+      "evidence": [
+        "https://github.com/SigNoz/signoz/tree/375b3f8305720b236a83b50955269c60d96e1f9e",
+        "https://raw.githubusercontent.com/SigNoz/signoz/375b3f8305720b236a83b50955269c60d96e1f9e/LICENSE"
+      ],
+      "license": "MIT for files outside ee/ and cmd/enterprise by root LICENSE; enterprise and third-party components have separate terms",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "375b3f8305720b236a83b50955269c60d96e1f9e"
+    },
+    {
+      "id": "SRC-154",
+      "url": "https://github.com/vmihailenco/uptrace",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official Uptrace README and root LICENSE inspected at pinned default-branch commit 1e622fff165391a26bbebc135e4c4f8a843ef1bd; accessed 2026-10-15."
+      ],
+      "discoveries": [
+        "Uptrace is an OpenTelemetry APM platform for traces, metrics, and logs, with dashboards, alerting, and integrations.",
+        "The README says its storage uses ClickHouse for telemetry data and PostgreSQL for metadata, so deployment has at least two persistence components.",
+        "The root LICENSE is GNU AGPL-3.0; license review is required before network-service use or distribution."
+      ],
+      "patterns": [
+        "Correlate traces, metrics, and logs with stable IDs and sampled, redacted span attributes.",
+        "Treat telemetry backends as diagnostic indexes and preserve raw canonical receipts separately."
+      ],
+      "sylphModules": [
+        "src/platform/ingress/canonical-ingress.ts",
+        "src/feed.ts",
+        "src/db-worker.ts (diagnostic instrumentation only)"
+      ],
+      "overlap": [
+        "Overlaps with SigNoz, Grafana Tempo, and other catalog observability stacks; no reason to deploy multiple without a documented selection."
+      ],
+      "risks": [
+        "AGPL-3.0 obligations require legal/license review for intended deployment.",
+        "ClickHouse and PostgreSQL add separate service, backup, and access-control dependencies.",
+        "Instrumentation must not add a synchronous remote network dependency to the serial ingestion lane."
+      ],
+      "validation": [
+        "If considered, send synthetic test events through an asynchronous outbox and prove remote backend failure has no effect on ingress ACKs.",
+        "Verify redaction, retention, resource consumption, and recovery of the telemetry stack."
+      ],
+      "evidence": [
+        "https://github.com/uptrace/uptrace/tree/1e622fff165391a26bbebc135e4c4f8a843ef1bd",
+        "https://raw.githubusercontent.com/uptrace/uptrace/1e622fff165391a26bbebc135e4c4f8a843ef1bd/LICENSE"
+      ],
+      "license": "AGPL-3.0 (root LICENSE)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "1e622fff165391a26bbebc135e4c4f8a843ef1bd"
+    },
+    {
+      "id": "SRC-155",
+      "url": "https://github.com/hyperdxio/hyperdx",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official HyperDX README and repository license metadata inspected at pinned default-branch commit ecddea2a0469bd53416227a79e36392dc633bff8; accessed 2026-10-15."
+      ],
+      "discoveries": [
+        "HyperDX is a ClickHouse-based observability UI that unifies logs, metrics, traces, errors, and session replay with OpenTelemetry support.",
+        "The README describes ClickStack as a composed deployment including ClickHouse, HyperDX, an OpenTelemetry Collector, and MongoDB.",
+        "The repository metadata identifies MIT licensing; the deployment is a multi-service observability stack rather than a SYLPH library."
+      ],
+      "patterns": [
+        "Use cross-signal correlation and live-tail search for diagnosing synthetic queue/reconnect incidents.",
+        "Prefer OpenTelemetry-compatible instrumentation with redacted, bounded attributes and explicit sampling."
+      ],
+      "sylphModules": [
+        "operations incident diagnostics",
+        "src/dashboard.ts (external read-only observability)"
+      ],
+      "overlap": [
+        "Overlaps with SigNoz, Uptrace, and Grafana components; choose one observability stack if needed rather than accumulating duplicate systems."
+      ],
+      "risks": [
+        "Session replay and telemetry can capture sensitive data unless collection is explicitly restricted.",
+        "ClickStack multi-service footprint adds storage, network, credential, and upgrade dependencies.",
+        "Diagnostic UI cannot certify canonical feed health or fill settlement."
+      ],
+      "validation": [
+        "Run only on synthetic/local traces first; verify privacy filters and backend outage behavior.",
+        "Keep live readiness sourced from Engine snapshot and durable incident records, not HyperDX alerts."
+      ],
+      "evidence": [
+        "https://github.com/hyperdxio/hyperdx/tree/ecddea2a0469bd53416227a79e36392dc633bff8",
+        "https://github.com/hyperdxio/hyperdx/blob/ecddea2a0469bd53416227a79e36392dc633bff8/LICENSE"
+      ],
+      "license": "MIT (repository metadata)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "ecddea2a0469bd53416227a79e36392dc633bff8"
+    },
+    {
+      "id": "SRC-156",
+      "url": "https://github.com/jaegertracing/jaeger",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official Jaeger README and license metadata inspected at pinned main commit 563e23fdb5b95e141a0ca82dad9601fa51c66ec7; accessed 2026-10-15."
+      ],
+      "discoveries": [
+        "Jaeger v2 is an OpenTelemetry Collector-based distributed tracing platform; its quick start accepts OTLP over gRPC and HTTP.",
+        "Its architecture separates SDK/collector ingestion, storage backend, query service, and UI.",
+        "The README documents backend-version support policies, so storage compatibility must be checked against the current documented support matrix."
+      ],
+      "patterns": [
+        "Propagate trace context across ingress, journal commit, projection, and dashboard boundaries while keeping durable event IDs in the journal.",
+        "Use an asynchronous OTLP exporter so trace collection cannot become a synchronous dependency of the canonical ingress lane."
+      ],
+      "sylphModules": [
+        "src/platform/ingress/canonical-ingress.ts",
+        "src/platform/ingestion/gap-reconciler.ts",
+        "src/dashboard.ts"
+      ],
+      "overlap": [
+        "Overlaps with OpenTelemetry Collector, Tempo, SigNoz, Uptrace, and HyperDX; one trace backend is enough for an evaluation."
+      ],
+      "risks": [
+        "Telemetry loss or stale traces do not prove a feed gap; the journal remains authoritative.",
+        "Backend support varies by version and Jaeger storage plugins introduce additional compatibility dependencies.",
+        "Sensitive identifiers in spans require redaction and sampling."
+      ],
+      "validation": [
+        "Use synthetic local spans to validate trace continuity, sampling, redaction, and exporter outage behavior.",
+        "Test against the documented storage backend version support policy before deployment."
+      ],
+      "evidence": [
+        "https://github.com/jaegertracing/jaeger/tree/563e23fdb5b95e141a0ca82dad9601fa51c66ec7",
+        "https://github.com/jaegertracing/jaeger/blob/563e23fdb5b95e141a0ca82dad9601fa51c66ec7/README.md"
+      ],
+      "license": "Apache-2.0 (repository metadata)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "563e23fdb5b95e141a0ca82dad9601fa51c66ec7"
+    },
+    {
+      "id": "SRC-157",
+      "url": "https://github.com/networkx/networkx",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official NetworkX README and LICENSE.txt inspected at pinned main commit 6da4704cbf32ba6f50f6d9c46cc0a071e3a87985; accessed 2026-10-15."
+      ],
+      "discoveries": [
+        "NetworkX is a Python package for creating, manipulating, and studying complex networks.",
+        "It is an offline graph-analysis library, not a graph database or Solana data source.",
+        "The pinned LICENSE.txt identifies a 3-clause BSD license."
+      ],
+      "patterns": [
+        "For offline wallet research, represent observed transfers or common funding as typed, timestamped edges and preserve the source evidence for every edge.",
+        "Use graph algorithms to generate investigation candidates, then verify each relationship against canonical on-chain transactions."
+      ],
+      "sylphModules": [
+        "offline token/wallet relationship analysis",
+        "research data pipeline"
+      ],
+      "overlap": [
+        "Complements the graph-tooling resources in the catalog; no runtime service integration is needed."
+      ],
+      "risks": [
+        "Graph edges can create false associations when based on shared infrastructure, exchange custody, or incomplete observations.",
+        "The Python implementation and memory use may be unsuitable for very large graphs or low-latency runtime.",
+        "Derived centrality/community scores are investigative signals, not risk conclusions."
+      ],
+      "validation": [
+        "Use a labeled synthetic graph to test connected-component and community assumptions.",
+        "Report every edge’s source, observed time, and uncertainty; independently validate any real-world finding on chain."
+      ],
+      "evidence": [
+        "https://github.com/networkx/networkx/tree/6da4704cbf32ba6f50f6d9c46cc0a071e3a87985",
+        "https://raw.githubusercontent.com/networkx/networkx/6da4704cbf32ba6f50f6d9c46cc0a071e3a87985/LICENSE.txt"
+      ],
+      "license": "BSD-3-Clause (pinned LICENSE.txt)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "6da4704cbf32ba6f50f6d9c46cc0a071e3a87985"
+    },
+    {
+      "id": "SRC-158",
+      "url": "https://github.com/neo4j/neo4j",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official Neo4j README and license metadata inspected at pinned 2026.09 commit 54a7dcf7c2501b31866199143364c5332da8936f; accessed 2026-10-15."
+      ],
+      "discoveries": [
+        "Neo4j describes a graph store with Cypher and ACID transactions.",
+        "The GitHub repository advertises GPL-3.0; managed Aura and separate product offerings should not be presumed to share identical terms.",
+        "A graph database could model evidence-linked wallet/token relations, but it would add a separate state store and query interface."
+      ],
+      "patterns": [
+        "If used for offline research, store evidence IDs and source timestamps on each node/edge and preserve an exportable deterministic graph snapshot.",
+        "Treat graph outputs as candidate investigations; resolve economic authority in canonical chain records and Engine state."
+      ],
+      "sylphModules": [
+        "offline token/wallet relationship research",
+        "data export and investigative tooling"
+      ],
+      "overlap": [
+        "Overlaps with Memgraph, FalkorDB, and graph libraries already in the catalog."
+      ],
+      "risks": [
+        "GPL-3.0 and product/service terms require review for the exact distribution/use model.",
+        "A second state store can drift from the canonical journal and create ambiguous corrections/deletions.",
+        "Graph query results do not establish common control or malicious coordination without validated edge evidence."
+      ],
+      "validation": [
+        "Before a prototype, review the intended Neo4j edition and license, then test deterministic import/export and replay from the same evidence set.",
+        "Compare graph-derived links against verified transactions and include false-positive fixtures."
+      ],
+      "evidence": [
+        "https://github.com/neo4j/neo4j/tree/54a7dcf7c2501b31866199143364c5332da8936f",
+        "https://github.com/neo4j/neo4j/blob/54a7dcf7c2501b31866199143364c5332da8936f/LICENSE.txt"
+      ],
+      "license": "GPL-3.0 (GitHub repository metadata; verify product and deployment terms)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "54a7dcf7c2501b31866199143364c5332da8936f"
+    },
+    {
+      "id": "SRC-159",
+      "url": "https://github.com/memgraph/memgraph",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official Memgraph README and root LICENSE inspected at pinned master commit 0f420c4280967268e5425c6d54f31b9155b01c0f; accessed 2026-10-15."
+      ],
+      "discoveries": [
+        "Memgraph is an in-memory, Cypher-compatible graph database implemented in C++ and positioned for real-time graph analytics.",
+        "The root LICENSE explicitly states the source is variously licensed under BSL 1.1 and the Memgraph Enterprise License, with license files under `licenses/`.",
+        "The source README and root license are insufficient to establish the exact rights for each file or an intended deployment."
+      ],
+      "patterns": [
+        "If comparing graph engines, keep research ingestion asynchronous and downstream; preserve evidence IDs and edge provenance.",
+        "Run adversarial wallet-cluster fixtures to measure false positives before relying on graph relationships."
+      ],
+      "sylphModules": [
+        "offline wallet relationship analysis",
+        "investigative analytics"
+      ],
+      "overlap": [
+        "Same broad role as Neo4j/FalkorDB; do not introduce several graph databases for the same evidence set."
+      ],
+      "risks": [
+        "File-level BSL/MEL terms need review before use; repository-level “open source” wording is not license approval.",
+        "In-memory operation raises persistence, backup, and restart questions for audit-linked graph data.",
+        "Graph scores may confuse common infrastructure with coordinated control."
+      ],
+      "validation": [
+        "Inspect the specific files and license grants planned for use; obtain legal review if deployment rights are unclear.",
+        "Test restart/rebuild and compare graph outputs with a canonical evidence-ledger reference."
+      ],
+      "evidence": [
+        "https://github.com/memgraph/memgraph/tree/0f420c4280967268e5425c6d54f31b9155b01c0f",
+        "https://raw.githubusercontent.com/memgraph/memgraph/0f420c4280967268e5425c6d54f31b9155b01c0f/LICENSE"
+      ],
+      "license": "Mixed BSL-1.1 and Memgraph Enterprise License (root LICENSE; file-specific terms must be checked)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "0f420c4280967268e5425c6d54f31b9155b01c0f"
+    },
+    {
+      "id": "SRC-160",
+      "url": "https://github.com/FalkorDB/FalkorDB",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official FalkorDB README and root LICENSE inspected at pinned main commit b080a44c135e8b938732f155785992f39adcb41c; accessed 2026-10-15."
+      ],
+      "discoveries": [
+        "FalkorDB describes a graph database built on GraphBLAS sparse adjacency matrices and oriented toward knowledge graphs/GraphRAG.",
+        "The root LICENSE text is Server Side Public License (SSPL) version 1, not a permissive Apache license.",
+        "Its database/service deployment model makes licensing and hosting terms relevant before considering any use."
+      ],
+      "patterns": [
+        "GraphBLAS is a useful reference for sparse graph computation in offline wallet-cluster analysis.",
+        "Keep source observations and derived confidence separate; a graph acceleration layer must not confer execution or risk authority."
+      ],
+      "sylphModules": [
+        "offline graph analytics",
+        "token/wallet relationship research"
+      ],
+      "overlap": [
+        "Overlaps with NetworkX, Neo4j, Memgraph, and graph-tool; no current need for a new graph database in SYLPH runtime."
+      ],
+      "risks": [
+        "SSPL-1.0 has obligations different from permissive open-source licenses; review exact intended use and service model before adopting.",
+        "A graph store can be costly to reconcile and rebuild if source evidence changes or is retracted.",
+        "Graph-derived attribution remains uncertain without verified transaction relationships."
+      ],
+      "validation": [
+        "Review SSPL text and service obligations before any deployment.",
+        "Use deterministic graph fixtures and reconcile all imported edges to canonical source records; test rebuild/restart before production consideration."
+      ],
+      "evidence": [
+        "https://github.com/FalkorDB/FalkorDB/tree/b080a44c135e8b938732f155785992f39adcb41c",
+        "https://raw.githubusercontent.com/FalkorDB/FalkorDB/b080a44c135e8b938732f155785992f39adcb41c/LICENSE"
+      ],
+      "license": "SSPL-1.0 (root LICENSE; verify obligations for intended deployment)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "b080a44c135e8b938732f155785992f39adcb41c"
+    },
+    {
+      "id": "SRC-161",
+      "url": "https://github.com/Qiskit/rustworkx",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official rustworkx README and repository license metadata inspected at pinned main commit 25398ab47f664962076508de27aa78ec52e24eaf; accessed 2026-10-15."
+      ],
+      "discoveries": [
+        "rustworkx is a general-purpose Python graph library implemented in Rust, exposing shortest-path and other graph operations.",
+        "The README notes that it originated to provide a faster directed graph for Qiskit but now describes broader graph-library use.",
+        "The project publishes Apache-2.0 license metadata; binary packages or source builds have platform/toolchain requirements."
+      ],
+      "patterns": [
+        "For offline graph investigations, use a compact Rust-backed graph library only after profiling the data size and algorithm needs.",
+        "Preserve stable node identity and evidence-bearing edge attributes when computing connected components or paths."
+      ],
+      "sylphModules": [
+        "offline wallet/token relationship analytics",
+        "research processing tools"
+      ],
+      "overlap": [
+        "Overlaps with NetworkX and igraph as a graph-algorithm library; no runtime service integration."
+      ],
+      "risks": [
+        "Graph speed does not validate the input evidence or inferred relationship.",
+        "Index-based node IDs can be unstable across graph rebuilds unless a stable external identity map is maintained.",
+        "Platform binaries and Rust source builds have distinct compatibility requirements."
+      ],
+      "validation": [
+        "Compare chosen algorithm output with a small hand-verified graph fixture including disconnected components and duplicate edges.",
+        "Pin package and algorithm version; verify reproducible results from the same evidence snapshot."
+      ],
+      "evidence": [
+        "https://github.com/Qiskit/rustworkx/tree/25398ab47f664962076508de27aa78ec52e24eaf",
+        "https://github.com/Qiskit/rustworkx/blob/25398ab47f664962076508de27aa78ec52e24eaf/README.md"
+      ],
+      "license": "Apache-2.0 (repository metadata)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "25398ab47f664962076508de27aa78ec52e24eaf"
+    },
+    {
+      "id": "SRC-162",
+      "url": "https://github.com/igraph/python-igraph",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official python-igraph README and GitHub license metadata inspected at pinned main commit 6188691e703fd7463e8b07076bff896fb6eae8a1; accessed 2026-10-15."
+      ],
+      "discoveries": [
+        "python-igraph is the Python interface to igraph for creating, manipulating, and analyzing large graphs.",
+        "GitHub identifies GPL-2.0 licensing; verify the exact license text and downstream package/component terms for any redistribution.",
+        "It is an offline analytical dependency, not an on-chain data provider or runtime risk evaluator."
+      ],
+      "patterns": [
+        "Use graph libraries for exploratory connected-component, community, and centrality analysis on curated wallet evidence.",
+        "Keep graph-edge provenance and confidence independent from algorithm scores."
+      ],
+      "sylphModules": [
+        "offline graph analysis",
+        "research data pipeline"
+      ],
+      "overlap": [
+        "Overlaps with NetworkX and rustworkx; choose a single library based on workload and licensing, rather than including all."
+      ],
+      "risks": [
+        "GPL-2.0 licensing may constrain use or distribution; confirm exact terms before incorporation.",
+        "Graph algorithms can encode misleading assumptions when edge direction, weighting, or time windows are wrong.",
+        "Large graph inputs can consume substantial memory."
+      ],
+      "validation": [
+        "Create adversarial fixtures for common exchange funders, shared services, and unrelated wallets to estimate false-positive clustering.",
+        "Record code/version, algorithm parameters, graph snapshot hash, and data provenance for repeatability."
+      ],
+      "evidence": [
+        "https://github.com/igraph/python-igraph/tree/6188691e703fd7463e8b07076bff896fb6eae8a1",
+        "https://github.com/igraph/python-igraph/blob/6188691e703fd7463e8b07076bff896fb6eae8a1/LICENSE"
+      ],
+      "license": "GPL-2.0 (GitHub metadata; review pinned LICENSE and package terms before reuse)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "6188691e703fd7463e8b07076bff896fb6eae8a1"
+    },
+    {
+      "id": "SRC-163",
+      "url": "https://github.com/apache/age",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official Apache AGE README and Apache license metadata inspected at pinned master commit d7e2e74c95d1ac941a124437198e19b42b15446d; accessed 2026-10-15."
+      ],
+      "discoveries": [
+        "Apache AGE is a PostgreSQL extension that adds graph processing and graph queries over an existing relational database.",
+        "Its README describes graph analytics and a graph layer built on PostgreSQL, rather than a standalone low-latency market data adapter.",
+        "The repository declares Apache-2.0 licensing."
+      ],
+      "patterns": [
+        "If a graph-backed research warehouse is justified, linking graph nodes to relational evidence IDs can keep provenance queryable with the underlying records.",
+        "Build graph-derived aggregates as read-only analysis and preserve the same deterministic import source."
+      ],
+      "sylphModules": [
+        "offline wallet/token relationship research",
+        "historical analytics"
+      ],
+      "overlap": [
+        "Would add a graph extension on top of a database; overlaps with other graph engines and existing SQLite-based canonical state."
+      ],
+      "risks": [
+        "Requires PostgreSQL and extension-version operations, backup, migration, and compatibility planning.",
+        "Graph transaction semantics do not establish blockchain event completeness.",
+        "A separate relational graph database would be unnecessary if existing analytics can handle the workload."
+      ],
+      "validation": [
+        "Validate extension and PostgreSQL version compatibility; test deterministic import/export, restart, migration, and query results.",
+        "Reconcile all graph edges to canonical evidence and test corrections/retractions."
+      ],
+      "evidence": [
+        "https://github.com/apache/age/tree/d7e2e74c95d1ac941a124437198e19b42b15446d",
+        "https://github.com/apache/age/blob/d7e2e74c95d1ac941a124437198e19b42b15446d/README.md"
+      ],
+      "license": "Apache-2.0 (repository metadata)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "d7e2e74c95d1ac941a124437198e19b42b15446d"
+    },
+    {
+      "id": "SRC-164",
+      "url": "https://github.com/graphistry/pygraphistry",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official PyGraphistry README and repository license metadata inspected at pinned default-branch commit 0c71cc4bb8281ecc1f07de8657c4ec45c737a5c1; accessed 2026-10-15."
+      ],
+      "discoveries": [
+        "PyGraphistry is a Python client library for loading, shaping, embedding, and visualizing large graphs.",
+        "Its README positions visualization through the Graphistry analyzer; deployment target, data residency, and hosted versus self-hosted handling must be verified before sending wallet data.",
+        "GitHub identifies BSD-3-Clause licensing for the repository."
+      ],
+      "patterns": [
+        "Use graph visualization only as an analyst-facing view over a redacted, evidence-linked graph export.",
+        "Include edge source, time, and confidence in tooltips so visual proximity is not presented as proof of common control."
+      ],
+      "sylphModules": [
+        "offline research visualization",
+        "operator/analyst tooling"
+      ],
+      "overlap": [
+        "Complements graph algorithms and overlaps with other graph visualization tools; not a runtime data source."
+      ],
+      "risks": [
+        "Submitting graph data to a hosted analyzer can disclose wallet relationships and sensitive research; confirm deployment and data handling before use.",
+        "Visualization layout can imply stronger relationships than the underlying evidence supports.",
+        "GPU features and optional backend dependencies add environment constraints."
+      ],
+      "validation": [
+        "Use synthetic or redacted graphs for any hosted/demo environment.",
+        "Test that every visible relation links to its source evidence and that uncertainty is displayed explicitly."
+      ],
+      "evidence": [
+        "https://github.com/graphistry/pygraphistry/tree/0c71cc4bb8281ecc1f07de8657c4ec45c737a5c1",
+        "https://github.com/graphistry/pygraphistry/blob/0c71cc4bb8281ecc1f07de8657c4ec45c737a5c1/LICENSE.txt"
+      ],
+      "license": "BSD-3-Clause (repository metadata)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "0c71cc4bb8281ecc1f07de8657c4ec45c737a5c1"
+    },
+    {
+      "id": "SRC-165",
+      "url": "https://github.com/graphframes/graphframes",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Official GraphFrames README and Apache license metadata inspected at pinned main commit 407773a341a344207127139c098337fa601d0275; accessed 2026-10-15."
+      ],
+      "discoveries": [
+        "GraphFrames provides DataFrame-based graph algorithms and motif queries on Apache Spark.",
+        "It is a distributed analytics package, with runtime compatibility tied to Spark, Scala, and GraphFrames versions.",
+        "The repository declares Apache-2.0 licensing."
+      ],
+      "patterns": [
+        "Use distributed graph processing only when deterministic historical wallet data exceeds the practical capacity of local analysis.",
+        "Version event-time windows, edge filters, and algorithm parameters so batch graph results are reproducible."
+      ],
+      "sylphModules": [
+        "offline historical graph analytics",
+        "research data pipeline"
+      ],
+      "overlap": [
+        "Overlaps with NetworkX, rustworkx, igraph, and graph database options; substantially heavier and intended for larger offline workloads."
+      ],
+      "risks": [
+        "Spark cluster, serialization, and version compatibility add substantial operational cost.",
+        "Distributed execution may introduce nondeterministic ordering in outputs unless results are normalized.",
+        "A graph result still needs source-level on-chain verification and cannot become trade authorization."
+      ],
+      "validation": [
+        "Compare small fixtures against a single-process reference and normalize output ordering.",
+        "Test the exact Spark/Scala/GraphFrames combination and deterministic replay of the same input snapshot."
+      ],
+      "evidence": [
+        "https://github.com/graphframes/graphframes/tree/407773a341a344207127139c098337fa601d0275",
+        "https://github.com/graphframes/graphframes/blob/407773a341a344207127139c098337fa601d0275/README.md"
+      ],
+      "license": "Apache-2.0 (repository metadata)",
+      "decision": "RESEARCH_ONLY",
+      "pinnedRevision": "407773a341a344207127139c098337fa601d0275"
+    }
+  ]
+}

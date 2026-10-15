@@ -198,7 +198,79 @@ test('REALIZED EDGE LEDGER: tracks stage leakage and attributes causal loss', ()
   assert.equal(record.economicFactId, 'fact_edge_001');
   assert.equal(record.leakage.totalEdgeLeakageLamports, 4_500_000n); // 10M - 5.5M
   assert.equal(record.primaryLeakageCause, 'SLIPPAGE_IMPACT');
+  assert.equal(record.comprehensiveBreakdown.feesAndTipsLamports, 300_000n);
+  assert.equal(record.comprehensiveBreakdown.baseFeeLamports, undefined);
+  assert.equal(record.comprehensiveBreakdown.priorityFeeLamports, undefined);
+  assert.equal(record.comprehensiveBreakdown.tipLamports, undefined);
+  assert.equal(record.comprehensiveBreakdown.unclassifiedFeesAndTipsLamports, 300_000n);
+  assert.equal(record.comprehensiveBreakdown.feeBreakdownStatus, 'UNATTRIBUTED');
   assert.equal(ledger.count(), 1);
+
+  const attributed = ledger.append({
+    economicFactId: 'fact_edge_002',
+    mint: 'MintTokenX',
+    stages: {
+      predictedEdgeLamports: 10_000n,
+      decisionEdgeLamports: 9_000n,
+      submissionEdgeLamports: 8_000n,
+      landingEdgeLamports: 7_000n,
+      settlementEdgeLamports: 6_000n,
+      realizedNetEdgeLamports: 5_000n,
+    },
+    feesAndTipsLamports: 9_200n,
+    slippageAndImpactLamports: 0n,
+    capitalTimeAndFrictionLamports: 0n,
+    baseFeeLamports: 5_000n,
+    priorityFeeLamports: 1_200n,
+    tipLamports: 3_000n,
+  });
+  assert.equal(attributed.comprehensiveBreakdown.unclassifiedFeesAndTipsLamports, 0n);
+  assert.equal(attributed.comprehensiveBreakdown.feeBreakdownStatus, 'ATTRIBUTED');
+  assert.throws(() => ledger.append({
+    economicFactId: 'fact_edge_invalid_fee_split',
+    mint: 'MintTokenX',
+    stages: {
+      predictedEdgeLamports: 10_000n,
+      decisionEdgeLamports: 9_000n,
+      submissionEdgeLamports: 8_000n,
+      landingEdgeLamports: 7_000n,
+      settlementEdgeLamports: 6_000n,
+      realizedNetEdgeLamports: 5_000n,
+    },
+    feesAndTipsLamports: 9_000n,
+    slippageAndImpactLamports: 0n,
+    capitalTimeAndFrictionLamports: 0n,
+    baseFeeLamports: 5_000n,
+    priorityFeeLamports: 1_200n,
+    tipLamports: 3_000n,
+  }), /REALIZED_EDGE_INVALID_FEE_COMPONENTS/);
+
+  const hashInputs = {
+    economicFactId: 'fact_edge_fee_hash',
+    mint: 'MintTokenX',
+    stages: {
+      predictedEdgeLamports: 10_000n,
+      decisionEdgeLamports: 9_000n,
+      submissionEdgeLamports: 8_000n,
+      landingEdgeLamports: 7_000n,
+      settlementEdgeLamports: 6_000n,
+      realizedNetEdgeLamports: 5_000n,
+    },
+    feesAndTipsLamports: 9_200n,
+    slippageAndImpactLamports: 0n,
+    capitalTimeAndFrictionLamports: 0n,
+  };
+  const originalNow = Date.now;
+  let noComponentHash;
+  let componentHash;
+  try {
+    Date.now = () => 123;
+    noComponentHash = ledger.append(hashInputs).recordHash;
+    componentHash = ledger.append({ ...hashInputs, baseFeeLamports: 5_000n }).recordHash;
+  } finally {
+    Date.now = originalNow;
+  }
+  assert.notEqual(componentHash, noComponentHash, 'record hash must bind the reported fee breakdown');
 });
 
 test('RESEARCH GOVERNANCE: CapabilityRegistry and CounterexampleMemory enforce epistemic safety', () => {

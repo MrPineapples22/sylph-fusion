@@ -150,12 +150,14 @@ export interface IngressReceiptAccepted {
   readonly observationId: Hash256;
   readonly journalSeq: bigint;
   readonly envelopeHash: Hash256;
+  readonly postCommitWarning?: 'CENSUS_JOURNAL_WRITE_FAILED';
 }
 
 export interface IngressReceiptDuplicate {
   readonly status: 'DUPLICATE';
   readonly observationId: Hash256;
   readonly reason: string;
+  readonly postCommitWarning?: 'CENSUS_JOURNAL_WRITE_FAILED';
 }
 
 export interface IngressReceiptRejected {

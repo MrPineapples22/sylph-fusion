@@ -275,6 +275,8 @@ export interface EconomicDeltaSummary {
   readonly tokenDeltas: readonly TokenBalanceDelta[];
   readonly lamportDeltas: readonly LamportBalanceDelta[];
   readonly feeBurnedLamports?: bigint;
+  /** Derived as observed transaction fee minus observed priority fee. */
+  readonly baseFeeLamports?: bigint;
   readonly priorityFeeLamports?: bigint;
   readonly tradeAttribution: 'UNKNOWN';
   readonly netSolTransferred?: bigint;
@@ -299,8 +301,12 @@ export class EconomicDeltaEngine {
     postTokenBalances: readonly { account: string; owner: string; mint: string; amount: bigint }[];
   }): EconomicDeltaSummary {
     const priorityFeeLamports = input.priorityFeeLamports ?? 0n;
+    const baseFeeLamports = input.priorityFeeLamports === undefined
+      ? undefined
+      : input.feeLamports - priorityFeeLamports;
     if (input.feeLamports < 0n || (input.priorityFeeLamports !== undefined && (priorityFeeLamports < 0n || priorityFeeLamports > input.feeLamports)) ||
-        (input.feeBurnedLamports !== undefined && (input.feeBurnedLamports < 0n || input.feeBurnedLamports > input.feeLamports))) {
+        (input.feeBurnedLamports !== undefined && (input.feeBurnedLamports < 0n || input.feeBurnedLamports > input.feeLamports)) ||
+        (input.feeBurnedLamports !== undefined && baseFeeLamports !== undefined && input.feeBurnedLamports > baseFeeLamports)) {
       throw new Error('ECONOMIC_DELTA_INVALID_FEE_COMPONENTS');
     }
     const lamportDeltas: LamportBalanceDelta[] = [];
@@ -356,6 +362,7 @@ export class EconomicDeltaEngine {
       tokenDeltas,
       lamportDeltas,
       feeBurnedLamports: input.feeBurnedLamports,
+      baseFeeLamports,
       priorityFeeLamports: input.priorityFeeLamports,
       tradeAttribution: 'UNKNOWN',
     };

@@ -1,0 +1,72 @@
+{
+  "generatedAt": "2026-10-15T05:04:50.167Z",
+  "manifestRows": 288,
+  "uniqueManifestIds": 288,
+  "batchFiles": 23,
+  "catalogRecords": 288,
+  "uniqueCatalogIds": 288,
+  "directlyReviewedRecords": 183,
+  "triageOnlyRecords": 105,
+  "manifestReviewStatusCounts": {
+    "PARTIAL_REVIEW": 183,
+    "NOT_REVIEWED": 105
+  },
+  "batchStatusCounts": {
+    "PARTIAL_REVIEW": 183,
+    "CATALOG_TRIAGE": 105
+  },
+  "distinctDecisionCount": 171,
+  "topDecisionCounts": [
+    {
+      "decision": "RESEARCH_ONLY",
+      "count": 95
+    },
+    {
+      "decision": "REFERENCE_ONLY",
+      "count": 12
+    },
+    {
+      "decision": "NO_RUNTIME_INTEGRATION",
+      "count": 4
+    },
+    {
+      "decision": "OUT_OF_BAND_ONLY",
+      "count": 4
+    },
+    {
+      "decision": "PATTERN_ONLY",
+      "count": 4
+    },
+    {
+      "decision": "INFRASTRUCTURE_REFERENCE_ONLY_NO_DEPLOYMENT",
+      "count": 2
+    },
+    {
+      "decision": "NO_DIRECT_INTEGRATION",
+      "count": 2
+    },
+    {
+      "decision": "RESEARCH_REFERENCE_ONLY",
+      "count": 2
+    },
+    {
+      "decision": "ANALYTICS_STORAGE_PATTERN_ONLY_NO_DEPLOYMENT",
+      "count": 1
+    },
+    {
+      "decision": "ARCHIVE_BACKFILL_REFERENCE_ONLY; NO_RUNTIME_DEPENDENCY",
+      "count": 1
+    },
+    {
+      "decision": "ASSURANCE_ONLY_UNTIL_INDEPENDENTLY_VERIFIED",
+      "count": 1
+    },
+    {
+      "decision": "AUDIT_INDEX_REFERENCE_ONLY",
+      "count": 1
+    }
+  ],
+  "defectCount": 0,
+  "defects": [],
+  "interpretation": "Coverage validates catalog record structure and manifest identity. PARTIAL_REVIEW means pinned source/document inspection was performed; CATALOG_TRIAGE is not direct source review. Neither status establishes exhaustive upstream inspection, current source availability, runtime integration, API authorization, profitability, or REA execution."
+}

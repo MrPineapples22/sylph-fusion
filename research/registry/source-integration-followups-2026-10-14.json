@@ -1,0 +1,1224 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-10-15",
+  "interpretation": "Verified local implementation follow-ups linked to catalog source IDs. These records document changes and tests; they do not change source review status, grant integration authority, or establish profitability.",
+  "followups": [
+    {
+      "id": "INT-FEED-CENSUS-RETRY-001",
+      "catalogSourceIds": [
+        "SRC-269",
+        "SRC-274",
+        "SRC-276"
+      ],
+      "area": "feed admission snapshot, journal commit boundary, and provider-health projection",
+      "sourceToPipeline": {
+        "localFinding": "Feed committed an observation to canonical ingress, immediately marked its signature seen, then wrote Census-R. If that secondary write failed, the method returned canonical ACCEPTED without exposing incomplete projection and same-process retry was suppressed. In the live path, provider health was also refreshed before Census-R, so a failed secondary projection could still mint a fresh validated-observation timestamp.",
+        "relevantModules": [
+          "src/feed.ts",
+          "src/platform/ingress/canonical-ingress.ts",
+          "src/platform/ingestion/census-r.ts"
+        ],
+        "existingOverlap": "Canonical ingress remains the durable acceptance authority. Census-R remains a secondary ordered projection. The change exposes post-commit incompleteness and lets an identical canonical duplicate retry that projection; it does not turn secondary-journal success into LIVE feed evidence.",
+        "risks": [
+          "The Census-R journal used in this path is not proven crash-durable by this test; process restart may require separate recovery design.",
+          "A canonical ACCEPTED receipt can now carry a warning because downstream local projection is incomplete; callers must inspect postCommitWarning.",
+          "Historical retries must not update live freshness, provider health or slot watermark.",
+          "A live provider observation must not refresh provider capability health until canonical ingress and Census-R projection both commit.",
+          "Queued feed work must own snapshots of caller-provided log arrays and raw payload bytes, while checking queue capacity before allocating copies."
+        ],
+        "validationRequirements": [
+          "Inject Census-R failure after canonical acceptance and assert an explicit postCommitWarning.",
+          "Retry the same observation and require canonical DUPLICATE plus successful idempotent Census-R projection.",
+          "Assert historical failure and retry do not alter live timestamp, slot or provider health.",
+          "Inject a LIVE Census-R failure and assert Yellowstone/WSS provider health is not refreshed before both journal commits."
+        ]
+      },
+      "implementation": {
+        "change": "Feed snapshots source metadata, log arrays, and raw payload bytes after admission capacity succeeds and before queueing, preventing mutation while waiting under backpressure. It adds signatures to its bounded dedupe set only after Census-R succeeds; a failed side projection returns CENSUS_JOURNAL_WRITE_FAILED and remains retryable. Canonical DUPLICATE receipts proceed through the idempotent secondary projection path. Yellowstone and WSS validated-observation health updates occur only after canonical ingress and Census-R commit.",
+        "files": [
+          "src/feed.ts",
+          "src/platform/ingress/types.ts",
+          "dist/feed.js",
+          "dist/platform/ingress/types.js",
+          "test/feed-processing-intent-health.test.mjs",
+          "test/platform/yellowstone-captured-client.test.mjs"
+        ],
+        "validation": {
+          "build": "npm run build:engine — passed",
+          "focusedTests": "node --test test/feed-processing-intent-health.test.mjs test/platform/provider-health.test.mjs test/platform/census-r.test.mjs test/platform/canonical-ingress-durability.test.mjs — 51/51 passed",
+          "yellowstoneRegression": "node --test test/feed-processing-intent-health.test.mjs test/platform/yellowstone-captured-client.test.mjs — 14/14 passed; includes an injected Geyser Census-R failure with no fresh validated-observation timestamp",
+          "backpressureSnapshot": "npm run build:engine && node --test test/feed-processing-intent-health.test.mjs test/platform/yellowstone-captured-client.test.mjs test/feed-ingress-backpressure.test.mjs — build passed; 28/28 passed.",
+          "platformTests": "npm run test:platform — 1,074/1,074 passed; completed 2026-10-14 with TEMP/TMP/TMPDIR on D: after the C: temporary volume was full.",
+          "regression": "Historical post-commit retry, live provider-health-before-Census-R, and queued mutable-input snapshot regressions all failed before their respective fixes. The live failure previously refreshed SOLANA_WSS.lastValidatedObservation despite the required Census-R write failing; the queued-input case previously compiled a mutated/invalid frame after it was modified while waiting."
+        },
+        "authorityImpact": "Historical retries do not update live health. No signing, authorization, broadcast, capital, or risk-limit paths changed. No process restarted.",
+        "status": "VERIFIED_FEED_COMMIT_ORDER_AND_RETRY; SECONDARY JOURNAL CRASH DURABILITY NOT ESTABLISHED"
+      },
+      "evidence": [
+        "research/registry/source-review-batch-004-2026-10-14.json",
+        "test/feed-processing-intent-health.test.mjs"
+      ]
+    },
+    {
+      "id": "INT-VERITAS-V1-BOUNDARY-001",
+      "catalogSourceIds": [
+        "SRC-254",
+        "SRC-255"
+      ],
+      "area": "Solana V1 diagnostic wire decoding and signing boundary",
+      "sourceToPipeline": {
+        "upstreamFindings": [
+          "Current official Solana docs list legacy, v0 and v1 formats and state that v1 is active; v1 places compute, loaded-data and total-priority-fee values in message configuration.",
+          "ComputeBudget instructions do not configure v1 messages; they are no-op instructions that still consume an instruction slot and compute.",
+          "The Veritas decoder uses pinned web3.js 1.98.4 VersionedMessage.deserialize and only returns legacy/v0 types; previously, v1 was rejected as a generic deserialization failure.",
+          "The Solana Foundation transaction-v1-examples repository at commit baa8b2654d1695d62c17dd8a0d2ef775ef45ad14 includes a TypeScript @solana/kit 8.4.0 serialized V1 fixture with message config and inline account keys."
+        ],
+        "relevantModules": [
+          "src/platform/signing/veritas-wire-decoder.ts",
+          "src/platform/execution/transaction-compatibility.ts",
+          "src/platform/execution/asset-delta-engine.ts"
+        ],
+        "existingOverlap": "Veritas now uses a bounded read-only parser to extract the V1 config values and structural instruction/account boundaries. It deliberately labels all V1 instructions UNKNOWN and returns complete:false; SigningFirewall rejects the message as TRANSACTION_DECODER_INCOMPLETE. This is diagnostic compatibility only, not transaction authorization or realized-fee accounting.",
+        "risks": [
+          "The custom parser is not a runtime validator and does not fully interpret instruction effects, bind authorized signatures, or support address lookup tables; V1 signing remains disabled.",
+          "The declared total priority fee does not include or prove the actual transaction total fee; canonical confirmed meta.fee remains authoritative.",
+          "Adversarial review and broader property/fuzz testing remain required before expanding use of decoded V1 fields."
+        ],
+        "validationRequirements": [
+          "Compare fields against official SDK-generated fixtures and preserve bounded malformed-input rejection.",
+          "Keep all V1 results complete:false and confirm SigningFirewall rejects the decoded message.",
+          "Do not enable V1 signing until official runtime fixtures cover every config combination, full instruction/account semantics, signer binding, canonical round trips, and independent protocol/security review.",
+          "Reconcile confirmed meta.fee for successful and failed transactions; do not treat message config as realized fee."
+        ]
+      },
+      "implementation": {
+        "change": "Added a bounded read-only V1 wire parser for the config mask, total priority fee, CU limit, loaded-account data cap, heap request, inline addresses, and instruction framing. All V1 instructions remain UNKNOWN and every decoded V1 result remains complete:false, preserving SigningFirewall rejection. Added deterministic SDK-fixture, malformed-message, and firewall regressions.",
+        "files": [
+          "src/platform/signing/veritas-wire-decoder.ts",
+          "dist/platform/signing/veritas-wire-decoder.js",
+          "test/platform/veritas-wire-decoder.test.mjs",
+          "research/registry/source-review-batch-002-2026-10-14.json"
+        ],
+        "validation": {
+          "pinnedBuild": "TypeScript build with the repository pinned scratch dependency install — passed",
+          "focusedTests": "node --test test/platform/veritas-wire-decoder.test.mjs — 7/7 passed",
+          "platformSuite": "node --test --test-isolation=none test/platform/*.test.mjs — 1,061/1,061 passed across 23 suites from the pinned scratch project root",
+          "fixture": "Official Solana Foundation transaction-v1-examples commit baa8b2654d1695d62c17dd8a0d2ef775ef45ad14; @solana/kit 8.4.0 serialized fixture",
+          "limitations": "External example repository Vitest suite did not run because its optional Windows Yellowstone native binding was absent after install with scripts disabled; no claim is made for that upstream suite."
+        },
+        "authorityImpact": "Diagnostic decoding only. Every V1 transaction remains incomplete and blocked by SigningFirewall. No signing approval expansion, transaction submission, custody, capital authorization, risk-limit, or live process changes.",
+        "status": "VERIFIED_READ_ONLY_V1_CONFIG_DECODING; SIGNING_AND_REALIZED_FEE_RECONCILIATION_REMAIN_OPEN"
+      },
+      "evidence": [
+        "https://solana.com/docs/core/transactions/versioned-transactions",
+        "https://solana.com/docs/core/fees/compute-budget",
+        "https://solana.com/docs/core/fees/fee-structure",
+        "test/platform/veritas-wire-decoder.test.mjs",
+        "https://github.com/solana-foundation/transaction-v1-examples/tree/baa8b2654d1695d62c17dd8a0d2ef775ef45ad14"
+      ]
+    },
+    {
+      "id": "INT-TX-FEE-VERSION-001",
+      "catalogSourceIds": [
+        "SRC-254",
+        "SRC-255"
+      ],
+      "area": "finalized transaction fee and version visibility",
+      "sourceToPipeline": {
+        "upstreamFindings": [
+          "Finalized metadata exposes the transaction fee and versioned message; v0 account keys require the lookup-table addresses returned in transaction metadata.",
+          "The existing asset-delta engine already decodes address lookups and validates balance conservation, but callers dropped the reported fee and decoded transaction version; wallet-paid fees must be distinguished from transaction-level network fees.",
+          "Gross wallet SOL delta already includes transaction costs; fee must be exposed as a separate field and must not be subtracted a second time."
+        ],
+        "relevantModules": [
+          "src/platform/execution/asset-delta-engine.ts",
+          "src/execution.ts",
+          "test/core.test.mjs"
+        ],
+        "existingOverlap": "Extends the existing finalized asset-delta calculation and reconciliation result; does not add another settlement engine or change transaction support beyond legacy/v0.",
+        "risks": [
+          "Direct Executor broadcast/signing remains quarantined; this local reconciliation result does not establish live execution readiness.",
+          "The pinned SDK reader supports legacy and v0 only; other versions remain unresolved.",
+          "When the observing wallet is not the fee payer, feeLamports is zero even though transaction metadata reports a nonzero networkFeeLamports."
+        ],
+        "validationRequirements": [
+          "Cover legacy and v0 finalized fixtures and preserve gross SOL balance delta unchanged.",
+          "Propagate fee and decoded version through successful reconciliation only when all configured RPCs agree on finalized effects.",
+          "Keep unsupported versions and inconsistent provider observations pending."
+        ]
+      },
+      "implementation": {
+        "change": "AssetDeltaEngine now reports the decoded legacy/v0 message version and separates transaction-level networkFeeLamports from wallet-paid txFeeLamports; transactionDeltas and successful finalized reconciliation expose both separately from gross SOL delta.",
+        "files": [
+          "src/platform/execution/asset-delta-engine.ts",
+          "src/execution.ts",
+          "dist/platform/execution/asset-delta-engine.js",
+          "dist/execution.js",
+          "test/core.test.mjs"
+        ],
+        "validation": {
+          "build": "npm run build:engine — passed",
+          "combinedFocusedTests": "npm run build:engine && node --test test/core.test.mjs test/platform/certified-execution-authority.test.mjs test/platform/transaction-compatibility-2026.test.mjs — build passed; 63/63 tests passed"
+        },
+        "authorityImpact": "No signing, authorization, broadcast, capital, or risk-limit changes. No live process was restarted.",
+        "status": "VERIFIED_LOCAL_FIX; LEGACY RECONCILIATION VISIBILITY ONLY"
+      },
+      "evidence": [
+        "https://solana.com/docs/core/transactions/versioned-transactions",
+        "https://solana.com/docs/core/fees/fee-structure",
+        "src/platform/execution/asset-delta-engine.ts",
+        "test/core.test.mjs"
+      ]
+    },
+    {
+      "id": "INT-EXEC-ECON-001",
+      "catalogSourceIds": [
+        "SRC-214",
+        "SRC-215",
+        "SRC-220"
+      ],
+      "area": "execution-cost accounting",
+      "sourceToPipeline": {
+        "catalogPatterns": [
+          "Separate submission evidence from confirmed landing and settlement.",
+          "Account explicitly for priority fees, provider tips, and route-level costs.",
+          "Version and validate the execution route and transaction contract."
+        ],
+        "localFinding": "RealSlippageObservatory.decomposeExecutionLoss converted bigint notionals to Number and only attributed 60% of gross price loss, silently omitting the remaining 40%.",
+        "relevantModules": [
+          "src/platform/pipeline/execution-economics.ts",
+          "src/platform/pipeline/realized-edge-ledger.ts",
+          "src/platform/execution/authority.ts"
+        ],
+        "overlap": "The repository already has explicit fee/tip accounting in settlement and execution authority. This patch corrects the standalone decomposition helper and does not add a second execution engine.",
+        "integrationRisks": [
+          "Market-drift, transport-latency and self-impact splits remain heuristics rather than measured causal estimates.",
+          "The helper has no production call sites in src/ at this revision; do not describe the correction as a production PnL pipeline integration.",
+          "The direction-aware price calculation still depends on quote and landed prices being comparable observations for the same token, size, and market state."
+        ],
+        "validationRequirements": [
+          "Require explicit BUY/SELL direction, keep all lamport calculations in bigint, and conserve gross price loss across named and unattributed components.",
+          "Preserve explicit provider/network fees and tips as separate cost fields.",
+          "Use direction-bound quote/fill fixtures before connecting the helper to settlement or learning."
+        ]
+      },
+      "implementation": {
+        "change": "Price-ratio computation now requires BUY/SELL direction, uses decimal integer ratios and bigint notional arithmetic. The residual price loss is retained as otherFrictionLamports. Invalid direction, price, age and fee inputs are rejected.",
+        "files": [
+          "src/platform/pipeline/execution-economics.ts",
+          "dist/platform/pipeline/execution-economics.js",
+          "test/platform/execution-economics-and-governance.test.mjs"
+        ],
+        "failingRegressionObserved": true,
+        "validation": {
+          "build": "npm run build:engine — passed",
+          "focusedTests": "execution-economics and transaction-compatibility — 15/15 passed",
+          "platformTests": "npm run test:platform — 1060/1060 passed",
+          "registryValidation": "288 manifest rows, 288 matching review records, zero structural defects"
+        },
+        "authorityImpact": "No signing, authorization, broadcast, capital, or risk-limit changes. No live process was restarted.",
+        "status": "VERIFIED_LOCAL_FIX; NOT A PRODUCTION SETTLEMENT INTEGRATION"
+      },
+      "evidence": [
+        "https://developers.jup.ag/docs/swap/order-and-execute",
+        "research/registry/source-review-batch-021-2026-10-14.json",
+        "docs/UPSTREAM_RESEARCH_INTEGRATION.md"
+      ]
+    },
+    {
+      "id": "INT-JUP-QUOTE-002",
+      "catalogSourceIds": [
+        "SRC-220"
+      ],
+      "area": "Jupiter Swap V2 quote boundary",
+      "sourceToPipeline": {
+        "upstreamFindings": [
+          "Official Order & Execute docs say GET /swap/v2/order without taker returns a quote without an assembled transaction.",
+          "Jupiter docs describe transactionVersion as v0 by default and v1 only when specifically requested and supported by the winning route; local v1 signing remains unsupported.",
+          "The /execute response separates total wallet input/output from route input/output and identifies feeMint, so quote output is not realized wallet PnL."
+        ],
+        "relevantModules": [
+          "terminal/jupiter-research.mjs",
+          "terminal/test/jupiter-research.test.mjs",
+          "terminal/jev-market-context.mjs"
+        ],
+        "existingOverlap": "JupiterResearchQuoteService requests /swap/v2/order without a taker, calculates a size-specific two-sided quote estimate, and has no transaction assembly, signing or execute path. Provider health now treats the built-in quote endpoint as configured without requiring a taker; an API key, when present, is reflected as optional authentication.",
+        "risks": [
+          "A quote-only round trip is two sequential snapshots and does not guarantee the second side can execute at the displayed value.",
+          "Jupiter supports v1 output only for a subset of Order routes; the local web3.js V1 wire decoder remains fail-closed.",
+          "Do not promote this quote adapter to execution without transaction-version compatibility, authorization, confirmed settlement, and fee-mint reconciliation."
+        ],
+        "validationRequirements": [
+          "Keep the no-taker quote path incapable of signing or submitting.",
+          "If execution is separately implemented, bind /order requestId, router, transactionVersion and feeMint to decoded bytes and confirmed wallet deltas.",
+          "Use /execute total input/output only as provider observations and reconcile them with finalized chain evidence."
+        ]
+      },
+      "implementation": {
+        "change": "The Terminal research adapter always omits taker, requires the response to contain no transaction, and projects quote-only amounts. Its provider configuration no longer requires a taker address and accurately represents optional API-key authentication.",
+        "validation": {
+          "adapterTests": "node --test terminal/test/jupiter-research.test.mjs — 7/7 passed, including no-taker configuration, ignored legacy taker-env, empty-transaction quote handling, and executable-payload rejection.",
+          "fullTerminalSuite": "npm test in terminal/ — 475/475 passed after the quote-only configuration and response validation changes.",
+          "terminalBuild": "npm run build in terminal/ — passed; production UI and execution-engine bundles completed."
+        },
+        "authorityImpact": "Quote-only; no transaction is assembled, signed, submitted, or executed. No live authorization or signer path changed.",
+        "status": "VERIFIED_NO_TAKER_QUOTE_ONLY; V1_AND_EXECUTION_REMAIN_UNSUPPORTED"
+      },
+      "evidence": [
+        "https://developers.jup.ag/docs/swap/order-and-execute",
+        "research/registry/source-review-batch-021-2026-10-14.json",
+        "terminal/test/jupiter-research.test.mjs"
+      ]
+    },
+    {
+      "id": "INT-CALIBRATION-EVIDENCE-003",
+      "catalogSourceIds": [
+        "SRC-109",
+        "SRC-117",
+        "SRC-220"
+      ],
+      "area": "point-in-time execution calibration evidence",
+      "sourceToPipeline": {
+        "catalogPatterns": [
+          "Bind features to event and availability timestamps to prevent point-in-time leakage.",
+          "Keep delayed-event chronology explicit and validate it deterministically.",
+          "Retain exact Jupiter quote output and distinguish it from landed wallet output."
+        ],
+        "localFinding": "ExecutionCalibrationDataset silently substituted synthetic quote/simulation/landing timestamps and default 5,000-lamport fees when observations were absent; its basis-point conversion also truncated fractional bps.",
+        "relevantModules": [
+          "src/platform/calibration/execution-calibration-dataset.ts",
+          "src/intelligence/",
+          "research/"
+        ],
+        "overlap": "The repository already has a quote-simulation-landed calibration record shape. This change hardens evidence admission and precision without adding a feature-store dependency or a second calibration service.",
+        "integrationRisks": [
+          "The dataset currently has no production call sites; these records must not be described as active live calibration.",
+          "A valid triple still requires correct market/pool identity and independently verified landed output before it can train a model.",
+          "Price and liquidity fields remain Number-valued source observations and need explicit scale/provenance before cross-source aggregation."
+        ],
+        "validationRequirements": [
+          "Require observed quote, simulation, and landing times and require monotone event/slot order.",
+          "Require explicit nonnegative simulation/landing fees and positive quote/simulated/landed outputs.",
+          "Compute normalized slippage from bigint values and test fractional bps plus rejected missing evidence.",
+          "Keep rejected rows out of calibration cohorts."
+        ]
+      },
+      "implementation": {
+        "change": "Removed generated timestamps and default fee values; added runtime checks for explicit monotone time/slot evidence, outputs, prices, costs and capacity; preserved sub-bps slippage precision with bigint scaling.",
+        "files": [
+          "src/platform/calibration/execution-calibration-dataset.ts",
+          "dist/platform/calibration/execution-calibration-dataset.js",
+          "test/platform/blueprint-truth-semantics.test.mjs"
+        ],
+        "failingRegressionObserved": true,
+        "validation": {
+          "build": "npm run build:engine — passed",
+          "focusedTests": "node --test test/platform/blueprint-truth-semantics.test.mjs — 8/8 passed"
+        },
+        "authorityImpact": "Research/calibration evidence admission only; no signing, authorization, broadcast, capital, or risk-limit changes.",
+        "status": "VERIFIED_EVIDENCE_BOUNDARY_FIX; NOT A LIVE CALIBRATION INTEGRATION"
+      },
+      "evidence": [
+        "https://github.com/feast-dev/feast",
+        "https://github.com/dubzzz/fast-check",
+        "https://developers.jup.ag/docs/swap/order-and-execute",
+        "research/registry/source-review-batch-014-2026-10-14.json",
+        "research/registry/source-review-batch-021-2026-10-14.json"
+      ]
+    },
+    {
+      "id": "INT-TOKEN-SEMANTICS-004",
+      "catalogSourceIds": [
+        "SRC-178"
+      ],
+      "area": "token-program and mint-state evidence admission",
+      "sourceToPipeline": {
+        "catalogStatus": "SRC-178 has a PARTIAL_REVIEW in source-review-batch-018. The official transfer-fee implementation was re-opened during this follow-up; its calculate_fee method returns zero for zero input/rate, otherwise uses ceiling division, caps at maximum_fee, and returns None on checked-arithmetic failure. This corroborates the existing catalog note; exhaustive repository review remains incomplete.",
+        "localFinding": "TokenSemanticEngine inferred the SPL Token program when owner-program evidence was absent, defaulted missing mint fields to safe-looking values, and evaluated scheduled transfer fees against a hard-coded epoch. The actual Fusion entry path calls Market.snapshot() then Market.validateEntry(); snapshot already reads the mint bytes, owner and slot. ParserZeroCrossValidator previously compared only selected fields before reporting EXACT agreement. A follow-up protocol audit also found that the local decoder mapped extension ID 11 to PermanentDelegate, while the official enum assigns 11 to CpiGuard and 12 to PermanentDelegate; default account state 0 (uninitialized) had also been collapsed into initialized/absent.",
+        "relevantModules": [
+          "src/platform/truth/token-semantic-root.ts",
+          "src/platform/security/veto/parser-zero.ts",
+          "src/intelligence/master-orchestrator.ts",
+          "src/market.ts",
+          "src/fusion.ts"
+        ],
+        "overlap": "The repository already has a dual-path mint decoder and an exitability gate. The change uses those existing boundaries and does not add a second token-security engine.",
+        "integrationRisks": [
+          "The master-orchestrator helper still has no production src/ call site; the runtime integration is through Market.snapshot() in Fusion.",
+          "The dual decoder and the SPL SDK parse the mint on each snapshot, adding CPU to the entry/position-refresh path; latency impact has not been benchmarked.",
+          "A missing epoch selects the higher configured fee conservatively; it does not assert which fee is active on chain."
+        ],
+        "validationRequirements": [
+          "Missing or unsupported token program and incomplete mint state must block both buy and sell feasibility.",
+          "Unknown extensions must block feasibility.",
+          "Without a current epoch, fee assessment must use the higher scheduled basis-point rate.",
+          "Keep raw bytes, account owner, mint identity and snapshot slot bound at the Market.snapshot() boundary.",
+          "Retain the stricter existing extension allowlist and execution authorization checks even when semantic feasibility passes."
+        ]
+      },
+      "implementation": {
+        "change": "Removed implicit SPL owner inference and synthetic safe defaults; exposed explicit supported-program/state-completeness fields; blocked feasibility for incomplete state and unknown extensions; removed the hard-coded epoch default and selected the higher scheduled fee when epoch evidence is absent. Tightened dual-decoder agreement to compare the entire decoded state and wired raw mint bytes, RPC-reported owner, mint identity and context slot through Market.snapshot() into the existing entrySafe gate. Corrected Token-2022 extension discriminants (11=CpiGuard, 12=PermanentDelegate), exact payload-size checks, and default-account-state handling for uninitialized/initialized/frozen/invalid values; unsupported behaviors remain unknown and fail closed.",
+        "files": [
+          "src/platform/truth/token-semantic-root.ts",
+          "src/platform/security/veto/parser-zero.ts",
+          "src/market.ts",
+          "src/fusion.ts",
+          "src/intelligence/master-orchestrator.ts",
+          "test/market-token-semantics.test.mjs",
+          "test/platform/blueprint-truth-semantics.test.mjs",
+          "test/intelligence/pass-58-exitability-unwind-certificate.test.mjs",
+          "test/intelligence/blueprint-intelligence-lifecycle.test.mjs"
+        ],
+        "failingRegressionObserved": true,
+        "validation": {
+          "build": "npm run build:engine — passed after Token-2022 enum/default-state correction",
+          "marketEntryTests": "node --test test/market-token-semantics.test.mjs — 4/4 passed",
+          "dualDecoderTests": "node --test test/platform/blueprint-truth-semantics.test.mjs test/platform/pass-23-architectural-upgrades.test.mjs test/platform/veto-god-tier.test.mjs test/market-token-semantics.test.mjs — 34/34 passed, including the enum and all default-state regression cases",
+          "fullPlatformSuite": "npm run test:platform — 1,065/1,065 passed after the Token-2022 enum/default-state correction",
+          "fullProjectChain": "npm test traversed build, core, intelligence, platform and terminal stages; terminal reported 472/472 passed. The command uses && between stages, so later stages ran only after earlier zero exits.",
+          "intelligenceSuite": "npm run test:intelligence — 784/784 passed"
+        },
+        "authorityImpact": "Fail-closed eligibility analysis only; no signing, authorization, broadcast, capital, or risk-limit bypass added.",
+        "status": "VERIFIED_RUNTIME_ENTRY_GATE_CHANGE; NOT LIVE SIGNING AUTHORIZATION OR EXHAUSTIVE SOURCE REVIEW"
+      },
+      "evidence": [
+        "https://github.com/solana-program/token-2022/blob/main/clients/js/src/generated/types/extensionType.ts",
+        "https://github.com/solana-program/token-2022/blob/main/interface/src/extension/transfer_fee/mod.rs#L1230-L1252",
+        "research/registry/source-review-batch-018-2026-10-14.json",
+        "research/registry/resource_manifest.csv",
+        "src/platform/security/veto/parser-zero.ts",
+        "src/platform/truth/token-semantic-root.ts",
+        "src/market.ts",
+        "src/fusion.ts"
+      ]
+    },
+    {
+      "id": "INT-GRADUATED-AMM-QUOTE-002",
+      "catalogSourceIds": [
+        "SRC-063",
+        "SRC-259"
+      ],
+      "area": "graduated token pool observation and simulation quote inputs",
+      "sourceToPipeline": {
+        "catalogStatus": "SRC-063 and SRC-259 have PARTIAL_REVIEW records. The Raydium SDK repository identifies GPL-3.0 licensing and exposes pool/token account utilities; Pump's official public docs describe PumpSwap as a post-curve venue, require effective quote reserves (raw quote vault balance plus signed virtual quote reserves), and document pool-specific fee behavior. A follow-up verified installed @pump-fun/pump-sdk 4.0.0 V3 helpers and added narrowly scoped V3 synthetic-migration crossing-buy support. Current docs reference SDK 4.1.0; no dependency upgrade was made. Neither source review is exhaustive.",
+        "localFinding": "PostGraduationAmmBridge previously represented completion with an assumed 85 SOL pool reserve, hard-coded a Raydium-only active state, and Market.ammExitQuote used a fixed token reserve and 25 bps fee. This could create a graduated estimate without destination-pool evidence, and the API could not describe PumpSwap-specific effective quote reserves.",
+        "relevantModules": [
+          "src/platform/execution/solaris/amm-bridge.ts",
+          "src/platform/execution/solaris/types.ts",
+          "src/market.ts",
+          "src/platform/execution/authority.ts",
+          "src/fusion.ts"
+        ],
+        "overlap": "The existing bridge already owns migration/cooldown state and Market already owns simulation quote calculation. The patch extends these boundaries instead of adding another venue engine. Raydium's GPL SDK was not added or copied.",
+        "integrationRisks": [
+          "The new pool observation is still caller-supplied in-memory data; no canonical on-chain pool decoder/receipt adapter was added, so it does not prove live pool state.",
+          "The quote is a constant-product simulation estimate, not an executable route or confirmed fill.",
+          "PumpSwap callers must supply effective quote reserves including signed virtual quote reserves and an up-to-date combined fee; feeding raw vault balances is invalid.",
+          "Raydium CLMM, Meteora DLMM, Orca Whirlpool, non-SOL quote assets and unsupported pool families remain unsupported.",
+          "The Raydium SDK is GPL-3.0; package or code adoption needs a separate license review."
+        ],
+        "validationRequirements": [
+          "Curve completion alone must leave destination-pool reserves absent and quote calculation unavailable.",
+          "Require explicit venue, pool identity, token reserves, effective quote reserves, fee and slot for a pool observation.",
+          "Reject malformed, pre-migration and out-of-order pool observations.",
+          "Calculate simulated exit outputs only from observed reserve/fee inputs; retain the buy-side cooldown and permit observed sell-side marking.",
+          "Before live integration, bind pool bytes, program identity, mint identities, token decimals, slot and effective-fee derivation to independent on-chain evidence."
+        ]
+      },
+      "implementation": {
+        "change": "Removed synthetic destination reserves from migration state; replaced Raydium-specific state with PumpSwap/Raydium CPMM venue-aware pool observations; required explicit token reserve, venue-normalized effective quote reserve, combined fee and observation slot; rejected stale/pre-migration observations; removed hard-coded pool reserves/fee from Market.ammExitQuote; preserved an already-observed pool when migration evidence repeats; and made the migration-pending reason venue-neutral with a regression assertion.",
+        "files": [
+          "src/platform/execution/solaris/amm-bridge.ts",
+          "src/platform/execution/solaris/types.ts",
+          "src/market.ts",
+          "src/platform/execution/authority.ts",
+          "src/fusion.ts",
+          "test/platform/solaris-nexus.test.mjs",
+          "test/fusion-graduated-exit.test.mjs"
+        ],
+        "failingRegressionObserved": true,
+        "validation": {
+          "build": "npm run build:engine — passed",
+          "focusedTests": "node --test test/platform/solaris-nexus.test.mjs test/fusion-graduated-exit.test.mjs — 9/9 passed after venue-neutral reason assertion",
+          "fullPlatformSuite": "npm run test:platform — 1,065/1,065 passed after the graduated AMM observation change"
+        },
+        "authorityImpact": "Simulation-only quote evidence; no live signing, authorization, broadcast, custody or risk-limit changes.",
+        "status": "VERIFIED_SIMULATION_INPUT_CORRECTION; NO_CANONICAL_POOL_INGRESS_OR_LIVE_AMM_EXECUTION"
+      },
+      "evidence": [
+        "https://github.com/raydium-io/raydium-sdk-V2",
+        "https://github.com/pump-fun/pump-public-docs",
+        "research/registry/source-review-batch-003-2026-10-14.json",
+        "src/platform/execution/solaris/amm-bridge.ts",
+        "src/market.ts",
+        "test/fusion-graduated-exit.test.mjs"
+      ]
+    },
+    {
+      "id": "INT-PUMP-V3-SYNTHETIC-CROSSING-001",
+      "catalogSourceIds": [
+        "SRC-259"
+      ],
+      "area": "Pump V3 synthetic-migration crossing buy",
+      "sourceToPipeline": {
+        "upstreamFindings": [
+          "Official Pump docs state V3 buys/sells are supported for SOL-paired coins, V2 remains supported, and cashback coins are the V3 exception.",
+          "A buy crossing remaining curve inventory can include the synthetic post-completion PumpSwap leg; its exact-input quote requires the actual curve base-token balance.",
+          "The installed @pump-fun/pump-sdk 4.0.0 exports V3 quote/instruction methods; current Pump docs reference SDK 4.1.0."
+        ],
+        "relevantModules": [
+          "src/market.ts",
+          "src/execution.ts",
+          "test/platform/pump-v3-synthetic-migration.test.mjs"
+        ],
+        "overlap": "Market owns curve snapshots and quote semantics; Executor owns the paper-only builder. The change extends those components and retains V2 instructions for ordinary buys and sells.",
+        "risks": [
+          "The V3 instruction path is confined to the quarantined paper builder; it does not authorize live signing or submission.",
+          "A missing curve ATA balance cannot support a crossing quote and fails closed; no balance is synthesized from realTokenReserves.",
+          "Cashback and Mayhem crossing buys are unsupported; token-paired quotes and post-migration PumpSwap execution remain outside this integration.",
+          "V3 fee retention and later sweep events are not reconciled into live settlement or creator-fee accounting."
+        ],
+        "validationRequirements": [
+          "Read and verify curve base ATA mint, token program, and PDA owner in the same contextual RPC batch as curve/global/fee state.",
+          "Use the SDK V3 exact-input quote with observed curve base balance to detect synthetic crossing output.",
+          "Select V3 instructions only at or above the curve inventory boundary; keep ordinary V2 instruction routing intact.",
+          "Reject missing balance evidence and unsupported cashback crossings; retain live authority quarantine."
+        ]
+      },
+      "implementation": {
+        "change": "Market.snapshot now includes an optional validated curve base ATA balance. Market.buyQuote uses the pinned SDK V3 exact-input quote when balance evidence is available. Executor selects buyV3Instructions only when output reaches/exceeds remaining curve inventory; ordinary V2 instructions remain the path otherwise. Missing balance and cashback crossing quotes fail closed.",
+        "files": [
+          "src/market.ts",
+          "src/execution.ts",
+          "dist/market.js",
+          "dist/execution.js",
+          "test/platform/pump-v3-synthetic-migration.test.mjs"
+        ],
+        "validation": {
+          "build": "npm run build:engine — passed",
+          "focusedTests": "node --test test/platform/executor-signing-firewall.test.mjs test/platform/pump-v3-synthetic-migration.test.mjs — 19/19 passed, including same-slot ATA capture and wrong-PDA rejection",
+          "platformTests": "npm run test:platform — 1,071/1,071 passed"
+        },
+        "authorityImpact": "Paper-only; no live signing, authorization, broadcast, custody, capital, or risk-limit changes.",
+        "status": "VERIFIED_PAPER_CROSSING_BUY; NO_LIVE_PUMP_V3_EXECUTION_OR_FEE_SWEEP_RECONCILIATION"
+      },
+      "evidence": [
+        "https://github.com/pump-fun/pump-public-docs/blob/main/docs/instructions/TRADE_V3.md",
+        "https://github.com/pump-fun/pump-public-docs/blob/main/docs/SYNTHETIC_MIGRATION.md",
+        "https://www.npmjs.com/package/%40pump-fun/pump-sdk",
+        "research/registry/source-review-batch-001-2026-10-14.json",
+        "src/market.ts",
+        "src/execution.ts",
+        "test/platform/pump-v3-synthetic-migration.test.mjs"
+      ]
+    },
+    {
+      "id": "INT-SETTLEMENT-WALLET-CONSERVATION-001",
+      "catalogSourceIds": [
+        "SRC-214",
+        "SRC-215",
+        "SRC-220"
+      ],
+      "area": "observed wallet delta and cost conservation",
+      "sourceToPipeline": {
+        "localFinding": "The standalone transport settlement helper accepted one ambiguous solDeltaLamports field, subtracted fees and rent from it, and called the result an observed economic settlement. That shape could double-subtract costs if solDelta was the finalized wallet post-minus-pre delta, and it counted recoverable rent funding as friction.",
+        "relevantModules": [
+          "src/platform/pipeline/transport-reconciliation.ts",
+          "test/platform/transport-reconciliation.test.mjs"
+        ],
+        "existingOverlap": "This remains a standalone reconciliation helper with no production call sites. It now takes explicit gross trade SOL flow and finalized wallet SOL delta, proves exact conservation against wallet-paid fees and rent, records rent separately, and returns the already-net wallet delta without subtracting it twice.",
+        "integrationRisks": [
+          "The caller must supply gross trade flow and wallet-paid cost components derived from the same finalized signature and wallet; mismatched payers or omitted movements fail conservation.",
+          "This helper is not wired into production settlement, accounting, or learning, and the check does not establish live execution readiness.",
+          "Rent is separately reported as funded capital, not trading friction; rent recovery on account closure requires a separate finalized event."
+        ],
+        "validationRequirements": [
+          "Require exact equality between gross trade flow less wallet-paid base/priority/tip costs and rent funding, and finalized observed wallet delta.",
+          "Reject a delta that subtracts fee or rent components twice.",
+          "Keep token-denominated Token-2022 withheld fees out of SOL totals and bind every settlement field into its hash."
+        ]
+      },
+      "implementation": {
+        "change": "Replaced the ambiguous input contract with GrossTradeSettlementEvidence. Settlement now checks conservation, reports observed wallet delta as net proceeds without a second deduction, excludes rent deposits from trading friction, and hashes explicit gross flow, observed delta, fee attribution, and rent funding.",
+        "files": [
+          "src/platform/pipeline/transport-reconciliation.ts",
+          "dist/platform/pipeline/transport-reconciliation.js",
+          "test/platform/transport-reconciliation.test.mjs"
+        ],
+        "validation": {
+          "build": "npm run build:engine — passed",
+          "focusedTests": "node --test test/platform/transport-reconciliation.test.mjs test/platform/execution-economics-and-governance.test.mjs — 12/12 passed",
+          "platformTests": "npm run test:platform — 1,073/1,073 passed",
+          "regression": "The explicit malformed-conservation test rejects a wallet delta that subtracts the same fees and rent a second time."
+        },
+        "authorityImpact": "No signer, authorization, broadcast, custody, capital, or risk-limit path changed. No production callsite or live process was modified.",
+        "status": "VERIFIED_STANDALONE_CONSERVATION; NOT_CONNECTED_TO_PRODUCTION_SETTLEMENT"
+      },
+      "evidence": [
+        "research/registry/source-review-batch-021-2026-10-14.json",
+        "docs/UPSTREAM_RESEARCH_INTEGRATION.md",
+        "test/platform/transport-reconciliation.test.mjs"
+      ]
+    },
+    {
+      "id": "INT-FEED-SESSION-RECOVERY-001",
+      "catalogSourceIds": [
+        "SRC-028",
+        "SRC-029",
+        "SRC-269",
+        "SRC-274",
+        "SRC-276"
+      ],
+      "area": "bounded feed ingress, historical/live health isolation, and restart-safe recovery",
+      "sourceToPipeline": {
+        "localFinding": "The feed accepts observations through canonical ingress and projects them into Census-R. Process-local queue overflow or a durable journal/projection failure must be visible as an ingress incident; historical repair must not advance live timestamps/provider health. A restart must not infer a clean session solely from a healthy newly constructed Feed.",
+        "relevantModules": [
+          "src/feed.ts",
+          "src/fusion.ts",
+          "src/platform/ingestion/feed-session-latch.ts",
+          "src/platform/ingestion/census-r.ts",
+          "src/platform/ingress/canonical-ingress.ts",
+          "src/store.ts",
+          "src/db-worker.ts"
+        ],
+        "existingOverlap": "Canonical ingress remains the durable observation authority, Census-R remains an ordered secondary projection, and the staging batch capability remains replay-only. The new session latch is a restart-safety marker, not evidence that a historical observation is live or that live trading is ready.",
+        "discoveries": [
+          "Feed admission is bounded by item count and bytes, snapshots mutable source data only after capacity is available, and shares an in-flight result for duplicate signatures.",
+          "Provider health updates only after accepted LIVE canonical ingress and Census-R projection; HISTORICAL_REPAIR does not update live freshness or provider health.",
+          "A feed-session sidecar is written atomically and fsynced before subscription startup; unresolved ACTIVE/INCIDENT state restores an explicit hold on restart.",
+          "Yellowstone SubscribeRequest.fromSlot is used as an inclusive restart/reconnect cursor only after canonical ACCEPTED/DUPLICATE receipts; replay through the sampled confirmed boundary is marked HISTORICAL_REPAIR, and a coarse sidecar checkpoint survives clean restart. This cursor does not establish contiguous coverage."
+        ],
+        "patterns": [
+          "Keep replay intent explicit and separate live-health state from historical coverage.",
+          "Use bounded serial admission with backpressure, immutable queue snapshots, and drain-on-stop.",
+          "Persist recovery uncertainty independently of the main queue so storage pressure cannot erase the hold; gate entries until an operator-reviewed recovery clears it.",
+          "Resume from a durable accepted slot inclusively; use canonical idempotency to absorb same-slot duplicates and keep coverage certificates distinct from transport replay checkpoints."
+        ],
+        "risks": [
+          "This changes canonical ingestion and Engine entry gating, so independent Astra Architecture, Verification, Risk, and Certification review is required before merge or release.",
+          "A clean simulated restart test does not prove external provider recovery, current endpoint health, or production availability.",
+          "The Windows sidecar identity and atomic-replace behavior require verification on the intended filesystem and operator recovery procedure."
+        ],
+        "validationRequirements": [
+          "Build the pinned TypeScript engine and run deterministic feed, Yellowstone, canonical-ingress, Census-R, replay, and staging-batch regressions.",
+          "Exercise older/newer HISTORICAL_REPAIR and failed LIVE projection with before/after live fields, provider health, and dashboard snapshot.",
+          "Verify unclean restart blocks entries, clean drained shutdown removes only its own latch, and entry execution remains fail-closed under PAPER_MAX_RISK.",
+          "Complete independent critical-change review and release-gate evaluation before merge or deployment."
+        ],
+        "decision": "INTEGRATE_WITH_CRITICAL_REVIEW_GATE"
+      },
+      "implementation": {
+        "change": "Added bounded feed admission/backpressure and retryable Census-R projection behavior; separated historical/live health transitions; persisted feed-session incidents across restart; added Engine startup checks for ambiguous pending canonical ingress before feed startup; and added an atomic, bounded staging batch path for deterministic replay. Added Yellowstone fromSlot replay on reconnect/restart with a confirmed-slot historical/live handoff and restart-persistent cursor checkpoint.",
+        "files": [
+          "src/feed.ts",
+          "src/fusion.ts",
+          "src/platform/ingestion/feed-session-latch.ts",
+          "src/platform/ingestion/census-r.ts",
+          "src/platform/ingestion/provider-health.ts",
+          "src/platform/ingress/canonical-ingress.ts",
+          "src/platform/ingress/types.ts",
+          "src/store.ts",
+          "src/db-worker.ts",
+          "test/feed-processing-intent-health.test.mjs",
+          "test/feed-ingress-backpressure.test.mjs",
+          "test/platform/yellowstone-captured-client.test.mjs",
+          "test/platform/canonical-ingress-crash-recovery.test.mjs",
+          "test/platform/canonical-ingress-durability.test.mjs",
+          "test/platform/staging-ingress-batch.test.mjs",
+          "ui/app.js",
+          "test/dashboard.test.mjs",
+          "src/platform/ingestion/yellowstone-captured-client.ts"
+        ],
+        "validation": {
+          "build": "npm run build:engine — passed after the reconnect/restart cursor and confirmed-boundary handoff changes.",
+          "focusedTests": "Yellowstone capture/cursor, historical/live health isolation, feed backpressure, and durable checkpoint restart: 30/30 passed.",
+          "platformTests": "npm run test:platform — 1,047/1,047 passed on the updated branch.",
+          "intelligenceTests": "npm run test:intelligence — 777/777 passed.",
+          "terminalTests": "npm run test:terminal — 350/350 passed with the local terminal dependency junction present.",
+          "coreTests": "Latest known npm run test:core result remains 646/648. Two receipt tests reject the isolated worktree terminal/node_modules junction as TEST_RECEIPT_UNSAFE_SYMLINK. Core suite is not green.",
+          "liveRuntime": "No live provider connection, signing, broadcast, capital, or production runtime test was performed.",
+          "yellowstoneReplayTests": "Pinned SubscribeRequest fromSlot wire roundtrip; inclusive replay cursor and confirmed boundary; HISTORICAL_REPAIR freshness isolation; clean restart checkpoint recovery. Included in the 30/30 focused run."
+        },
+        "authorityImpact": "Tightens entry eligibility after feed/recovery incidents. Does not add signer, custody, broadcast, or capital authorization. Requires independent critical-change review before merge/release.",
+        "status": "VERIFIED_BUILD_AND_PLATFORM_TESTS_PENDING_CORE_ENVIRONMENT_AND_INDEPENDENT_CRITICAL_REVIEW"
+      },
+      "evidence": [
+        "https://github.com/rpcpool/yellowstone-grpc",
+        "https://github.com/helius-labs/yellowstone-grpc",
+        "test/feed-processing-intent-health.test.mjs",
+        "test/feed-ingress-backpressure.test.mjs",
+        "test/platform/canonical-ingress-crash-recovery.test.mjs",
+        "test/platform/canonical-ingress-durability.test.mjs",
+        "test/platform/staging-ingress-batch.test.mjs",
+        "test/dashboard.test.mjs",
+        "ui/app.js",
+        "https://github.com/rpcpool/yellowstone-grpc/blob/master/examples/typescript/README.md",
+        "https://github.com/rpcpool/yellowstone-grpc/blob/master/CHANGELOG.md",
+        "test/platform/yellowstone-captured-client.test.mjs"
+      ]
+    },
+    {
+      "id": "INT-JITO-STATUS-WINDOW-001",
+      "catalogSourceIds": [
+        "SRC-257"
+      ],
+      "area": "Jito inflight status interpretation",
+      "sourceToPipeline": {
+        "upstreamFindings": [
+          "Jito inflight bundle statuses are only retained for a five-minute lookback; Invalid and missing status results do not establish relay failure or transaction non-landing.",
+          "An accepted sendBundle response establishes receipt, not chain landing; finalized chain reconciliation remains authoritative."
+        ],
+        "relevantModules": [
+          "src/platform/execution/jito-lifecycle-coordinator.ts"
+        ],
+        "existingOverlap": "The coordinator already separated inflight status polling from settlement reconciliation. The correction preserves that boundary and uses a nonterminal STATUS_NOT_RETAINED result for absent-window outcomes.",
+        "risks": [
+          "Callers must continue reconciliation after status retention expires.",
+          "This adapter test does not establish live Jito connectivity, transaction landing, or actual trading costs."
+        ],
+        "validationRequirements": [
+          "Test Invalid, null, empty and missing result entries as nonterminal status-not-retained outcomes.",
+          "Keep mismatched bundle IDs and malformed status payloads fail-closed.",
+          "Verify final outcomes from chain state rather than the expiring inflight endpoint."
+        ]
+      },
+      "implementation": {
+        "change": "JitoLifecycleCoordinator now maps Invalid and null/empty/missing inflight results to STATUS_NOT_RETAINED with BUNDLE_NOT_FOUND_IN_INFLIGHT_WINDOW. These outcomes remain nonterminal; no relay failure or non-landing conclusion is inferred.",
+        "files": [
+          "src/platform/execution/jito-lifecycle-coordinator.ts",
+          "dist/platform/execution/jito-lifecycle-coordinator.js",
+          "test/platform/jito-fence.test.mjs"
+        ],
+        "validation": {
+          "build": "npm run build:engine — passed",
+          "focusedTests": "node --test test/platform/jito-fence.test.mjs — 5/5 passed",
+          "platformTests": "npm run test:platform — 1,048/1,048 passed after the Jito status correction"
+        },
+        "authorityImpact": "No signing, broadcast, capital authorization, or risk-limit changes. No services were started, stopped, or restarted.",
+        "status": "VERIFIED_LOCAL_ADAPTER_FIX; LIVE_JITO_AND_CHAIN_RECONCILIATION_UNVERIFIED"
+      },
+      "evidence": [
+        "https://docs.jito.wtf/lowlatencytxnsend/",
+        "src/platform/execution/jito-lifecycle-coordinator.ts",
+        "test/platform/jito-fence.test.mjs"
+      ]
+    },
+    {
+      "id": "INT-JUPITER-QUOTE-U64-001",
+      "catalogSourceIds": [
+        "SRC-258"
+      ],
+      "area": "Jupiter quote-only response bounds",
+      "sourceToPipeline": {
+        "upstreamFindings": [
+          "Jupiter /order returns a quote with transaction null when taker is omitted; the API can return a transaction when taker is supplied.",
+          "Solana token raw amounts are represented by u64 values; quote output outside that range cannot be a valid token amount for the downstream sell quote."
+        ],
+        "relevantModules": [
+          "terminal/jupiter-research.mjs"
+        ],
+        "existingOverlap": "The adapter already omits taker, strips response data down to quote fields, enforces QUOTE_ONLY authority and validates response size. This adds a bounded-u64 check before any BigInt arithmetic or second quote.",
+        "risks": [
+          "The adapter remains an untrusted provider snapshot; a valid range does not establish quote freshness, execution, or profit.",
+          "Provider contract changes require fixture and documentation review."
+        ],
+        "validationRequirements": [
+          "Accept valid canonical positive integer amounts within u64.",
+          "Reject amount above u64 before using it as a sell quote input.",
+          "Assert no transaction payload enters results and executionAuthorized remains false."
+        ]
+      },
+      "implementation": {
+        "change": "JupiterResearchQuoteService now validates outAmount as a canonical positive u64 before returning the quote, preventing out-of-range provider values from entering BigInt round-trip arithmetic or becoming the sell input.",
+        "files": [
+          "terminal/jupiter-research.mjs",
+          "terminal/test/jupiter-research.test.mjs"
+        ],
+        "validation": {
+          "focusedTests": "node --test terminal/test/jupiter-research.test.mjs — 4/4 passed",
+          "terminalTests": "npm run test:terminal — 351/351 passed"
+        },
+        "authorityImpact": "No signing, transaction submission, capital authorization, or risk-limit changes.",
+        "status": "VERIFIED_LOCAL_QUOTE_SCHEMA_GUARD; LIVE_JUPITER_CONTRACT_UNEXERCISED"
+      },
+      "evidence": [
+        "https://developers.jup.ag/docs/swap/order-and-execute",
+        "https://solana.com/docs/tokens/basics/create-token-account",
+        "terminal/jupiter-research.mjs",
+        "terminal/test/jupiter-research.test.mjs"
+      ]
+    },
+    {
+      "id": "INT-AMM-POOL-STATE-001",
+      "catalogSourceIds": [
+        "SRC-259",
+        "SRC-063",
+        "SRC-077"
+      ],
+      "area": "graduated AMM state and execution-aware exit marks",
+      "sourceToPipeline": {
+        "upstreamFindings": [
+          "Pump graduation does not identify Raydium as the destination; PumpSwap is a first-party venue and Pump documentation describes multiple lifecycle variants and fee-sweep behavior.",
+          "An executable constant-product exit estimate requires observed quote and token reserves and the applicable effective fee; a generic default reserve can invent a mark.",
+          "Non-SOL quote pools cannot be reported as SOL proceeds without a separately verified conversion route.",
+          "A structurally valid pool snapshot still becomes stale; it must carry source observation time and be rejected after its freshness lease expires."
+        ],
+        "relevantModules": [
+          "src/platform/execution/solaris/amm-bridge.ts",
+          "src/platform/execution/solaris/types.ts",
+          "src/market.ts",
+          "src/fusion.ts",
+          "src/platform/execution/authority.ts"
+        ],
+        "existingOverlap": "The existing Market path reads and quotes Pump native-SOL curves. The prior graduation bridge defaulted to 85 SOL, used a hard-coded token reserve and fee, and named Raydium regardless of venue. It now requires an explicit generic AMM pool snapshot and will not price non-SOL quote pools as SOL. No canonical pool account parser or certificate is connected yet.",
+        "risks": [
+          "The new pool API validates shape, identity, slot ordering, and numeric bounds but does not authenticate the caller or certify account ownership/provenance.",
+          "Effective fee must include venue-specific and token transfer costs or the resulting mark remains optimistic.",
+          "No provider path currently populates this state from canonical on-chain pool accounts.",
+          "Freshness timestamps are caller-supplied evidence and remain unauthenticated until bound to a verified pool observation."
+        ],
+        "validationRequirements": [
+          "Require canonical on-chain pool identity and account-owner validation before production use.",
+          "Decode quote/token reserves and fee from a pinned protocol version at a common slot.",
+          "Bind the pool observation timestamp to the source receipt and enforce a bounded maximum age on marks and entry eligibility.",
+          "Test PumpSwap and at least one non-Pump venue, stale/regressing slots, pool identity changes, non-SOL quote mint, and depleted reserves.",
+          "Reconcile simulated marks against finalized exit fills before using them for performance or entry decisions."
+        ]
+      },
+      "implementation": {
+        "change": "Replaced default Raydium-only migration assumptions and fabricated AMM reserves/fee with a generic explicit pool snapshot (venue, pool address, quote mint, quote/token reserves, effective fee, slot, observation time). SOL exit marks now use these supplied values only while the snapshot is within its 1-second freshness lease, and repeated completed-curve observations no longer reset migration state or cooldown.",
+        "files": [
+          "src/platform/execution/solaris/amm-bridge.ts",
+          "src/platform/execution/solaris/types.ts",
+          "src/market.ts",
+          "src/fusion.ts",
+          "src/platform/execution/authority.ts",
+          "test/fusion-graduated-exit.test.mjs",
+          "test/platform/solaris-nexus.test.mjs"
+        ],
+        "validation": {
+          "build": "npm run build:engine — passed",
+          "focusedTests": "node --test test/fusion-graduated-exit.test.mjs test/platform/solaris-nexus.test.mjs test/platform/certified-execution-authority.test.mjs — 22/22 passed",
+          "platformTests": "npm run test:platform — 1,048/1,048 passed after reserve, venue, fee, slot, migration-idempotency, and freshness changes"
+        },
+        "authorityImpact": "No signing, broadcast, custody, capital authorization, or risk-limit bypass. This is a mark/quote path only; it does not add venue submission or canonical pool ingestion.",
+        "status": "VERIFIED_SIMULATION_MARK_CORRECTION; CANONICAL_AMM_INGESTION_AND_LIVE_EXECUTION_UNIMPLEMENTED"
+      },
+      "evidence": [
+        "https://github.com/pump-fun/pump-public-docs/blob/main/docs/instructions/BUY.md",
+        "https://github.com/pump-fun/pump-public-docs/blob/main/docs/instructions/TRADE_V3.md",
+        "https://github.com/pump-fun/pump-public-docs/blob/main/docs/SYNTHETIC_MIGRATION.md",
+        "src/platform/execution/solaris/amm-bridge.ts",
+        "test/fusion-graduated-exit.test.mjs"
+      ]
+    },
+    {
+      "id": "INT-FEE-COMPONENT-CONSISTENCY-001",
+      "catalogSourceIds": [
+        "SRC-255"
+      ],
+      "area": "observed transaction fee component reconciliation",
+      "sourceToPipeline": {
+        "upstreamFindings": [
+          "Solana's total network fee is base fee plus priority fee; the base fee may include transaction and precompile signatures.",
+          "The v1 priority fee is a total lamport amount, while legacy/v0 derive it from requested compute limit and micro-lamports per CU.",
+          "A reported burned amount must be bounded by base fee, not just by total transaction fee."
+        ],
+        "relevantModules": [
+          "src/platform/ingestion/truth-x.ts",
+          "test/platform/truth-x.test.mjs"
+        ],
+        "existingOverlap": "EconomicDeltaEngine accepted feeBurnedLamports and priorityFeeLamports when each was individually no greater than feeLamports, even when burned fees exceeded the base fee left after priority fees. It now derives baseFeeLamports only when priority-fee evidence is explicitly present and rejects that contradictory decomposition.",
+        "risks": [
+          "This consistency check does not prove that supplied fee components were decoded correctly for a given transaction version.",
+          "A missing priority-fee observation intentionally leaves base fee unknown.",
+          "Jito tips and venue fees remain separate economic components and are outside this validator."
+        ],
+        "validationRequirements": [
+          "Reject burned fee greater than total fee minus explicit priority fee.",
+          "Keep the derived base fee undefined when priority-fee evidence is absent.",
+          "Add version-specific fee fixtures and reconcile them against canonical chain meta.fee before using for net PnL."
+        ]
+      },
+      "implementation": {
+        "change": "EconomicDeltaEngine now exposes baseFeeLamports = feeLamports - priorityFeeLamports when priority fee is supplied and rejects feeBurnedLamports above the derived base fee. Added deterministic regression assertions for contradictory and incomplete decompositions.",
+        "files": [
+          "src/platform/ingestion/truth-x.ts",
+          "test/platform/truth-x.test.mjs"
+        ],
+        "validation": {
+          "redTest": "Before the implementation, the updated Truth-X test failed because baseFeeLamports was absent.",
+          "build": "npm run build:engine — passed",
+          "focusedTests": "node --test test/platform/truth-x.test.mjs — 9/9 passed"
+        },
+        "authorityImpact": "Accounting validation only; no signing, broadcast, custody, capital authorization, or risk-limit changes.",
+        "status": "VERIFIED_FEE_COMPONENT_CONSISTENCY_GUARD; VERSIONED_FEE_DECODING_AND_FULL_PNL_RECONCILIATION_REMAIN_OPEN"
+      },
+      "evidence": [
+        "https://solana.com/docs/core/fees/fee-structure",
+        "https://solana.com/docs/core/transactions/versioned-transactions",
+        "src/platform/ingestion/truth-x.ts",
+        "test/platform/truth-x.test.mjs"
+      ]
+    },
+    {
+      "id": "INT-V1-SIGNING-FAIL-CLOSED-001",
+      "catalogSourceIds": [
+        "SRC-254"
+      ],
+      "area": "transaction V1 signing decoder compatibility boundary",
+      "sourceToPipeline": {
+        "upstreamFindings": [
+          "Solana v1 messages begin with version prefix 0x81 and carry fee/resource limits in a message config rather than relying on legacy/v0 ComputeBudget instructions.",
+          "The installed @solana/web3.js 1.98.4 VersionedMessage decoder in this worktree only supports legacy and v0.",
+          "The signing decoder must fail closed until it can bind the v1 config and instruction/account structure from the exact message bytes."
+        ],
+        "relevantModules": [
+          "src/platform/signing/veritas-wire-decoder.ts",
+          "src/platform/signing/signing-firewall.ts"
+        ],
+        "existingOverlap": "Veritas decodes complete legacy/v0 payer-origin transfers. Before this guard, a v1 message had no explicit format rejection and was passed to the legacy/v0 deserializer. The decoder now recognizes 0x81 and rejects it with a version-specific unsupported error before parsing.",
+        "risks": [
+          "This guard does not add v1 message decoding or signing support.",
+          "The guard only recognizes the canonical v1 prefix; malformed or future formats remain subject to generic parser rejection.",
+          "The signing surface continues to depend on the installed decoder's supported versions."
+        ],
+        "validationRequirements": [
+          "Prove 0x81 V1 messages fail with an explicit unsupported-version error before legacy/v0 deserialization.",
+          "Keep legacy/v0 decoding and signing-firewall behavior unchanged.",
+          "Do not enable V1 signing until official-format fixtures cover config masks, limits, fee totals, instruction/account decoding, and canonical byte round-trips."
+        ]
+      },
+      "implementation": {
+        "change": "Added an explicit 0x81 rejection in VeritasWireDecoder and a deterministic regression test. This makes the unsupported V1 boundary observable and fail-closed without claiming V1 support.",
+        "files": [
+          "src/platform/signing/veritas-wire-decoder.ts",
+          "test/platform/veritas-wire-decoder.test.mjs"
+        ],
+        "validation": {
+          "build": "npm run build:engine — passed",
+          "focusedTests": "node --test test/platform/veritas-wire-decoder.test.mjs test/platform/signing-firewall.test.mjs — 11/11 passed"
+        },
+        "authorityImpact": "No signing approval expansion, transaction submission, custody, capital authorization, or risk-limit changes.",
+        "status": "VERIFIED_V1_UNSUPPORTED_VERSION_GUARD; FULL_V1_WIRE_DECODING_UNIMPLEMENTED"
+      },
+      "evidence": [
+        "https://solana.com/docs/core/fees/compute-budget",
+        "https://solana.com/docs/core/transactions/versioned-transactions",
+        "https://github.com/solana-foundation/transaction-v1-examples",
+        "src/platform/signing/veritas-wire-decoder.ts",
+        "test/platform/veritas-wire-decoder.test.mjs"
+      ]
+    },
+    {
+      "id": "INT-LOCKFILE-CLEAN-INSTALL-001",
+      "catalogSourceIds": [
+        "SRC-256"
+      ],
+      "area": "pinned dependency installation and build reproducibility",
+      "sourceToPipeline": {
+        "upstreamFindings": [
+          "The project declares pnpm 11.19.0 as its package manager and lists exact runtime dependency versions.",
+          "The candidate pnpm lock did not include two declared direct packages, so a frozen install correctly failed.",
+          "The shared worktree node_modules junction resolved @pump-fun/pump-sdk 4.0.0 while package.json and pnpm lock specify 2.0.0; compilation against that junction was not sufficient evidence for the locked source set."
+        ],
+        "relevantModules": [
+          "package.json",
+          "pnpm-lock.yaml",
+          "package-lock.json",
+          "tsconfig.json"
+        ],
+        "existingOverlap": "A scratch copy of the source and manifests was used to reconcile both lockfiles, install dependencies without lifecycle scripts, verify Pump SDK 2.0.0 and transitive PumpSwap SDK 1.20.0, then build and run targeted tests. The user's existing node_modules junction was left untouched.",
+        "risks": [
+          "A checked-in lockfile does not install dependencies into an existing worktree automatically.",
+          "This clean install/build does not establish live service readiness or production behavior.",
+          "The installation omitted dependency lifecycle scripts, so native optional bindings fell back to pure JavaScript in tests."
+        ],
+        "validationRequirements": [
+          "A pnpm frozen install succeeds from a scratch copy using the checked-in pnpm lock.",
+          "An npm clean install succeeds from a scratch copy using package-lock.json.",
+          "Confirm installed SDK versions match the declared pins before accepting build/test evidence.",
+          "Build the engine and run representative AMM, fee-accounting, transaction-compatibility, and signing tests in that environment."
+        ]
+      },
+      "implementation": {
+        "change": "Reconciled pnpm-lock.yaml and package-lock.json with the exact dependencies declared in package.json. No runtime code or installed worktree dependencies were modified.",
+        "files": [
+          "pnpm-lock.yaml",
+          "package-lock.json"
+        ],
+        "validation": {
+          "frozenPnpmInstall": "pnpm install --frozen-lockfile --ignore-scripts — passed in isolated scratch copy",
+          "cleanNpmInstall": "npm ci --ignore-scripts --no-audit --no-fund — passed in isolated scratch copy",
+          "lockedSdkVersions": "npm ls confirmed @pump-fun/pump-sdk 2.0.0 and @pump-fun/pump-swap-sdk 1.20.0",
+          "engineBuild": "npm run build:engine — passed in isolated scratch copy after clean install",
+          "focusedTests": "Six platform suites covering AMM, economic deltas, transaction compatibility, and signing — 42/42 passed"
+        },
+        "authorityImpact": "Dependency reproducibility only; no signing, broadcast, custody, capital authorization, or risk-limit changes.",
+        "status": "VERIFIED_LOCKFILE_ALIGNMENT_AND_PINNED_BUILD; USER_WORKTREE_DEPENDENCY_JUNCTION_UNCHANGED"
+      },
+      "evidence": [
+        "package.json",
+        "pnpm-lock.yaml",
+        "package-lock.json",
+        "src/market.ts",
+        "test/fusion-graduated-exit.test.mjs",
+        "test/platform/truth-x.test.mjs",
+        "test/platform/veritas-wire-decoder.test.mjs"
+      ]
+    },
+    {
+      "id": "INT-JITO-TIP-FLOOR-EXACT-LAMPORTS-001",
+      "catalogSourceIds": [
+        "SRC-257"
+      ],
+      "area": "Jito tip-floor estimate conversion",
+      "sourceToPipeline": {
+        "upstreamFindings": [
+          "The official Jito documentation describes tip amounts as part of a competitive auction and exposes the tip-floor API as a market observation, not as a guaranteed landing price.",
+          "The existing adapter converted the 75th-percentile SOL value with floating-point multiplication and Math.ceil, which can overstate at decimal boundaries and accepted coercible values such as null as zero."
+        ],
+        "relevantModules": [
+          "src/execution.ts",
+          "src/platform/execution/jito-tip-floor.ts"
+        ],
+        "existingOverlap": "The configured min/max tip policy remains authoritative. The observed floor is converted exactly and capped at the configured maximum before the existing panic multiplier and final cap are applied. No submission path was enabled or changed.",
+        "risks": [
+          "A tip-floor observation is not a quote or guarantee that an opportunity will land.",
+          "This does not model the finalized transaction's actual tip transfer or bundle outcome."
+        ],
+        "validationRequirements": [
+          "Test integer lamports, fractional-lamport ceilings, zero, scientific notation, malformed values, and negative values.",
+          "Check that the estimate is capped by the configured maximum before panic scaling."
+        ]
+      },
+      "implementation": {
+        "change": "Added exact decimal-SOL-to-lamport conversion using BigInt, strict input validation, and maximum-tip clamping in the Jito tip-floor refresh path.",
+        "files": [
+          "src/platform/execution/jito-tip-floor.ts",
+          "src/execution.ts",
+          "test/platform/jito-tip-floor.test.mjs"
+        ],
+        "validation": {
+          "engineBuild": "npm run build:engine — passed in isolated pinned scratch copy",
+          "focusedTests": "node --test test/platform/jito-tip-floor.test.mjs test/platform/jito-fence.test.mjs — 8/8 passed",
+          "platformSuite": "npm run test:platform — 1,058/1,058 passed (23 suites) in the isolated pinned scratch copy after the tip-floor patch"
+        },
+        "authorityImpact": "Tip estimation only; no signing, broadcast, custody, capital authorization, or risk-limit paths changed.",
+        "status": "VERIFIED_TIP_FLOOR_UNIT_CONVERSION_ONLY"
+      },
+      "evidence": [
+        "https://docs.jito.wtf/lowlatencytxnsend/",
+        "test/platform/jito-tip-floor.test.mjs"
+      ]
+    },
+    {
+      "id": "INT-REALIZED-EDGE-FEE-ATTRIBUTION-001",
+      "catalogSourceIds": [
+        "SRC-255"
+      ],
+      "area": "realized edge ledger fee attribution integrity",
+      "sourceToPipeline": {
+        "upstreamFindings": [
+          "Solana network fees and Jito tips are distinct cost components; transaction metadata is the authority for realized transaction fee.",
+          "An aggregate realized fees-and-tips total does not identify how much was base fee, priority fee, or tip.",
+          "The catalog review established that missing observations must remain unknown instead of receiving synthetic accounting values."
+        ],
+        "relevantModules": [
+          "src/platform/pipeline/realized-edge-ledger.ts",
+          "src/platform/pipeline/unified-unit.ts"
+        ],
+        "existingOverlap": "RealizedEdgeLedger accepted a total feesAndTipsLamports value but filled missing fee categories with a fixed 5,000-lamport base fee and split the remainder equally between priority fee and tip. It now preserves the total, leaves absent components undefined, reports the unattributed residual and attribution status, rejects over-allocation, and includes the attribution breakdown in recordHash.",
+        "risks": [
+          "Unclassified cost remains economically charged in the aggregate; the change improves attribution and does not reduce net costs.",
+          "A caller may still provide incorrect explicit categories; this check verifies only nonnegative arithmetic and total bounds, not chain provenance.",
+          "No finalized account-delta or meta.fee reconciliation is added by this ledger change."
+        ],
+        "validationRequirements": [
+          "When no components are supplied, show the full aggregate as unclassified and expose no synthetic base, priority, or tip values.",
+          "Require supplied components to be nonnegative and their sum not to exceed the total; mark full attribution only when all categories are present and balance exactly.",
+          "Prove the record hash changes when the fee breakdown changes while the identity, timestamp, stages, and aggregate remain fixed.",
+          "Run the focused economics tests and the complete platform suite."
+        ]
+      },
+      "implementation": {
+        "change": "Removed the 5,000-lamport and equal-split fee-category defaults from RealizedEdgeLedger. The report retains the aggregate, exposes missing categories as undefined, calculates an unclassified residual/status, validates explicit sums, and hashes both attribution and comprehensive breakdowns.",
+        "files": [
+          "src/platform/pipeline/realized-edge-ledger.ts",
+          "dist/platform/pipeline/realized-edge-ledger.js",
+          "test/platform/execution-economics-and-governance.test.mjs"
+        ],
+        "validation": {
+          "redTest": "New realized-edge assertions failed before the change because the aggregate total was omitted from comprehensiveBreakdown and a fabricated 5,000-lamport base fee was emitted.",
+          "pinnedBuild": "TypeScript build with pinned scratch dependencies passed.",
+          "focusedTests": "node --test test/platform/execution-economics-and-governance.test.mjs — 5/5 passed.",
+          "fullPlatformSuite": "node --test --test-isolation=none test/platform/*.test.mjs — 1,061/1,061 passed across 23 suites from the pinned scratch project root."
+        },
+        "authorityImpact": "Analytics/accounting representation only. No signing, broadcast, custody, capital authorization, risk-limit, or live process changes.",
+        "status": "VERIFIED_NO_SYNTHETIC_FEE_SPLIT; FINALIZED_FEE_AND_TIP_PROVENANCE_RECONCILIATION_REMAINS_OPEN"
+      },
+      "evidence": [
+        "https://solana.com/docs/core/fees/fee-structure",
+        "src/platform/pipeline/realized-edge-ledger.ts",
+        "test/platform/execution-economics-and-governance.test.mjs"
+      ]
+    },
+    {
+      "id": "INT-JUPITER-V0-BUILD-VERSION-GUARD-001",
+      "catalogSourceIds": [
+        "SRC-258"
+      ],
+      "area": "Jupiter V2 V0 build version, simulation, and compute-fee boundary",
+      "sourceToPipeline": {
+        "upstreamFindings": [
+          "Current Jupiter /build docs identify response transactionVersion as 0 or 1 and default requests to V0.",
+          "For V1, computeBudgetInstructions are empty, ALTs are absent, and computeUnitPrice must be translated into message configuration; that response shape is not compatible with SYLPH’s V0 instruction decoder.",
+          "The /build flow returns instructions and cannot use Jupiter /execute; signing and landing remain caller-controlled.",
+          "Jupiter recommends simulating the assembled /build instruction set at a 1.4M CU cap, then sizing the compute limit to 1.2x consumed units, capped at 1.4M; /build returns a unit price instruction but not a CU limit."
+        ],
+        "relevantModules": [
+          "src/execution.ts",
+          "src/platform/signing/veritas-wire-decoder.ts",
+          "test/jupiter-v2-build.test.mjs"
+        ],
+        "existingOverlap": "Executor.graduatedSell previously relied on the default transaction version but did not send transactionVersion=0 or check the returned version. It now requests V0 and rejects responses unless transactionVersion is 0 or the canonical string \"0\". Evidence exposes instructionTransactionVersion: 0 while transactionVersion remains null because the method does not serialize a transaction. The builder now resolves and verifies ALTs before compiling the exact instruction set for an unsigned confirmed-commit simulation. It inserts the capped 1.2x CU limit and computes route priority fee by ceiling(microLamports * selectedLimit / 1,000,000). Paper settlement uses this route fee instead of MAX_PRIORITY_LAMPORTS. Route evidence keeps fee fields as strings for safe serialization.",
+        "risks": [
+          "Simulation uses current RPC state and does not guarantee the route will land or realize the simulated output.",
+          "Simulation and fee derivation remain V0-only; V1 message configuration is still unsupported.",
+          "No live Jupiter service, signing, submission, or finalized transaction was exercised."
+        ],
+        "validationRequirements": [
+          "Prove the request pins V0 and an explicit V1 response is rejected before it enters the instruction-only route.",
+          "Keep existing amount, output-threshold, instruction-data, signer, compute-fee, and lookup-table checks passing.",
+          "Do not report a transaction version as serialized when only instructions are returned.",
+          "Prove the response price and simulated CU limit produce the exact integer-ceiling priority fee, and that the result remains under the configured cap."
+        ]
+      },
+      "implementation": {
+        "change": "Pin Jupiter /build requests to transactionVersion=0, validate response transactionVersion, and record instructionTransactionVersion separately from the absent serialized transaction version. Added a regression that first accepted a V1-shaped response and now rejects it. The V0 builder now simulates the assembled instruction set with verified ALTs, chooses a 1.2x compute limit capped at 1.4M, and uses the resulting integer-ceiling priority fee in the paper cost projection instead of the configured maximum.",
+        "files": [
+          "src/execution.ts",
+          "dist/execution.js",
+          "test/jupiter-v2-build.test.mjs"
+        ],
+        "validation": {
+          "redV1ResponseTest": "The explicit V1-response regression failed before version pinning because the old V0-only path accepted the V1-shaped result.",
+          "pinnedBuild": "TypeScript build using the pinned scratch dependency installation passed.",
+          "focusedTests": "node --test test/jupiter-v2-build.test.mjs — 12/12 passed, including exact CU-price math, 1.2x CU limit, and simulation fail-closed cases.",
+          "platformSuite": "node --test --test-isolation=none test/platform/*.test.mjs — 1,061/1,061 passed across 23 suites after the compute-simulation patch.",
+          "liveIntegration": "No live Jupiter API or RPC simulation, signing, or transaction submission was performed."
+        },
+        "authorityImpact": "Request/response compatibility guard only. No signing, broadcast, custody, capital authorization, or risk-limit changes; no live process changed.",
+        "status": "VERIFIED_V0_BUILD_SIMULATION_AND_PRIORITY_FEE_ESTIMATE; LIVE_EXECUTION_AND_V1_SUPPORT_REMAIN_UNVERIFIED"
+      },
+      "evidence": [
+        "https://developers.jup.ag/docs/swap/build",
+        "https://developers.jup.ag/docs/swap/advanced/transaction-versions",
+        "test/jupiter-v2-build.test.mjs",
+        "https://developers.jup.ag/docs/swap/build#simulate-compute-unit-limit",
+        "test/jupiter-v2-build.test.mjs"
+      ]
+    },
+    {
+      "id": "INT-RAYDIUM-V2-PROGRAM-FAMILY-CLASSIFICATION-001",
+      "catalogSourceIds": ["SRC-063"],
+      "area": "read-only DEX program identification",
+      "sourceRevision": "e2e8bcd865189c994682a9477ec8eaf1e2da8aaf",
+      "sourceToPipeline": {
+        "localFinding": "The envelope parser identified Raydium AMM v4 but treated the official stable-AMM, CLMM, CPMM and Launchpad program IDs as unknown. Its output is explicitly a research observation and contains no decoded trade identity or amounts.",
+        "relevantModules": [
+          "src/platform/ingestion/dex-stream-parser.ts",
+          "test/platform/upstream-pattern-adaptations.test.mjs",
+          "src/platform/ingestion/dual-path-reconciler.ts"
+        ],
+        "existingOverlap": "This extends exact program identification in the existing envelope. It does not add a Raydium SDK dependency, transaction decoder, canonical pool-account reader, reconciliation protocol support, or execution route.",
+        "integrationRisks": [
+          "Program IDs and account layouts must remain pinned and be reviewed against upstream upgrades.",
+          "Classification is not proof that a transaction contains a trade instruction or succeeds.",
+          "The SDK is GPL-3.0; dependency adoption or source reuse requires separate license review.",
+          "Raydium API pool metadata remains non-canonical and cannot establish executable liquidity."
+        ],
+        "validationRequirements": [
+          "Known family IDs must be classified exactly and remain NOT_DECODED with null trade fields.",
+          "Unknown IDs and failed transaction metadata must retain existing behavior.",
+          "Do not add newly classified families to transaction reconciliation until independent protocol-specific decoders and fixtures exist."
+        ]
+      },
+      "implementation": {
+        "change": "Added exact classification for Raydium stable AMM, CLMM, CPMM and Launchpad program IDs from the pinned official SDK source. All trade details remain unknown and null.",
+        "files": [
+          "src/platform/ingestion/dex-stream-parser.ts",
+          "dist/platform/ingestion/dex-stream-parser.js",
+          "test/platform/upstream-pattern-adaptations.test.mjs"
+        ],
+        "validation": {
+          "redRegression": "The new regression failed before the patch because the stable-AMM program ID returned UNKNOWN_DEX.",
+          "pinnedBuild": "npm run build:engine in .audit/pinned-build passed.",
+          "focusedTests": "node --test test/platform/upstream-pattern-adaptations.test.mjs test/intelligence/pass-64-stream-multiplexer-dex-parser-landing.test.mjs — 11/11 passed.",
+          "platformSuite": "npm run test:platform in .audit/pinned-build — 1,062/1,062 passed across 23 suites.",
+          "compiledArtifact": "Direct dist parser checks classified 4/4 added IDs and preserved NOT_DECODED/null trade fields.",
+          "rootBuild": "npm run build:engine in the main worktree remains blocked by missing @pump-fun/pump-swap-sdk from its root dependency tree."
+        },
+        "authorityImpact": "Read-only classification only. No transaction reconciliation support, signing, broadcast, custody, capital authorization, or risk-limit changes.",
+        "status": "VERIFIED_PARTIAL_PROGRAM_CLASSIFICATION; NO_RAYDIUM_TRADE_DECODING_OR_EXECUTION"
+      },
+      "evidence": [
+        "https://github.com/raydium-io/raydium-sdk-V2/blob/e2e8bcd865189c994682a9477ec8eaf1e2da8aaf/src/common/programId.ts",
+        "https://github.com/raydium-io/raydium-sdk-V2/blob/e2e8bcd865189c994682a9477ec8eaf1e2da8aaf/src/api/api.ts",
+        "https://github.com/raydium-io/raydium-sdk-V2/blob/e2e8bcd865189c994682a9477ec8eaf1e2da8aaf/src/common/transfer.ts",
+        "test/platform/upstream-pattern-adaptations.test.mjs"
+      ]
+    },
+    {
+      "id": "INT-THOROFARE-LATENCY-DIST-001",
+      "catalogSourceIds": [
+        "SRC-002"
+      ],
+      "area": "bounded provider-health latency distribution telemetry",
+      "sourceToPipeline": {
+        "upstreamFindings": [
+          "Thorofare measures six Yellowstone slot stages and reports p50/p90/p99 distributions. Its comparative delay metric assigns zero when an endpoint wins, so it is specific to paired endpoint comparisons.",
+          "SYLPH ProviderHealthTracker currently records up to 20 recent request/observation samples and exposes an average; these samples do not measure Yellowstone slot propagation or finality-stage timing."
+        ],
+        "relevantModules": [
+          "src/platform/ingestion/provider-health.ts",
+          "test/platform/provider-health.test.mjs",
+          "src/platform/ingestion/yellowstone-captured-client.ts"
+        ],
+        "existingOverlap": "The existing rolling sample window already supplies successful measured latency. The adaptation exposes nearest-rank percentiles and the positive measurement count from that same window; it does not implement a two-provider benchmark.",
+        "risks": [
+          "A p99 derived from at most 20 samples is a coarse diagnostic and unstable at low sample counts.",
+          "Request latency must not be presented as slot propagation or finalization latency.",
+          "Percentiles do not establish market-feed freshness, canonicality, provider truth, or execution quality."
+        ],
+        "validationRequirements": [
+          "Assert exact p50/p90/p99 nearest-rank values and reported sample count.",
+          "Assert only the latest 20 measured successful samples contribute.",
+          "Run the provider-health, Yellowstone client and Jito health regressions; keep feed gates and execution authority unchanged."
+        ]
+      },
+      "implementation": {
+        "change": "Added latencyP50Ms, latencyP90Ms, latencyP99Ms and latencySampleCount to ProviderMetricEntry. Percentiles use nearest-rank over positive-latency successful samples in the existing bounded 20-request window. Empty measurement windows report zeros.",
+        "files": [
+          "src/platform/ingestion/provider-health.ts",
+          "dist/platform/ingestion/provider-health.js",
+          "test/platform/provider-health.test.mjs"
+        ],
+        "validation": {
+          "redRegression": "New regression initially failed because latencySampleCount was absent.",
+          "focusedCompile": "Direct TypeScript compilation of src/platform/ingestion/provider-health.ts passed using the repository compiler and NodeNext strict options.",
+          "focusedTests": "node --test test/platform/provider-health.test.mjs test/platform/yellowstone-captured-client.test.mjs test/platform/jito-provider-health.test.mjs — 25/25 passed.",
+          "engineBuild": "npm run build:engine did not pass: installed root dependency tree is missing @pump-fun/pump-swap-sdk, imported by src/platform/execution/solaris/pump-swap-pool-reader.ts.",
+          "platformSuite": "node --test --test-isolation=none test/platform/*.test.mjs — 972/980 passed, 8 test files failed to load because @pump-fun/pump-swap-sdk is absent: canonical-ingress-crash-recovery, durable-research-spool, paper-max-risk, pump-swap-pool-reader, runtime-telemetry-producer, solaris-nexus, staging-ingress-batch, venue-economics. No assertion failure in the new percentile regression; the eight failures are module-resolution failures."
+        },
+        "authorityImpact": "Observability fields only. Provider availability and feed-health decisions are unchanged; no signing, broadcast, custody, capital, authorization or risk-limit paths changed.",
+        "status": "VERIFIED_BOUNDED_LATENCY_PERCENTILES; FULL_ENGINE_BUILD_BLOCKED_BY_MISSING_INSTALLED_SDK"
+      },
+      "evidence": [
+        "https://github.com/rpcpool/yellowstone-thorofare/blob/582bdd06e1309d8fe686f34e0a53d074ee96bea6/README.md",
+        "https://github.com/rpcpool/yellowstone-thorofare/blob/582bdd06e1309d8fe686f34e0a53d074ee96bea6/Cargo.toml",
+        "test/platform/provider-health.test.mjs"
+      ]
+    }
+  ]
+}

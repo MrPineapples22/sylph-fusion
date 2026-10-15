@@ -99,6 +99,7 @@ test('SystemLifecycleManager: enforces valid paths and blocks illegal shortcuts'
 test('CommandGateway: enforces AXIOM verification, idempotency, and lifecycle rules', async () => {
   globalLifecycle.bootstrapToHealthy();
   const gateway = CommandGateway.resetInstance();
+  gateway.updateSolPriceUsd(150, Date.now());
   gateway.setPaperEntryEvidenceProvider(async (mint, poolAddress) => ({
     mint, poolAddress, priceUsd: 1, liquidityUsd: 1_000_000,
     observedAt: Date.now(), solPriceUsd: 150, solObservedAt: Date.now(),
@@ -127,9 +128,13 @@ test('CommandGateway: enforces AXIOM verification, idempotency, and lifecycle ru
   assert.equal(buyRes.success, true);
   assert.ok(buyRes.data?.report);
   assert.equal(buyRes.data.report.status, 'FILLED');
+  assert.equal(buyRes.data.report.priorityFeeLamports, 50_000n);
 
   const afterBuySnap = gateway.getSnapshot();
   assert.equal(afterBuySnap.positions.length, 1);
+  assert.equal(afterBuySnap.positions[0].costBasisUsd,
+    100 + Number(5_000n + buyRes.data.report.priorityFeeLamports + buyRes.data.report.jitoTipLamports) / 1e9 * 150,
+    'paper cost basis includes base signature fee, priority fee and tip');
   assert.equal(afterBuySnap.cashUsd, 10_000.0 - afterBuySnap.positions[0].costBasisUsd);
   assert.equal(afterBuySnap.positions[0].asset, 'PoolAlpha111111111111111111111111111111111');
 

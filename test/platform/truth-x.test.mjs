@@ -198,6 +198,7 @@ test('EconomicDeltaEngine: calculates account creation and closure deltas withou
   assert.equal(summary.netSolTransferred, undefined);
   assert.equal(summary.feeBurnedLamports, undefined);
   assert.equal(summary.priorityFeeLamports, 5_000n);
+  assert.equal(summary.baseFeeLamports, 5_000n);
   assert.equal(summary.isOrganic, undefined);
   assert.deepEqual(summary.lamportDeltas.find(d => d.account === 'new_account'), {
     account: 'new_account', preLamports: 0n, postLamports: 1000n, delta: 1000n,
@@ -209,6 +210,16 @@ test('EconomicDeltaEngine: calculates account creation and closure deltas withou
   assert.equal(summary.tokenDeltas.find(d => d.account === 'closed_ata').delta, -10n);
   assert.throws(() => EconomicDeltaEngine.calculateDeltas({
     signature: 'bad-fee', slot: 1, feeLamports: 2n, priorityFeeLamports: 3n,
+    preBalances: [], postBalances: [], preTokenBalances: [], postTokenBalances: [],
+  }), /INVALID_FEE_COMPONENTS/);
+  assert.throws(() => EconomicDeltaEngine.calculateDeltas({
+    signature: 'burn-exceeds-base', slot: 1, feeLamports: 10_000n,
+    priorityFeeLamports: 6_000n, feeBurnedLamports: 5_000n,
+    preBalances: [], postBalances: [], preTokenBalances: [], postTokenBalances: [],
+  }), /INVALID_FEE_COMPONENTS/);
+  assert.throws(() => EconomicDeltaEngine.calculateDeltas({
+    signature: 'burn-without-priority-context', slot: 1, feeLamports: 10_000n,
+    feeBurnedLamports: 10_001n,
     preBalances: [], postBalances: [], preTokenBalances: [], postTokenBalances: [],
   }), /INVALID_FEE_COMPONENTS/);
 });

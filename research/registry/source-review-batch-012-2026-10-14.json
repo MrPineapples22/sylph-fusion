@@ -1,0 +1,386 @@
+{
+  "batchId": "source-review-batch-012-2026-10-14",
+  "reviewedAt": "2026-10-14",
+  "repository": {
+    "localHead": "074ed82",
+    "remoteHead": "074ed82",
+    "mainAndTaskBranchMatch": true,
+    "worktreeHasPreexistingEdits": true
+  },
+  "sourceRecords": 9,
+  "directlyReviewed": 9,
+  "sources": [
+    {
+      "id": "SRC-082",
+      "url": "https://github.com/anza-xyz/sbpf",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Anza SBPF README, Cargo metadata and license files",
+        "Pinned repository commit 3e1510b1eac344af15c99dcdb4c3b3e6dc2b3d7b"
+      ],
+      "discoveries": [
+        "SBPF provides an eBPF VM/JIT, assembler, disassembler and verifier.",
+        "Pinned crate is 0.25.0 with Apache-2.0.",
+        "README identifies it as a VM layer rather than a transaction parser."
+      ],
+      "patterns": [
+        "Pin VM versions for deterministic validation fixtures.",
+        "Distinguish bytecode verification from on-chain program correctness.",
+        "Preserve runtime feature/config context."
+      ],
+      "sylphModules": [
+        "src/platform/execution/authority.ts",
+        "test/",
+        "src/platform/signing/veritas-wire-decoder.ts"
+      ],
+      "overlap": "Potential VM-level reference only; SYLPH has no on-chain program execution requirement in its current Node service.",
+      "risks": [
+        "VM/JIT code is security-critical.",
+        "Verifier success is not a safety proof.",
+        "No SYLPH SBF execution target was established."
+      ],
+      "validation": [
+        "Pin runtime/version and preserve exact reproducer as offline fixture.",
+        "Compare behavior using deterministic controlled state.",
+        "No production VM/runtime change or unauthorized exploit activity."
+      ],
+      "evidence": [
+        "https://github.com/anza-xyz/sbpf",
+        "https://github.com/anza-xyz/sbpf/tree/3e1510b1eac344af15c99dcdb4c3b3e6dc2b3d7b"
+      ],
+      "license": "Apache-2.0",
+      "decision": "VM_TEST_REFERENCE_ONLY_NO_RUNTIME_ADOPTION"
+    },
+    {
+      "id": "SRC-083",
+      "url": "https://github.com/firedancer-io/solfuzz-agave",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Solfuzz-Agave README, Cargo manifest and test sources",
+        "Pinned repository commit 4e9fdeed80d1c67e4c8e89a49d2ade21a5ce9612"
+      ],
+      "discoveries": [
+        "Harness adapts Agave execution components to Solfuzz APIs.",
+        "README documents selected block/ELF/transaction APIs.",
+        "Pinned dependency includes Solana Pubkey 4.3.0 and targets x86_64 Linux."
+      ],
+      "patterns": [
+        "Differentially test protocol components across implementations.",
+        "Retain minimized failing inputs as fixed regressions.",
+        "Record architecture and exact Agave version for each result."
+      ],
+      "sylphModules": [
+        "src/platform/ingestion/truth-x.ts",
+        "src/platform/signing/veritas-wire-decoder.ts",
+        "src/platform/execution/authority.ts",
+        "test/"
+      ],
+      "overlap": "Could validate transaction/version semantics offline; it does not directly test SYLPH JavaScript integration or process state.",
+      "risks": [
+        "Linux/x86_64 and Agave-specific boundary.",
+        "Fuzz harness is not production runtime.",
+        "Tests were not run."
+      ],
+      "validation": [
+        "Pin runtime/version and preserve exact reproducer as offline fixture.",
+        "Compare behavior using deterministic controlled state.",
+        "No production VM/runtime change or unauthorized exploit activity."
+      ],
+      "evidence": [
+        "https://github.com/firedancer-io/solfuzz-agave",
+        "https://github.com/firedancer-io/solfuzz-agave/tree/4e9fdeed80d1c67e4c8e89a49d2ade21a5ce9612"
+      ],
+      "license": "Apache-2.0",
+      "decision": "DIFFERENTIAL_FUZZ_REFERENCE_ONLY_NOT_RUN"
+    },
+    {
+      "id": "SRC-084",
+      "url": "https://github.com/firedancer-io/test-vectors",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Firedancer test-vectors README, vector map and fixture convention",
+        "Pinned repository commit 07967b11a161388b30c675c4684cadce00cc67fc"
+      ],
+      "discoveries": [
+        "Repository stores protobuf-serialized conformance inputs across instruction, transaction, VM and other categories.",
+        "README describes converting mismatches into fixtures.",
+        "CI runs regression and coverage on fixtures."
+      ],
+      "patterns": [
+        "Preserve minimized cross-client mismatches as deterministic fixtures.",
+        "Keep binary schema/version with each decoder.",
+        "Use CI coverage to prevent regressions."
+      ],
+      "sylphModules": [
+        "src/platform/ingestion/truth-x.ts",
+        "src/platform/signing/veritas-wire-decoder.ts",
+        "test/"
+      ],
+      "overlap": "Potential external fixtures for decoders and transaction accounting; project still needs its own version-specific cases.",
+      "risks": [
+        "No root LICENSE file found.",
+        "Fixture corpus may be architecture/protocol-version specific.",
+        "Binary fixture payloads were not parsed in this pass."
+      ],
+      "validation": [
+        "Pin runtime/version and preserve exact reproducer as offline fixture.",
+        "Compare behavior using deterministic controlled state.",
+        "No production VM/runtime change or unauthorized exploit activity."
+      ],
+      "evidence": [
+        "https://github.com/firedancer-io/test-vectors",
+        "https://github.com/firedancer-io/test-vectors/tree/07967b11a161388b30c675c4684cadce00cc67fc"
+      ],
+      "license": "LICENSE_NOT_FOUND_REVIEW_REQUIRED",
+      "decision": "FIXTURE_REFERENCE_ONLY_LICENSE_REVIEW"
+    },
+    {
+      "id": "SRC-085",
+      "url": "https://github.com/neodyme-labs/solana-poc-framework",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Neodyme PoC framework README, Cargo metadata and examples",
+        "Pinned repository commit afb00cad6c0c32fb4e89c1b974e79a1b46e39d02"
+      ],
+      "discoveries": [
+        "Framework supports local Solana PoCs and version branches including Solana 2.2.",
+        "Source uses dev-context-only runtime features.",
+        "README describes built-in/program-BPF conformance mechanisms."
+      ],
+      "patterns": [
+        "Use deterministic local state to reproduce adversarial failures.",
+        "Pin runtime and feature flags.",
+        "Convert each reproduced mismatch into a regression fixture."
+      ],
+      "sylphModules": [
+        "test/",
+        "src/platform/execution/authority.ts",
+        "research/registry/"
+      ],
+      "overlap": "Could support future testing of an owned on-chain program; current scope is TypeScript off-chain application.",
+      "risks": [
+        "Security PoC tooling can enable exploit development.",
+        "Use only authorized local fixtures.",
+        "Legacy branches/dev-only features are not production validation."
+      ],
+      "validation": [
+        "Pin runtime/version and preserve exact reproducer as offline fixture.",
+        "Compare behavior using deterministic controlled state.",
+        "No production VM/runtime change or unauthorized exploit activity."
+      ],
+      "evidence": [
+        "https://github.com/neodyme-labs/solana-poc-framework",
+        "https://github.com/neodyme-labs/solana-poc-framework/tree/afb00cad6c0c32fb4e89c1b974e79a1b46e39d02"
+      ],
+      "license": "MIT_OR_APACHE-2.0",
+      "decision": "AUTHORIZED_LOCAL_POC_TESTS_ONLY"
+    },
+    {
+      "id": "SRC-086",
+      "url": "https://github.com/Ackee-Blockchain/public-audit-reports",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Ackee public-audit-reports README, catalog structure and pinned commit",
+        "Pinned repository commit 2033ac4dcd808e9cebdadfbaff40e4e89e33998f"
+      ],
+      "discoveries": [
+        "Repository indexes published third-party smart-contract audit reports.",
+        "Reports are external documents rather than a reusable runtime library.",
+        "A report applies only to its stated program/version/scope."
+      ],
+      "patterns": [
+        "Tie audit findings to exact program version and scope.",
+        "Track remediation status separately from report publication.",
+        "Use audits alongside tests and deployed-code identity."
+      ],
+      "sylphModules": [
+        "RELEASE_CERTIFICATION.md",
+        "ARCHITECTURE_GAPS.md",
+        "research/registry/"
+      ],
+      "overlap": "Useful for external program/protocol security references but no direct report-level integration identified.",
+      "risks": [
+        "Individual report licenses/redistribution terms vary.",
+        "No specific report was audited against SYLPH dependencies here.",
+        "A published audit does not prove current deployed code matches the audited build."
+      ],
+      "validation": [
+        "Pin exact source/report and validate applicable scope.",
+        "Keep provenance, freshness and risk interpretation distinct.",
+        "Use isolated deterministic test data; do not route findings directly to signing authority."
+      ],
+      "evidence": [
+        "https://github.com/Ackee-Blockchain/public-audit-reports",
+        "https://github.com/Ackee-Blockchain/public-audit-reports/tree/2033ac4dcd808e9cebdadfbaff40e4e89e33998f"
+      ],
+      "license": "REPORTS_ONLY_INDIVIDUAL_LICENSES_NOT_AUDITED",
+      "decision": "AUDIT_INDEX_REFERENCE_ONLY"
+    },
+    {
+      "id": "SRC-087",
+      "url": "https://github.com/Shopify/toxiproxy",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Toxiproxy README, Go module, toxic implementation and usage docs",
+        "Pinned repository commit 49299d8838525126e09c85ebe0ba89940a3261e5"
+      ],
+      "discoveries": [
+        "Framework inserts a controllable TCP proxy for deterministic network fault tests.",
+        "Documented toxics cover latency, connection down, bandwidth limits, timeout and slow close.",
+        "README frames use for CI/development fault injection."
+      ],
+      "patterns": [
+        "Reproduce sustained latency and disconnects through a controlled proxy.",
+        "Assert reconnect, queue-drain and continuity behavior under bounded faults.",
+        "Keep fault knobs deterministic and test-only."
+      ],
+      "sylphModules": [
+        "src/rpc.ts",
+        "src/feed.ts",
+        "src/platform/ingestion/yellowstone-captured-client.ts",
+        "test/"
+      ],
+      "overlap": "Existing unit tests mock failures; a proxy could add integration-level TCP failure testing without replacing code.",
+      "risks": [
+        "Must remain isolated from production endpoints/credentials.",
+        "TCP proxy behavior is not identical to every WebSocket/provider implementation.",
+        "No SYLPH test was run through this tool."
+      ],
+      "validation": [
+        "Pin exact source/report and validate applicable scope.",
+        "Keep provenance, freshness and risk interpretation distinct.",
+        "Use isolated deterministic test data; do not route findings directly to signing authority."
+      ],
+      "evidence": [
+        "https://github.com/Shopify/toxiproxy",
+        "https://github.com/Shopify/toxiproxy/tree/49299d8838525126e09c85ebe0ba89940a3261e5"
+      ],
+      "license": "MIT",
+      "decision": "TEST_PATTERN_REFERENCE_ONLY_NO_RUNTIME_DEPENDENCY"
+    },
+    {
+      "id": "SRC-088",
+      "url": "https://github.com/Syndica/sig",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Syndica Sig README, license and project architecture docs",
+        "Pinned repository commit b5026c60fe56b51edd79131115b7e741449d6b2e"
+      ],
+      "discoveries": [
+        "Sig is an independent Solana validator implemented in Zig.",
+        "README distinguishes current multi-process v2 from maintenance-mode v1.",
+        "v2 components communicate via typed shared-memory regions and separate sandboxes."
+      ],
+      "patterns": [
+        "Use independent validator observations to detect implementation-specific discrepancies.",
+        "Treat producer/service health and message freshness as separate signals.",
+        "Pin major architecture generation alongside evidence."
+      ],
+      "sylphModules": [
+        "src/platform/ingestion/census-r.ts",
+        "src/platform/ingestion/gap-reconciler.ts",
+        "src/platform/ingestion/truth-x.ts"
+      ],
+      "overlap": "Potential client diversity source; not a direct data adapter for current application.",
+      "risks": [
+        "Validator infrastructure and Zig build are outside SYLPH TypeScript runtime.",
+        "Sparse review did not build or start a node.",
+        "Cross-client agreement is not proof of finality or strategy quality."
+      ],
+      "validation": [
+        "Pin exact source/report and validate applicable scope.",
+        "Keep provenance, freshness and risk interpretation distinct.",
+        "Use isolated deterministic test data; do not route findings directly to signing authority."
+      ],
+      "evidence": [
+        "https://github.com/Syndica/sig",
+        "https://github.com/Syndica/sig/tree/b5026c60fe56b51edd79131115b7e741449d6b2e"
+      ],
+      "license": "Apache-2.0",
+      "decision": "CLIENT_DIVERSITY_RESEARCH_ONLY_NO_DEPLOYMENT"
+    },
+    {
+      "id": "SRC-089",
+      "url": "https://github.com/SperLat/Sombra",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Sombra README, root license and risk-console data truth labels",
+        "Pinned repository commit 886825795456f071738b0f429e8894c78790cca5"
+      ],
+      "discoveries": [
+        "Project describes pre-transaction wallet/signature/program screening with allow/review/block outcomes.",
+        "It labels live-RPC data separately from demo samples and local heuristics.",
+        "Audit evidence is exported to JSON/CSV and appended to JSONL logs."
+      ],
+      "patterns": [
+        "Preserve provenance labels across chain facts, demo fixtures and heuristics.",
+        "Make risk decisions explainable with source evidence and explicit guardrails.",
+        "Append auditable decision records instead of overwriting conclusions."
+      ],
+      "sylphModules": [
+        "src/market.ts",
+        "src/platform/execution/authority.ts",
+        "terminal/",
+        "research/registry/"
+      ],
+      "overlap": "Potentially overlaps RugCheck/GoPlus and existing manual research surface; needs source-by-source comparison.",
+      "risks": [
+        "AGPL-3.0 license; prototype heuristic scores are not certified risk signals.",
+        "Live RPC availability and demo fallback must never be conflated.",
+        "Not an authorization/signing service or direct SYLPH engine."
+      ],
+      "validation": [
+        "Pin exact source/report and validate applicable scope.",
+        "Keep provenance, freshness and risk interpretation distinct.",
+        "Use isolated deterministic test data; do not route findings directly to signing authority."
+      ],
+      "evidence": [
+        "https://github.com/SperLat/Sombra",
+        "https://github.com/SperLat/Sombra/tree/886825795456f071738b0f429e8894c78790cca5"
+      ],
+      "license": "AGPL-3.0_REVIEW_REQUIRED",
+      "decision": "EVIDENCE_LABEL_PATTERN_ONLY_AGPL_REVIEW"
+    },
+    {
+      "id": "SRC-090",
+      "url": "https://github.com/Unizuka22/opensol-agent",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "OpenSol Agent README, license and project architecture description",
+        "Pinned repository commit 8f80b2a3e5479288be9d118c7110a0ba30ff23c4"
+      ],
+      "discoveries": [
+        "CLI-first read-only intelligence tool queries public wallet/token/transaction data.",
+        "README explicitly says it does not require keys or trade.",
+        "Its report separates source probes from plain-English explanation and describes visible signals."
+      ],
+      "patterns": [
+        "Keep investigative read paths isolated from execution authority.",
+        "Show raw evidence behind generated narrative or score.",
+        "Avoid private keys in read-only analytics workflows."
+      ],
+      "sylphModules": [
+        "research/registry/",
+        "terminal/",
+        "src/platform/execution/authority.ts"
+      ],
+      "overlap": "Potential research UX pattern; existing app should avoid a duplicate agent engine and keep its controls explicit.",
+      "risks": [
+        "AI narrative can overstate source facts if not tied to evidence.",
+        "Public RPC results need timestamps/freshness and endpoint provenance.",
+        "No runtime/package execution or external LLM call was performed."
+      ],
+      "validation": [
+        "Pin exact source/report and validate applicable scope.",
+        "Keep provenance, freshness and risk interpretation distinct.",
+        "Use isolated deterministic test data; do not route findings directly to signing authority."
+      ],
+      "evidence": [
+        "https://github.com/Unizuka22/opensol-agent",
+        "https://github.com/Unizuka22/opensol-agent/tree/8f80b2a3e5479288be9d118c7110a0ba30ff23c4"
+      ],
+      "license": "MIT",
+      "decision": "READ_ONLY_RESEARCH_PATTERN_NO_RUNTIME_DEPENDENCY"
+    }
+  ]
+}

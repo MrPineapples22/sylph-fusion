@@ -1,0 +1,2894 @@
+{
+  "generatedAt": "2026-10-15T02:35:20.905Z",
+  "manifestRows": 288,
+  "checkedRows": 288,
+  "uniqueCheckedIds": 288,
+  "methodology": "Unauthenticated HEAD requests with redirect following; GET fallback only for HTTP 405/501. Availability checks establish only endpoint reachability at observation time, not source correctness, safety, license, maintenance, or API authorization.",
+  "statusCounts": {
+    "REACHABLE": 275,
+    "REACHABLE_RESTRICTED": 10,
+    "NOT_FOUND": 1,
+    "INCONCLUSIVE_NETWORK": 1,
+    "INCONCLUSIVE_REMOTE": 1
+  },
+  "sources": [
+    {
+      "id": "SRC-001",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/anza-xyz/jetstreamer",
+      "checkedAt": "2026-10-15T02:34:32.077Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/anza-xyz/jetstreamer",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-002",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/rpcpool/yellowstone-thorofare",
+      "checkedAt": "2026-10-15T02:34:32.170Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/rpcpool/yellowstone-thorofare",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-003",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/jito-foundation/geyser-grpc-plugin",
+      "checkedAt": "2026-10-15T02:34:32.171Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/jito-foundation/geyser-grpc-plugin",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-004",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/blockworks-foundation/quic_geyser_plugin",
+      "checkedAt": "2026-10-15T02:34:32.173Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/blockworks-foundation/quic_geyser_plugin",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-005",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/blockworks-foundation/geyser-grpc-connector",
+      "checkedAt": "2026-10-15T02:34:32.174Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/blockworks-foundation/geyser-grpc-connector",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-006",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/streamingfast/firehose-solana",
+      "checkedAt": "2026-10-15T02:34:32.175Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/streamingfast/firehose-solana",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-007",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/streamingfast/substreams-solana",
+      "checkedAt": "2026-10-15T02:34:32.910Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/streamingfast/substreams-solana",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-008",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/goldsky-io/streamling",
+      "checkedAt": "2026-10-15T02:34:32.912Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/goldsky-io/streamling",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-009",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/firedancer-io/fd-yellowstone",
+      "checkedAt": "2026-10-15T02:34:32.914Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/firedancer-io/fd-yellowstone",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-010",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/streamingfast/substreams-foundational-modules",
+      "checkedAt": "2026-10-15T02:34:32.916Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/streamingfast/substreams-foundational-modules",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-011",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/streamingfast/substreams",
+      "checkedAt": "2026-10-15T02:34:32.918Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/streamingfast/substreams",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-012",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/streamingfast/substreams-rs",
+      "checkedAt": "2026-10-15T02:34:32.919Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/streamingfast/substreams-rs",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-013",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/streamingfast/firehose-core",
+      "checkedAt": "2026-10-15T02:34:33.701Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/streamingfast/firehose-core",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-014",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/streamingfast/bstream",
+      "checkedAt": "2026-10-15T02:34:33.703Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/streamingfast/bstream",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-015",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/streamingfast/dstore",
+      "checkedAt": "2026-10-15T02:34:33.704Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/streamingfast/dstore",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-016",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/metaplex-foundation/digital-asset-rpc-infrastructure",
+      "checkedAt": "2026-10-15T02:34:33.705Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/metaplex-foundation/digital-asset-rpc-infrastructure",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-017",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/metaplex-foundation/digital-asset-validator-plugin",
+      "checkedAt": "2026-10-15T02:34:33.706Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/metaplex-foundation/digital-asset-validator-plugin",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-018",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/metaplex-foundation/aura",
+      "checkedAt": "2026-10-15T02:34:33.707Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/metaplex-foundation/aura",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-019",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/goldsky-io/streamling-community-plugins",
+      "checkedAt": "2026-10-15T02:34:34.449Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/goldsky-io/streamling-community-plugins",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-020",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/rpcpool/radiance-triton-faithful",
+      "checkedAt": "2026-10-15T02:34:34.451Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/rpcpool/radiance-triton-faithful",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-021",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/Astralane/shred-tools",
+      "checkedAt": "2026-10-15T02:34:34.452Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/Astralane/shred-tools",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-022",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/Aditya-dom/orbshred",
+      "checkedAt": "2026-10-15T02:34:34.453Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/Aditya-dom/orbshred",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-023",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/rpcpool/yellowstone-vixen",
+      "checkedAt": "2026-10-15T02:34:34.454Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/solana-rpc/shipstern",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-024",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/0xfnzero/solana-streamer",
+      "checkedAt": "2026-10-15T02:34:34.455Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/0xfnzero/solana-streamer",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-025",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/0xfnzero/sol-shred-sdk",
+      "checkedAt": "2026-10-15T02:34:35.582Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/0xfnzero/sol-shred-sdk",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-026",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/solsonar/solana-shred-parser",
+      "checkedAt": "2026-10-15T02:34:35.583Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/solsonar/solana-shred-parser",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-027",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/solana-foundation/solana-microscope",
+      "checkedAt": "2026-10-15T02:34:35.585Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/solana-foundation/solana-microscope",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-028",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/rpcpool/yellowstone-grpc",
+      "checkedAt": "2026-10-15T02:34:35.586Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/rpcpool/yellowstone-grpc",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-029",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/helius-labs/yellowstone-grpc",
+      "checkedAt": "2026-10-15T02:34:35.587Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/helius-labs/yellowstone-grpc",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-030",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/jito-foundation/solana-accountsdb-connector",
+      "checkedAt": "2026-10-15T02:34:35.588Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/jito-foundation/solana-accountsdb-connector",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-031",
+      "category": "github_streaming_rpc",
+      "url": "https://github.com/solana-foundation/rpc-latency-monitor",
+      "checkedAt": "2026-10-15T02:34:36.676Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/solana-foundation/rpc-latency-monitor",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-032",
+      "category": "github_parsers_sdks",
+      "url": "https://github.com/codama-idl/codama",
+      "checkedAt": "2026-10-15T02:34:36.677Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/codama-idl/codama",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-033",
+      "category": "github_parsers_sdks",
+      "url": "https://github.com/codama-idl/renderers-js",
+      "checkedAt": "2026-10-15T02:34:36.679Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/codama-idl/renderers-js",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-034",
+      "category": "github_parsers_sdks",
+      "url": "https://github.com/codama-idl/renderers-rust",
+      "checkedAt": "2026-10-15T02:34:36.680Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/codama-idl/renderers-rust",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-035",
+      "category": "github_parsers_sdks",
+      "url": "https://github.com/codama-idl/renderers-go",
+      "checkedAt": "2026-10-15T02:34:36.682Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/codama-idl/renderers-go",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-036",
+      "category": "github_parsers_sdks",
+      "url": "https://github.com/metaplex-foundation/shank",
+      "checkedAt": "2026-10-15T02:34:36.683Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/metaplex-foundation/shank",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-037",
+      "category": "github_parsers_sdks",
+      "url": "https://github.com/anza-xyz/wincode",
+      "checkedAt": "2026-10-15T02:34:37.449Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/anza-xyz/wincode",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-038",
+      "category": "github_parsers_sdks",
+      "url": "https://github.com/debridge-finance/evm-sol-serializer",
+      "checkedAt": "2026-10-15T02:34:37.450Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/debridge-finance/evm-sol-serializer",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-039",
+      "category": "github_parsers_sdks",
+      "url": "https://github.com/firedancer-io/solana_dissector",
+      "checkedAt": "2026-10-15T02:34:37.451Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/firedancer-io/solana_dissector",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-040",
+      "category": "github_parsers_sdks",
+      "url": "https://github.com/codama-idl/renderers-js-umi",
+      "checkedAt": "2026-10-15T02:34:37.452Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/codama-idl/renderers-js-umi",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-041",
+      "category": "github_parsers_sdks",
+      "url": "https://github.com/codama-idl/spec",
+      "checkedAt": "2026-10-15T02:34:37.453Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/codama-idl/spec",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-042",
+      "category": "github_parsers_sdks",
+      "url": "https://github.com/0xfnzero/sol-parser-sdk",
+      "checkedAt": "2026-10-15T02:34:37.454Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/0xfnzero/sol-parser-sdk",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-043",
+      "category": "github_parsers_sdks",
+      "url": "https://github.com/tkhq/solana-parser",
+      "checkedAt": "2026-10-15T02:34:38.560Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/tkhq/solana-parser",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-044",
+      "category": "github_parsers_sdks",
+      "url": "https://github.com/0xfnzero/sol-parser-sdk-nodejs",
+      "checkedAt": "2026-10-15T02:34:38.561Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/0xfnzero/sol-parser-sdk-nodejs",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-045",
+      "category": "github_parsers_sdks",
+      "url": "https://github.com/0xfnzero/sol-parser-sdk-python",
+      "checkedAt": "2026-10-15T02:34:38.562Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/0xfnzero/sol-parser-sdk-python",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-046",
+      "category": "github_parsers_sdks",
+      "url": "https://github.com/0xfnzero/sol-parser-sdk-golang",
+      "checkedAt": "2026-10-15T02:34:38.563Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/0xfnzero/sol-parser-sdk-golang",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-047",
+      "category": "github_parsers_sdks",
+      "url": "https://github.com/cxcx-ai/solana-dex-parser",
+      "checkedAt": "2026-10-15T02:34:38.564Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/cxcx-ai/solana-dex-parser",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-048",
+      "category": "github_parsers_sdks",
+      "url": "https://github.com/metaplex-foundation/blockbuster",
+      "checkedAt": "2026-10-15T02:34:38.565Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/metaplex-foundation/blockbuster",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-049",
+      "category": "github_dex_swaps_launches",
+      "url": "https://github.com/raydium-io/raydium-library",
+      "checkedAt": "2026-10-15T02:34:39.238Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/raydium-io/raydium-library",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-050",
+      "category": "github_dex_swaps_launches",
+      "url": "https://github.com/raydium-io/raydium-cpi",
+      "checkedAt": "2026-10-15T02:34:39.240Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/raydium-io/raydium-cpi",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-051",
+      "category": "github_dex_swaps_launches",
+      "url": "https://github.com/MeteoraAg/dbc-go",
+      "checkedAt": "2026-10-15T02:34:39.241Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/MeteoraAg/dbc-go",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-052",
+      "category": "github_dex_swaps_launches",
+      "url": "https://github.com/MeteoraAg/damm-v2-go",
+      "checkedAt": "2026-10-15T02:34:39.242Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/MeteoraAg/damm-v2-go",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-053",
+      "category": "github_dex_swaps_launches",
+      "url": "https://github.com/MeteoraAg/meteora-invent",
+      "checkedAt": "2026-10-15T02:34:39.243Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/MeteoraAg/meteora-invent",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-054",
+      "category": "github_dex_swaps_launches",
+      "url": "https://github.com/orca-so/account-microscope",
+      "checkedAt": "2026-10-15T02:34:39.244Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/orca-so/account-microscope",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-055",
+      "category": "github_dex_swaps_launches",
+      "url": "https://github.com/jup-ag/metis-binary",
+      "checkedAt": "2026-10-15T02:34:39.962Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/jup-ag/metis-binary",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-056",
+      "category": "github_dex_swaps_launches",
+      "url": "https://github.com/jup-ag/jupiter-quote-api-node",
+      "checkedAt": "2026-10-15T02:34:39.963Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/jup-ag/jupiter-quote-api-node",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-057",
+      "category": "github_dex_swaps_launches",
+      "url": "https://github.com/jup-ag/rfq-webhook-toolkit",
+      "checkedAt": "2026-10-15T02:34:39.964Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/jup-ag/rfq-webhook-toolkit",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-058",
+      "category": "github_dex_swaps_launches",
+      "url": "https://github.com/MeteoraAg/dynamic-fee-sharing",
+      "checkedAt": "2026-10-15T02:34:39.965Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/MeteoraAg/dynamic-fee-sharing",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-059",
+      "category": "github_dex_swaps_launches",
+      "url": "https://github.com/0xfnzero/sol-trade-sdk",
+      "checkedAt": "2026-10-15T02:34:39.966Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/0xfnzero/sol-trade-sdk",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-060",
+      "category": "github_dex_swaps_launches",
+      "url": "https://github.com/franco-bianco/solanaswap-go",
+      "checkedAt": "2026-10-15T02:34:39.967Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/franco-bianco/solanaswap-go",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-061",
+      "category": "github_dex_swaps_launches",
+      "url": "https://github.com/mooncitydev/solana-copytrading-bot",
+      "checkedAt": "2026-10-15T02:34:41.107Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/mooncitydev/solana-copytrading-bot",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-062",
+      "category": "github_dex_swaps_launches",
+      "url": "https://github.com/TreeCityWes/Pump-Fun-Trading-Bot-Solana",
+      "checkedAt": "2026-10-15T02:34:41.109Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/TreeCityWes/Pump-Fun-Trading-Bot-Solana",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-063",
+      "category": "github_dex_swaps_launches",
+      "url": "https://github.com/raydium-io/raydium-sdk-V2",
+      "checkedAt": "2026-10-15T02:34:41.109Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/raydium-io/raydium-sdk-V2",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-064",
+      "category": "github_dex_swaps_launches",
+      "url": "https://github.com/orca-so/whirlpools",
+      "checkedAt": "2026-10-15T02:34:41.110Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/orca-so/whirlpools",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-065",
+      "category": "github_dex_swaps_launches",
+      "url": "https://github.com/0xsupersimon/raydium-launchpad-bonkfun-transaction-parser-go",
+      "checkedAt": "2026-10-15T02:34:41.111Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/0xsupersimon/raydium-launchpad-bonkfun-transaction-parser-go",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-066",
+      "category": "github_execution_validator_jito",
+      "url": "https://github.com/blockworks-foundation/autobahn",
+      "checkedAt": "2026-10-15T02:34:41.112Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/blockworks-foundation/autobahn",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-067",
+      "category": "github_execution_validator_jito",
+      "url": "https://github.com/blockworks-foundation/lite-rpc",
+      "checkedAt": "2026-10-15T02:34:42.419Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/blockworks-foundation/lite-rpc",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-068",
+      "category": "github_execution_validator_jito",
+      "url": "https://github.com/jito-foundation/jito-programs",
+      "checkedAt": "2026-10-15T02:34:42.420Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/jito-foundation/jito-programs",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-069",
+      "category": "github_execution_validator_jito",
+      "url": "https://github.com/jito-foundation/jito-tip-router",
+      "checkedAt": "2026-10-15T02:34:42.422Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/jito-foundation/jito-tip-router",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-070",
+      "category": "github_execution_validator_jito",
+      "url": "https://github.com/jito-foundation/jito-solana",
+      "checkedAt": "2026-10-15T02:34:42.423Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/jito-foundation/jito-solana",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-071",
+      "category": "github_execution_validator_jito",
+      "url": "https://github.com/jito-labs/jito-rust-rpc",
+      "checkedAt": "2026-10-15T02:34:42.424Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/jito-labs/jito-rust-rpc",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-072",
+      "category": "github_execution_validator_jito",
+      "url": "https://github.com/jito-labs/jito-go-rpc",
+      "checkedAt": "2026-10-15T02:34:42.425Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/jito-labs/jito-go-rpc",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-073",
+      "category": "github_execution_validator_jito",
+      "url": "https://github.com/helius-labs/helius-rust-sdk",
+      "checkedAt": "2026-10-15T02:34:43.433Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/helius-labs/helius-rust-sdk",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-074",
+      "category": "github_execution_validator_jito",
+      "url": "https://github.com/orca-so/tx-sender",
+      "checkedAt": "2026-10-15T02:34:43.435Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/orca-so/tx-sender",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-075",
+      "category": "github_execution_validator_jito",
+      "url": "https://github.com/firedancer-io/firedancer",
+      "checkedAt": "2026-10-15T02:34:43.436Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/firedancer-io/firedancer",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-076",
+      "category": "github_execution_validator_jito",
+      "url": "https://github.com/jito-labs/searcher-examples",
+      "checkedAt": "2026-10-15T02:34:43.437Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/jito-labs/searcher-examples",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-077",
+      "category": "github_execution_validator_jito",
+      "url": "https://github.com/jito-foundation/solana-analysis",
+      "checkedAt": "2026-10-15T02:34:43.438Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/jito-foundation/solana-analysis",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-078",
+      "category": "github_execution_validator_jito",
+      "url": "https://github.com/jito-foundation/firebam",
+      "checkedAt": "2026-10-15T02:34:43.439Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/jito-foundation/firebam",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-079",
+      "category": "github_simulation_testing_security",
+      "url": "https://github.com/LiteSVM/litesvm",
+      "checkedAt": "2026-10-15T02:34:44.149Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/LiteSVM/litesvm",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-080",
+      "category": "github_simulation_testing_security",
+      "url": "https://github.com/LiteSVM/anchor-litesvm",
+      "checkedAt": "2026-10-15T02:34:44.150Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/LiteSVM/anchor-litesvm",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-081",
+      "category": "github_simulation_testing_security",
+      "url": "https://github.com/anza-xyz/svm",
+      "checkedAt": "2026-10-15T02:34:44.151Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/anza-xyz/svm",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-082",
+      "category": "github_simulation_testing_security",
+      "url": "https://github.com/anza-xyz/sbpf",
+      "checkedAt": "2026-10-15T02:34:44.152Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/anza-xyz/sbpf",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-083",
+      "category": "github_simulation_testing_security",
+      "url": "https://github.com/firedancer-io/solfuzz-agave",
+      "checkedAt": "2026-10-15T02:34:44.153Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/firedancer-io/solfuzz-agave",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-084",
+      "category": "github_simulation_testing_security",
+      "url": "https://github.com/firedancer-io/test-vectors",
+      "checkedAt": "2026-10-15T02:34:44.154Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/firedancer-io/test-vectors",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-085",
+      "category": "github_simulation_testing_security",
+      "url": "https://github.com/neodyme-labs/solana-poc-framework",
+      "checkedAt": "2026-10-15T02:34:45.738Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/neodyme-labs/solana-poc-framework",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-086",
+      "category": "github_simulation_testing_security",
+      "url": "https://github.com/Ackee-Blockchain/public-audit-reports",
+      "checkedAt": "2026-10-15T02:34:45.739Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/Ackee-Blockchain/public-audit-reports",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-087",
+      "category": "github_simulation_testing_security",
+      "url": "https://github.com/Shopify/toxiproxy",
+      "checkedAt": "2026-10-15T02:34:45.741Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/Shopify/toxiproxy",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-088",
+      "category": "github_simulation_testing_security",
+      "url": "https://github.com/Syndica/sig",
+      "checkedAt": "2026-10-15T02:34:45.741Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/Syndica/sig",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-089",
+      "category": "github_simulation_testing_security",
+      "url": "https://github.com/SperLat/Sombra",
+      "checkedAt": "2026-10-15T02:34:45.742Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/SperLat/Sombra",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-090",
+      "category": "github_simulation_testing_security",
+      "url": "https://github.com/Unizuka22/opensol-agent",
+      "checkedAt": "2026-10-15T02:34:45.743Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/Unizuka22/opensol-agent",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-091",
+      "category": "github_treasury_signing_crosschain",
+      "url": "https://github.com/Squads-Protocol/smart-account-program",
+      "checkedAt": "2026-10-15T02:34:46.472Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/Squads-Protocol/smart-account-program",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-092",
+      "category": "github_treasury_signing_crosschain",
+      "url": "https://github.com/Squads-Protocol/v4-examples",
+      "checkedAt": "2026-10-15T02:34:46.473Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/Squads-Protocol/v4-examples",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-093",
+      "category": "github_treasury_signing_crosschain",
+      "url": "https://github.com/Squads-Protocol/squads-multisig-batch-optimizer",
+      "checkedAt": "2026-10-15T02:34:46.474Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/Squads-Protocol/squads-multisig-batch-optimizer",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-094",
+      "category": "github_treasury_signing_crosschain",
+      "url": "https://github.com/wormhole-foundation/wormhole",
+      "checkedAt": "2026-10-15T02:34:46.475Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/wormhole-foundation/wormhole",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-095",
+      "category": "github_treasury_signing_crosschain",
+      "url": "https://github.com/wormhole-foundation/wormhole-connect",
+      "checkedAt": "2026-10-15T02:34:46.476Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/wormhole-foundation/wormhole-connect",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-096",
+      "category": "github_treasury_signing_crosschain",
+      "url": "https://github.com/wormhole-foundation/wormhole-circle-integration",
+      "checkedAt": "2026-10-15T02:34:46.477Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/wormhole-foundation/wormhole-circle-integration",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-097",
+      "category": "github_treasury_signing_crosschain",
+      "url": "https://github.com/debridge-finance/meta-aggregation-api",
+      "checkedAt": "2026-10-15T02:34:47.545Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/debridge-finance/meta-aggregation-api",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-098",
+      "category": "github_treasury_signing_crosschain",
+      "url": "https://github.com/debridge-finance/desdk",
+      "checkedAt": "2026-10-15T02:34:47.547Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/debridge-finance/desdk",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-099",
+      "category": "github_treasury_signing_crosschain",
+      "url": "https://github.com/debridge-finance/dln-contracts",
+      "checkedAt": "2026-10-15T02:34:47.548Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/debridge-finance/dln-contracts",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-100",
+      "category": "github_treasury_signing_crosschain",
+      "url": "https://github.com/solana-program/token-wrap",
+      "checkedAt": "2026-10-15T02:34:47.549Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/solana-program/token-wrap",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-101",
+      "category": "github_treasury_signing_crosschain",
+      "url": "https://github.com/hashicorp/vault",
+      "checkedAt": "2026-10-15T02:34:47.550Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/hashicorp/vault",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-102",
+      "category": "github_treasury_signing_crosschain",
+      "url": "https://github.com/Infisical/infisical",
+      "checkedAt": "2026-10-15T02:34:47.551Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/Infisical/infisical",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-103",
+      "category": "github_treasury_signing_crosschain",
+      "url": "https://github.com/getsops/sops",
+      "checkedAt": "2026-10-15T02:34:48.661Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/getsops/sops",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-104",
+      "category": "github_treasury_signing_crosschain",
+      "url": "https://github.com/smallstep/certificates",
+      "checkedAt": "2026-10-15T02:34:48.662Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/smallstep/certificates",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-105",
+      "category": "github_treasury_signing_crosschain",
+      "url": "https://github.com/spiffe/spire",
+      "checkedAt": "2026-10-15T02:34:48.663Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/spiffe/spire",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-106",
+      "category": "github_quant_ml_data",
+      "url": "https://github.com/ClickHouse/ClickHouse",
+      "checkedAt": "2026-10-15T02:34:48.664Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/ClickHouse/ClickHouse",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-107",
+      "category": "github_quant_ml_data",
+      "url": "https://github.com/apache/arrow",
+      "checkedAt": "2026-10-15T02:34:48.665Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/apache/arrow",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-108",
+      "category": "github_quant_ml_data",
+      "url": "https://github.com/apache/datafusion",
+      "checkedAt": "2026-10-15T02:34:48.666Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/apache/datafusion",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-109",
+      "category": "github_quant_ml_data",
+      "url": "https://github.com/feast-dev/feast",
+      "checkedAt": "2026-10-15T02:34:49.597Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/feast-dev/feast",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-110",
+      "category": "github_quant_ml_data",
+      "url": "https://github.com/nautechsystems/nautilus_trader",
+      "checkedAt": "2026-10-15T02:34:49.599Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/nautechsystems/nautilus_trader",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-111",
+      "category": "github_quant_ml_data",
+      "url": "https://github.com/polakowo/vectorbt",
+      "checkedAt": "2026-10-15T02:34:49.600Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/polakowo/vectorbt",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-112",
+      "category": "github_quant_ml_data",
+      "url": "https://github.com/microsoft/qlib",
+      "checkedAt": "2026-10-15T02:34:49.601Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/microsoft/qlib",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-113",
+      "category": "github_quant_ml_data",
+      "url": "https://github.com/lightgbm-org/LightGBM",
+      "checkedAt": "2026-10-15T02:34:49.602Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/lightgbm-org/LightGBM",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-114",
+      "category": "github_quant_ml_data",
+      "url": "https://github.com/dmlc/xgboost",
+      "checkedAt": "2026-10-15T02:34:49.602Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/dmlc/xgboost",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-115",
+      "category": "github_quant_ml_data",
+      "url": "https://github.com/catboost/catboost",
+      "checkedAt": "2026-10-15T02:34:50.502Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/catboost/catboost",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-116",
+      "category": "github_quant_ml_data",
+      "url": "https://github.com/subsquid/pipes-sdk",
+      "checkedAt": "2026-10-15T02:34:50.504Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/subsquid/pipes-sdk",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-117",
+      "category": "github_quant_ml_data",
+      "url": "https://github.com/dubzzz/fast-check",
+      "checkedAt": "2026-10-15T02:34:50.505Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/dubzzz/fast-check",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-118",
+      "category": "github_quant_ml_data",
+      "url": "https://github.com/HypothesisWorks/hypothesis",
+      "checkedAt": "2026-10-15T02:34:50.506Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/HypothesisWorks/hypothesis",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-119",
+      "category": "github_quant_ml_data",
+      "url": "https://github.com/scikit-learn-contrib/MAPIE",
+      "checkedAt": "2026-10-15T02:34:50.507Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/scikit-learn-contrib/MAPIE",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-120",
+      "category": "github_quant_ml_data",
+      "url": "https://github.com/online-ml/river",
+      "checkedAt": "2026-10-15T02:34:50.508Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/online-ml/river",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-121",
+      "category": "github_quant_ml_data",
+      "url": "https://github.com/deepcharles/ruptures",
+      "checkedAt": "2026-10-15T02:34:51.243Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/deepcharles/ruptures",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-122",
+      "category": "github_quant_ml_data",
+      "url": "https://github.com/ranaroussi/quantstats",
+      "checkedAt": "2026-10-15T02:34:51.244Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/ranaroussi/quantstats",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-123",
+      "category": "github_quant_ml_data",
+      "url": "https://github.com/bashtage/arch",
+      "checkedAt": "2026-10-15T02:34:51.246Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/bashtage/arch",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-124",
+      "category": "github_quant_ml_data",
+      "url": "https://github.com/sktime/sktime",
+      "checkedAt": "2026-10-15T02:34:51.247Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/sktime/sktime",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-125",
+      "category": "github_quant_ml_data",
+      "url": "https://github.com/pymc-devs/pymc",
+      "checkedAt": "2026-10-15T02:34:51.247Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/pymc-devs/pymc",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-126",
+      "category": "github_quant_ml_data",
+      "url": "https://github.com/SeldonIO/alibi-detect",
+      "checkedAt": "2026-10-15T02:34:51.248Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/SeldonIO/alibi-detect",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-127",
+      "category": "github_formal_correctness",
+      "url": "https://github.com/tlaplus/tlaplus",
+      "checkedAt": "2026-10-15T02:34:52.964Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/tlaplus/tlaplus",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-128",
+      "category": "github_formal_correctness",
+      "url": "https://github.com/apalache-mc/apalache",
+      "checkedAt": "2026-10-15T02:34:52.965Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/apalache-mc/apalache",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-129",
+      "category": "github_formal_correctness",
+      "url": "https://github.com/AlloyTools/org.alloytools.alloy",
+      "checkedAt": "2026-10-15T02:34:52.967Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/AlloyTools/org.alloytools.alloy",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-130",
+      "category": "github_formal_correctness",
+      "url": "https://github.com/Z3Prover/z3",
+      "checkedAt": "2026-10-15T02:34:52.968Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/Z3Prover/z3",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-131",
+      "category": "github_formal_correctness",
+      "url": "https://github.com/pschanely/crosshair",
+      "checkedAt": "2026-10-15T02:34:52.969Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/pschanely/crosshair",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-132",
+      "category": "github_formal_correctness",
+      "url": "https://github.com/proptest-rs/proptest",
+      "checkedAt": "2026-10-15T02:34:52.970Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/proptest-rs/proptest",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-133",
+      "category": "github_formal_correctness",
+      "url": "https://github.com/tokio-rs/loom",
+      "checkedAt": "2026-10-15T02:34:53.681Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/tokio-rs/loom",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-134",
+      "category": "github_formal_correctness",
+      "url": "https://github.com/jepsen-io/jepsen",
+      "checkedAt": "2026-10-15T02:34:53.683Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/jepsen-io/jepsen",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-135",
+      "category": "github_formal_correctness",
+      "url": "https://github.com/quint-co/quint",
+      "checkedAt": "2026-10-15T02:34:53.684Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/quint-co/quint",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-136",
+      "category": "github_formal_correctness",
+      "url": "https://github.com/rust-fuzz/cargo-fuzz",
+      "checkedAt": "2026-10-15T02:34:53.685Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/rust-fuzz/cargo-fuzz",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-137",
+      "category": "github_data_observability_ops",
+      "url": "https://github.com/grafana/loki",
+      "checkedAt": "2026-10-15T02:34:53.686Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/grafana/loki",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-138",
+      "category": "github_data_observability_ops",
+      "url": "https://github.com/grafana/tempo",
+      "checkedAt": "2026-10-15T02:34:53.687Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/grafana/tempo",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-139",
+      "category": "github_data_observability_ops",
+      "url": "https://github.com/grafana/k6",
+      "checkedAt": "2026-10-15T02:34:54.526Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/grafana/k6",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-140",
+      "category": "github_data_observability_ops",
+      "url": "https://github.com/grafana/pyroscope",
+      "checkedAt": "2026-10-15T02:34:54.528Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/grafana/pyroscope",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-141",
+      "category": "github_data_observability_ops",
+      "url": "https://github.com/grafana/alloy",
+      "checkedAt": "2026-10-15T02:34:54.529Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/grafana/alloy",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-142",
+      "category": "github_data_observability_ops",
+      "url": "https://github.com/prometheus/prometheus",
+      "checkedAt": "2026-10-15T02:34:54.530Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/prometheus/prometheus",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-143",
+      "category": "github_data_observability_ops",
+      "url": "https://github.com/open-telemetry/opentelemetry-collector",
+      "checkedAt": "2026-10-15T02:34:54.531Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/open-telemetry/opentelemetry-collector",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-144",
+      "category": "github_data_observability_ops",
+      "url": "https://github.com/temporalio/temporal",
+      "checkedAt": "2026-10-15T02:34:54.532Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/temporalio/temporal",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-145",
+      "category": "github_data_observability_ops",
+      "url": "https://github.com/nats-io/nats-server",
+      "checkedAt": "2026-10-15T02:34:55.249Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/nats-io/nats-server",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-146",
+      "category": "github_data_observability_ops",
+      "url": "https://github.com/redpanda-data/redpanda",
+      "checkedAt": "2026-10-15T02:34:55.251Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/redpanda-data/redpanda",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-147",
+      "category": "github_data_observability_ops",
+      "url": "https://github.com/risingwavelabs/risingwave",
+      "checkedAt": "2026-10-15T02:34:55.252Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/risingwavelabs/risingwave",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-148",
+      "category": "github_data_observability_ops",
+      "url": "https://github.com/MaterializeInc/materialize",
+      "checkedAt": "2026-10-15T02:34:55.253Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/MaterializeInc/materialize",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-149",
+      "category": "github_data_observability_ops",
+      "url": "https://github.com/timescale/timescaledb",
+      "checkedAt": "2026-10-15T02:34:55.254Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/timescale/timescaledb",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-150",
+      "category": "github_data_observability_ops",
+      "url": "https://github.com/influxdata/influxdb",
+      "checkedAt": "2026-10-15T02:34:55.254Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/influxdata/influxdb",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-151",
+      "category": "github_data_observability_ops",
+      "url": "https://github.com/VictoriaMetrics/VictoriaMetrics",
+      "checkedAt": "2026-10-15T02:34:55.975Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/VictoriaMetrics/VictoriaMetrics",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-152",
+      "category": "github_data_observability_ops",
+      "url": "https://github.com/questdb/questdb",
+      "checkedAt": "2026-10-15T02:34:55.977Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/questdb/questdb",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-153",
+      "category": "github_data_observability_ops",
+      "url": "https://github.com/signoz/signoz",
+      "checkedAt": "2026-10-15T02:34:55.978Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/signoz/signoz",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-154",
+      "category": "github_data_observability_ops",
+      "url": "https://github.com/vmihailenco/uptrace",
+      "checkedAt": "2026-10-15T02:34:55.980Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/vmihailenco/uptrace",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-155",
+      "category": "github_data_observability_ops",
+      "url": "https://github.com/hyperdxio/hyperdx",
+      "checkedAt": "2026-10-15T02:34:55.981Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/hyperdxio/hyperdx",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-156",
+      "category": "github_data_observability_ops",
+      "url": "https://github.com/jaegertracing/jaeger",
+      "checkedAt": "2026-10-15T02:34:55.982Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/jaegertracing/jaeger",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-157",
+      "category": "github_graph_analytics",
+      "url": "https://github.com/networkx/networkx",
+      "checkedAt": "2026-10-15T02:35:00.345Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/networkx/networkx",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-158",
+      "category": "github_graph_analytics",
+      "url": "https://github.com/neo4j/neo4j",
+      "checkedAt": "2026-10-15T02:35:00.346Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/neo4j/neo4j",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-159",
+      "category": "github_graph_analytics",
+      "url": "https://github.com/memgraph/memgraph",
+      "checkedAt": "2026-10-15T02:35:00.347Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/memgraph/memgraph",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-160",
+      "category": "github_graph_analytics",
+      "url": "https://github.com/FalkorDB/FalkorDB",
+      "checkedAt": "2026-10-15T02:35:00.348Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/FalkorDB/FalkorDB",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-161",
+      "category": "github_graph_analytics",
+      "url": "https://github.com/Qiskit/rustworkx",
+      "checkedAt": "2026-10-15T02:35:00.348Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/Qiskit/rustworkx",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-162",
+      "category": "github_graph_analytics",
+      "url": "https://github.com/igraph/python-igraph",
+      "checkedAt": "2026-10-15T02:35:00.349Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/igraph/python-igraph",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-163",
+      "category": "github_graph_analytics",
+      "url": "https://github.com/apache/age",
+      "checkedAt": "2026-10-15T02:35:01.247Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/apache/age",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-164",
+      "category": "github_graph_analytics",
+      "url": "https://github.com/graphistry/pygraphistry",
+      "checkedAt": "2026-10-15T02:35:01.249Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/graphistry/pygraphistry",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-165",
+      "category": "github_graph_analytics",
+      "url": "https://github.com/graphframes/graphframes",
+      "checkedAt": "2026-10-15T02:35:01.250Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/graphframes/graphframes",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-166",
+      "category": "github_supply_chain_ci",
+      "url": "https://github.com/semgrep/semgrep",
+      "checkedAt": "2026-10-15T02:35:01.251Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/semgrep/semgrep",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-167",
+      "category": "github_supply_chain_ci",
+      "url": "https://github.com/stryker-mutator/stryker-js",
+      "checkedAt": "2026-10-15T02:35:01.252Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/stryker-mutator/stryker-js",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-168",
+      "category": "github_supply_chain_ci",
+      "url": "https://github.com/renovatebot/renovate",
+      "checkedAt": "2026-10-15T02:35:01.253Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/renovatebot/renovate",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-169",
+      "category": "github_supply_chain_ci",
+      "url": "https://github.com/sigstore/cosign",
+      "checkedAt": "2026-10-15T02:35:02.049Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/sigstore/cosign",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-170",
+      "category": "github_supply_chain_ci",
+      "url": "https://github.com/sigstore/rekor",
+      "checkedAt": "2026-10-15T02:35:02.050Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/sigstore/rekor",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-171",
+      "category": "github_supply_chain_ci",
+      "url": "https://github.com/aquasecurity/trivy",
+      "checkedAt": "2026-10-15T02:35:02.052Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/aquasecurity/trivy",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-172",
+      "category": "github_supply_chain_ci",
+      "url": "https://github.com/google/osv-scanner",
+      "checkedAt": "2026-10-15T02:35:02.053Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/google/osv-scanner",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-173",
+      "category": "github_supply_chain_ci",
+      "url": "https://github.com/gitleaks/gitleaks",
+      "checkedAt": "2026-10-15T02:35:02.054Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/gitleaks/gitleaks",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-174",
+      "category": "github_supply_chain_ci",
+      "url": "https://github.com/open-policy-agent/opa",
+      "checkedAt": "2026-10-15T02:35:02.055Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/open-policy-agent/opa",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-175",
+      "category": "github_supply_chain_ci",
+      "url": "https://github.com/github/codeql",
+      "checkedAt": "2026-10-15T02:35:03.557Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/github/codeql",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-176",
+      "category": "github_project_rea",
+      "url": "https://github.com/MrPineapples22/sylph-fusion",
+      "checkedAt": "2026-10-15T02:35:03.559Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/MrPineapples22/sylph-fusion",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-177",
+      "category": "github_project_rea",
+      "url": "https://github.com/morluto/rea",
+      "checkedAt": "2026-10-15T02:35:03.560Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/morluto/rea",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-178",
+      "category": "github_additional_solana",
+      "url": "https://github.com/solana-program/token-2022",
+      "checkedAt": "2026-10-15T02:35:03.561Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/solana-program/token-2022",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-179",
+      "category": "github_additional_solana",
+      "url": "https://github.com/Blockdaemon/solana-accountsdb-plugin-kafka",
+      "checkedAt": "2026-10-15T02:35:03.562Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/Blockdaemon/solana-accountsdb-plugin-kafka",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-180",
+      "category": "github_additional_solana",
+      "url": "https://github.com/solana-foundation/solana-web3.js",
+      "checkedAt": "2026-10-15T02:35:03.563Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/solana-foundation/solana-web3.js",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-181",
+      "category": "github_additional_solana",
+      "url": "https://github.com/anza-xyz/kit",
+      "checkedAt": "2026-10-15T02:35:04.516Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/anza-xyz/kit",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-182",
+      "category": "github_additional_solana",
+      "url": "https://github.com/MeteoraAg/dynamic-bonding-curve-sdk",
+      "checkedAt": "2026-10-15T02:35:04.517Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/MeteoraAg/dynamic-bonding-curve-sdk",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-183",
+      "category": "github_additional_solana",
+      "url": "https://github.com/sevenlabs-hq/carbon",
+      "checkedAt": "2026-10-15T02:35:04.518Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/sevenlabs-hq/carbon",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-184",
+      "category": "web_streaming_infra_rpc",
+      "url": "https://orbitflare.com/index.php/benchmarks",
+      "checkedAt": "2026-10-15T02:35:04.519Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://orbitflare.com/index.php/benchmarks",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-185",
+      "category": "web_streaming_infra_rpc",
+      "url": "https://shred.one",
+      "checkedAt": "2026-10-15T02:35:04.520Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://shred.one/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-186",
+      "category": "web_streaming_infra_rpc",
+      "url": "https://docs.blockspace.everstake.com",
+      "checkedAt": "2026-10-15T02:35:04.521Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://docs.blockspace.everstake.com/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-187",
+      "category": "web_streaming_infra_rpc",
+      "url": "https://blog.triton.one/before-the-block-get-the-fastest-streams-on-solana/",
+      "checkedAt": "2026-10-15T02:35:05.672Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://blog.triton.one/before-the-block-get-the-fastest-streams-on-solana/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-188",
+      "category": "web_streaming_infra_rpc",
+      "url": "https://blockrazor.io",
+      "checkedAt": "2026-10-15T02:35:05.673Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://blockrazor.io/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-189",
+      "category": "web_streaming_infra_rpc",
+      "url": "https://shyft.to",
+      "checkedAt": "2026-10-15T02:35:05.674Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://shyft.to/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-190",
+      "category": "web_streaming_infra_rpc",
+      "url": "https://doublezero.xyz",
+      "checkedAt": "2026-10-15T02:35:05.676Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://doublezero.xyz/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-191",
+      "category": "web_streaming_infra_rpc",
+      "url": "https://www.helius.dev",
+      "checkedAt": "2026-10-15T02:35:05.677Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://www.helius.dev/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-192",
+      "category": "web_streaming_infra_rpc",
+      "url": "https://www.helius.dev/laserstream/",
+      "checkedAt": "2026-10-15T02:35:05.678Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://www.helius.dev/laserstream",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-193",
+      "category": "web_streaming_infra_rpc",
+      "url": "https://onfinality.io/en",
+      "checkedAt": "2026-10-15T02:35:06.287Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://onfinality.io/en",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-194",
+      "category": "web_streaming_infra_rpc",
+      "url": "https://onfinality.io/en/networks/solana",
+      "checkedAt": "2026-10-15T02:35:06.288Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://onfinality.io/en/networks/solana",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-195",
+      "category": "web_streaming_infra_rpc",
+      "url": "https://documentation.onfinality.io/support/",
+      "checkedAt": "2026-10-15T02:35:06.290Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://documentation.onfinality.io/support/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-196",
+      "category": "web_market_data_research",
+      "url": "https://dexploit.dev",
+      "checkedAt": "2026-10-15T02:35:06.291Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://dexploit.dev/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-197",
+      "category": "web_market_data_research",
+      "url": "https://solanadata.allium.so",
+      "checkedAt": "2026-10-15T02:35:06.292Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://solanadata.allium.so/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-198",
+      "category": "web_market_data_research",
+      "url": "https://dune.com",
+      "checkedAt": "2026-10-15T02:35:06.293Z",
+      "method": "HEAD",
+      "httpStatus": 403,
+      "finalUrl": "https://dune.com/",
+      "status": "REACHABLE_RESTRICTED"
+    },
+    {
+      "id": "SRC-199",
+      "category": "web_market_data_research",
+      "url": "https://flipsidecrypto.xyz",
+      "checkedAt": "2026-10-15T02:35:07.684Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://edisyl.com/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-200",
+      "category": "web_market_data_research",
+      "url": "https://www.hellomoon.io",
+      "checkedAt": "2026-10-15T02:35:07.685Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://www.hellomoon.io/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-201",
+      "category": "web_market_data_research",
+      "url": "https://moralis.com",
+      "checkedAt": "2026-10-15T02:35:07.687Z",
+      "method": "HEAD",
+      "httpStatus": 403,
+      "finalUrl": "https://moralis.com/",
+      "status": "REACHABLE_RESTRICTED"
+    },
+    {
+      "id": "SRC-202",
+      "category": "web_market_data_research",
+      "url": "https://coinstats.app",
+      "checkedAt": "2026-10-15T02:35:07.688Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://coinstats.app/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-203",
+      "category": "web_market_data_research",
+      "url": "https://www.coingecko.com",
+      "checkedAt": "2026-10-15T02:35:07.689Z",
+      "method": "HEAD",
+      "httpStatus": 403,
+      "finalUrl": "https://www.coingecko.com/",
+      "status": "REACHABLE_RESTRICTED"
+    },
+    {
+      "id": "SRC-204",
+      "category": "web_market_data_research",
+      "url": "https://defillama.com",
+      "checkedAt": "2026-10-15T02:35:07.690Z",
+      "method": "HEAD",
+      "httpStatus": 403,
+      "finalUrl": "https://defillama.com/",
+      "status": "REACHABLE_RESTRICTED"
+    },
+    {
+      "id": "SRC-205",
+      "category": "web_market_data_research",
+      "url": "https://dexscreener.com",
+      "checkedAt": "2026-10-15T02:35:08.133Z",
+      "method": "HEAD",
+      "httpStatus": 403,
+      "finalUrl": "https://dexscreener.com/",
+      "status": "REACHABLE_RESTRICTED"
+    },
+    {
+      "id": "SRC-206",
+      "category": "web_market_data_research",
+      "url": "https://rugcheck.xyz",
+      "checkedAt": "2026-10-15T02:35:08.134Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://rugcheck.xyz/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-207",
+      "category": "web_market_data_research",
+      "url": "https://bubblemaps.io",
+      "checkedAt": "2026-10-15T02:35:08.136Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://bubblemaps.io/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-208",
+      "category": "web_market_data_research",
+      "url": "https://birdeye.so",
+      "checkedAt": "2026-10-15T02:35:08.136Z",
+      "method": "HEAD",
+      "httpStatus": 403,
+      "finalUrl": "https://birdeye.so/",
+      "status": "REACHABLE_RESTRICTED"
+    },
+    {
+      "id": "SRC-209",
+      "category": "web_market_data_research",
+      "url": "https://solana.fm",
+      "checkedAt": "2026-10-15T02:35:08.137Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://solana.fm/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-210",
+      "category": "web_market_data_research",
+      "url": "https://solana.fm/?cluster=mainnet-alpha",
+      "checkedAt": "2026-10-15T02:35:08.138Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://solana.fm/?cluster=mainnet-alpha",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-211",
+      "category": "web_trading_execution_terminals",
+      "url": "https://dflow.net",
+      "checkedAt": "2026-10-15T02:35:08.752Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://dflow.net/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-212",
+      "category": "web_trading_execution_terminals",
+      "url": "https://about.titan.exchange",
+      "checkedAt": "2026-10-15T02:35:08.753Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://about.titan.exchange/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-213",
+      "category": "web_trading_execution_terminals",
+      "url": "https://bloxroute.com",
+      "checkedAt": "2026-10-15T02:35:08.754Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://bloxroute.com/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-214",
+      "category": "web_trading_execution_terminals",
+      "url": "https://temporal.xyz",
+      "checkedAt": "2026-10-15T02:35:08.755Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://temporal.xyz/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-215",
+      "category": "web_trading_execution_terminals",
+      "url": "https://astralane.io",
+      "checkedAt": "2026-10-15T02:35:08.756Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://astralane.io/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-216",
+      "category": "web_trading_execution_terminals",
+      "url": "https://harmonic.gg",
+      "checkedAt": "2026-10-15T02:35:08.757Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://harmonic.gg/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-217",
+      "category": "web_trading_execution_terminals",
+      "url": "https://www.ironforge.cloud",
+      "checkedAt": "2026-10-15T02:35:10.603Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://www.ironforge.sanctum.so/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-218",
+      "category": "web_trading_execution_terminals",
+      "url": "https://jup.ag",
+      "checkedAt": "2026-10-15T02:35:10.604Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://jup.ag/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-219",
+      "category": "web_trading_execution_terminals",
+      "url": "https://jup.ag/portfolio",
+      "checkedAt": "2026-10-15T02:35:10.605Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://jup.ag/portfolio",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-220",
+      "category": "web_trading_execution_terminals",
+      "url": "https://dev.jup.ag",
+      "checkedAt": "2026-10-15T02:35:10.605Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://developers.jup.ag/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-221",
+      "category": "web_trading_execution_terminals",
+      "url": "https://pump.fun",
+      "checkedAt": "2026-10-15T02:35:10.606Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://pump.fun/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-222",
+      "category": "web_trading_execution_terminals",
+      "url": "https://pumpportal.fun",
+      "checkedAt": "2026-10-15T02:35:10.607Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://pumpportal.fun/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-223",
+      "category": "web_trading_execution_terminals",
+      "url": "https://raydium.io",
+      "checkedAt": "2026-10-15T02:35:11.158Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://raydium.io/swap/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-224",
+      "category": "web_trading_execution_terminals",
+      "url": "https://meteora.ag",
+      "checkedAt": "2026-10-15T02:35:11.159Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://www.meteora.ag/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-225",
+      "category": "web_trading_execution_terminals",
+      "url": "https://www.orca.so",
+      "checkedAt": "2026-10-15T02:35:11.160Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://www.orca.so/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-226",
+      "category": "web_trading_execution_terminals",
+      "url": "https://gmgn.ai",
+      "checkedAt": "2026-10-15T02:35:11.161Z",
+      "method": "HEAD",
+      "httpStatus": 403,
+      "finalUrl": "https://gmgn.ai/",
+      "status": "REACHABLE_RESTRICTED"
+    },
+    {
+      "id": "SRC-227",
+      "category": "web_trading_execution_terminals",
+      "url": "https://photon-sol.tinyastro.io",
+      "checkedAt": "2026-10-15T02:35:11.162Z",
+      "method": "HEAD",
+      "httpStatus": 403,
+      "finalUrl": "https://photon-sol.tinyastro.io/",
+      "status": "REACHABLE_RESTRICTED"
+    },
+    {
+      "id": "SRC-228",
+      "category": "web_trading_execution_terminals",
+      "url": "https://trojan.com",
+      "checkedAt": "2026-10-15T02:35:11.164Z",
+      "method": "HEAD",
+      "httpStatus": 403,
+      "finalUrl": "https://trojan.com/",
+      "status": "REACHABLE_RESTRICTED"
+    },
+    {
+      "id": "SRC-229",
+      "category": "web_token_safety_custody",
+      "url": "https://www.blockaid.io",
+      "checkedAt": "2026-10-15T02:35:11.695Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://blockaid.io/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-230",
+      "category": "web_token_safety_custody",
+      "url": "https://blowfish.xyz",
+      "checkedAt": "2026-10-15T02:35:11.696Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://blowfish.xyz/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-231",
+      "category": "web_token_safety_custody",
+      "url": "https://www.range.org",
+      "checkedAt": "2026-10-15T02:35:11.698Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://range.org/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-232",
+      "category": "web_token_safety_custody",
+      "url": "https://hypernative.io",
+      "checkedAt": "2026-10-15T02:35:11.699Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://www.hypernative.io/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-233",
+      "category": "web_token_safety_custody",
+      "url": "https://txshield.dev",
+      "checkedAt": "2026-10-15T02:35:11.700Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://txshield.dev/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-234",
+      "category": "web_token_safety_custody",
+      "url": "https://skynet.certik.com",
+      "checkedAt": "2026-10-15T02:35:11.701Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://skynet.certik.com/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-235",
+      "category": "web_token_safety_custody",
+      "url": "https://spearbit.com",
+      "checkedAt": "2026-10-15T02:35:12.476Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://spearbit.com/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-236",
+      "category": "web_token_safety_custody",
+      "url": "https://www.sec3.dev",
+      "checkedAt": "2026-10-15T02:35:12.478Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://sec3.dev/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-237",
+      "category": "web_token_safety_custody",
+      "url": "https://www.turnkey.com",
+      "checkedAt": "2026-10-15T02:35:12.479Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://www.turnkey.com/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-238",
+      "category": "web_token_safety_custody",
+      "url": "https://privy.io",
+      "checkedAt": "2026-10-15T02:35:12.480Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://www.privy.io/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-239",
+      "category": "web_token_safety_custody",
+      "url": "https://fordefi.com",
+      "checkedAt": "2026-10-15T02:35:12.481Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://fordefi.com/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-240",
+      "category": "web_token_safety_custody",
+      "url": "https://www.fireblocks.com",
+      "checkedAt": "2026-10-15T02:35:12.482Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://www.fireblocks.com/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-241",
+      "category": "web_token_safety_custody",
+      "url": "https://aws.amazon.com/kms/",
+      "checkedAt": "2026-10-15T02:35:12.955Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://aws.amazon.com/kms/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-242",
+      "category": "web_token_safety_custody",
+      "url": "https://phantom.com",
+      "checkedAt": "2026-10-15T02:35:12.956Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://phantom.com/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-243",
+      "category": "web_token_safety_custody",
+      "url": "https://solflare.com",
+      "checkedAt": "2026-10-15T02:35:12.957Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://www.solflare.com/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-244",
+      "category": "web_token_safety_custody",
+      "url": "https://step.finance",
+      "checkedAt": "2026-10-15T02:35:12.958Z",
+      "method": "HEAD",
+      "httpStatus": 404,
+      "finalUrl": "https://step.finance/",
+      "status": "NOT_FOUND"
+    },
+    {
+      "id": "SRC-245",
+      "category": "web_token_safety_custody",
+      "url": "https://sonar.watch",
+      "checkedAt": "2026-10-15T02:35:12.959Z",
+      "status": "INCONCLUSIVE_NETWORK",
+      "errorCode": "ENOTFOUND"
+    },
+    {
+      "id": "SRC-246",
+      "category": "web_token_safety_custody",
+      "url": "https://orb.helius.dev",
+      "checkedAt": "2026-10-15T02:35:12.960Z",
+      "method": "HEAD",
+      "httpStatus": 429,
+      "finalUrl": "https://orb.helius.dev/",
+      "status": "INCONCLUSIVE_REMOTE"
+    },
+    {
+      "id": "SRC-247",
+      "category": "web_visual_debug_rea",
+      "url": "https://graph-tool.skewed.de",
+      "checkedAt": "2026-10-15T02:35:14.441Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://graph-tool.skewed.de/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-248",
+      "category": "web_visual_debug_rea",
+      "url": "https://rea.tools/",
+      "checkedAt": "2026-10-15T02:35:14.443Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://rea.tools/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-249",
+      "category": "web_visual_debug_rea",
+      "url": "https://rea.tools/guides/",
+      "checkedAt": "2026-10-15T02:35:14.444Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://rea.tools/guides/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-250",
+      "category": "web_visual_debug_rea",
+      "url": "https://rea.tools/showcase/",
+      "checkedAt": "2026-10-15T02:35:14.445Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://rea.tools/showcase/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-251",
+      "category": "web_visual_debug_rea",
+      "url": "https://www.npmjs.com/package/rea-agents",
+      "checkedAt": "2026-10-15T02:35:14.446Z",
+      "method": "HEAD",
+      "httpStatus": 403,
+      "finalUrl": "https://www.npmjs.com/package/rea-agents",
+      "status": "REACHABLE_RESTRICTED"
+    },
+    {
+      "id": "SRC-252",
+      "category": "web_visual_debug_rea",
+      "url": "https://skills.sh/morluto/rea/reverse-engineer-anything",
+      "checkedAt": "2026-10-15T02:35:14.447Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://www.skills.sh/morluto/rea/reverse-engineer-anything",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-253",
+      "category": "web_visual_debug_rea",
+      "url": "https://github.com",
+      "checkedAt": "2026-10-15T02:35:15.238Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-254",
+      "category": "docs_solana_trading",
+      "url": "https://solana.com/docs/core/fees/compute-budget",
+      "checkedAt": "2026-10-15T02:35:15.239Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://solana.com/docs/core/fees/compute-budget",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-255",
+      "category": "docs_solana_trading",
+      "url": "https://solana.com/docs/core/fees/fee-structure",
+      "checkedAt": "2026-10-15T02:35:15.240Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://solana.com/docs/core/fees/fee-structure",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-256",
+      "category": "docs_solana_trading",
+      "url": "https://solana.com/docs/tools/production-readiness",
+      "checkedAt": "2026-10-15T02:35:15.241Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://solana.com/docs/tools/production-readiness",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-257",
+      "category": "docs_solana_trading",
+      "url": "https://docs.jito.wtf/lowlatencytxnsend/",
+      "checkedAt": "2026-10-15T02:35:15.242Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://docs.jito.wtf/lowlatencytxnsend/",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-258",
+      "category": "docs_solana_trading",
+      "url": "https://developers.jup.ag/docs/swap/index.md",
+      "checkedAt": "2026-10-15T02:35:15.243Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://developers.jup.ag/docs/swap/index.md",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-259",
+      "category": "docs_solana_trading",
+      "url": "https://github.com/pump-fun/pump-public-docs",
+      "checkedAt": "2026-10-15T02:35:15.746Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/pump-fun/pump-public-docs",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-260",
+      "category": "docs_rea_reverse_engineering",
+      "url": "https://github.com/morluto/rea/blob/main/docs/installation.md",
+      "checkedAt": "2026-10-15T02:35:15.747Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/morluto/rea/blob/main/docs/installation.md",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-261",
+      "category": "docs_rea_reverse_engineering",
+      "url": "https://github.com/morluto/rea/blob/main/docs/javascript-application-workflows.md",
+      "checkedAt": "2026-10-15T02:35:15.748Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/morluto/rea/blob/main/docs/javascript-application-workflows.md",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-262",
+      "category": "docs_rea_reverse_engineering",
+      "url": "https://github.com/morluto/rea/blob/main/docs/browser-observation.md",
+      "checkedAt": "2026-10-15T02:35:15.749Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/morluto/rea/blob/main/docs/browser-observation.md",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-263",
+      "category": "docs_rea_reverse_engineering",
+      "url": "https://github.com/morluto/rea/blob/main/docs/process-capture.md",
+      "checkedAt": "2026-10-15T02:35:15.750Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/morluto/rea/blob/main/docs/process-capture.md",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-264",
+      "category": "docs_rea_reverse_engineering",
+      "url": "https://github.com/morluto/rea/blob/main/docs/cli.md",
+      "checkedAt": "2026-10-15T02:35:15.751Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/morluto/rea/blob/main/docs/cli.md",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-265",
+      "category": "docs_rea_reverse_engineering",
+      "url": "https://github.com/morluto/rea/blob/main/docs/native-investigation.md",
+      "checkedAt": "2026-10-15T02:35:16.730Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/morluto/rea/blob/main/docs/native-investigation.md",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-266",
+      "category": "docs_rea_reverse_engineering",
+      "url": "https://github.com/morluto/rea/blob/main/SECURITY.md",
+      "checkedAt": "2026-10-15T02:35:16.732Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/morluto/rea/blob/main/SECURITY.md",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-267",
+      "category": "docs_rea_reverse_engineering",
+      "url": "https://github.com/morluto/rea/blob/main/DISCLAIMER.md",
+      "checkedAt": "2026-10-15T02:35:16.733Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/morluto/rea/blob/main/DISCLAIMER.md",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-268",
+      "category": "docs_rea_reverse_engineering",
+      "url": "https://github.com/morluto/rea/blob/main/AGENTS.md",
+      "checkedAt": "2026-10-15T02:35:16.734Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/morluto/rea/blob/main/AGENTS.md",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-269",
+      "category": "sylph_source_audit",
+      "url": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/feed.ts",
+      "checkedAt": "2026-10-15T02:35:16.735Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/feed.ts",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-270",
+      "category": "sylph_source_audit",
+      "url": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/fusion.ts",
+      "checkedAt": "2026-10-15T02:35:16.736Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/fusion.ts",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-271",
+      "category": "sylph_source_audit",
+      "url": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/execution.ts",
+      "checkedAt": "2026-10-15T02:35:17.727Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/execution.ts",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-272",
+      "category": "sylph_source_audit",
+      "url": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/market.ts",
+      "checkedAt": "2026-10-15T02:35:17.729Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/market.ts",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-273",
+      "category": "sylph_source_audit",
+      "url": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/rpc.ts",
+      "checkedAt": "2026-10-15T02:35:17.730Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/rpc.ts",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-274",
+      "category": "sylph_source_audit",
+      "url": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/platform/ingress/canonical-ingress.ts",
+      "checkedAt": "2026-10-15T02:35:17.731Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/platform/ingress/canonical-ingress.ts",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-275",
+      "category": "sylph_source_audit",
+      "url": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/platform/ingestion/truth-x.ts",
+      "checkedAt": "2026-10-15T02:35:17.732Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/platform/ingestion/truth-x.ts",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-276",
+      "category": "sylph_source_audit",
+      "url": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/platform/ingestion/census-r.ts",
+      "checkedAt": "2026-10-15T02:35:17.733Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/platform/ingestion/census-r.ts",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-277",
+      "category": "sylph_source_audit",
+      "url": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/platform/ingestion/yellowstone-captured-client.ts",
+      "checkedAt": "2026-10-15T02:35:18.609Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/platform/ingestion/yellowstone-captured-client.ts",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-278",
+      "category": "sylph_source_audit",
+      "url": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/platform/ingestion/gap-reconciler.ts",
+      "checkedAt": "2026-10-15T02:35:18.611Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/platform/ingestion/gap-reconciler.ts",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-279",
+      "category": "sylph_source_audit",
+      "url": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/platform/execution/authority.ts",
+      "checkedAt": "2026-10-15T02:35:18.612Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/platform/execution/authority.ts",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-280",
+      "category": "sylph_source_audit",
+      "url": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/platform/execution/solaris/amm-bridge.ts",
+      "checkedAt": "2026-10-15T02:35:18.613Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/platform/execution/solaris/amm-bridge.ts",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-281",
+      "category": "sylph_source_audit",
+      "url": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/runtime-composition.ts",
+      "checkedAt": "2026-10-15T02:35:18.614Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/runtime-composition.ts",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-282",
+      "category": "sylph_source_audit",
+      "url": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/platform/pipeline/runtime-divergence.ts",
+      "checkedAt": "2026-10-15T02:35:18.615Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/platform/pipeline/runtime-divergence.ts",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-283",
+      "category": "sylph_source_audit",
+      "url": "https://github.com/MrPineapples22/sylph-fusion/blob/main/RELEASE_CERTIFICATION.md",
+      "checkedAt": "2026-10-15T02:35:19.954Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/MrPineapples22/sylph-fusion/blob/main/RELEASE_CERTIFICATION.md",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-284",
+      "category": "sylph_source_audit",
+      "url": "https://github.com/MrPineapples22/sylph-fusion/blob/main/ARCHITECTURE_GAPS.md",
+      "checkedAt": "2026-10-15T02:35:19.955Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/MrPineapples22/sylph-fusion/blob/main/ARCHITECTURE_GAPS.md",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-285",
+      "category": "sylph_source_audit",
+      "url": "https://github.com/MrPineapples22/sylph-fusion/blob/main/package.json",
+      "checkedAt": "2026-10-15T02:35:19.957Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/MrPineapples22/sylph-fusion/blob/main/package.json",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-286",
+      "category": "sylph_source_audit",
+      "url": "https://github.com/MrPineapples22/sylph-fusion/blob/main/tsconfig.json",
+      "checkedAt": "2026-10-15T02:35:19.958Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/MrPineapples22/sylph-fusion/blob/main/tsconfig.json",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-287",
+      "category": "sylph_source_audit",
+      "url": "https://github.com/MrPineapples22/sylph-fusion/blob/main/docs/ECOSYSTEM_INTEGRATION_AUDIT_2026-10-12.md",
+      "checkedAt": "2026-10-15T02:35:19.959Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/MrPineapples22/sylph-fusion/blob/main/docs/ECOSYSTEM_INTEGRATION_AUDIT_2026-10-12.md",
+      "status": "REACHABLE"
+    },
+    {
+      "id": "SRC-288",
+      "category": "sylph_source_audit",
+      "url": "https://github.com/MrPineapples22/sylph-fusion/commit/f5c31177f2b8d79cdf5e3662e4049ac44b9562b2",
+      "checkedAt": "2026-10-15T02:35:19.960Z",
+      "method": "HEAD",
+      "httpStatus": 200,
+      "finalUrl": "https://github.com/MrPineapples22/sylph-fusion/commit/f5c31177f2b8d79cdf5e3662e4049ac44b9562b2",
+      "status": "REACHABLE"
+    }
+  ]
+}

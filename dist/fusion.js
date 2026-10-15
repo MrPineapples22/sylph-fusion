@@ -13,6 +13,7 @@ import { exitDecision, log, mulBps, settle, recordFailure, recordEquity, pruneRi
 import { startDashboard } from './dashboard.js';
 import { RpcPool } from './rpc.js';
 import { Feed } from './feed.js';
+import { beginFeedSession, closeFeedSession, feedSessionLatchLocation, persistFeedReplayCheckpoint, persistFeedSessionIncident } from './platform/ingestion/feed-session-latch.js';
 import { globalProviderHealthTracker } from './platform/ingestion/provider-health.js';
 import { createCanonicalSolanaIngress, StoreIngressJournal, isDurableCanonicalIngress, isDurableCanonicalIngressForStore } from './platform/ingress/canonical-ingress.js';
 import { RuntimeTelemetryExporter } from './platform/ingress/runtime-telemetry-exporter.js';
@@ -226,6 +227,7 @@ export class Engine {
     gateMode;
     researchSpool;
     #ingress;
+    #ingressStoreCapability;
     #projectionCapability;
     candidates = new Map();
     stopped = false;
@@ -323,6 +325,7 @@ export class Engine {
         const projectionCapability = getStoreIngressCapability(this.store);
         if (!projectionCapability)
             throw new Error('ENGINE_PROJECTION_DURABLE_STORE_REQUIRED');
+        this.#ingressStoreCapability = projectionCapability;
         const internalProjectionCapability = getEngineProjectionCapability(this.store);
         if (!internalProjectionCapability)
             throw new Error('ENGINE_PROJECTION_DURABLE_STORE_REQUIRED');
@@ -339,6 +342,25 @@ export class Engine {
             await this.#onCommitted(committed);
         });
         this.feed = feed ?? new Feed(cfg, rpc.connection, this.#ingress);
+        if (typeof this.feed.setFatalIngressFaultHandler === 'function')
+            this.feed.setFatalIngressFaultHandler(async (fault) => {
+                this.state.halted = true;
+                this.state.feedIngressFault = { ...fault };
+                let failure;
+                for (let attempt = 0; attempt < 6; attempt++) {
+                    try {
+                        await this.store.save(this.state, `feed_ingress_fault:${fault.reason}`);
+                        return;
+                    }
+                    catch (error) {
+                        failure = error;
+                        if (attempt < 5)
+                            await delay(50 * (2 ** attempt));
+                    }
+                }
+                log('feed_ingress_fault_durability_unavailable', { reason: fault.reason, error: String(failure) });
+                throw failure instanceof Error ? failure : new Error(String(failure));
+            });
         this.feedOwnership = feed ? 'RUNTIME_COMPOSITION_INJECTED' : 'ENGINE_LOCAL_FALLBACK';
         this.feed.gapReconciler.setRecoveryCertificateJournal({
             saveVerifiedRecoveryCertificate: certificate => {
@@ -869,9 +891,9 @@ export class Engine {
             if (wouldNormalHalt) {
                 log('paper_risk_bypass', { rule: 'ENTRY_RISK_GATES', normalResult: 'DENY', paperMaxRiskResult: 'ATTEMPT', mint: candidate.mint });
             }
-            return !this.stopped && !this.state.pending && !this.entryBuildInFlight && !this.state.positions[candidate.mint] && !s.curve.complete && entryAmount > 0n;
+            return !this.stopped && !this.state.feedIngressFault && this.feed.healthy() && !this.state.pending && !this.entryBuildInFlight && !this.state.positions[candidate.mint] && !s.curve.complete && entryAmount > 0n;
         }
-        return !this.stopped && !this.state.operatorPaused && !this.state.halted && this.feed.healthy() && !this.state.pending && !this.entryBuildInFlight && !candidate.devSold && now >= candidate.next && !this.state.positions[candidate.mint] && !this.state.closed[candidate.mint] && !s.curve.complete && !s.curve.isMayhemMode && entryAmount > 0n;
+        return !this.stopped && !this.state.feedIngressFault && !this.state.operatorPaused && !this.state.halted && this.feed.healthy() && !this.state.pending && !this.entryBuildInFlight && !candidate.devSold && now >= candidate.next && !this.state.positions[candidate.mint] && !this.state.closed[candidate.mint] && !s.curve.complete && !s.curve.isMayhemMode && entryAmount > 0n;
     }
     async setPaused(paused) {
         if (this.stopped)
@@ -900,7 +922,7 @@ export class Engine {
             performance: this.state.performance ?? null, connected: true,
             mode: this.cfg.MODE, demo: false, wallet: this.state.wallet, time: Date.now(), startedAt: this.startedAt,
             paused: !!this.state.operatorPaused, halted: this.state.halted, stopping: this.stopped,
-            feed: { healthy: this.feed.healthy(), last: this.feed.last, slot: this.feed.slot },
+            feed: { healthy: this.feed.healthy(), last: this.feed.last, slot: this.feed.slot, ingressFault: this.state.feedIngressFault ?? null },
             providerHealth: globalProviderHealthTracker.getReport(now),
             rpcEndpoints: typeof this.rpc?.getEndpointStats === 'function' ? this.rpc.getEndpointStats() : [],
             cash: this.state.cash, dayPnl: this.state.dayPnl, day: this.state.day,
@@ -915,6 +937,7 @@ export class Engine {
             },
             positions: Object.values(this.state.positions ?? {}).map(p => {
                 const mark = this.marks.get(p.mint) ?? null;
+                const marketEvidence = this.market?.ammBridge?.getObservationSummary?.(p.mint) ?? null;
                 const currentValue = mark ? mark.value : null;
                 const unrealizedPnl = mark ? String(BigInt(mark.value) - BigInt(p.cost)) : null;
                 const peakMultiple = BigInt(p.cost) > 0n && p.peak ? (Number(p.peak) / Number(p.cost)).toFixed(2) : '1.00';
@@ -934,6 +957,7 @@ export class Engine {
                     creator: p.creator,
                     creatorTokens: p.creatorTokens,
                     mark,
+                    marketEvidence,
                 };
             }),
             pending: this.state.pending ? { mint: this.state.pending.mint, side: this.state.pending.side, signature: this.state.pending.signature, created: this.state.pending.created, reason: this.state.pending.reason } : null,
@@ -1132,6 +1156,14 @@ export class Engine {
         let feedTask = null;
         try {
             await this.restoreIngressProjection();
+            const ingressStartupState = await this.#ingressStoreCapability.inspectIngressStartupState();
+            if (ingressStartupState.hasLegacyUnknown) {
+                throw new Error('ENGINE_INGRESS_LEGACY_UNKNOWN_REQUIRES_REBUILD');
+            }
+            if (ingressStartupState.oldestPendingSequence !== null &&
+                ingressStartupState.oldestPendingSequence <= this.projectionSequence) {
+                throw new Error('ENGINE_PENDING_INGRESS_NOT_AFTER_PROJECTION');
+            }
             if (#ingress in this)
                 await this.#ingress?.recoverPendingDeliveries();
             feedTask = this.feed.run().catch(() => { log('feed_fatal'); this.stop(); });
@@ -1160,7 +1192,7 @@ export class Engine {
             }
         }
         finally {
-            this.feed.stop();
+            await this.feed.stop();
             await feedTask;
             this.loopLag.disable();
             for (const p of Object.values(this.state.positions)) {
@@ -1410,10 +1442,12 @@ export class Engine {
             if (s.curve.complete) {
                 const graduatedState = this.market.ammBridge?.getGraduatedState?.(p.mint);
                 const lifecycleCert = this.market.lifecycle?.getCertificate?.(p.mint);
-                const hasAmmRoute = (graduatedState?.status === 'RAYDIUM_ACTIVE' ||
+                const hasAmmRoute = (graduatedState?.status === 'AMM_ACTIVE' ||
                     graduatedState?.status === 'AMM_STABILIZED' ||
                     lifecycleCert?.valuationStatus === 'PRICED_AMM') &&
-                    Boolean(graduatedState?.currentPoolSolLamports && graduatedState.currentPoolSolLamports > 0n);
+                    Boolean(graduatedState?.poolAddress && graduatedState.currentPoolQuoteReserves &&
+                        graduatedState.currentPoolQuoteReserves > 0n && graduatedState.currentPoolTokenReserves &&
+                        graduatedState.currentPoolTokenReserves > 0n && graduatedState.poolSlot);
                 if (hasAmmRoute) {
                     try {
                         const grossExit = this.market.ammExitQuote(p.mint, BigInt(p.qty));
@@ -2223,6 +2257,15 @@ export async function runEngine(options = {}) {
         const state = await store.load() ?? { version: 1, wallet: key.publicKey.toBase58(), mode: cfg.MODE, positions: {}, pending: null, cash: String(cfg.PAPER_CASH_LAMPORTS), day: new Date().toISOString().slice(0, 10), dayPnl: '0', closed: {}, halted: false };
         if (state.version !== 1 || state.wallet !== key.publicKey.toBase58() || state.mode !== cfg.MODE)
             throw new Error('database version/wallet/mode mismatch');
+        const feedSessionLocation = await feedSessionLatchLocation(resolve(cfg.DB_PATH));
+        const { databaseIdentity, canonicalDatabasePath, path: feedSessionPath } = feedSessionLocation;
+        const feedSession = await beginFeedSession(feedSessionPath, databaseIdentity, canonicalDatabasePath);
+        if (feedSession.incident) {
+            state.halted = true;
+            state.feedIngressFault ??= { ...feedSession.incident };
+            log('feed_session_recovery_blocked', { reason: feedSession.incident.reason, slot: feedSession.incident.slot ?? null,
+                signature: feedSession.incident.signature ?? null, observedAtMs: feedSession.incident.observedAtMs });
+        }
         pruneRiskState(state, Date.now(), cfg.FAILURE_WINDOW_MS);
         if (cfg.MODE === 'live') {
             if (!state.pending) {
@@ -2250,6 +2293,15 @@ export async function runEngine(options = {}) {
         if (options.runtimeTelemetry)
             runtimeTelemetry = new RuntimeTelemetryExporter(ingress, options.runtimeTelemetry, code => log('runtime_telemetry_export_failed', { code }));
         const feed = new Feed(cfg, rpc.connection, ingress);
+        feed.restoreYellowstoneReplayCursor(feedSession.lastAcceptedYellowstoneSlot);
+        if (feedSession.incident)
+            feed.restoreIngressFault(feedSession.incident);
+        else if (feedSession.sessionId) {
+            const sessionId = feedSession.sessionId;
+            feed.setFatalIngressFaultHandler(fault => persistFeedSessionIncident(feedSessionPath, sessionId, fault));
+            feed.setYellowstoneCheckpointHandler(slot => persistFeedReplayCheckpoint(feedSessionPath, sessionId, slot));
+            feed.setCleanSessionCloseHandler(slot => closeFeedSession(feedSessionPath, sessionId, slot));
+        }
         const paperRuntime = composePaperRuntime({
             context: { mode: 'PAPER' },
             market,

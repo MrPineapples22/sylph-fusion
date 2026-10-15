@@ -1,0 +1,636 @@
+{
+  "batchId": "source-review-batch-010-2026-10-14",
+  "reviewedAt": "2026-10-14",
+  "repository": {
+    "localHead": "6b3a3b2",
+    "remoteHead": "6b3a3b2",
+    "mainAndTaskBranchMatch": true,
+    "worktreeHasPreexistingEdits": true
+  },
+  "sourceRecords": 15,
+  "directlyReviewed": 15,
+  "sources": [
+    {
+      "id": "SRC-048",
+      "url": "https://github.com/metaplex-foundation/blockbuster",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "BlockBuster README, LICENSE, Cargo workspace and instruction parser",
+        "Pinned repository commit ac98b92d14a6d9fa21a1a4a4ec3d90d0a3b0da73"
+      ],
+      "discoveries": [
+        "Metaplex Geyser transaction/account parsers",
+        "warns IDLs may omit remaining/optional accounts and semantic details",
+        "consumes Plerkle FlatBuffer types."
+      ],
+      "patterns": [
+        "Parser semantics must be program-specific",
+        "retain original event envelope",
+        "qualify IDL completeness."
+      ],
+      "sylphModules": [
+        "src/platform/ingestion/truth-x.ts",
+        "src/platform/ingestion/yellowstone-captured-client.ts",
+        "src/platform/ingress/types.ts"
+      ],
+      "overlap": "Parser architecture is relevant, but target programs differ from Pump/Raydium token trading.",
+      "risks": [
+        "AGPL-3.0-only requires legal review",
+        "Plerkle input coupling",
+        "Metaplex asset focus does not cover swap economics."
+      ],
+      "validation": [
+        "verify pinned release against current official program/IDL",
+        "use protocol-specific fixtures for decoding, quote math and lifecycle",
+        "no runtime dependency or execution-path change without license and safety review"
+      ],
+      "evidence": [
+        "https://github.com/metaplex-foundation/blockbuster",
+        "https://github.com/metaplex-foundation/blockbuster/tree/ac98b92d14a6d9fa21a1a4a4ec3d90d0a3b0da73"
+      ],
+      "license": "AGPL-3.0-only_REVIEW_REQUIRED",
+      "decision": "PATTERN_REFERENCE_ONLY; AGPL REVIEW REQUIRED"
+    },
+    {
+      "id": "SRC-049",
+      "url": "https://github.com/raydium-io/raydium-library",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Raydium README, workspace manifests and config",
+        "Pinned repository commit 72a22dcd6136fdd354c47d35aaa4b035652398c5"
+      ],
+      "discoveries": [
+        "README describes amount/instruction CLI for AMM, CLMM and CPMM",
+        "README explicitly documents old Rust <1.80, Solana <1.18 and Anchor 0.29 dependencies",
+        "examples include slippage configuration and simulation controls."
+      ],
+      "patterns": [
+        "Keep pool-family adapters separate",
+        "simulation and slippage are explicit parameters",
+        "normalize SOL/WSOL assumptions at boundary."
+      ],
+      "sylphModules": [
+        "src/platform/execution/solaris/amm-bridge.ts",
+        "src/market.ts",
+        "src/execution.ts",
+        "terminal/raydium-pool-research.mjs"
+      ],
+      "overlap": "Current Raydium research adapter is read-only and AMM bridge exists; this Rust CLI is not a drop-in SDK.",
+      "risks": [
+        "No root LICENSE found",
+        "README documents outdated dependencies",
+        "CLI execution/wallet options are not an integration authority."
+      ],
+      "validation": [
+        "verify pinned release against current official program/IDL",
+        "use protocol-specific fixtures for decoding, quote math and lifecycle",
+        "no runtime dependency or execution-path change without license and safety review"
+      ],
+      "evidence": [
+        "https://github.com/raydium-io/raydium-library",
+        "https://github.com/raydium-io/raydium-library/tree/72a22dcd6136fdd354c47d35aaa4b035652398c5"
+      ],
+      "license": "LICENSE_NOT_FOUND_REVIEW_REQUIRED",
+      "decision": "LEGACY_REFERENCE_ONLY; NO LICENSE CLEARANCE"
+    },
+    {
+      "id": "SRC-050",
+      "url": "https://github.com/raydium-io/raydium-cpi",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Raydium CPI README, workspace and instruction sources",
+        "Pinned repository commit 115df2779d53bacc7db9d0be2773a4b48a6d372b"
+      ],
+      "discoveries": [
+        "Provides on-chain CPI interfaces for AMM/CLMM/CPMM",
+        "README pins Anchor/Solana toolchain requirements and says compatibility differs by branch",
+        "instruction source documents minimum_amount_out as slippage protection."
+      ],
+      "patterns": [
+        "Keep CPI account constraints separate from off-chain quote construction",
+        "pin account metas and minimum output",
+        "verify toolchain branch compatibility."
+      ],
+      "sylphModules": [
+        "src/platform/execution/solaris/amm-bridge.ts",
+        "src/execution.ts",
+        "src/platform/signing/veritas-wire-decoder.ts"
+      ],
+      "overlap": "Potential instruction semantics reference; not needed by the TypeScript off-chain quote/research adapter.",
+      "risks": [
+        "No root LICENSE found",
+        "on-chain CPI privilege/account layouts can drift",
+        "adding CPI is out of current TypeScript runtime scope."
+      ],
+      "validation": [
+        "verify pinned release against current official program/IDL",
+        "use protocol-specific fixtures for decoding, quote math and lifecycle",
+        "no runtime dependency or execution-path change without license and safety review"
+      ],
+      "evidence": [
+        "https://github.com/raydium-io/raydium-cpi",
+        "https://github.com/raydium-io/raydium-cpi/tree/115df2779d53bacc7db9d0be2773a4b48a6d372b"
+      ],
+      "license": "LICENSE_NOT_FOUND_REVIEW_REQUIRED",
+      "decision": "INTERFACE_REFERENCE_ONLY; NO LICENSE CLEARANCE"
+    },
+    {
+      "id": "SRC-051",
+      "url": "https://github.com/MeteoraAg/dbc-go",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "MeteoraAg/dbc-go README, go.mod, curve math and instruction/account source",
+        "Pinned repository commit 377824fc6056f10ee51074080c92362de52b09da"
+      ],
+      "discoveries": [
+        "Go examples cover Meteora Dynamic Bonding Curve pools and lifecycle operations",
+        "curve math is implemented separately from instruction/account helpers",
+        "module declares solana-go v1.8.4 and Go 1.21."
+      ],
+      "patterns": [
+        "Separate pre-migration bonding-curve pricing from post-migration AMM",
+        "keep curve math and account decoding versioned",
+        "include creator/partner fee components in quote accounting."
+      ],
+      "sylphModules": [
+        "src/market.ts",
+        "src/platform/execution/solaris/amm-bridge.ts",
+        "src/platform/ingestion/truth-x.ts"
+      ],
+      "overlap": "Meteora DLMM research exists; DBC is not currently covered by that adapter.",
+      "risks": [
+        "No root LICENSE found",
+        "older Go SDK dependencies",
+        "DBC deployment/account schema and migration semantics require current official IDL and fixtures."
+      ],
+      "validation": [
+        "verify pinned release against current official program/IDL",
+        "use protocol-specific fixtures for decoding, quote math and lifecycle",
+        "no runtime dependency or execution-path change without license and safety review"
+      ],
+      "evidence": [
+        "https://github.com/MeteoraAg/dbc-go",
+        "https://github.com/MeteoraAg/dbc-go/tree/377824fc6056f10ee51074080c92362de52b09da"
+      ],
+      "license": "LICENSE_NOT_FOUND_REVIEW_REQUIRED",
+      "decision": "RESEARCH_GAP_CANDIDATE; NO LICENSE CLEARANCE"
+    },
+    {
+      "id": "SRC-052",
+      "url": "https://github.com/MeteoraAg/damm-v2-go",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Meteora DAMM V2 Go README, Go module and state/instruction helpers",
+        "Pinned repository commit 3cc12838bce93a9cd546b22a1caaabaa81ce81f7"
+      ],
+      "discoveries": [
+        "Examples read pool and position accounts and expose position-fee/reward operations",
+        "pool deserialization checks an 8-byte discriminator before decoding",
+        "its module path is github.com/dannwee/dbc-go despite the DAMM V2 repository name."
+      ],
+      "patterns": [
+        "Validate discriminator and account length before decoding",
+        "treat pool and position state as separate typed records",
+        "quote fees only from decoded protocol state."
+      ],
+      "sylphModules": [
+        "src/platform/execution/solaris/amm-bridge.ts",
+        "src/market.ts",
+        "terminal/meteora-dlmm-research.mjs"
+      ],
+      "overlap": "Existing Meteora adapter covers DLMM research but audit states it does not cover DAMM/DBC executable quotes.",
+      "risks": [
+        "No root LICENSE found",
+        "examples require manually configured keys/RPC and were not run",
+        "module identity mismatch and generated schema provenance need review."
+      ],
+      "validation": [
+        "pin upstream release and protocol/account versions",
+        "validate with deterministic offline fixtures; never supply funded-wallet secrets",
+        "resolve licensing/provenance before reuse and keep execution authorization unchanged"
+      ],
+      "evidence": [
+        "https://github.com/MeteoraAg/damm-v2-go",
+        "https://github.com/MeteoraAg/damm-v2-go/tree/3cc12838bce93a9cd546b22a1caaabaa81ce81f7"
+      ],
+      "license": "LICENSE_NOT_FOUND_REVIEW_REQUIRED",
+      "decision": "READ_ONLY_ACCOUNT_PATTERN; NO_LICENSE_CLEARANCE"
+    },
+    {
+      "id": "SRC-053",
+      "url": "https://github.com/MeteoraAg/meteora-invent",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Meteora Invent README, LICENSE, root package metadata and selected action docs",
+        "Pinned repository commit dd77ef3d5aede3f0ff21d566d052097200417f5e"
+      ],
+      "discoveries": [
+        "Monorepo contains DLMM/DBC launch and pool-management actions plus scaffolds",
+        "README instructions include keypair configuration and state-changing commands",
+        "LICENSE.md says MIT while root package.json declares ISC."
+      ],
+      "patterns": [
+        "Keep launch configuration separate from execution",
+        "model Token-2022 transfer-hook behavior explicitly",
+        "validate pool status and token type before action."
+      ],
+      "sylphModules": [
+        "src/platform/execution/authority.ts",
+        "src/execution.ts",
+        "src/platform/execution/solaris/amm-bridge.ts"
+      ],
+      "overlap": "No necessary runtime overlap; do not allow a launch toolkit to expand SYLPH authority.",
+      "risks": [
+        "Root license and package metadata conflict",
+        "broad CLI can create/manage pools and keys",
+        "do not run or add as trading dependency."
+      ],
+      "validation": [
+        "pin upstream release and protocol/account versions",
+        "validate with deterministic offline fixtures; never supply funded-wallet secrets",
+        "resolve licensing/provenance before reuse and keep execution authorization unchanged"
+      ],
+      "evidence": [
+        "https://github.com/MeteoraAg/meteora-invent",
+        "https://github.com/MeteoraAg/meteora-invent/tree/dd77ef3d5aede3f0ff21d566d052097200417f5e"
+      ],
+      "license": "MIT_REPOSITORY_ISC_PACKAGE_REVIEW_REQUIRED",
+      "decision": "DOC_AND_CONFIG_REFERENCE_ONLY; LICENSE_CONFLICT_REVIEW"
+    },
+    {
+      "id": "SRC-054",
+      "url": "https://github.com/orca-so/account-microscope",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Orca account-microscope README, package metadata and account serialization source",
+        "Pinned repository commit f7d0575d37225cb4b4caabbccf3efa8a29b54c4a"
+      ],
+      "discoveries": [
+        "Read-only UI inspects raw Token/Token-2022 and Whirlpool accounts.",
+        "RPC account fetch preserves the context slot.",
+        "Exported account JSON hardcodes rentEpoch to zero; dependencies include an alpha Whirlpool SDK and older web3/Anchor versions."
+      ],
+      "patterns": [
+        "Preserve RPC context slot with decoded account evidence",
+        "separate raw account bytes from protocol-specific presentation",
+        "never replace original account metadata with display defaults."
+      ],
+      "sylphModules": [
+        "src/market.ts",
+        "src/platform/execution/solaris/amm-bridge.ts",
+        "src/platform/ingestion/truth-x.ts"
+      ],
+      "overlap": "Could support Orca account research; current DEX integration uses other adapters and lacks established Orca quote flow.",
+      "risks": [
+        "No root LICENSE found",
+        "older/alpha dependencies",
+        "rentEpoch serialization is lossy",
+        "browser UI and account snapshots are not a canonical live feed."
+      ],
+      "validation": [
+        "pin upstream release and protocol/account versions",
+        "validate with deterministic offline fixtures; never supply funded-wallet secrets",
+        "resolve licensing/provenance before reuse and keep execution authorization unchanged"
+      ],
+      "evidence": [
+        "https://github.com/orca-so/account-microscope",
+        "https://github.com/orca-so/account-microscope/tree/f7d0575d37225cb4b4caabbccf3efa8a29b54c4a"
+      ],
+      "license": "LICENSE_NOT_FOUND_REVIEW_REQUIRED",
+      "decision": "READ_ONLY_INSPECTION_PATTERN; NO_LICENSE_CLEARANCE"
+    },
+    {
+      "id": "SRC-055",
+      "url": "https://github.com/jup-ag/metis-binary",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Jupiter Metis Binary repository README and file inventory",
+        "Pinned repository commit f7e6cbd8c0a6ca9314ff6fc6c9887c4ad258bdb"
+      ],
+      "discoveries": [
+        "README describes a binary distribution for Jupiter Metis routing",
+        "repository contains deployment examples and references external binary-key docs but no routing source, binary artifact, or license file in the pinned tree."
+      ],
+      "patterns": [
+        "Treat route construction as a provider boundary",
+        "retain an inspectable quote/route explanation",
+        "require exact build provenance before operating an external binary."
+      ],
+      "sylphModules": [
+        "src/execution.ts",
+        "terminal/jupiter-research.mjs",
+        "src/platform/execution/authority.ts"
+      ],
+      "overlap": "SYLPH currently consumes Jupiter APIs and does not host its own route service.",
+      "risks": [
+        "Binary internals and artifact digest are unavailable in reviewed tree",
+        "no root LICENSE",
+        "cannot inspect route correctness, signing boundary, telemetry, or security."
+      ],
+      "validation": [
+        "pin upstream release and protocol/account versions",
+        "validate with deterministic offline fixtures; never supply funded-wallet secrets",
+        "resolve licensing/provenance before reuse and keep execution authorization unchanged"
+      ],
+      "evidence": [
+        "https://github.com/jup-ag/metis-binary",
+        "https://github.com/jup-ag/metis-binary/tree/f7e6cbd8c0a6ca9314ff6fc6c9887c4ad258bdb"
+      ],
+      "license": "LICENSE_NOT_FOUND_BINARY_DISTRIBUTION_UNREVIEWED",
+      "decision": "DOC_ONLY_BINARY_UNVERIFIED; NO_RUNTIME_ADOPTION"
+    },
+    {
+      "id": "SRC-056",
+      "url": "https://github.com/jup-ag/jupiter-quote-api-node",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Jupiter API v6 README, package metadata and OpenAPI artifact",
+        "Pinned repository commit 6dbd33abfaa1f495f28ad122b3c06edf4ce28360"
+      ],
+      "discoveries": [
+        "Generated @jup-ag/api client is version 6.0.48 and describes Jupiter V6",
+        "README says hosted paid APIs are deprecated and describes separate quote and swap-transaction endpoints",
+        "the swap endpoint returns a transaction for caller signing/sending."
+      ],
+      "patterns": [
+        "Keep quote acquisition separate from transaction construction",
+        "pin generated OpenAPI/client version",
+        "keep signing and broadcast outside data adapter."
+      ],
+      "sylphModules": [
+        "terminal/jupiter-research.mjs",
+        "src/execution.ts",
+        "docs/ECOSYSTEM_INTEGRATION_AUDIT_2026-10-12.md"
+      ],
+      "overlap": "Legacy wrapper overlaps and is superseded by current V2 research path; do not add as second Jupiter client.",
+      "risks": [
+        "Legacy V6 API shape",
+        "package says MIT but no root LICENSE in pinned tree",
+        "transaction response crosses signer boundary if consumed carelessly."
+      ],
+      "validation": [
+        "compare pinned source and OpenAPI/IDL with current official deployment",
+        "use deterministic offline fixtures for timeout, expiry, fee and account behavior",
+        "do not add signing, broadcast, claims, or external endpoint without dedicated review"
+      ],
+      "evidence": [
+        "https://github.com/jup-ag/jupiter-quote-api-node",
+        "https://github.com/jup-ag/jupiter-quote-api-node/tree/6dbd33abfaa1f495f28ad122b3c06edf4ce28360"
+      ],
+      "license": "PACKAGE_DECLARES_MIT_ROOT_LICENSE_FILE_NOT_FOUND",
+      "decision": "V6_QUOTE_REFERENCE_ONLY_NO_SIGNING"
+    },
+    {
+      "id": "SRC-057",
+      "url": "https://github.com/jup-ag/rfq-webhook-toolkit",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Jupiter RFQ README, Cargo workspace, order-engine source and documented API",
+        "Pinned repository commit 3aa4fce515d4b5827ee2d48f08041ea706d911cd"
+      ],
+      "discoveries": [
+        "RFQ is an order-engine market-maker webhook flow",
+        "README documents 250 ms webhook timeout, 55 s quote/transaction expiry split (20 s fulfillment, 35 s user acceptance), and 5 s frontend re-quote cadence",
+        "repeated 50x responses can suspend a webhook."
+      ],
+      "patterns": [
+        "Model quote expiry and request timeout as separate clocks",
+        "explicit unsupported-pair response differs from service failure",
+        "record maker latency/availability separately from aggregator quotes."
+      ],
+      "sylphModules": [
+        "src/execution.ts",
+        "src/platform/execution/authority.ts",
+        "terminal/jupiter-research.mjs"
+      ],
+      "overlap": "Potential future institutional/RFQ route, but current project has no maker service to expose.",
+      "risks": [
+        "Webhook source and fulfillment behavior can change",
+        "external market-maker enrollment is required",
+        "signing and fill validation are privileged paths",
+        "audit coverage is not a runtime guarantee."
+      ],
+      "validation": [
+        "compare pinned source and OpenAPI/IDL with current official deployment",
+        "use deterministic offline fixtures for timeout, expiry, fee and account behavior",
+        "do not add signing, broadcast, claims, or external endpoint without dedicated review"
+      ],
+      "evidence": [
+        "https://github.com/jup-ag/rfq-webhook-toolkit",
+        "https://github.com/jup-ag/rfq-webhook-toolkit/tree/3aa4fce515d4b5827ee2d48f08041ea706d911cd"
+      ],
+      "license": "MIT",
+      "decision": "RFQ_PATTERN_ONLY_NO_MARKET_MAKER_ENDPOINT"
+    },
+    {
+      "id": "SRC-058",
+      "url": "https://github.com/MeteoraAg/dynamic-fee-sharing",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Meteora dynamic-fee-sharing README, Cargo source, package metadata and deployment config",
+        "Pinned repository commit 3e327c1ab085246612d28da21e1a78c7008119fe"
+      ],
+      "discoveries": [
+        "README publishes a fee-sharing program ID and pinned toolchain versions",
+        "source defines fee vault/authority PDAs and claim-related events",
+        "package metadata declares ISC but no root LICENSE file is present."
+      ],
+      "patterns": [
+        "Keep accrued revenue claims separate from swap price impact and network fee accounting",
+        "derive fee-vault identity from pinned program seeds",
+        "verify deployment ID against official state before reading."
+      ],
+      "sylphModules": [
+        "src/platform/execution/authority.ts",
+        "src/execution.ts",
+        "src/platform/ingestion/truth-x.ts"
+      ],
+      "overlap": "Potential accounting research if the app provides LP positions; current trading workflow is token swaps, not pool fee sharing.",
+      "risks": [
+        "No root LICENSE",
+        "claim/transfer functions affect custody",
+        "program deployment and state layout require independent verification",
+        "not a quote adapter."
+      ],
+      "validation": [
+        "compare pinned source and OpenAPI/IDL with current official deployment",
+        "use deterministic offline fixtures for timeout, expiry, fee and account behavior",
+        "do not add signing, broadcast, claims, or external endpoint without dedicated review"
+      ],
+      "evidence": [
+        "https://github.com/MeteoraAg/dynamic-fee-sharing",
+        "https://github.com/MeteoraAg/dynamic-fee-sharing/tree/3e327c1ab085246612d28da21e1a78c7008119fe"
+      ],
+      "license": "LICENSE_NOT_FOUND_PACKAGE_DECLARES_ISC_REVIEW_REQUIRED",
+      "decision": "FEE_CLAIM_RESEARCH_ONLY_NO_CUSTODY_PATH"
+    },
+    {
+      "id": "SRC-059",
+      "url": "https://github.com/0xfnzero/sol-trade-sdk",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Sol Trade SDK README, Cargo metadata and client/instruction source",
+        "Pinned repository commit 4f2bd75c60ceea128ec773db533068c14a55c1fa"
+      ],
+      "discoveries": [
+        "Rust SDK advertises multi-DEX trading and latency-sensitive sends",
+        "Cargo declares MIT and Solana SDK 4.0.1",
+        "inspected client/instruction modules accept Signer/Keypair and build signed-trade paths with slippage controls."
+      ],
+      "patterns": [
+        "Study per-DEX adapter boundaries and exact account-meta construction",
+        "measure execution cost and inclusion separately",
+        "keep transaction-building and signing behind SYLPH authority."
+      ],
+      "sylphModules": [
+        "src/execution.ts",
+        "src/platform/execution/authority.ts",
+        "src/platform/execution/jito-lifecycle-coordinator.ts",
+        "src/platform/signing/veritas-wire-decoder.ts"
+      ],
+      "overlap": "Large overlap with existing execution authority and protocol adapters; no code should be copied directly.",
+      "risks": [
+        "Direct signer and low-latency execution capability crosses critical boundary",
+        "repository claims do not establish safe fills or profit",
+        "protocol IDs and Solana v4 compatibility require fixture validation."
+      ],
+      "validation": [
+        "compare pinned source and OpenAPI/IDL with current official deployment",
+        "use deterministic offline fixtures for timeout, expiry, fee and account behavior",
+        "do not add signing, broadcast, claims, or external endpoint without dedicated review"
+      ],
+      "evidence": [
+        "https://github.com/0xfnzero/sol-trade-sdk",
+        "https://github.com/0xfnzero/sol-trade-sdk/tree/4f2bd75c60ceea128ec773db533068c14a55c1fa"
+      ],
+      "license": "MIT",
+      "decision": "NO_EXECUTION_ADOPTION; AUTHORITY_BOUNDARY_REVIEW_ONLY"
+    },
+    {
+      "id": "SRC-060",
+      "url": "https://github.com/franco-bianco/solanaswap-go",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Go README, module metadata and transaction parser sample",
+        "Pinned repository commit 7f093fbce751dd5af51efaa12c463370fc961924"
+      ],
+      "discoveries": [
+        "Parser advertises several DEX protocols and derives swap data from events, token transfers or instruction bytes depending on venue",
+        "example requests finalized/confirmed transaction data with supported transaction version 0",
+        "no root LICENSE was found."
+      ],
+      "patterns": [
+        "Keep venue-specific extraction paths separate",
+        "retain exact transaction signature/version/slot with decoded swap evidence",
+        "distinguish transaction fee metadata from total trading cost."
+      ],
+      "sylphModules": [
+        "src/platform/execution/solaris/amm-bridge.ts",
+        "src/execution.ts",
+        "terminal/"
+      ],
+      "overlap": "Potential comparative implementation only; current source is insufficient to recommend integration.",
+      "risks": [
+        "Coverage claims are not completeness evidence",
+        "parser depends on provider-returned transaction metadata",
+        "no root LICENSE",
+        "not a live quoting/execution interface."
+      ],
+      "validation": [
+        "pin parser and protocol version; use stored offline transaction fixtures",
+        "never run trading examples or provide funded-wallet material",
+        "review credential custody and licensing before any code reuse"
+      ],
+      "evidence": [
+        "https://github.com/franco-bianco/solanaswap-go",
+        "https://github.com/franco-bianco/solanaswap-go/tree/7f093fbce751dd5af51efaa12c463370fc961924"
+      ],
+      "license": "LICENSE_NOT_FOUND_REVIEW_REQUIRED",
+      "decision": "OFFLINE_PARSE_REFERENCE_ONLY_NO_LIVE_ADOPTION"
+    },
+    {
+      "id": "SRC-061",
+      "url": "https://github.com/mooncitydev/solana-copytrading-bot",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Rust README, Cargo manifest and Jito transaction sender source",
+        "Pinned repository commit e17988b2281d25ab3a7b364cfe64aa42929c87b9"
+      ],
+      "discoveries": [
+        "Bot describes target-wallet WebSocket monitoring and automated Pump/Raydium copying",
+        "source loads a Keypair, submits a Jito bundle and polls confirmation",
+        "README claims MIT but the pinned tree has no LICENSE file."
+      ],
+      "patterns": [
+        "Separate observed-wallet event from strategy decision",
+        "track signal-to-send delay and bundle outcome independently",
+        "measure realized fills including priority/tip and failed transactions."
+      ],
+      "sylphModules": [
+        "src/platform/execution/authority.ts",
+        "src/platform/ingestion/truth-x.ts",
+        "src/platform/ingestion/provider-health.ts"
+      ],
+      "overlap": "Wallet research exists separately; no automatic copy-trade authority should be added based on this example.",
+      "risks": [
+        "Unverified license",
+        "automatic signing/broadcast and copy-trading risks",
+        "bundle submission/confirmation logic is not a SYLPH execution pattern to transplant."
+      ],
+      "validation": [
+        "pin parser and protocol version; use stored offline transaction fixtures",
+        "never run trading examples or provide funded-wallet material",
+        "review credential custody and licensing before any code reuse"
+      ],
+      "evidence": [
+        "https://github.com/mooncitydev/solana-copytrading-bot",
+        "https://github.com/mooncitydev/solana-copytrading-bot/tree/e17988b2281d25ab3a7b364cfe64aa42929c87b9"
+      ],
+      "license": "README_CLAIMS_MIT_LICENSE_FILE_NOT_FOUND",
+      "decision": "NO_COPY_TRADING_ADOPTION; LICENSE_UNVERIFIED"
+    },
+    {
+      "id": "SRC-062",
+      "url": "https://github.com/TreeCityWes/Pump-Fun-Trading-Bot-Solana",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Pump bot README, script.mjs and sell.js source",
+        "Pinned repository commit f21cbaabbf73d1af68314142fa8c055ddf645206"
+      ],
+      "discoveries": [
+        "Scripts load a local private key and send its encoded form in a third-party trade API request",
+        "README proposes market-cap/bonding-curve triggers with staged exits and 10% stop loss",
+        "configured slippage is 5%."
+      ],
+      "patterns": [
+        "Keep strategy thresholds separate from execution authority",
+        "explicitly model stop/partial-exit state transitions",
+        "route credentials only through approved local custody/signing boundaries."
+      ],
+      "sylphModules": [
+        "src/market.ts",
+        "src/platform/execution/authority.ts",
+        "src/execution.ts",
+        "src/platform/ingestion/gap-reconciler.ts"
+      ],
+      "overlap": "Pump curve support exists in SYLPH; an external sniper implementation would duplicate and risk bypassing controls.",
+      "risks": [
+        "Credential is transmitted to external API by the example",
+        "no root LICENSE",
+        "strategy is not evidence of performance",
+        "code was inspected but never run."
+      ],
+      "validation": [
+        "pin parser and protocol version; use stored offline transaction fixtures",
+        "never run trading examples or provide funded-wallet material",
+        "review credential custody and licensing before any code reuse"
+      ],
+      "evidence": [
+        "https://github.com/TreeCityWes/Pump-Fun-Trading-Bot-Solana",
+        "https://github.com/TreeCityWes/Pump-Fun-Trading-Bot-Solana/tree/f21cbaabbf73d1af68314142fa8c055ddf645206"
+      ],
+      "license": "LICENSE_NOT_FOUND_REVIEW_REQUIRED",
+      "decision": "REJECT_CREDENTIAL_FORWARDING_PATTERN; NO_EXECUTION"
+    }
+  ]
+}

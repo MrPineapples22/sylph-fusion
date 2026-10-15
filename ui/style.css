@@ -1001,6 +1001,10 @@ td b {
   color: var(--sell) !important;
 }
 
+.market-evidence-warning {
+  color: var(--warning) !important;
+}
+
 /* ==========================================================================
    Metrics Grid & Automation Controls
    ========================================================================== */

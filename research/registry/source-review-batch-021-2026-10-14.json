@@ -1,0 +1,563 @@
+{
+  "batch": 21,
+  "date": "2026-10-14",
+  "sourceRecords":15,"directlyReviewed":0,
+  "scope": "Solana transaction delivery, routers, venues and trading terminals",
+  "method": "Official protocol/vendor documentation reviewed where accessible. Product claims are not independent benchmarks; no credentials or live transaction paths used.",
+  "sources": [
+    {
+      "id": "SRC-214",
+      "url": "https://temporal.xyz",
+      "status": "CATALOG_TRIAGE",
+      "provenance": [
+        "Official Temporal product page; accessed 2026-10-14."
+      ],
+      "discoveries": [
+        "Listed as Solana transaction delivery/landing infrastructure.",
+        "Publicly stated performance requires independent, region-matched measurement."
+      ],
+      "patterns": [
+        "Separate submission acknowledgement from confirmation and finality.",
+        "Measure landing slot, expiry, fees and retry behavior per route."
+      ],
+      "sylphModules": [
+        "src/platform/execution/authority.ts",
+        "src/rpc.ts"
+      ],
+      "overlap": [
+        "Potential transport adapter only; no signing authority should move to provider."
+      ],
+      "risks": [
+        "Endpoint behavior, fees and availability unverified.",
+        "Fast submission can increase duplicate/retry costs."
+      ],
+      "validation": [
+        "Verify current API and terms.",
+        "Run isolated non-capital tests and reconcile confirmed signatures."
+      ],
+      "evidence": [
+        "https://temporal.xyz"
+      ],
+      "license": "Hosted service terms need review",
+      "decision": "RESEARCH_ONLY"
+    },
+    {
+      "id": "SRC-215",
+      "url": "https://astralane.io",
+      "status": "CATALOG_TRIAGE",
+      "provenance": [
+        "Astralane official quickstart and public docs; accessed 2026-10-14."
+      ],
+      "discoveries": [
+        "Docs describe transaction submission through relay/staked paths, tips and configurable retry behavior.",
+        "Public provider/client materials describe silent drops under rate limits, so transport success cannot equal landing."
+      ],
+      "patterns": [
+        "Persist send intent, provider receipt, signature status and confirmed outcome separately.",
+        "Calculate tips and priority fees in realized cost."
+      ],
+      "sylphModules": [
+        "src/platform/execution/authority.ts",
+        "src/rpc.ts",
+        "execution telemetry"
+      ],
+      "overlap": [
+        "Transport provider could fit behind existing execution authority; signer remains local and policy-controlled."
+      ],
+      "risks": [
+        "Provider retries/tips can cause duplicate cost or overpay.",
+        "API key and endpoint limits must remain secret and bounded."
+      ],
+      "validation": [
+        "Verify current endpoint and fee semantics.",
+        "Test rate limiting, timeout, duplicate submission and on-chain confirmation using authorized tests."
+      ],
+      "evidence": [
+        "https://astralane.gitbook.io/docs/low-latency/quickstart",
+        "https://github.com/Astralane/astralane-quic-client-go"
+      ],
+      "license": "Hosted service terms need review",
+      "decision": "RESEARCH_ONLY"
+    },
+    {
+      "id": "SRC-216",
+      "url": "https://harmonic.gg",
+      "status": "CATALOG_TRIAGE",
+      "provenance": [
+        "Official provider website entry; exact public API contract not established in this pass."
+      ],
+      "discoveries": [
+        "Listed as Solana trading/execution infrastructure.",
+        "Supported paths, pricing and telemetry require direct official documentation review."
+      ],
+      "patterns": [
+        "Maintain per-route delivery, cost and confirmation metrics.",
+        "Treat provider labels as metadata, not authorization."
+      ],
+      "sylphModules": [
+        "src/platform/execution/authority.ts",
+        "execution telemetry"
+      ],
+      "overlap": [
+        "Potential delivery route; no code integration approved."
+      ],
+      "risks": [
+        "Claims and availability not independently verified.",
+        "Unknown fee/retry semantics."
+      ],
+      "validation": [
+        "Obtain official API docs and current terms.",
+        "Test submission idempotency, landing and cost on isolated transactions."
+      ],
+      "evidence": [
+        "https://harmonic.gg"
+      ],
+      "license": "Not verified",
+      "decision": "RESEARCH_ONLY"
+    },
+    {
+      "id": "SRC-217",
+      "url": "https://www.ironforge.cloud",
+      "status": "CATALOG_TRIAGE",
+      "provenance": [
+        "Official Ironforge product website entry; accessed 2026-10-14."
+      ],
+      "discoveries": [
+        "Listed as Solana network infrastructure/service provider.",
+        "Specific RPC/stream products, regions and service terms need product-level verification."
+      ],
+      "patterns": [
+        "Track provider and region alongside slot lag and error rate.",
+        "Fail over only with gap detection and source reconciliation."
+      ],
+      "sylphModules": [
+        "src/rpc.ts",
+        "src/platform/ingestion/gap-reconciler.ts"
+      ],
+      "overlap": [
+        "Possible infrastructure provider; existing RPC abstraction should remain the integration seam."
+      ],
+      "risks": [
+        "Capabilities and SLAs unverified.",
+        "Provider failover can create inconsistent observations."
+      ],
+      "validation": [
+        "Verify API docs, limits and archive range.",
+        "Inject outage/failover and duplicate-source cases."
+      ],
+      "evidence": [
+        "https://www.ironforge.cloud"
+      ],
+      "license": "Hosted service terms need review",
+      "decision": "RESEARCH_ONLY"
+    },
+    {
+      "id": "SRC-218",
+      "url": "https://jup.ag",
+      "status": "CATALOG_TRIAGE",
+      "provenance": [
+        "Jupiter official product site; developer API reviewed separately in SRC-220."
+      ],
+      "discoveries": [
+        "Jupiter is a Solana swap and portfolio interface that routes across liquidity venues.",
+        "A UI route is not itself a stable integration contract."
+      ],
+      "patterns": [
+        "Use direct API quote/build contracts for integrations, with route freshness and simulation.",
+        "Verify token mint and output amount before signing."
+      ],
+      "sylphModules": [
+        "src/platform/execution/solaris/amm-bridge.ts",
+        "src/market.ts"
+      ],
+      "overlap": [
+        "Core swap router context; integration documentation is tracked in separate source record."
+      ],
+      "risks": [
+        "UI prices and available liquidity can move before execution.",
+        "Route/program support changes over time."
+      ],
+      "validation": [
+        "Validate exact API version and confirmed output.",
+        "Test transaction versioning and fee accounting."
+      ],
+      "evidence": [
+        "https://jup.ag",
+        "https://dev.jup.ag"
+      ],
+      "license": "Hosted product terms need review",
+      "decision": "RESEARCH_REFERENCE_ONLY"
+    },
+    {
+      "id": "SRC-219",
+      "url": "https://jup.ag/portfolio",
+      "status": "CATALOG_TRIAGE",
+      "provenance": [
+        "Jupiter portfolio product page; accessed 2026-10-14."
+      ],
+      "discoveries": [
+        "Portfolio UI aggregates wallet holdings and activity for user review.",
+        "Displayed portfolio valuation is not a canonical realized-PnL ledger."
+      ],
+      "patterns": [
+        "Use portfolio views as an independent reconciliation aid.",
+        "Account for fees, failed transactions, transfers and open positions in internal ledger."
+      ],
+      "sylphModules": [
+        "accounting/reconciliation",
+        "dashboard positions"
+      ],
+      "overlap": [
+        "User-facing portfolio context; do not duplicate as accounting authority."
+      ],
+      "risks": [
+        "Indexing delays and token pricing gaps can distort balances.",
+        "Wallet/portfolio connection has privacy implications."
+      ],
+      "validation": [
+        "Compare sampled balances and signatures to RPC and internal fills.",
+        "Keep realized and unrealized PnL distinct."
+      ],
+      "evidence": [
+        "https://jup.ag/portfolio"
+      ],
+      "license": "Hosted product terms need review",
+      "decision": "REFERENCE_ONLY"
+    },
+    {
+      "id": "SRC-220",
+      "url": "https://dev.jup.ag",
+      "status": "CATALOG_TRIAGE",
+      "provenance": [
+        "Current official Jupiter Order & Execute documentation, accessed 2026-10-14."
+      ],
+      "discoveries": [
+        "The current recommended Meta-Aggregator flow is GET /swap/v2/order followed by signed POST /execute; /order without taker returns a quote and does not assemble a transaction.",
+        "Order responses report router, fee mint and transaction version; current docs permit requesting v1 only as a supported-version ceiling, while actual v1 support depends on route and order mode.",
+        "The local Terminal research adapter now omits taker and rejects transaction payloads; SYLPH runtime execution still uses a separate manual /build adapter and the pinned web3.js path does not decode or sign v1."
+      ],
+      "patterns": [
+        "Separate no-taker quote research from transaction construction and signing.",
+        "Bind any future execution response to router, request ID, transaction version, fee mint and finalized wallet deltas.",
+        "Keep API version migrations behind deterministic mocked-contract tests."
+      ],
+      "sylphModules": [
+        "src/platform/execution/solaris/amm-bridge.ts",
+        "src/platform/execution/authority.ts",
+        "src/rpc.ts"
+      ],
+      "overlap": [
+        "Primary candidate swap adapter using existing bridge and authorization."
+      ],
+      "risks": [
+        "Changing from manual /build to /order + /execute would move landing and confirmation behavior to Jupiter and alter execution authority boundaries.",
+        "Jupiter documents v1 transaction output for a subset of Meta-Aggregator routes; the current web3.js decoder cannot sign that version.",
+        "Fees are token-denominated and route-specific; quote output is not the final wallet delta."
+      ],
+      "validation": [
+        "Test no-taker quote response and reject any transaction field.",
+        "For future execution, pin official response fixtures for v0/v1, router variants, expiries and fee-mint accounting.",
+        "Keep signing, submitting and realized settlement in their existing separately authorized pipeline."
+      ],
+      "evidence": [
+        "https://developers.jup.ag/docs/swap/order-and-execute",
+        "https://developers.jup.ag/docs/api-reference/swap/v1/swap"
+      ],
+      "license": "API terms and rate limits require review",
+      "decision": "QUOTE_ONLY_LOCAL_ADAPTER; NO_ORDER_EXECUTION_OR_V1_ENABLEMENT"
+    },
+    {
+      "id": "SRC-221",
+      "url": "https://pump.fun",
+      "status": "CATALOG_TRIAGE",
+      "provenance": [
+        "Official Pump.fun bonding curve documentation; accessed 2026-10-14."
+      ],
+      "discoveries": [
+        "Official docs describe a virtual-reserve bonding curve and automatic atomic migration to PumpSwap at graduation.",
+        "Docs state buys/sells move price along the curve and trading fees apply; fee schedule must be read at execution time."
+      ],
+      "patterns": [
+        "Represent bonding-curve and graduated AMM as distinct market states.",
+        "Calculate size-aware executable price and lifecycle transition from on-chain state."
+      ],
+      "sylphModules": [
+        "src/market.ts",
+        "src/platform/execution/solaris/amm-bridge.ts",
+        "src/platform/ingestion/truth-x.ts"
+      ],
+      "overlap": [
+        "Venue lifecycle extends existing market/execution bridge."
+      ],
+      "risks": [
+        "Stale curve state creates price-impact errors.",
+        "Migration and fee details can change; third-party labels may lag."
+      ],
+      "validation": [
+        "Use official program IDs/SDK and captured pre/post-graduation fixtures.",
+        "Simulate buy/sell at multiple sizes and reconcile actual net amounts."
+      ],
+      "evidence": [
+        "https://pump.fun/docs/bonding-curve"
+      ],
+      "license": "Protocol docs; program terms/version require review",
+      "decision": "RESEARCH_ONLY"
+    },
+    {
+      "id": "SRC-222",
+      "url": "https://pumpportal.fun",
+      "status": "CATALOG_TRIAGE",
+      "provenance": [
+        "Official PumpPortal website/docs entry; prior catalog notes indicate metered trade streams and distinct Local/Lightning APIs; current details not independently revalidated in this pass."
+      ],
+      "discoveries": [
+        "Third-party Pump.fun integration offers event feeds and transaction construction/submission products.",
+        "Local transaction construction and hosted-wallet submission have materially different custody boundaries."
+      ],
+      "patterns": [
+        "Prefer locally controlled signing with transaction inspection where supported.",
+        "Record per-call fee, protocol fee, network fee and returned transaction signature."
+      ],
+      "sylphModules": [
+        "src/platform/ingestion/canonical-ingress.ts",
+        "src/platform/execution/authority.ts"
+      ],
+      "overlap": [
+        "Potential launch-event provider and execution transport; avoid making it a canonical feed or signer."
+      ],
+      "risks": [
+        "Pricing, metering and API behavior can change.",
+        "Hosted-wallet modes may transfer custody/signing authority."
+      ],
+      "validation": [
+        "Recheck current fee schedule/docs and terms.",
+        "Use only local-signing route in isolated tests; verify transaction bytes before signing."
+      ],
+      "evidence": [
+        "https://pumpportal.fun"
+      ],
+      "license": "Hosted service terms need review",
+      "decision": "RESEARCH_ONLY"
+    },
+    {
+      "id": "SRC-223",
+      "url": "https://raydium.io",
+      "status": "CATALOG_TRIAGE",
+      "provenance": [
+        "Official Raydium product/docs entry; detailed SDK source reviewed in earlier repository batch."
+      ],
+      "discoveries": [
+        "Raydium provides Solana AMM and launch/pool infrastructure.",
+        "Pool type and program lifecycle determine quote and account decoding semantics."
+      ],
+      "patterns": [
+        "Key market state by mint plus pool address and program/version.",
+        "Use pool-specific quote math and on-chain simulation."
+      ],
+      "sylphModules": [
+        "src/market.ts",
+        "src/platform/execution/solaris/amm-bridge.ts",
+        "src/platform/ingestion/truth-x.ts"
+      ],
+      "overlap": [
+        "Venue integration belongs in existing AMM bridge."
+      ],
+      "risks": [
+        "Multiple pool designs and migration paths.",
+        "Indexers may lag pool creation or liquidity changes."
+      ],
+      "validation": [
+        "Test supported pool types against official SDK fixtures and RPC state.",
+        "Measure full fill and fees on simulation/test environment."
+      ],
+      "evidence": [
+        "https://raydium.io"
+      ],
+      "license": "Protocol/product docs; SDK-specific terms reviewed separately",
+      "decision": "RESEARCH_ONLY"
+    },
+    {
+      "id": "SRC-224",
+      "url": "https://meteora.ag",
+      "status": "CATALOG_TRIAGE",
+      "provenance": [
+        "Official Meteora site and DBC developer guide; accessed 2026-10-14."
+      ],
+      "discoveries": [
+        "Meteora offers launch and AMM products including Dynamic Bonding Curve and DAMM lifecycle.",
+        "DBC migration targets DAMM v2 according to official guide; not every token uses this path."
+      ],
+      "patterns": [
+        "Track launch mechanism and migration state per pool.",
+        "Implement lifecycle-specific decoders and fee models."
+      ],
+      "sylphModules": [
+        "src/platform/execution/solaris/amm-bridge.ts",
+        "src/market.ts"
+      ],
+      "overlap": [
+        "Adds supported venue lifecycle in existing bridge."
+      ],
+      "risks": [
+        "Protocol account layouts and fee rules are versioned.",
+        "Transfer-hook behavior may alter actual transfer amounts."
+      ],
+      "validation": [
+        "Use official SDK/docs and versioned account fixtures.",
+        "Compare quote to simulated and confirmed output."
+      ],
+      "evidence": [
+        "https://meteora.ag",
+        "https://github.com/MeteoraAg/docs/blob/main/developer-guides/dbc/index.mdx"
+      ],
+      "license": "Protocol/product docs; verify SDK terms",
+      "decision": "RESEARCH_ONLY"
+    },
+    {
+      "id": "SRC-225",
+      "url": "https://www.orca.so",
+      "status": "CATALOG_TRIAGE",
+      "provenance": [
+        "Official Orca website; Whirlpools source/docs reviewed in earlier batch."
+      ],
+      "discoveries": [
+        "Orca provides concentrated-liquidity Whirlpool markets and swap interface.",
+        "Liquidity distribution across ticks affects price impact and executable depth."
+      ],
+      "patterns": [
+        "Quote against current tick arrays and pool state, not headline TVL alone.",
+        "Track price impact across position size and route."
+      ],
+      "sylphModules": [
+        "src/platform/execution/solaris/amm-bridge.ts",
+        "src/market.ts"
+      ],
+      "overlap": [
+        "Venue-specific implementation fits existing AMM bridge."
+      ],
+      "risks": [
+        "Tick-array/account state can change between quote and landing.",
+        "Program version and token extensions affect compatibility."
+      ],
+      "validation": [
+        "Test tick crossings and partial liquidity using official SDK fixtures.",
+        "Simulate and reconcile realized output/fees."
+      ],
+      "evidence": [
+        "https://www.orca.so",
+        "https://github.com/orca-so/whirlpools"
+      ],
+      "license": "Protocol docs; SDK terms review required",
+      "decision": "RESEARCH_ONLY"
+    },
+    {
+      "id": "SRC-226",
+      "url": "https://gmgn.ai",
+      "status": "CATALOG_TRIAGE",
+      "provenance": [
+        "Official GMGN product website; accessed 2026-10-14."
+      ],
+      "discoveries": [
+        "Trading/research platform advertises token discovery, wallet tracking and execution features.",
+        "Signals and wallet rankings are provider-derived and do not prove realized performance."
+      ],
+      "patterns": [
+        "Use wallet signals as candidates for on-chain verification, with source timestamp.",
+        "Separate copy-trade analytics from independently calculated net PnL."
+      ],
+      "sylphModules": [
+        "offline wallet analytics",
+        "market discovery"
+      ],
+      "overlap": [
+        "Research interface only unless a documented API contract is independently evaluated."
+      ],
+      "risks": [
+        "Ranking may omit related wallets, transfers, fees and unrealized losses.",
+        "Automated copying can create latency, slippage and custody risks."
+      ],
+      "validation": [
+        "Reconstruct selected wallets from on-chain transfers and fills.",
+        "Do not automate execution from unverified platform signals."
+      ],
+      "evidence": [
+        "https://gmgn.ai"
+      ],
+      "license": "Hosted service terms need review",
+      "decision": "RESEARCH_ONLY"
+    },
+    {
+      "id": "SRC-227",
+      "url": "https://photon-sol.tinyastro.io",
+      "status": "CATALOG_TRIAGE",
+      "provenance": [
+        "Official Photon product website; accessed 2026-10-14."
+      ],
+      "discoveries": [
+        "Trading terminal presents Solana token discovery and manual execution features.",
+        "UI speed and displayed token data are not independently verified execution guarantees."
+      ],
+      "patterns": [
+        "Use terminal displays as analyst workflow, then verify mint, pool and transaction on-chain.",
+        "Record actual fills and fees outside UI display."
+      ],
+      "sylphModules": [
+        "operator workflow",
+        "accounting/reconciliation"
+      ],
+      "overlap": [
+        "Manual trading surface only; no engine integration established."
+      ],
+      "risks": [
+        "UI/extension phishing and stale quotes.",
+        "Wallet signing requires transaction inspection and scoped hot-wallet funding."
+      ],
+      "validation": [
+        "Verify domain and transaction details before wallet approval.",
+        "Reconcile signatures and token balance changes."
+      ],
+      "evidence": [
+        "https://photon-sol.tinyastro.io"
+      ],
+      "license": "Hosted service terms need review",
+      "decision": "REFERENCE_ONLY"
+    },
+    {
+      "id": "SRC-228",
+      "url": "https://trojan.com",
+      "status": "CATALOG_TRIAGE",
+      "provenance": [
+        "Official Trojan site and documentation; accessed 2026-10-14."
+      ],
+      "discoveries": [
+        "Product offers Telegram and web terminal trading workflows with automation/order features.",
+        "User-facing terminal capability does not define a public integration API or guarantee fills."
+      ],
+      "patterns": [
+        "Keep manual terminal use distinct from bot execution controls.",
+        "Verify exact transaction and custody path before wallet approval."
+      ],
+      "sylphModules": [
+        "operator workflow",
+        "accounting/reconciliation"
+      ],
+      "overlap": [
+        "No direct engine API integration established."
+      ],
+      "risks": [
+        "Telegram bot and wallet permissions introduce custody/security risk.",
+        "Displayed order status may differ from finalized chain state."
+      ],
+      "validation": [
+        "Read official security/custody docs and test with isolated wallet only.",
+        "Verify every transaction via signature and confirmed account delta."
+      ],
+      "evidence": [
+        "https://trojan.com",
+        "https://docs.trojan.com/"
+      ],
+      "license": "Hosted service terms need review",
+      "decision": "REFERENCE_ONLY"
+    }
+  ]
+}

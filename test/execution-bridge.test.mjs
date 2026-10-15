@@ -16,7 +16,7 @@ test('execution bridge converts fills to USD and token display units', () => {
   }});
   assert.equal(view.priceUsd, 20);
   assert.equal(view.inputUsd, 100);
-  assert.equal(view.feesUsd, 0.015);
+  assert.equal(view.feesUsd, 0.0155, 'one-signature base fee is included with priority fee and tip');
   assert.equal(view.outputTokens, 5);
 });
 

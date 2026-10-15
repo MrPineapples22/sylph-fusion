@@ -4,7 +4,9 @@ const MAX_BODY_BYTES = 262_144;
 const MAX_CACHED_MINTS = 100;
 const MINT = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
-const positiveIntegerString = value => typeof value === 'string' && /^(?:0|[1-9][0-9]*)$/.test(value) && BigInt(value) > 0n;
+const MAX_TOKEN_AMOUNT = 18_446_744_073_709_551_615n;
+const positiveTokenAmountString = value => typeof value === 'string' && /^(?:0|[1-9][0-9]*)$/.test(value) &&
+  value.length <= 20 && BigInt(value) > 0n && BigInt(value) <= MAX_TOKEN_AMOUNT;
 
 export class JupiterResearchQuoteService {
   constructor({ apiKey = '', amountLamports = 10_000_000, minRequestGapMs = 2_100,
@@ -113,7 +115,7 @@ export class JupiterResearchQuoteService {
       let body;
       try { body = JSON.parse(raw); } catch { const error = new Error('Jupiter quote response invalid'); error.code = 'JUPITER_RESPONSE_JSON_INVALID'; throw error; }
       if (!body || typeof body !== 'object' || body.inputMint !== inputMint || body.outputMint !== outputMint ||
-          body.inAmount !== String(amount) || !positiveIntegerString(body.outAmount) ||
+          body.inAmount !== String(amount) || !positiveTokenAmountString(body.outAmount) ||
           (body.transaction !== undefined && body.transaction !== null && body.transaction !== '')) {
         const error = new Error('Jupiter did not return a valid quote-only response'); error.code = 'JUPITER_QUOTE_SCHEMA_INVALID'; throw error;
       }

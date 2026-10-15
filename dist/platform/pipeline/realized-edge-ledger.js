@@ -24,6 +24,21 @@ export class RealizedEdgeLedger {
     records = [];
     append(params) {
         const { stages, feesAndTipsLamports, slippageAndImpactLamports, capitalTimeAndFrictionLamports } = params;
+        const feeParts = [params.baseFeeLamports, params.priorityFeeLamports, params.tipLamports];
+        if (typeof feesAndTipsLamports !== 'bigint' || feesAndTipsLamports < 0n ||
+            feeParts.some(value => value !== undefined && (typeof value !== 'bigint' || value < 0n))) {
+            throw new Error('REALIZED_EDGE_INVALID_FEE_COMPONENTS');
+        }
+        const attributedFeesAndTipsLamports = feeParts.reduce((sum, value) => sum + (value ?? 0n), 0n);
+        if (attributedFeesAndTipsLamports > feesAndTipsLamports) {
+            throw new Error('REALIZED_EDGE_INVALID_FEE_COMPONENTS');
+        }
+        const suppliedFeePartCount = feeParts.filter(value => value !== undefined).length;
+        const feeBreakdownStatus = suppliedFeePartCount === 0
+            ? 'UNATTRIBUTED'
+            : suppliedFeePartCount === feeParts.length && attributedFeesAndTipsLamports === feesAndTipsLamports
+                ? 'ATTRIBUTED'
+                : 'PARTIAL';
         // Calculate stage-by-stage leakage
         const predictionToDecision = stages.predictedEdgeLamports - stages.decisionEdgeLamports;
         const decisionToSubmission = stages.decisionEdgeLamports - stages.submissionEdgeLamports;
@@ -76,9 +91,12 @@ export class RealizedEdgeLedger {
             liquidityChangeLamports: params.liquidityChangeLamports ?? (submissionToLanding > 0n ? submissionToLanding : 0n),
             priceImpactLamports: params.priceImpactLamports ?? (slippageAndImpactLamports / 2n),
             slippageLamports: params.slippageLamports ?? (slippageAndImpactLamports - slippageAndImpactLamports / 2n),
-            baseFeeLamports: params.baseFeeLamports ?? 5000n,
-            priorityFeeLamports: params.priorityFeeLamports ?? (feesAndTipsLamports > 5000n ? (feesAndTipsLamports - 5000n) / 2n : 0n),
-            tipLamports: params.tipLamports ?? (feesAndTipsLamports > 5000n ? (feesAndTipsLamports - 5000n) - (feesAndTipsLamports - 5000n) / 2n : 0n),
+            feesAndTipsLamports,
+            baseFeeLamports: params.baseFeeLamports,
+            priorityFeeLamports: params.priorityFeeLamports,
+            tipLamports: params.tipLamports,
+            unclassifiedFeesAndTipsLamports: feesAndTipsLamports - attributedFeesAndTipsLamports,
+            feeBreakdownStatus,
             failureCostLamports: params.failureCostLamports ?? 0n,
             capitalLockCostLamports: params.capitalLockCostLamports ?? capitalTimeAndFrictionLamports,
             netRealizedEdgeLamports: stages.realizedNetEdgeLamports,
@@ -99,6 +117,18 @@ export class RealizedEdgeLedger {
             },
             primaryCause,
             recordedAt,
+            attribution: {
+                signalEdgeLamports: `${attribution.signalEdgeLamports}n`,
+                timingEdgeLamports: `${attribution.timingEdgeLamports}n`,
+                routingEdgeLamports: `${attribution.routingEdgeLamports}n`,
+                leaderEdgeLamports: `${attribution.leaderEdgeLamports}n`,
+                liquidityEdgeLamports: `${attribution.liquidityEdgeLamports}n`,
+                feesAndTipsLamports: `${attribution.feesAndTipsLamports}n`,
+                slippageAndImpactLamports: `${attribution.slippageAndImpactLamports}n`,
+                capitalTimeAndFrictionLamports: `${attribution.capitalTimeAndFrictionLamports}n`,
+                netRealizedEdgeLamports: `${attribution.netRealizedEdgeLamports}n`,
+            },
+            comprehensiveBreakdown: Object.fromEntries(Object.entries(comprehensiveBreakdown).map(([key, value]) => [key, typeof value === 'bigint' ? `${value}n` : value])),
         };
         const recordHash = hashCanonical(recordPayload);
         const record = Object.freeze({

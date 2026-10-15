@@ -1,5 +1,7 @@
 import { parentPort, workerData } from 'node:worker_threads';
 import { createHash, randomBytes } from 'node:crypto';
+import { existsSync, lstatSync, readFileSync, readlinkSync, realpathSync, statSync } from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
 import { openGenerationDatabase, registerInitialGenerationSync, readGenerationIdentitySync, sqliteDiagnostic } from './platform/storage/generation-sqlite.js';
 import { GenerationStorageError } from './platform/storage/generation-identity.js';
 import { serializeRecoveryCertificate } from './platform/ingestion/recovery-certificate.js';
@@ -19,6 +21,149 @@ const verifiedRecoveryCertificateSchema = `CREATE TABLE IF NOT EXISTS verified_r
 ) STRICT;`;
 const verifiedRecoveryCertificateIndex = 'CREATE INDEX verified_recovery_certificates_gap_time_idx ON verified_recovery_certificates_v2(gap_id,certified_at_ms DESC,certificate_id ASC)';
 const normalizedSql = (value) => value.replace(/CREATE TABLE IF NOT EXISTS /i, 'CREATE TABLE ').replace(/\s+/g, '').replace(/;$/, '').toLowerCase();
+function validateStagingReplayRole() {
+    const role = workerData?.stagingReplay;
+    if (role === undefined)
+        return null;
+    if (!role || typeof role !== 'object' || typeof role.nonce !== 'string' || !/^[a-f0-9]{64}$/.test(role.nonce) ||
+        typeof role.lockNonce !== 'string' || !/^[a-f0-9]{64}$/.test(role.lockNonce) ||
+        !Number.isSafeInteger(role.lockPid) || role.lockPid < 1 ||
+        !role.denyIdentity || typeof role.denyIdentity.configuredPath !== 'string' ||
+        !role.denyIdentity.configuredPath || resolve(role.denyIdentity.configuredPath) !== role.denyIdentity.configuredPath ||
+        typeof role.denyIdentity.canonicalPath !== 'string' ||
+        (role.denyIdentity.realPath !== null && typeof role.denyIdentity.realPath !== 'string') ||
+        (role.denyIdentity.dev !== null && typeof role.denyIdentity.dev !== 'string') ||
+        (role.denyIdentity.ino !== null && typeof role.denyIdentity.ino !== 'string') ||
+        typeof role.sessionId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(role.sessionId) ||
+        typeof role.manifestSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(role.manifestSha256) ||
+        typeof role.evidenceSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(role.evidenceSha256))
+        throw new Error('STAGING_INGRESS_ROLE_INVALID');
+    const stageDir = realpathSync(role.stageDir);
+    const workDir = realpathSync(dirname(stageDir));
+    if (resolve(workerData.path) !== join(stageDir, 'staging.sqlite') || !/^feed-replay-staging-[a-z0-9-]{1,96}$/i.test(basename(stageDir)) ||
+        basename(workDir).toLowerCase() !== 'work' ||
+        realpathSync(role.sessionPath) !== join(stageDir, 'stage-session.json'))
+        throw new Error('STAGING_INGRESS_PATH_INVALID');
+    let packageManifest;
+    try {
+        packageManifest = JSON.parse(readFileSync(join(dirname(workDir), 'package.json'), 'utf8'));
+    }
+    catch {
+        throw new Error('STAGING_INGRESS_PROJECT_ROOT_INVALID');
+    }
+    if (packageManifest?.name !== 'sylph-fusion')
+        throw new Error('STAGING_INGRESS_PROJECT_ROOT_INVALID');
+    if (existsSync(workerData.path)) {
+        const realDb = realpathSync(workerData.path);
+        if (dirname(realDb) !== stageDir || statSync(realDb).nlink !== 1)
+            throw new Error('STAGING_INGRESS_DATABASE_PATH_INVALID');
+    }
+    assertStagingSession(role);
+    return Object.freeze({ ...role, stageDir, sessionPath: join(stageDir, 'stage-session.json') });
+}
+function normalizedDatabasePath(path) {
+    const value = resolve(path);
+    return process.platform === 'win32' ? value.toLowerCase() : value;
+}
+function canonicalProspectivePath(path, seen = new Set()) {
+    const candidate = resolve(path);
+    if (seen.has(candidate))
+        throw new Error('STAGING_CONFIGURED_DATABASE_PATH_INVALID');
+    seen.add(candidate);
+    try {
+        const entry = lstatSync(candidate);
+        if (entry.isSymbolicLink())
+            return canonicalProspectivePath(resolve(dirname(candidate), readlinkSync(candidate)), seen);
+        return realpathSync(candidate);
+    }
+    catch (error) {
+        if (error?.code !== 'ENOENT')
+            throw error;
+        const parent = dirname(candidate);
+        if (parent === candidate)
+            return candidate;
+        return join(canonicalProspectivePath(parent, seen), basename(candidate));
+    }
+}
+function currentConfiguredDatabaseIdentity(configuredPath) {
+    try {
+        if (!configuredPath || resolve(configuredPath) !== configuredPath)
+            throw new Error('STAGING_CONFIGURED_DATABASE_PATH_INVALID');
+        const canonicalPath = canonicalProspectivePath(configuredPath);
+        const realPath = existsSync(configuredPath) ? realpathSync(configuredPath) : null;
+        const stats = realPath ? statSync(realPath) : null;
+        return { configuredPath: resolve(configuredPath), canonicalPath, realPath,
+            dev: stats && Number(stats.dev) !== 0 ? String(stats.dev) : null,
+            ino: stats && Number(stats.ino) !== 0 ? String(stats.ino) : null };
+    }
+    catch {
+        throw new Error('STAGING_CONFIGURED_DATABASE_PATH_INVALID');
+    }
+}
+function assertStagingDatabaseIsNotConfigured(role) {
+    const denied = role.denyIdentity;
+    if (!denied)
+        throw new Error('STAGING_CONFIGURED_DATABASE_IDENTITY_UNAVAILABLE');
+    const current = currentConfiguredDatabaseIdentity(denied.configuredPath);
+    if (current.configuredPath !== denied.configuredPath || current.canonicalPath !== denied.canonicalPath || current.realPath !== denied.realPath ||
+        current.dev !== denied.dev || current.ino !== denied.ino)
+        throw new Error('STAGING_CONFIGURED_DATABASE_IDENTITY_CHANGED');
+    const stagingPath = resolve(workerData.path);
+    const normalizedStaging = normalizedDatabasePath(stagingPath);
+    if (normalizedStaging === normalizedDatabasePath(denied.configuredPath) ||
+        normalizedStaging === normalizedDatabasePath(denied.canonicalPath))
+        throw new Error('STAGING_DATABASE_MUST_DIFFER_FROM_CONFIGURED_DATABASE');
+    let stagingReal = null;
+    let stagingStats = null;
+    if (existsSync(stagingPath)) {
+        stagingReal = realpathSync(stagingPath);
+        stagingStats = statSync(stagingReal);
+    }
+    if ((stagingReal && denied.realPath && normalizedDatabasePath(stagingReal) === normalizedDatabasePath(denied.realPath)) ||
+        (stagingReal && normalizedDatabasePath(stagingReal) === normalizedDatabasePath(denied.canonicalPath)) ||
+        (stagingStats && denied.dev && denied.ino && String(stagingStats.dev) === denied.dev && String(stagingStats.ino) === denied.ino)) {
+        throw new Error('STAGING_DATABASE_MUST_DIFFER_FROM_CONFIGURED_DATABASE');
+    }
+}
+function assertStagingSession(role) {
+    if (realpathSync(role.stageDir) !== role.stageDir ||
+        realpathSync(role.sessionPath) !== join(role.stageDir, 'stage-session.json') ||
+        (existsSync(workerData.path) && (dirname(realpathSync(workerData.path)) !== role.stageDir || statSync(workerData.path).nlink !== 1))) {
+        throw new Error('STAGING_INGRESS_PATH_INVALID');
+    }
+    let session;
+    let sessionStat;
+    let lockStat;
+    let lock;
+    try {
+        sessionStat = lstatSync(role.sessionPath);
+        lockStat = lstatSync(join(role.stageDir, 'stage-session.lock'));
+        if (!sessionStat.isFile() || sessionStat.nlink !== 1 || !lockStat.isFile() || lockStat.nlink !== 1) {
+            throw new Error('STAGING_INGRESS_SESSION_FILE_INVALID');
+        }
+        lock = JSON.parse(readFileSync(join(role.stageDir, 'stage-session.lock'), 'utf8'));
+    }
+    catch {
+        throw new Error('STAGING_INGRESS_LOCK_INVALID');
+    }
+    try {
+        session = JSON.parse(readFileSync(role.sessionPath, 'utf8'));
+    }
+    catch {
+        throw new Error('STAGING_INGRESS_SESSION_INVALID');
+    }
+    if (session?.schemaVersion !== 1 || session?.project !== 'sylph-fusion-finalized-replay' ||
+        session.sessionId !== role.sessionId || !session.pending || !Number.isSafeInteger(session.pending.fromSlot) ||
+        session.pending.fromSlot < 1 || !Number.isSafeInteger(session.pending.toSlot) || session.pending.toSlot < session.pending.fromSlot ||
+        session.pending.manifestSha256 !== role.manifestSha256 || session.pending.evidenceSha256 !== role.evidenceSha256) {
+        throw new Error('STAGING_INGRESS_SESSION_INVALID');
+    }
+    if (lock?.schemaVersion !== 1 || lock.project !== 'sylph-fusion-finalized-replay' || lock.sessionId !== role.sessionId ||
+        lock.pid !== role.lockPid || lock.nonce !== role.lockNonce)
+        throw new Error('STAGING_INGRESS_LOCK_LOST');
+    assertStagingDatabaseIsNotConfigured(role);
+}
+const stagingReplayRole = validateStagingReplayRole();
 function ensureVerifiedRecoveryCertificateSchema() {
     const table = db.prepare("SELECT sql FROM sqlite_schema WHERE type='table' AND name='verified_recovery_certificates_v2'").get();
     if (!table)
@@ -42,6 +187,26 @@ const initialized = (() => {
     }
 })();
 const { db, registrationCapable } = initialized;
+function rollbackTransactionIfActive() {
+    if (db.isTransaction)
+        db.exec('ROLLBACK');
+}
+function stagingImmutablePayload(body) {
+    let payload;
+    try {
+        payload = JSON.parse(body);
+    }
+    catch {
+        throw new Error('STAGING_INGRESS_BATCH_CONTENT_CONFLICT');
+    }
+    if (!payload || typeof payload !== 'object' || !payload.truthEvidence || typeof payload.truthEvidence !== 'object') {
+        throw new Error('STAGING_INGRESS_BATCH_CONTENT_CONFLICT');
+    }
+    const { entryHash: _entryHash, validatedAtMs: _validatedAtMs, ...immutable } = payload;
+    const { validatedAtMs: _evidenceValidatedAtMs, ...immutableEvidence } = immutable.truthEvidence;
+    immutable.truthEvidence = immutableEvidence;
+    return JSON.stringify(immutable);
+}
 const runtimeIdentitySchema = `CREATE TABLE runtime_store_identity_v1(
   singleton INTEGER PRIMARY KEY CHECK(singleton=1),
   instance_id TEXT NOT NULL CHECK(length(instance_id)=32 AND instance_id NOT GLOB '*[^a-f0-9]*')
@@ -72,7 +237,7 @@ function runtimeStoreInstanceId() {
         return rows[0].instance_id;
     }
     catch (error) {
-        db.exec('ROLLBACK');
+        rollbackTransactionIfActive();
         throw error;
     }
 }
@@ -156,13 +321,105 @@ function ensureIngressDeliverySchema() {
         db.exec('COMMIT');
     }
     catch (error) {
-        db.exec('ROLLBACK');
+        rollbackTransactionIfActive();
         throw error;
     }
 }
 parentPort.on('message', (m) => {
     try {
-        if (m.op === 'runtime-store-instance-id') {
+        if (m.op === 'append-staging-ingress-batch') {
+            if (!stagingReplayRole || m.capability !== stagingReplayRole.nonce)
+                throw new Error('STAGING_INGRESS_CAPABILITY_REQUIRED');
+            assertStagingSession(stagingReplayRole);
+            assertRuntimeDurability();
+            const rows = JSON.parse(m.body ?? 'null');
+            if (!Array.isArray(rows) || rows.length < 1 || rows.length > 64)
+                throw new Error('STAGING_INGRESS_BATCH_LIMIT');
+            let totalBytes = 0;
+            const prepared = rows.map((row) => {
+                if (!row || typeof row !== 'object' || !/^[a-f0-9]{64}$/.test(row.observationId ?? '') ||
+                    row.eventId !== `ingress:${row.observationId}` || !/^[a-f0-9]{64}$/.test(row.eventHash ?? '') ||
+                    typeof row.body !== 'string' || Buffer.byteLength(row.body) > 65_536 ||
+                    createHash('sha256').update(`${'canonical_ingress_committed_v1'}:${row.body}`).digest('hex') !== row.eventHash) {
+                    throw new Error('STAGING_INGRESS_BATCH_INPUT_INVALID');
+                }
+                totalBytes += Buffer.byteLength(row.body);
+                let payload;
+                try {
+                    payload = JSON.parse(row.body);
+                }
+                catch {
+                    throw new Error('STAGING_INGRESS_BATCH_INPUT_INVALID');
+                }
+                const { entryHash, ...entryPayload } = payload ?? {};
+                if (payload?.schemaVersion !== 1 || payload?.observationId !== row.observationId ||
+                    !Number.isSafeInteger(payload?.validatedAtMs) || payload.validatedAtMs < 0 ||
+                    !Number.isSafeInteger(payload?.truthEvidence?.validatedAtMs) || payload.truthEvidence.validatedAtMs < 0 ||
+                    typeof entryHash !== 'string' || !/^[a-f0-9]{64}$/.test(entryHash) ||
+                    createHash('sha256').update(JSON.stringify(entryPayload)).digest('hex') !== entryHash ||
+                    row.eventId !== `ingress:${payload.observationId}`)
+                    throw new Error('STAGING_INGRESS_BATCH_INPUT_INVALID');
+                return { ...row, entryHash };
+            });
+            if (totalBytes > 2 * 1024 * 1024 || new Set(prepared.map((row) => row.observationId)).size !== prepared.length) {
+                throw new Error('STAGING_INGRESS_BATCH_LIMIT');
+            }
+            ensureIngressDeliverySchema();
+            db.exec('BEGIN IMMEDIATE');
+            try {
+                const existing = prepared.map((row) => db.prepare(`SELECT a.id AS audit_id,a.event,a.body,e.event_hash AS dedupe_hash,d.entry_hash,d.delivery_status
+          FROM audit_event_dedupe e JOIN audit a ON a.id=e.audit_id
+          LEFT JOIN canonical_ingress_delivery_v1 d ON d.observation_id=? WHERE e.event_id=?`).get(row.observationId, row.eventId));
+                const existingCount = existing.filter(Boolean).length;
+                if (existingCount !== 0 && existingCount !== prepared.length)
+                    throw new Error('STAGING_INGRESS_BATCH_PARTIAL_EXISTENCE');
+                const result = [];
+                if (existingCount === prepared.length) {
+                    let priorSequence = 0;
+                    for (let i = 0; i < prepared.length; i++) {
+                        const row = prepared[i], prior = existing[i];
+                        const storedEventHash = typeof prior.body === 'string'
+                            ? createHash('sha256').update(`canonical_ingress_committed_v1:${prior.body}`).digest('hex') : '';
+                        const storedPayload = (() => { try {
+                            return JSON.parse(prior.body);
+                        }
+                        catch {
+                            return null;
+                        } })();
+                        if (prior.event !== 'canonical_ingress_committed_v1' || typeof prior.body !== 'string' ||
+                            prior.dedupe_hash !== storedEventHash || prior.entry_hash !== storedEventHash ||
+                            typeof storedPayload?.entryHash !== 'string' ||
+                            createHash('sha256').update(JSON.stringify((({ entryHash: _h, ...payload }) => payload)(storedPayload))).digest('hex') !== storedPayload.entryHash ||
+                            stagingImmutablePayload(prior.body) !== stagingImmutablePayload(row.body) ||
+                            !Number.isSafeInteger(prior.audit_id) || prior.audit_id <= priorSequence ||
+                            (prior.delivery_status !== 'PENDING' && prior.delivery_status !== 'ACKNOWLEDGED')) {
+                            throw new Error('STAGING_INGRESS_BATCH_CONTENT_CONFLICT');
+                        }
+                        priorSequence = prior.audit_id;
+                        result.push({ observationId: row.observationId, auditId: prior.audit_id, eventHash: storedEventHash, inserted: false });
+                    }
+                }
+                else {
+                    for (const row of prepared) {
+                        const info = db.prepare('INSERT INTO audit(at,event,body) VALUES(?,?,?)').run(Date.now(), 'canonical_ingress_committed_v1', row.body);
+                        const auditId = Number(info.lastInsertRowid);
+                        db.prepare('INSERT INTO audit_event_dedupe(event_id,event_hash,audit_id,created_at_ms) VALUES(?,?,?,?)')
+                            .run(row.eventId, row.eventHash, auditId, Date.now());
+                        db.prepare(`INSERT INTO canonical_ingress_delivery_v1(observation_id,audit_id,entry_hash,acknowledged_at_ms,delivery_status)
+              VALUES(?,?,?,NULL,'PENDING')`).run(row.observationId, auditId, row.eventHash);
+                        result.push({ observationId: row.observationId, auditId, eventHash: row.eventHash, inserted: true });
+                    }
+                }
+                assertStagingSession(stagingReplayRole);
+                db.exec('COMMIT');
+                parentPort.postMessage({ id: m.id, value: JSON.stringify(result) });
+            }
+            catch (error) {
+                rollbackTransactionIfActive();
+                throw error;
+            }
+        }
+        else if (m.op === 'runtime-store-instance-id') {
             parentPort.postMessage({ id: m.id, value: runtimeStoreInstanceId() });
         }
         else if (m.op === 'assert-ingress-durability') {
@@ -198,7 +455,7 @@ parentPort.on('message', (m) => {
                 db.exec('COMMIT');
             }
             catch (e) {
-                db.exec('ROLLBACK');
+                rollbackTransactionIfActive();
                 throw e;
             }
             parentPort.postMessage({ id: m.id, value: null });
@@ -259,7 +516,7 @@ parentPort.on('message', (m) => {
                     parentPort.postMessage({ id: m.id, value: JSON.stringify({ inserted: true, auditId }) });
                 }
                 catch (e) {
-                    db.exec('ROLLBACK');
+                    rollbackTransactionIfActive();
                     throw e;
                 }
             }
@@ -296,6 +553,55 @@ parentPort.on('message', (m) => {
         WHERE d.delivery_status='PENDING' AND d.audit_id>? ORDER BY d.audit_id LIMIT ?`).all(query.afterSequence, query.limit);
             parentPort.postMessage({ id: m.id, value: JSON.stringify(rows) });
         }
+        else if (m.op === 'inspect-ingress-startup-state') {
+            // Read only bounded scalar facts and do not run schema migration/ensure here.
+            const table = db.prepare("SELECT 1 AS present FROM sqlite_schema WHERE type='table' AND name='canonical_ingress_delivery_v1'").get();
+            if (!table) {
+                const audit = db.prepare("SELECT 1 AS present FROM sqlite_schema WHERE type='table' AND name='audit'").get();
+                if (!audit)
+                    throw new Error('INGRESS_AUDIT_SCHEMA_UNAVAILABLE');
+                const historicalIngress = db.prepare(`SELECT 1 AS present FROM audit
+          WHERE event='canonical_ingress_committed_v1' LIMIT 1`).get();
+                if (historicalIngress)
+                    throw new Error('INGRESS_OUTBOX_REBUILD_REQUIRED');
+                const pruneLedger = db.prepare("SELECT 1 AS present FROM sqlite_schema WHERE type='table' AND name='audit_prune_ledger'").get();
+                if (!pruneLedger)
+                    throw new Error('INGRESS_AUDIT_PRUNE_LEDGER_UNAVAILABLE');
+                const pruneColumns = db.prepare('PRAGMA table_info(audit_prune_ledger)').all();
+                if (!pruneColumns.some(column => column.name === 'event_counts_json')) {
+                    throw new Error('INGRESS_AUDIT_PRUNE_LEDGER_UNAVAILABLE');
+                }
+                const malformedPruneSummary = db.prepare(`SELECT 1 AS present FROM audit_prune_ledger
+          WHERE json_valid(event_counts_json)=0 OR json_type(event_counts_json)!='object' OR
+            (json_type(event_counts_json,'$.canonical_ingress_committed_v1') IS NOT NULL AND
+             (json_type(event_counts_json,'$.canonical_ingress_committed_v1')!='integer' OR
+              json_extract(event_counts_json,'$.canonical_ingress_committed_v1')<0)) LIMIT 1`).get();
+                if (malformedPruneSummary)
+                    throw new Error('INGRESS_AUDIT_PRUNE_LEDGER_INVALID');
+                const prunedIngress = db.prepare(`SELECT 1 AS present FROM audit_prune_ledger
+          WHERE json_type(event_counts_json,'$.canonical_ingress_committed_v1')='integer' AND
+            json_extract(event_counts_json,'$.canonical_ingress_committed_v1')>0 LIMIT 1`).get();
+                if (prunedIngress)
+                    throw new Error('INGRESS_OUTBOX_REBUILD_REQUIRED');
+                parentPort.postMessage({ id: m.id, value: JSON.stringify({ outboxAvailable: false, oldestPendingSequence: null, hasLegacyUnknown: false }) });
+            }
+            else {
+                const pending = db.prepare(`SELECT audit_id FROM canonical_ingress_delivery_v1
+          WHERE delivery_status='PENDING' ORDER BY audit_id LIMIT 1`).get();
+                const legacyUnknown = db.prepare(`SELECT audit_id FROM canonical_ingress_delivery_v1
+          WHERE delivery_status='LEGACY_UNKNOWN' ORDER BY audit_id LIMIT 1`).get();
+                for (const row of [pending, legacyUnknown]) {
+                    if (row && (!Number.isSafeInteger(row.audit_id) || row.audit_id < 1)) {
+                        throw new Error('INGRESS_OUTBOX_SEQUENCE_INVALID');
+                    }
+                }
+                parentPort.postMessage({ id: m.id, value: JSON.stringify({
+                        outboxAvailable: true,
+                        oldestPendingSequence: pending ? pending.audit_id : null,
+                        hasLegacyUnknown: Boolean(legacyUnknown),
+                    }) });
+            }
+        }
         else if (m.op === 'load-engine-projection') {
             const exists = db.prepare("SELECT 1 AS present FROM sqlite_schema WHERE type='table' AND name='canonical_ingress_engine_projection_v1'").get();
             const row = exists ? db.prepare(`SELECT sequence,observation_id AS observationId,entry_hash AS entryHash,
@@ -331,6 +637,7 @@ parentPort.on('message', (m) => {
             }
             if (!projection || projection.schemaVersion !== 1 || projection.sequence !== input.sequence ||
                 projection.observationId !== input.observationId || projection.entryHash !== input.entryHash ||
+                typeof projection.canonicalState?.revision !== 'string' || !/^(?:0|[1-9][0-9]*)$/.test(projection.canonicalState.revision) ||
                 !state || typeof state !== 'object' || Array.isArray(state))
                 throw new Error('ENGINE_PROJECTION_IDENTITY_MISMATCH');
             ensureIngressDeliverySchema();
@@ -341,6 +648,20 @@ parentPort.on('message', (m) => {
         projection_json TEXT NOT NULL,projection_hash TEXT NOT NULL CHECK(length(projection_hash)=64 AND projection_hash NOT GLOB '*[^a-f0-9]*'),
         state_json TEXT NOT NULL,state_hash TEXT NOT NULL CHECK(length(state_hash)=64 AND state_hash NOT GLOB '*[^a-f0-9]*')
       ) STRICT;`);
+            db.exec(`CREATE TABLE IF NOT EXISTS canonical_ingress_projection_history_v1(
+        sequence INTEGER PRIMARY KEY CHECK(sequence>0),
+        observation_id TEXT NOT NULL UNIQUE CHECK(length(observation_id)=64 AND observation_id NOT GLOB '*[^a-f0-9]*'),
+        entry_hash TEXT NOT NULL CHECK(length(entry_hash)=64 AND entry_hash NOT GLOB '*[^a-f0-9]*'),
+        previous_sequence INTEGER CHECK(previous_sequence IS NULL OR previous_sequence>0),
+        previous_projection_hash TEXT CHECK(previous_projection_hash IS NULL OR (length(previous_projection_hash)=64 AND previous_projection_hash NOT GLOB '*[^a-f0-9]*')),
+        canonical_revision TEXT NOT NULL CHECK(canonical_revision GLOB '[0-9]*' AND canonical_revision NOT GLOB '*[^0-9]*'),
+        projection_hash TEXT NOT NULL CHECK(length(projection_hash)=64 AND projection_hash NOT GLOB '*[^a-f0-9]*'),
+        state_hash TEXT NOT NULL CHECK(length(state_hash)=64 AND state_hash NOT GLOB '*[^a-f0-9]*'),
+        committed_at_ms INTEGER NOT NULL CHECK(committed_at_ms BETWEEN 0 AND 9007199254740991),
+        CHECK((previous_sequence IS NULL AND previous_projection_hash IS NULL) OR
+              (previous_sequence IS NOT NULL AND previous_projection_hash IS NOT NULL AND previous_sequence<sequence))
+      ) STRICT;
+`);
             const projectionHash = createHash('sha256').update(input.projectionJson).digest('hex');
             const stateHash = createHash('sha256').update(input.stateJson).digest('hex');
             const ackEvent = 'canonical_ingress_delivery_ack_v1';
@@ -354,14 +675,22 @@ parentPort.on('message', (m) => {
                     throw new Error('INGRESS_ACK_IDENTITY_MISMATCH');
                 if (delivery.delivery_status !== 'PENDING')
                     throw new Error(delivery.delivery_status === 'LEGACY_UNKNOWN' ? 'INGRESS_LEGACY_DELIVERY_REQUIRES_REBUILD' : 'INGRESS_PROJECTION_ALREADY_ACKNOWLEDGED');
-                const existing = db.prepare('SELECT sequence,observation_id,entry_hash FROM canonical_ingress_engine_projection_v1 WHERE id=1').get();
+                const existing = db.prepare('SELECT sequence,observation_id,entry_hash,projection_hash FROM canonical_ingress_engine_projection_v1 WHERE id=1').get();
                 if (existing && existing.sequence >= input.sequence)
                     throw new Error('ENGINE_PROJECTION_SEQUENCE_REGRESSION');
+                const earlierUnresolved = db.prepare(`SELECT audit_id FROM canonical_ingress_delivery_v1
+          WHERE delivery_status IN ('PENDING','LEGACY_UNKNOWN') AND audit_id<? ORDER BY audit_id LIMIT 1`).get(input.sequence);
+                if (earlierUnresolved)
+                    throw new Error('ENGINE_PROJECTION_BLOCKED_BY_EARLIER_DELIVERY');
                 db.prepare(`INSERT INTO canonical_ingress_engine_projection_v1(id,sequence,observation_id,entry_hash,projection_json,projection_hash,state_json,state_hash)
           VALUES(1,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET sequence=excluded.sequence,observation_id=excluded.observation_id,
-          entry_hash=excluded.entry_hash,projection_json=excluded.projection_json,projection_hash=excluded.projection_hash,
-          state_json=excluded.state_json,state_hash=excluded.state_hash`).run(input.sequence, input.observationId, input.entryHash, input.projectionJson, projectionHash, input.stateJson, stateHash);
-                db.prepare('INSERT INTO state VALUES(1,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body').run(input.stateJson);
+          entry_hash=excluded.entry_hash,projection_json=excluded.projection_json,projection_hash=excluded.projection_hash`).run(input.sequence, input.observationId, input.entryHash, input.projectionJson, projectionHash, input.stateJson, stateHash);
+                db.prepare(`UPDATE canonical_ingress_engine_projection_v1 SET state_json=?,state_hash=?
+          WHERE id=1 AND state_hash<>?`).run(input.stateJson, stateHash, stateHash);
+                db.prepare(`INSERT INTO canonical_ingress_projection_history_v1(
+          sequence,observation_id,entry_hash,previous_sequence,previous_projection_hash,canonical_revision,projection_hash,state_hash,committed_at_ms
+        ) VALUES(?,?,?,?,?,?,?,?,?)`).run(input.sequence, input.observationId, input.entryHash, existing?.sequence ?? null, existing?.projection_hash ?? null, projection.canonicalState.revision, projectionHash, stateHash, Date.now());
+                db.prepare('INSERT INTO state VALUES(1,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body WHERE state.body<>excluded.body').run(input.stateJson);
                 db.prepare(`UPDATE canonical_ingress_delivery_v1 SET acknowledged_at_ms=?,delivery_status='ACKNOWLEDGED'
           WHERE observation_id=? AND delivery_status='PENDING'`).run(Date.now(), input.observationId);
                 const prior = db.prepare('SELECT event_hash FROM audit_event_dedupe WHERE event_id=?').get(ackEventId);
@@ -375,7 +704,7 @@ parentPort.on('message', (m) => {
                 db.exec('COMMIT');
             }
             catch (error) {
-                db.exec('ROLLBACK');
+                rollbackTransactionIfActive();
                 throw error;
             }
             parentPort.postMessage({ id: m.id, value: null });
@@ -413,7 +742,7 @@ parentPort.on('message', (m) => {
                 db.exec('COMMIT');
             }
             catch (error) {
-                db.exec('ROLLBACK');
+                rollbackTransactionIfActive();
                 throw error;
             }
             parentPort.postMessage({ id: m.id, value: null });
@@ -492,8 +821,7 @@ parentPort.on('message', (m) => {
                 db.exec('COMMIT');
             }
             catch (error) {
-                if (db.isTransaction)
-                    db.exec('ROLLBACK');
+                rollbackTransactionIfActive();
                 throw error;
             }
             parentPort.postMessage({ id: m.id, value: null });
@@ -539,8 +867,7 @@ parentPort.on('message', (m) => {
                 db.exec('COMMIT');
             }
             catch (error) {
-                if (db.isTransaction)
-                    db.exec('ROLLBACK');
+                rollbackTransactionIfActive();
                 throw error;
             }
             parentPort.postMessage({ id: m.id, value: null });
@@ -669,8 +996,7 @@ parentPort.on('message', (m) => {
                 db.exec('COMMIT');
             }
             catch (error) {
-                if (db.isTransaction)
-                    db.exec('ROLLBACK');
+                rollbackTransactionIfActive();
                 throw error;
             }
             parentPort.postMessage({ id: m.id, value: null });
@@ -710,8 +1036,7 @@ parentPort.on('message', (m) => {
                 db.exec('COMMIT');
             }
             catch (error) {
-                if (db.isTransaction)
-                    db.exec('ROLLBACK');
+                rollbackTransactionIfActive();
                 throw error;
             }
             parentPort.postMessage({ id: m.id, value: null });
@@ -784,7 +1109,7 @@ parentPort.on('message', (m) => {
                 }
             }
             catch (error) {
-                db.exec('ROLLBACK');
+                rollbackTransactionIfActive();
                 throw error;
             }
         }

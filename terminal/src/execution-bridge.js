@@ -1,6 +1,8 @@
 // Pure translation boundary between the terminal's USD/number ledger and the
 // credential-free execution engine's lamport/base-unit contract.
 export const LAMPORTS_PER_SOL = 1_000_000_000n;
+// This simulator models one transaction signature at Solana's current base rate.
+export const BASE_NETWORK_FEE_LAMPORTS = 5_000n;
 
 function finitePositive(value, name) {
   const n = Number(value);
@@ -30,7 +32,7 @@ export function fillToTerminal({ report, solPriceUsd, tokenDecimals = 9 }) {
   const decimals = Number.isInteger(tokenDecimals) && tokenDecimals >= 0 && tokenDecimals <= 18 ? tokenDecimals : 9;
   const scale = 10 ** decimals;
   const inputSol = Number(report.inputAmount) / Number(LAMPORTS_PER_SOL);
-  const feesSol = Number(report.priorityFeeLamports + report.jitoTipLamports) / Number(LAMPORTS_PER_SOL);
+  const feesSol = Number(BASE_NETWORK_FEE_LAMPORTS + report.priorityFeeLamports + report.jitoTipLamports) / Number(LAMPORTS_PER_SOL);
   return { status: report.status, priceUsd: report.execPrice * sol * scale / 1e9,
     inputUsd: inputSol * sol, feesUsd: feesSol * sol,
     outputTokens: Number(report.outputAmount) / scale,

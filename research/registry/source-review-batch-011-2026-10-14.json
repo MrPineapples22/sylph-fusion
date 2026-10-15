@@ -1,0 +1,627 @@
+{
+  "batchId": "source-review-batch-011-2026-10-14",
+  "reviewedAt": "2026-10-14",
+  "repository": {
+    "localHead": "4151265ea7a87127cf957d0fb2b2ef0beb959b0b",
+    "remoteHead": "4151265ea7a87127cf957d0fb2b2ef0beb959b0b",
+    "mainAndTaskBranchMatch": true,
+    "worktreeHasPreexistingEdits": true
+  },
+  "sourceRecords": 15,
+  "directlyReviewed": 15,
+  "sources": [
+    {
+      "id": "SRC-064",
+      "url": "https://github.com/orca-so/whirlpools",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Orca Whirlpools README, LICENSE, swap instruction source and package metadata",
+        "Pinned repository commit cc683ec92acb5e7606caa3d8e514d9383e9c7c11"
+      ],
+      "discoveries": [
+        "Repository documents official Whirlpool program ID and verifiable-build procedure",
+        "swap instruction consumes ordered tick arrays and sqrt-price limit",
+        "LICENSE says Apache-2.0 only through Feb 26 2025 and Orca License thereafter."
+      ],
+      "patterns": [
+        "Pin program ID plus source/build hash",
+        "include tick-array sequence and price limit in route validation",
+        "preserve pre/post cutoff licensing provenance."
+      ],
+      "sylphModules": [
+        "src/platform/execution/solaris/amm-bridge.ts",
+        "src/market.ts",
+        "src/execution.ts"
+      ],
+      "overlap": "Orca is not currently a direct quote provider in SYLPH; adapter could reuse official quote math behind existing AMM bridge.",
+      "risks": [
+        "Current license is Orca-specific, not assumed Apache/MIT",
+        "concentrated-liquidity account state is complex",
+        "source build agreement does not prove live account freshness."
+      ],
+      "validation": [
+        "verify exact deployed program and source/IDL release",
+        "use deterministic offline fixtures for tick/account and transport outcomes",
+        "resolve licensing and isolate any provider credentials before reuse"
+      ],
+      "evidence": [
+        "https://github.com/orca-so/whirlpools",
+        "https://github.com/orca-so/whirlpools/tree/cc683ec92acb5e7606caa3d8e514d9383e9c7c11"
+      ],
+      "license": "ORCA_LICENSE_TERMS_REVIEW_REQUIRED",
+      "decision": "PROTOCOL_REFERENCE_ONLY_ORCA_LICENSE_REVIEW"
+    },
+    {
+      "id": "SRC-065",
+      "url": "https://github.com/0xsupersimon/raydium-launchpad-bonkfun-transaction-parser-go",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "The manifest slug returned HTTP 404 on 2026-10-15; the owner’s current public repository was found at the canonical transaction-parser-go slug.",
+        "Read-only source inspection at upstream commit 0cccb67e6dad30ab19245d1b2b24136b69589792: README.md, parser.go, instructions_test.go, and go.mod."
+      ],
+      "discoveries": [
+        "The README describes Raydium Launchpad/Bonkfun pre-migration and post-migration parsing and says parsers must inspect top-level and inner instructions; the README separately describes transaction sending.",
+        "hasGeyserMarkers() returns false, so ParseTransaction cannot enter its advertised Geyser branch; the dormant Geyser decoder also initializes empty instruction/account collections.",
+        "When standard transaction decoding fails, the active alternative decoder returns only a signature and empty event arrays; it does not report parse failure, so valid-but-unsupported transactions can be silently lost. A separate unreferenced demo fallback fabricates a sample swap and must not be used."
+      ],
+      "patterns": [
+        "treat parse failure as unknown and never synthesize market observations",
+        "separate Geyser protobuf decoding from serialized transaction decoding",
+        "model creation, multiple trades, inner instructions, and migration as independent parsed events"
+      ],
+      "sylphModules": [
+        "src/platform/ingestion/truth-x.ts",
+        "src/platform/ingress/canonical-ingress.ts",
+        "src/platform/ingestion/yellowstone-captured-client.ts"
+      ],
+      "overlap": "Potential parser-pattern reference only. SYLPH already has canonical ingress and Truth-X normalization; replacing them with this source would weaken trust because its Geyser path is unreachable and unsupported transactions can return empty-success results.",
+      "risks": [
+        "The source README also describes transaction sending; do not run those tests or invoke any signing/submission path.",
+        "An unreferenced demonstration helper fabricates a sample swap from arbitrary long input.",
+        "No LICENSE file is present in the reviewed repository root; license remains unverified."
+      ],
+      "validation": [
+        "Require an explicit parse status and fail closed on unsupported transaction versions or encodings.",
+        "Add fixtures proving Geyser messages are decoded and malformed inputs never yield fabricated market events.",
+        "Compare multi-instruction and inner-instruction parses with canonical RPC metadata; pin a confirmed license before code reuse."
+      ],
+      "evidence": [
+        "https://github.com/0xsupersimon/raydium-launchpad-bonkfun",
+        "https://github.com/0xsupersimon/raydium-launchpad-bonkfun-transaction-parser-go/tree/0cccb67e6dad30ab19245d1b2b24136b69589792",
+        "https://github.com/0xsupersimon/raydium-launchpad-bonkfun-transaction-parser-go/blob/0cccb67e6dad30ab19245d1b2b24136b69589792/parser.go"
+      ],
+      "license": "UNVERIFIED_NO_LICENSE_FILE",
+      "decision": "PATTERN_ONLY; REJECT_UPSTREAM_PARSER_UNTIL_GEYSER_PATH_AND_PARSE_FAILURE_SEMANTICS_ARE_FIXED"
+    },
+    {
+      "id": "SRC-066",
+      "url": "https://github.com/blockworks-foundation/autobahn",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Autobahn README, workspace manifests and adapter guide",
+        "Pinned repository commit 78167c7bd4c284a0ecbef0032e89df562714ad7b"
+      ],
+      "discoveries": [
+        "Router uses pluggable DEX adapters and says execution reliability is prioritized over marginal price",
+        "self-hosting requires custom validator patches for low-latency account subscriptions",
+        "README identifies AGPL-3.0 and alternate commercial licensing by request."
+      ],
+      "patterns": [
+        "Keep route adapters separate",
+        "rank with execution success/price-impact evidence rather than nominal quote alone",
+        "isolate provider-specific account subscriptions."
+      ],
+      "sylphModules": [
+        "src/execution.ts",
+        "src/platform/execution/solaris/amm-bridge.ts",
+        "terminal/jupiter-research.mjs"
+      ],
+      "overlap": "Potential comparison source, but deploying another aggregator duplicates Jupiter routing and requires smart-contract compatibility review.",
+      "risks": [
+        "AGPL/commercial license review",
+        "custom validator patches and low-latency order flow",
+        "no current SYLPH router integration or provider credentials verified."
+      ],
+      "validation": [
+        "verify exact deployed program and source/IDL release",
+        "use deterministic offline fixtures for tick/account and transport outcomes",
+        "resolve licensing and isolate any provider credentials before reuse"
+      ],
+      "evidence": [
+        "https://github.com/blockworks-foundation/autobahn",
+        "https://github.com/blockworks-foundation/autobahn/tree/78167c7bd4c284a0ecbef0032e89df562714ad7b"
+      ],
+      "license": "AGPL-3.0_REVIEW_REQUIRED",
+      "decision": "ROUTER_PATTERN_ONLY_AGPL_REVIEW"
+    },
+    {
+      "id": "SRC-067",
+      "url": "https://github.com/blockworks-foundation/lite-rpc",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Lite RPC README, Cargo workspace and QUIC connection metrics",
+        "Pinned repository commit 325dfe5a229a14370bfb6ab05f41796e3e016a69"
+      ],
+      "discoveries": [
+        "Project forwards transactions using leader lookup and QUIC/TPU paths and documents optional authenticated gRPC tokens and a QUIC forward proxy",
+        "workspace declares AGPL although a package.json in the tree separately says MIT."
+      ],
+      "patterns": [
+        "Separate route construction from transport delivery",
+        "record send/connection outcomes independently",
+        "keep RPC/gRPC authentication and transport credentials scoped."
+      ],
+      "sylphModules": [
+        "src/rpc.ts",
+        "src/execution.ts",
+        "src/platform/execution/authority.ts",
+        "src/platform/execution/jito-lifecycle-coordinator.ts"
+      ],
+      "overlap": "Existing RPC pool and Jito lifecycle coordinator already address transport/status interfaces.",
+      "risks": [
+        "AGPL workspace license",
+        "package metadata conflict",
+        "custom QUIC/RPC infrastructure changes transaction landing behavior and requires controlled fault tests."
+      ],
+      "validation": [
+        "verify exact deployed program and source/IDL release",
+        "use deterministic offline fixtures for tick/account and transport outcomes",
+        "resolve licensing and isolate any provider credentials before reuse"
+      ],
+      "evidence": [
+        "https://github.com/blockworks-foundation/lite-rpc",
+        "https://github.com/blockworks-foundation/lite-rpc/tree/325dfe5a229a14370bfb6ab05f41796e3e016a69"
+      ],
+      "license": "AGPL-3.0_REVIEW_REQUIRED",
+      "decision": "TRANSPORT_RESEARCH_ONLY_AGPL_REVIEW"
+    },
+    {
+      "id": "SRC-068",
+      "url": "https://github.com/jito-foundation/jito-programs",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Jito programs README, SECURITY.md and repository inventory",
+        "Pinned repository commit ce1dfb6b3f6c423bf206ec1f24df911d292aa409"
+      ],
+      "discoveries": [
+        "Repository hosts on-chain MEV collection/sharing programs and includes release procedures that rebuild IDLs and push tags",
+        "pinned root contains SECURITY.md but no root LICENSE file."
+      ],
+      "patterns": [
+        "Pin generated IDLs to release commit and deployed program ID",
+        "review security policy and release artifacts before interpreting protocol interfaces",
+        "keep MEV payment accounting explicit."
+      ],
+      "sylphModules": [
+        "src/platform/execution/jito-lifecycle-coordinator.ts",
+        "src/execution.ts",
+        "src/platform/signing/veritas-wire-decoder.ts"
+      ],
+      "overlap": "SYLPH uses Jito read-only tips/status research; it does not depend on Jito program CPI paths.",
+      "risks": [
+        "No root LICENSE found",
+        "on-chain program security and deployment authority are in scope",
+        "no contract build or deployed-state verification was performed."
+      ],
+      "validation": [
+        "verify exact deployed program and source/IDL release",
+        "use deterministic offline fixtures for tick/account and transport outcomes",
+        "resolve licensing and isolate any provider credentials before reuse"
+      ],
+      "evidence": [
+        "https://github.com/jito-foundation/jito-programs",
+        "https://github.com/jito-foundation/jito-programs/tree/ce1dfb6b3f6c423bf206ec1f24df911d292aa409"
+      ],
+      "license": "LICENSE_NOT_FOUND_REVIEW_REQUIRED",
+      "decision": "PROGRAM_REFERENCE_ONLY_NO_DEPLOYMENT_VERIFICATION"
+    },
+    {
+      "id": "SRC-069",
+      "url": "https://github.com/jito-foundation/jito-tip-router",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Jito Tip Router README, Cargo metadata and license files",
+        "Pinned repository commit 0fa020103872fc3fe5833891d9e22b2a714ff684"
+      ],
+      "discoveries": [
+        "Program describes epoch-level distribution of Jito tip revenue among DAO treasury and network participants",
+        "Cargo declares MIT OR Apache-2.0",
+        "this is an on-chain distribution program, not bundle transport."
+      ],
+      "patterns": [
+        "Account for confirmed tip transfers exactly once",
+        "separate revenue distribution from per-transaction landing tips",
+        "verify program/authority and epoch configuration."
+      ],
+      "sylphModules": [
+        "src/platform/execution/jito-lifecycle-coordinator.ts",
+        "src/platform/execution/authority.ts",
+        "src/execution.ts"
+      ],
+      "overlap": "Existing Jito tip floor research does not execute tip-router instructions.",
+      "risks": [
+        "Moves funds under program authority",
+        "account lifecycle and release versions matter",
+        "no runtime interface or deployed state was verified."
+      ],
+      "validation": [
+        "pin SDK/validator release and endpoint semantics",
+        "test status, reconnect, duplicate-submit and fee reconciliation with offline fixtures",
+        "do not send live transactions or expose credentials during research"
+      ],
+      "evidence": [
+        "https://github.com/jito-foundation/jito-tip-router",
+        "https://github.com/jito-foundation/jito-tip-router/tree/0fa020103872fc3fe5833891d9e22b2a714ff684"
+      ],
+      "license": "MIT_OR_APACHE-2.0",
+      "decision": "COST_ACCOUNTING_REFERENCE_ONLY"
+    },
+    {
+      "id": "SRC-070",
+      "url": "https://github.com/jito-foundation/jito-solana",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Jito-Solana README, root license and workspace manifest",
+        "Pinned repository commit b9bbfba03b26d91da3e5606d3950c487a7b7018d"
+      ],
+      "discoveries": [
+        "Repository is a Jito validator fork",
+        "pinned manifest reports version 4.5.0-alpha.1, Rust 1.98.1 and edition 2024",
+        "integrates validator components including bundle-related features."
+      ],
+      "patterns": [
+        "Treat validator/client distribution separately from a client-side sender",
+        "record validator implementation/version with observed landing telemetry",
+        "run only in controlled infrastructure tests."
+      ],
+      "sylphModules": [
+        "src/platform/execution/jito-lifecycle-coordinator.ts",
+        "src/platform/ingestion/provider-health.ts",
+        "src/execution.ts"
+      ],
+      "overlap": "SYLPH queries Jito public endpoints; it does not operate a validator.",
+      "risks": [
+        "Large privileged validator surface",
+        "alpha toolchain/dependency requirements",
+        "deploying it would change infrastructure and is outside current client runtime scope."
+      ],
+      "validation": [
+        "pin SDK/validator release and endpoint semantics",
+        "test status, reconnect, duplicate-submit and fee reconciliation with offline fixtures",
+        "do not send live transactions or expose credentials during research"
+      ],
+      "evidence": [
+        "https://github.com/jito-foundation/jito-solana",
+        "https://github.com/jito-foundation/jito-solana/tree/b9bbfba03b26d91da3e5606d3950c487a7b7018d"
+      ],
+      "license": "Apache-2.0",
+      "decision": "INFRASTRUCTURE_REFERENCE_ONLY_NO_DEPLOYMENT"
+    },
+    {
+      "id": "SRC-071",
+      "url": "https://github.com/jito-labs/jito-rust-rpc",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Jito Rust RPC README, LICENSE, Cargo metadata and methods",
+        "Pinned repository commit a981785e0f362f980df113f944034466168b08ff"
+      ],
+      "discoveries": [
+        "SDK exposes sendBundle, sendTransaction and bundle-status calls",
+        "Cargo package says MIT while root LICENSE is Apache-2.0",
+        "request client is a thin JSON-RPC wrapper."
+      ],
+      "patterns": [
+        "Separate submit acknowledgement from bundle inclusion/confirmation",
+        "persist bundle identifiers and poll status with bounded retry",
+        "measure actual landed transaction costs separately."
+      ],
+      "sylphModules": [
+        "src/platform/execution/jito-lifecycle-coordinator.ts",
+        "src/execution.ts",
+        "terminal/"
+      ],
+      "overlap": "Cross-language reference only; no need for Rust SDK in current runtime.",
+      "risks": [
+        "License metadata conflict needs resolution",
+        "network send methods cross execution boundary",
+        "successful RPC response alone is not proof of a fill."
+      ],
+      "validation": [
+        "pin SDK/validator release and endpoint semantics",
+        "test status, reconnect, duplicate-submit and fee reconciliation with offline fixtures",
+        "do not send live transactions or expose credentials during research"
+      ],
+      "evidence": [
+        "https://github.com/jito-labs/jito-rust-rpc",
+        "https://github.com/jito-labs/jito-rust-rpc/tree/a981785e0f362f980df113f944034466168b08ff"
+      ],
+      "license": "LICENSE_APACHE_CARGO_MIT_CONFLICT",
+      "decision": "STATUS_PATTERN_ONLY_LICENSE_REVIEW_REQUIRED"
+    },
+    {
+      "id": "SRC-072",
+      "url": "https://github.com/jito-labs/jito-go-rpc",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Jito Go RPC README, LICENSE, client.go and bundles.go",
+        "Pinned repository commit 24b8c97108f2abb3153abd8d5b714465de13f7c7"
+      ],
+      "discoveries": [
+        "Client provides sendBundle/sendTransaction plus inflight and final bundle-status methods",
+        "optional x-jito-auth UUID is attached by transport",
+        "root license is Apache-2.0 while README shows a different Go version from go.mod."
+      ],
+      "patterns": [
+        "Track transport acknowledgement, in-flight status and final status as separate states",
+        "bound retries and avoid duplicate submission on ambiguous timeouts",
+        "keep auth values out of logs."
+      ],
+      "sylphModules": [
+        "src/platform/execution/jito-lifecycle-coordinator.ts",
+        "src/execution.ts"
+      ],
+      "overlap": "No direct runtime role; existing TypeScript implementation is the relevant client.",
+      "risks": [
+        "Sending API is execution-capable",
+        "version/documentation skew",
+        "UUID auth and retry behavior require endpoint-specific validation."
+      ],
+      "validation": [
+        "pin SDK/validator release and endpoint semantics",
+        "test status, reconnect, duplicate-submit and fee reconciliation with offline fixtures",
+        "do not send live transactions or expose credentials during research"
+      ],
+      "evidence": [
+        "https://github.com/jito-labs/jito-go-rpc",
+        "https://github.com/jito-labs/jito-go-rpc/tree/24b8c97108f2abb3153abd8d5b714465de13f7c7"
+      ],
+      "license": "Apache-2.0",
+      "decision": "STATUS_PATTERN_ONLY_NO_SEND_ADOPTION"
+    },
+    {
+      "id": "SRC-073",
+      "url": "https://github.com/helius-labs/helius-rust-sdk",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Helius Rust SDK README, Cargo metadata and WebSocket builder source",
+        "Pinned repository commit 95ecc11f42bbfff79940c2d46da64c35f5b5de49"
+      ],
+      "discoveries": [
+        "SDK v3.0.1 exposes WebSocket ping interval and pong timeout configuration, with defaults documented as 10 s and 30 s",
+        "builder rejects API credentials embedded in URLs and accepts them through an API-key type."
+      ],
+      "patterns": [
+        "Make ping cadence and pong timeout explicit configurable settings",
+        "preserve endpoint-independent health state and reconnect/continuity evidence",
+        "never log credentials."
+      ],
+      "sylphModules": [
+        "src/rpc.ts",
+        "src/platform/ingestion/provider-health.ts",
+        "terminal/"
+      ],
+      "overlap": "Potential Helius provider reference; adding Rust SDK would not fit current runtime and would duplicate RPC clients.",
+      "risks": [
+        "SDK settings do not prove behavior of SYLPH or of another provider",
+        "credential and rate-limit handling remains endpoint-specific",
+        "no Helius connection was attempted."
+      ],
+      "validation": [
+        "pin SDK/validator release and endpoint semantics",
+        "test status, reconnect, duplicate-submit and fee reconciliation with offline fixtures",
+        "do not send live transactions or expose credentials during research"
+      ],
+      "evidence": [
+        "https://github.com/helius-labs/helius-rust-sdk",
+        "https://github.com/helius-labs/helius-rust-sdk/tree/95ecc11f42bbfff79940c2d46da64c35f5b5de49"
+      ],
+      "license": "MIT",
+      "decision": "WEBSOCKET_CONFIG_REFERENCE_ONLY_NO_PROVIDER_ACCESS"
+    },
+    {
+      "id": "SRC-074",
+      "url": "https://github.com/orca-so/tx-sender",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Orca tx-sender README, LICENSE, transaction builder and compute-budget source",
+        "Pinned repository commit 0ec3c1ab22ef7146c682b906fc2547d6836ea7d7"
+      ],
+      "discoveries": [
+        "Library supports ALTs, dynamic priority instructions, compute estimation and optional Jito tips",
+        "on simulation-estimation failure the inspected source falls back to 1,400,000 compute units",
+        "repository license changed from Apache to Orca License on Feb. 27, 2025."
+      ],
+      "patterns": [
+        "Keep compute limit, priority fee and Jito tip as distinct cost components",
+        "record estimation failure instead of treating fallback as measured usage",
+        "resolve ALTs before exact-message validation."
+      ],
+      "sylphModules": [
+        "src/execution.ts",
+        "src/platform/execution/authority.ts",
+        "src/platform/execution/jito-lifecycle-coordinator.ts"
+      ],
+      "overlap": "Execution transport overlaps existing authority/Jito lifecycle abstractions.",
+      "risks": [
+        "Sending/retry code is execution-capable",
+        "fallback may overstate compute/fees",
+        "current Orca license terms apply and have not been approved for reuse."
+      ],
+      "validation": [
+        "pin relevant protocol and client version",
+        "compare with offline transaction/slot fixtures and confirmed balances",
+        "no validator deployment, RPC request, transaction send, or code reuse without review"
+      ],
+      "evidence": [
+        "https://github.com/orca-so/tx-sender",
+        "https://github.com/orca-so/tx-sender/tree/0ec3c1ab22ef7146c682b906fc2547d6836ea7d7"
+      ],
+      "license": "ORCA_LICENSE_TERMS_REVIEW_REQUIRED",
+      "decision": "COST_MODEL_REFERENCE_ONLY_NO_SENDER_ADOPTION"
+    },
+    {
+      "id": "SRC-075",
+      "url": "https://github.com/firedancer-io/firedancer",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Firedancer pinned README, LICENSE and validator architecture description",
+        "Pinned repository commit cecd931568ea9875f0f7714dbcea28b573403721"
+      ],
+      "discoveries": [
+        "Firedancer is a separate Solana validator client with a restrictive sandbox and independent implementation",
+        "root license delegates additional terms to NOTICE",
+        "this bounded read used a sparse checkout and did not inspect build/runtime behavior."
+      ],
+      "patterns": [
+        "Treat client diversity as an independent validation dimension",
+        "compare protocol observations across implementations with slot/signature identity",
+        "use only isolated validator-lab evidence."
+      ],
+      "sylphModules": [
+        "src/platform/ingestion/census-r.ts",
+        "src/platform/ingestion/gap-reconciler.ts",
+        "src/platform/ingestion/yellowstone-captured-client.ts"
+      ],
+      "overlap": "Potential independent validator conformance target, not a market data adapter.",
+      "risks": [
+        "Validator deployment is operationally sensitive",
+        "license/NOTICE conditions require review",
+        "sparse documentation review is not a compatibility or performance result."
+      ],
+      "validation": [
+        "pin relevant protocol and client version",
+        "compare with offline transaction/slot fixtures and confirmed balances",
+        "no validator deployment, RPC request, transaction send, or code reuse without review"
+      ],
+      "evidence": [
+        "https://github.com/firedancer-io/firedancer",
+        "https://github.com/firedancer-io/firedancer/tree/cecd931568ea9875f0f7714dbcea28b573403721"
+      ],
+      "license": "Firedancer_LICENSE_AND_NOTICE_REVIEW_REQUIRED",
+      "decision": "VALIDATOR_DIVERSITY_REFERENCE_ONLY"
+    },
+    {
+      "id": "SRC-077",
+      "url": "https://github.com/jito-foundation/solana-analysis",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Jito solana-analysis workspace and fee/tip analysis sources",
+        "Pinned repository commit ea809c1ebf368f26e488bb8a24c4d92652e92ae0"
+      ],
+      "discoveries": [
+        "Workspace uses Solana 1.16-era crates and includes fee_analysis and tip_distribution_analysis utilities",
+        "fee analysis tracks success/failure counts, compute usage, vote/non-vote fees and Jito tips separately",
+        "no root LICENSE or README found."
+      ],
+      "patterns": [
+        "Separate failed and successful transaction fees",
+        "attribute votes, non-votes and explicit tips independently",
+        "chunk historical slot analysis with bounded worker channels."
+      ],
+      "sylphModules": [
+        "research/",
+        "src/platform/pipeline/runtime-divergence.ts",
+        "docs/ECOSYSTEM_INTEGRATION_AUDIT_2026-10-12.md"
+      ],
+      "overlap": "Potential research reference only; does not provide runtime capability.",
+      "risks": [
+        "Legacy dependencies and no license evidence",
+        "exploratory scripts may embed source-data assumptions",
+        "was not run or connected to an RPC."
+      ],
+      "validation": [
+        "pin relevant protocol and client version",
+        "compare with offline transaction/slot fixtures and confirmed balances",
+        "no validator deployment, RPC request, transaction send, or code reuse without review"
+      ],
+      "evidence": [
+        "https://github.com/jito-foundation/solana-analysis",
+        "https://github.com/jito-foundation/solana-analysis/tree/ea809c1ebf368f26e488bb8a24c4d92652e92ae0"
+      ],
+      "license": "LICENSE_NOT_FOUND_REVIEW_REQUIRED",
+      "decision": "OFFLINE_FEE_RESEARCH_ONLY_NO_LICENSE_CLEARANCE"
+    },
+    {
+      "id": "SRC-078",
+      "url": "https://github.com/jito-foundation/firebam",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "FireBAM README, LICENSE, SECURITY.md and validator overview",
+        "Pinned repository commit 30249d2b0869a5c0cd37287d4453734e96a8621e"
+      ],
+      "discoveries": [
+        "FireBAM is a Firedancer fork adding BAM transaction scheduling support",
+        "root LICENSE/NOTICE governs repository contents",
+        "published docs direct operators to separate validator setup/release guides."
+      ],
+      "patterns": [
+        "Keep BAM scheduling path distinct from Jito bundles and RPC send acknowledgements",
+        "record validator/scheduler identity when comparing landing outcomes",
+        "separate validator operation from client routing."
+      ],
+      "sylphModules": [
+        "src/platform/execution/jito-lifecycle-coordinator.ts",
+        "src/platform/ingestion/provider-health.ts",
+        "src/platform/ingestion/census-r.ts"
+      ],
+      "overlap": "Potential infrastructure reference only; SYLPH does not run a validator.",
+      "risks": [
+        "Requires validator operations and BAM-specific infrastructure",
+        "no runtime compatibility or execution guarantee established",
+        "NOTICE and license scope apply."
+      ],
+      "validation": [
+        "pin relevant protocol and client version",
+        "compare with offline transaction/slot fixtures and confirmed balances",
+        "no validator deployment, RPC request, transaction send, or code reuse without review"
+      ],
+      "evidence": [
+        "https://github.com/jito-foundation/firebam",
+        "https://github.com/jito-foundation/firebam/tree/30249d2b0869a5c0cd37287d4453734e96a8621e"
+      ],
+      "license": "Apache-2.0_PER_NOTICE",
+      "decision": "INFRASTRUCTURE_REFERENCE_ONLY_NO_DEPLOYMENT"
+    },
+    {
+      "id": "SRC-081",
+      "url": "https://github.com/anza-xyz/svm",
+      "status": "PARTIAL_REVIEW",
+      "provenance": [
+        "Anza SVM sparse checkout, root LICENSE and svm crate manifest/source",
+        "Pinned repository commit 11d56df5e356e0a68ac9cef4a001346b4c9475d8"
+      ],
+      "discoveries": [
+        "SVM crate is a component of Anza transaction execution.",
+        "Its manifest inherits workspace-wide license/version/toolchain settings.",
+        "Selected source includes account overrides and durable-nonce state handling."
+      ],
+      "patterns": [
+        "Keep transaction execution semantics as a versioned adapter boundary.",
+        "Validate durable nonce and account-override paths separately.",
+        "Pin crate and workspace commits together."
+      ],
+      "sylphModules": [
+        "src/platform/execution/authority.ts",
+        "src/platform/ingestion/truth-x.ts",
+        "test/"
+      ],
+      "overlap": "Potential future protocol fixture harness; existing project has Node tests but no current SVM integration.",
+      "risks": [
+        "Bounded sparse checkout did not include the complete workspace manifest/tree.",
+        "SVM internals are execution-critical.",
+        "This is not a client market adapter."
+      ],
+      "validation": [
+        "Pin runtime/version and preserve exact reproducer as offline fixture.",
+        "Compare behavior using deterministic controlled state.",
+        "No production VM/runtime change or unauthorized exploit activity."
+      ],
+      "evidence": [
+        "https://github.com/anza-xyz/svm",
+        "https://github.com/anza-xyz/svm/tree/11d56df5e356e0a68ac9cef4a001346b4c9475d8"
+      ],
+      "license": "Apache-2.0",
+      "decision": "SVM_REFERENCE_ONLY_NO_ENGINE_INTEGRATION"
+    }
+  ]
+}

@@ -161,6 +161,7 @@ test('PASS-24 REQ-3 (Invariant 4): CensusRJournalAuthority completeness-gated se
   census.commitTransactionBatch({
     slot: 100,
     bankHash,
+    bankIdentityStatus: 'VERIFIED',
     txHash: 'tx-100',
     providerId: 'provider-1',
     providerTimestampMs: 1000,
@@ -171,6 +172,7 @@ test('PASS-24 REQ-3 (Invariant 4): CensusRJournalAuthority completeness-gated se
   census.commitTransactionBatch({
     slot: 150,
     bankHash,
+    bankIdentityStatus: 'VERIFIED',
     txHash: 'tx-150',
     providerId: 'provider-1',
     providerTimestampMs: 1500,

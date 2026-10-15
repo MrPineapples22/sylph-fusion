@@ -56,6 +56,8 @@ export interface ExecutionEngine {
 export type EngineMode='PAPER'|'LIVE';
 export interface EngineConfig { mode:EngineMode; paper?:{seed?:number;tipFloorLamports?:bigint;tipCeilingLamports?:bigint}; live?:{grpcEndpoint:string;jitoBlockEngineUrl:string;rpcUrl:string;privateKeyBase58:string}; }
 const BPS=10_000n, FEE_BPS=25n, SLOT_MS=400;
+/** Paper fills model one transaction signature; Solana's base fee is charged per signature. */
+export const SIMULATED_BASE_NETWORK_FEE_LAMPORTS = 5_000n;
 const clamp=(n:number,min:number,max:number)=>Math.max(min,Math.min(max,n));
 /** Expands tranche tolerance with cumulative depth usage, bounded by a hard cap. */
 export function computeTrancheSlippageBps(trancheIndex:number,cumulativeTokenAmount:bigint,poolTokenReserve:bigint,baseSlippageBps=150,maxSlippageBps=1500){if(poolTokenReserve<=0n||cumulativeTokenAmount<=0n)return baseSlippageBps;const depthRatioBps=Number((cumulativeTokenAmount*10_000n)/poolTokenReserve);return Math.min(maxSlippageBps,baseSlippageBps+Math.round(depthRatioBps*1.35));}

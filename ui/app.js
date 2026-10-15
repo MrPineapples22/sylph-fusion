@@ -41,10 +41,11 @@ function render(s) {
   $('pnl').className = BigInt(s.dayPnl) < 0n ? 'negative' : 'positive'; $('exposure').textContent = sol(exp);
   $('capacity').textContent = s.positions.length + ' / ' + s.limits.positions; $('capacity-note').textContent = Math.max(0, s.limits.positions - s.positions.length) + ' slots available';
   $('position-count').textContent = s.positions.length + ' OPEN'; $('pause').disabled = busy || s.demo || s.stopping; $('pause').textContent = s.paperActive ? (s.paused ? 'Resume paper entries' : 'Pause paper entries') : s.demo ? 'Preview only' : s.paused ? 'Resume new entries' : 'Pause new entries'; if ($('auto')) { $('auto').disabled = busy || !s.paperActive || s.demo || s.stopping; $('auto').textContent = s.autoPaper ? 'Stop auto paper' : 'Start auto paper'; }
-  const note = s.paperActive ? (s.autoPaper ? 'SMART AUTO PAPER ACTIVE · Entries require fresh quotes, liquidity, momentum, and confirmed safety approval. Every fill is saved to CSV; no transaction is sent.' : 'PAPER MODE · Uses live quotes but never sends a transaction. Rug checks and the one-trade-per-token rule still apply.') : s.demo ? 'OFFLINE PREVIEW · Sample data only. This preview cannot connect to a wallet or place trades.' : s.stopping ? 'Engine stopping. Open positions and pending orders are being preserved.' : s.halted ? 'SAFETY HALT · New entries are blocked. Operator resume cannot override this halt.' : s.paused ? 'New entries paused. Position monitoring and automatic exits remain active.' : !s.feed.healthy ? 'Waiting for a fresh, warmed-up market feed. New entries are blocked until the feed is ready.' : 'Engine monitoring markets. New entries remain subject to every configured risk check.';
-  $('notice').textContent = s.connected === false && !s.paperActive ? 'Live market app · Trading engine is not running. Watch tokens here; no trades are being placed.' : note; $('notice').classList.toggle('warn', s.demo || s.halted || (!s.feed.healthy && !s.paperActive));
-  $('feed').textContent = s.feed.healthy ? 'Healthy' : 'Waiting / stale'; $('feed-dot').classList.toggle('healthy', s.feed.healthy);
-  $('entries').textContent = s.stopping ? 'Stopping' : s.halted ? 'Safety halted' : s.paused ? 'Paused by you' : s.feed.healthy ? 'Risk gated' : 'Waiting for feed';
+  const feedIncident = s.feed?.ingressFault;
+  const note = feedIncident ? `FEED RECOVERY HOLD · ${feedIncident.reason}. New entries are blocked until the incident is reviewed and a fresh live feed is verified.` : s.paperActive ? (s.autoPaper ? 'SMART AUTO PAPER ACTIVE · Entries require fresh quotes, liquidity, momentum, and confirmed safety approval. Every fill is saved to CSV; no transaction is sent.' : 'PAPER MODE · Uses live quotes but never sends a transaction. Rug checks and the one-trade-per-token rule still apply.') : s.demo ? 'OFFLINE PREVIEW · Sample data only. This preview cannot connect to a wallet or place trades.' : s.stopping ? 'Engine stopping. Open positions and pending orders are being preserved.' : s.halted ? 'SAFETY HALT · New entries are blocked. Operator resume cannot override this halt.' : s.paused ? 'New entries paused. Position monitoring and automatic exits remain active.' : !s.feed.healthy ? 'Waiting for a fresh, warmed-up market feed. New entries are blocked until the feed is ready.' : 'Engine monitoring markets. New entries remain subject to every configured risk check.';
+  $('notice').textContent = s.connected === false && !s.paperActive ? 'Live market app · Trading engine is not running. Watch tokens here; no trades are being placed.' : note; $('notice').classList.toggle('warn', !!feedIncident || s.demo || s.halted || (!s.feed.healthy && !s.paperActive));
+  $('feed').textContent = feedIncident ? 'Recovery hold' : s.feed.healthy ? 'Healthy' : 'Waiting / stale'; $('feed-dot').classList.toggle('healthy', s.feed.healthy && !feedIncident);
+  $('entries').textContent = feedIncident ? 'Recovery hold' : s.stopping ? 'Stopping' : s.halted ? 'Safety halted' : s.paused ? 'Paused by you' : s.feed.healthy ? 'Risk gated' : 'Waiting for feed';
   $('slot').textContent = s.feed.slot ? s.feed.slot.toLocaleString() : '—'; $('wallet').textContent = short(s.wallet); $('wallet').title = s.wallet;
   $('positions-body').replaceChildren(); $('positions-empty').hidden = !!s.positions.length;
   for (const p of s.positions) {
@@ -53,7 +54,21 @@ function render(s) {
     row.append(text('td', sol(p.cost))); const value = document.createElement('td');
     const fresh = p.mark && s.time - p.mark.at < 10000;
     value.append(text('span', p.mark ? sol(p.mark.value) : '—')); value.append(text('small', !p.mark ? 'Not yet quoted' : fresh ? 'Latest estimate' : 'Stale estimate')); row.append(value);
-    row.append(text('td', p.stage + ' / 5')); row.append(text('td', p.panic ? 'Exit requested' : 'Monitoring', p.panic ? 'negative' : 'positive'));
+    row.append(text('td', p.stage + ' / 5'));
+    const statusCell = document.createElement('td');
+    statusCell.append(text('span', p.panic ? 'Exit requested' : 'Monitoring', p.panic ? 'negative' : 'positive'));
+    const evidence = p.marketEvidence;
+    if (evidence) {
+      const evidenceLabels = {
+        NOT_MIGRATED: 'Bonding curve', WAITING: 'Waiting for canonical pool',
+        OBSERVED: `Canonical pool · slot ${evidence.slot ?? '—'}`,
+        UNAVAILABLE: `Pool read unavailable · ${evidence.lastError ?? 'unknown error'}`,
+        STALE: 'Pool observation is stale', UNVERIFIED: 'Pool data unverified',
+      };
+      const evidenceClass = evidence.status === 'OBSERVED' ? 'positive' : 'market-evidence-warning';
+      statusCell.append(text('small', evidenceLabels[evidence.status] ?? 'Market evidence unknown', evidenceClass));
+    }
+    row.append(statusCell);
     const action = document.createElement('td'); if (s.paperActive) { const b = text('button', 'Exit all'); b.className = 'paper-action'; b.addEventListener('click', async () => { b.disabled = true; try { render(await api('/api/paper', { action: 'sell', mint: p.mint, fraction: 10000 })); toast('Paper position exited'); } catch (e) { toast(e.message); b.disabled = false; } }); action.append(b); } else action.append(text('small', 'Engine managed')); row.append(action); $('positions-body').append(row);
   }
   const lane = $('pending'); if (lane) lane.replaceChildren(text('div', 'ORDER LANE', 'eyebrow'), text('strong', s.pending ? s.pending.side.toUpperCase() + ' · Awaiting chain outcome' : 'No pending order'), text('p', s.pending ? short(s.pending.mint) + ' · ' + Math.floor((s.time - s.pending.created) / 1000) + 's pending. ' + s.pending.reason : 'Ready for the next eligible execution.'));

@@ -1,0 +1,44 @@
+{
+  "path": "D:\\Users\\juans\\SF-feed-ingress/research/registry/resource_manifest.csv",
+  "sha256": "590bfbe6b667264125afad383dad5c92dcd95d27b0d952421ea864e741a53cc0",
+  "bytes": 52884,
+  "records": 288,
+  "uniqueIds": 288,
+  "uniqueUrls": 288,
+  "uniqueHosts": 67,
+  "categories": {
+    "docs_rea_reverse_engineering": 9,
+    "docs_solana_trading": 6,
+    "github_additional_solana": 6,
+    "github_data_observability_ops": 20,
+    "github_dex_swaps_launches": 17,
+    "github_execution_validator_jito": 13,
+    "github_formal_correctness": 10,
+    "github_graph_analytics": 9,
+    "github_parsers_sdks": 17,
+    "github_project_rea": 2,
+    "github_quant_ml_data": 21,
+    "github_simulation_testing_security": 12,
+    "github_streaming_rpc": 31,
+    "github_supply_chain_ci": 10,
+    "github_treasury_signing_crosschain": 15,
+    "sylph_source_audit": 20,
+    "web_market_data_research": 15,
+    "web_streaming_infra_rpc": 12,
+    "web_token_safety_custody": 18,
+    "web_trading_execution_terminals": 18,
+    "web_visual_debug_rea": 7
+  },
+  "priorities": {
+    "P0": 45,
+    "P1": 84,
+    "P2": 159
+  },
+  "reviewStatuses": {
+    "NOT_REVIEWED": 177,
+    "PARTIAL_REVIEW": 111
+  },
+  "invalidUrls": [],
+  "duplicateIds": [],
+  "duplicateUrls": []
+}
