@@ -945,7 +945,8 @@
         "files": ["src/platform/execution/jito-tip-floor.ts", "src/execution.ts", "test/platform/jito-tip-floor.test.mjs"],
         "validation": {
           "engineBuild": "npm run build:engine — passed in isolated pinned scratch copy",
-          "focusedTests": "node --test test/platform/jito-tip-floor.test.mjs test/platform/jito-fence.test.mjs — 8/8 passed"
+          "focusedTests": "node --test test/platform/jito-tip-floor.test.mjs test/platform/jito-fence.test.mjs — 8/8 passed",
+          "platformSuite": "npm run test:platform — 1,058/1,058 passed (23 suites) in the isolated pinned scratch copy after the tip-floor patch"
         },
         "authorityImpact": "Tip estimation only; no signing, broadcast, custody, capital authorization, or risk-limit paths changed.",
         "status": "VERIFIED_TIP_FLOOR_UNIT_CONVERSION_ONLY"
