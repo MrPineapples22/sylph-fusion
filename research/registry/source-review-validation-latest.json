@@ -1,19 +1,19 @@
 {
-  "generatedAt": "2026-10-15T04:29:35.677Z",
+  "generatedAt": "2026-10-15T04:30:53.389Z",
   "manifestRows": 288,
   "uniqueManifestIds": 288,
   "batchFiles": 23,
   "catalogRecords": 288,
   "uniqueCatalogIds": 288,
-  "directlyReviewedRecords": 84,
-  "triageOnlyRecords": 204,
+  "directlyReviewedRecords": 88,
+  "triageOnlyRecords": 200,
   "manifestReviewStatusCounts": {
-    "PARTIAL_REVIEW": 84,
-    "NOT_REVIEWED": 204
+    "PARTIAL_REVIEW": 88,
+    "NOT_REVIEWED": 200
   },
   "batchStatusCounts": {
-    "PARTIAL_REVIEW": 84,
-    "CATALOG_TRIAGE": 204
+    "PARTIAL_REVIEW": 88,
+    "CATALOG_TRIAGE": 200
   },
   "distinctDecisionCount": 169,
   "topDecisionCounts": [
@@ -38,7 +38,7 @@
       "count": 4
     },
     {
-      "decision": "CLIENT_DIVERSITY_RESEARCH_ONLY",
+      "decision": "INFRASTRUCTURE_REFERENCE_ONLY_NO_DEPLOYMENT",
       "count": 2
     },
     {

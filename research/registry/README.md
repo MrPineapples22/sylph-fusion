@@ -406,3 +406,12 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - SRC-072 Jito Go RPC is pinned at 24b8c97108f2abb3153abd8d5b714465de13f7c7 (Apache-2.0). In-flight and final bundle status are distinct; its client attaches optional auth headers. Send methods were inspected only.
 - SRC-073 Helius Rust SDK is pinned at 95ecc11f42bbfff79940c2d46da64c35f5b5de49 (MIT). WebSocket builder exposes ping/pong timeouts (documented defaults 10/30 seconds) and keeps API key outside URLs. This is a configuration reference; no provider was connected.
 - Registry status: 84 direct source inspections and 204 catalog-triage records. No live send or provider access was exercised.
+
+
+## Sender cost and validator diversity references (2026-10-14)
+
+- SRC-074 Orca tx-sender is pinned at 0ec3c1ab22ef7146c682b906fc2547d6836ea7d7. It combines compute estimation, priority instructions, optional Jito tips and ALTs; a failed estimate falls back to 1.4M CU. Its current license is Orca License, not assumed Apache.
+- SRC-075 Firedancer is pinned at cecd931568ea9875f0f7714dbcea28b573403721 (root LICENSE plus NOTICE). Sparse README/license review only; no build or validator behavior was checked.
+- SRC-077 Jito solana-analysis is pinned at ea809c1ebf368f26e488bb8a24c4d92652e92ae0. Its historical fee utility separates success/failure, compute, vote/non-vote and tip measures; no root license found and it was not run.
+- SRC-078 FireBAM is pinned at 30249d2b0869a5c0cd37287d4453734e96a8621e (LICENSE/NOTICE). It adds BAM scheduling to a validator fork; this is infrastructure context, not Jito bundle transport or a client send path.
+- Registry status: 88 direct source inspections and 200 catalog-triage records. No external sender or validator was run.
