@@ -396,3 +396,13 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - SRC-067 Lite RPC is pinned at 325dfe5a229a14370bfb6ab05f41796e3e016a69 (AGPL workspace). It adds QUIC/TPU forwarding and auth mechanisms; a nested package declares MIT, so license metadata conflicts need resolution.
 - SRC-068 Jito programs is pinned at ce1dfb6b3f6c423bf206ec1f24df911d292aa409. Release steps rebuild IDLs and push tags; no root LICENSE or deployed program verification was found in this bounded pass.
 - Registry status: 79 direct source inspections and 209 catalog-triage records. No transport, routing, or on-chain program code was integrated.
+
+
+## Jito delivery and WebSocket reliability references (2026-10-14)
+
+- SRC-069 Jito Tip Router is pinned at 0fa020103872fc3fe5833891d9e22b2a714ff684 (MIT OR Apache-2.0). It distributes epoch tip revenue on-chain; this is distinct from a transaction landing tip and requires separate accounting.
+- SRC-070 Jito-Solana is pinned at b9bbfba03b26d91da3e5606d3950c487a7b7018d (Apache-2.0). It is a validator fork, with pinned manifest reporting an alpha v4.5.0 toolchain; it is not a client sender integration.
+- SRC-071 Jito Rust RPC is pinned at a981785e0f362f980df113f944034466168b08ff. It exposes send and bundle-status methods; root Apache license conflicts with Cargo MIT metadata. No requests were sent.
+- SRC-072 Jito Go RPC is pinned at 24b8c97108f2abb3153abd8d5b714465de13f7c7 (Apache-2.0). In-flight and final bundle status are distinct; its client attaches optional auth headers. Send methods were inspected only.
+- SRC-073 Helius Rust SDK is pinned at 95ecc11f42bbfff79940c2d46da64c35f5b5de49 (MIT). WebSocket builder exposes ping/pong timeouts (documented defaults 10/30 seconds) and keeps API key outside URLs. This is a configuration reference; no provider was connected.
+- Registry status: 84 direct source inspections and 204 catalog-triage records. No live send or provider access was exercised.

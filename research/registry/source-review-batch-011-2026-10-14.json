@@ -2,13 +2,13 @@
   "batchId": "source-review-batch-011-2026-10-14",
   "reviewedAt": "2026-10-14",
   "repository": {
-    "localHead": "785236f",
-    "remoteHead": "785236f",
+    "localHead": "7aaf150",
+    "remoteHead": "7aaf150",
     "mainAndTaskBranchMatch": true,
     "worktreeHasPreexistingEdits": true
   },
   "sourceRecords": 15,
-  "directlyReviewed": 5,
+  "directlyReviewed": 10,
   "sources": [
     {
       "id": "SRC-064",
@@ -218,19 +218,20 @@
     {
       "id": "SRC-069",
       "url": "https://github.com/jito-foundation/jito-tip-router",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Jito Tip Router README and program context"
+        "Jito Tip Router README, Cargo metadata and license files",
+        "Pinned repository commit 0fa020103872fc3fe5833891d9e22b2a714ff684"
       ],
       "discoveries": [
-        "Tip Router concerns routing/handling Jito tips on chain and is separate from Block Engine bundle delivery.",
-        "Tip payment is a real economic transfer and should be measured as a transaction cost, not inferred from a successful endpoint response.",
-        "No tip-router instruction is part of the SYLPH simulation/research integration reviewed here."
+        "Program describes epoch-level distribution of Jito tip revenue among DAO treasury and network participants",
+        "Cargo declares MIT OR Apache-2.0",
+        "this is an on-chain distribution program, not bundle transport."
       ],
       "patterns": [
-        "account for tip transfer exactly once",
-        "verify destination/program and amount",
-        "separate tip quote from landed tip receipt"
+        "Account for confirmed tip transfers exactly once",
+        "separate revenue distribution from per-transaction landing tips",
+        "verify program/authority and epoch configuration."
       ],
       "sylphModules": [
         "src/platform/execution/jito-lifecycle-coordinator.ts",
@@ -239,37 +240,39 @@
       ],
       "overlap": "Existing Jito tip floor research does not execute tip-router instructions.",
       "risks": [
-        "on-chain fund movement",
-        "program upgrade and account config",
-        "double-counted tips in PnL"
+        "Moves funds under program authority",
+        "account lifecycle and release versions matter",
+        "no runtime interface or deployed state was verified."
       ],
       "validation": [
-        "audit program version and instructions",
-        "derive cost from confirmed transaction balances",
-        "keep disabled absent authority and explicit scope"
+        "pin SDK/validator release and endpoint semantics",
+        "test status, reconnect, duplicate-submit and fee reconciliation with offline fixtures",
+        "do not send live transactions or expose credentials during research"
       ],
       "evidence": [
-        "https://github.com/jito-foundation/jito-tip-router"
+        "https://github.com/jito-foundation/jito-tip-router",
+        "https://github.com/jito-foundation/jito-tip-router/tree/0fa020103872fc3fe5833891d9e22b2a714ff684"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "NO_INTEGRATION; COST_ACCOUNTING_PATTERN_ONLY"
+      "license": "MIT_OR_APACHE-2.0",
+      "decision": "COST_ACCOUNTING_REFERENCE_ONLY"
     },
     {
       "id": "SRC-070",
       "url": "https://github.com/jito-foundation/jito-solana",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Jito Solana repository and upstream client description"
+        "Jito-Solana README, root license and workspace manifest",
+        "Pinned repository commit b9bbfba03b26d91da3e5606d3950c487a7b7018d"
       ],
       "discoveries": [
-        "Jito-Solana is a validator/client distribution extending the Solana client with Jito MEV-related features.",
-        "Running it is validator infrastructure, not a client-side bundle sender or confirmation proof.",
-        "A specialized validator path does not by itself guarantee a user's transaction lands or receives a favorable fill."
+        "Repository is a Jito validator fork",
+        "pinned manifest reports version 4.5.0-alpha.1, Rust 1.98.1 and edition 2024",
+        "integrates validator components including bundle-related features."
       ],
       "patterns": [
-        "record validator/client implementation",
-        "distinguish validator features from user submission APIs",
-        "measure realized landing and cost outcomes"
+        "Treat validator/client distribution separately from a client-side sender",
+        "record validator implementation/version with observed landing telemetry",
+        "run only in controlled infrastructure tests."
       ],
       "sylphModules": [
         "src/platform/execution/jito-lifecycle-coordinator.ts",
@@ -278,37 +281,39 @@
       ],
       "overlap": "SYLPH queries Jito public endpoints; it does not operate a validator.",
       "risks": [
-        "large validator operations footprint",
-        "consensus/client version coupling",
-        "MEV incentives and execution uncertainty"
+        "Large privileged validator surface",
+        "alpha toolchain/dependency requirements",
+        "deploying it would change infrastructure and is outside current client runtime scope."
       ],
       "validation": [
-        "pin validator release and audit changes",
-        "compare landing telemetry across validator paths",
-        "never infer trade authorization from infrastructure choice"
+        "pin SDK/validator release and endpoint semantics",
+        "test status, reconnect, duplicate-submit and fee reconciliation with offline fixtures",
+        "do not send live transactions or expose credentials during research"
       ],
       "evidence": [
-        "https://github.com/jito-foundation/jito-solana"
+        "https://github.com/jito-foundation/jito-solana",
+        "https://github.com/jito-foundation/jito-solana/tree/b9bbfba03b26d91da3e5606d3950c487a7b7018d"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "INFRASTRUCTURE_REFERENCE_ONLY"
+      "license": "Apache-2.0",
+      "decision": "INFRASTRUCTURE_REFERENCE_ONLY_NO_DEPLOYMENT"
     },
     {
       "id": "SRC-071",
       "url": "https://github.com/jito-labs/jito-rust-rpc",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Rust RPC SDK repository description"
+        "Jito Rust RPC README, LICENSE, Cargo metadata and methods",
+        "Pinned repository commit a981785e0f362f980df113f944034466168b08ff"
       ],
       "discoveries": [
-        "Provides Rust JSON-RPC client bindings for Jito services.",
-        "SDK method availability and response types must match current Jito documentation; client bindings do not prove endpoint behavior.",
-        "SYLPH is Node/TypeScript and already has bounded Jito status/tip probes."
+        "SDK exposes sendBundle, sendTransaction and bundle-status calls",
+        "Cargo package says MIT while root LICENSE is Apache-2.0",
+        "request client is a thin JSON-RPC wrapper."
       ],
       "patterns": [
-        "pin service API and SDK version",
-        "validate bundle status lifecycle explicitly",
-        "avoid equating submission acknowledgment with landing"
+        "Separate submit acknowledgement from bundle inclusion/confirmation",
+        "persist bundle identifiers and poll status with bounded retry",
+        "measure actual landed transaction costs separately."
       ],
       "sylphModules": [
         "src/platform/execution/jito-lifecycle-coordinator.ts",
@@ -317,37 +322,39 @@
       ],
       "overlap": "Cross-language reference only; no need for Rust SDK in current runtime.",
       "risks": [
-        "API/schema drift",
-        "status semantics and retry duplication",
-        "license and maintenance not verified"
+        "License metadata conflict needs resolution",
+        "network send methods cross execution boundary",
+        "successful RPC response alone is not proof of a fill."
       ],
       "validation": [
-        "compare SDK methods with current official docs",
-        "test pending/landed/failed/unknown bundle status",
-        "do not add signing or submit capability"
+        "pin SDK/validator release and endpoint semantics",
+        "test status, reconnect, duplicate-submit and fee reconciliation with offline fixtures",
+        "do not send live transactions or expose credentials during research"
       ],
       "evidence": [
-        "https://github.com/jito-labs/jito-rust-rpc"
+        "https://github.com/jito-labs/jito-rust-rpc",
+        "https://github.com/jito-labs/jito-rust-rpc/tree/a981785e0f362f980df113f944034466168b08ff"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "NO_RUNTIME_DEPENDENCY; API_CONFORMANCE_REFERENCE"
+      "license": "LICENSE_APACHE_CARGO_MIT_CONFLICT",
+      "decision": "STATUS_PATTERN_ONLY_LICENSE_REVIEW_REQUIRED"
     },
     {
       "id": "SRC-072",
       "url": "https://github.com/jito-labs/jito-go-rpc",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Go RPC SDK repository description"
+        "Jito Go RPC README, LICENSE, client.go and bundles.go",
+        "Pinned repository commit 24b8c97108f2abb3153abd8d5b714465de13f7c7"
       ],
       "discoveries": [
-        "Provides Go client bindings for Jito JSON-RPC methods.",
-        "Go SDK type definitions may aid cross-language schema comparison but share service API trust boundaries.",
-        "No Go component is present in SYLPH runtime."
+        "Client provides sendBundle/sendTransaction plus inflight and final bundle-status methods",
+        "optional x-jito-auth UUID is attached by transport",
+        "root license is Apache-2.0 while README shows a different Go version from go.mod."
       ],
       "patterns": [
-        "compare RPC schema across maintained clients",
-        "model unknown status explicitly",
-        "test idempotent request behavior"
+        "Track transport acknowledgement, in-flight status and final status as separate states",
+        "bound retries and avoid duplicate submission on ambiguous timeouts",
+        "keep auth values out of logs."
       ],
       "sylphModules": [
         "src/platform/execution/jito-lifecycle-coordinator.ts",
@@ -355,37 +362,38 @@
       ],
       "overlap": "No direct runtime role; existing TypeScript implementation is the relevant client.",
       "risks": [
-        "client/service version mismatch",
-        "retry/duplicate semantics",
-        "license not verified"
+        "Sending API is execution-capable",
+        "version/documentation skew",
+        "UUID auth and retry behavior require endpoint-specific validation."
       ],
       "validation": [
-        "pin commit and compare docs/schema",
-        "use read-only status fixtures",
-        "keep bundle submit path blocked"
+        "pin SDK/validator release and endpoint semantics",
+        "test status, reconnect, duplicate-submit and fee reconciliation with offline fixtures",
+        "do not send live transactions or expose credentials during research"
       ],
       "evidence": [
-        "https://github.com/jito-labs/jito-go-rpc"
+        "https://github.com/jito-labs/jito-go-rpc",
+        "https://github.com/jito-labs/jito-go-rpc/tree/24b8c97108f2abb3153abd8d5b714465de13f7c7"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "NO_ADOPTION; OPTIONAL_SCHEMA_COMPARISON"
+      "license": "Apache-2.0",
+      "decision": "STATUS_PATTERN_ONLY_NO_SEND_ADOPTION"
     },
     {
       "id": "SRC-073",
       "url": "https://github.com/helius-labs/helius-rust-sdk",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Helius Rust SDK README and API surface"
+        "Helius Rust SDK README, Cargo metadata and WebSocket builder source",
+        "Pinned repository commit 95ecc11f42bbfff79940c2d46da64c35f5b5de49"
       ],
       "discoveries": [
-        "Asynchronous Rust SDK wraps Helius RPC/enhanced APIs.",
-        "This is a language-specific convenience layer; availability, quotas, and data semantics remain Helius service properties.",
-        "SYLPH currently has provider health and TypeScript/RPC paths and no configured Helius SDK use was validated here."
+        "SDK v3.0.1 exposes WebSocket ping interval and pong timeout configuration, with defaults documented as 10 s and 30 s",
+        "builder rejects API credentials embedded in URLs and accepts them through an API-key type."
       ],
       "patterns": [
-        "keep provider API keys out of URLs/logs",
-        "validate enhanced response identity and freshness",
-        "treat provider-parsed events as derived data"
+        "Make ping cadence and pong timeout explicit configurable settings",
+        "preserve endpoint-independent health state and reconnect/continuity evidence",
+        "never log credentials."
       ],
       "sylphModules": [
         "src/rpc.ts",
@@ -394,20 +402,21 @@
       ],
       "overlap": "Potential Helius provider reference; adding Rust SDK would not fit current runtime and would duplicate RPC clients.",
       "risks": [
-        "provider quota/auth dependency",
-        "enhanced parsing semantic differences",
-        "Rust SDK version and license"
+        "SDK settings do not prove behavior of SYLPH or of another provider",
+        "credential and rate-limit handling remains endpoint-specific",
+        "no Helius connection was attempted."
       ],
       "validation": [
-        "pin SDK and API docs",
-        "compare enhanced data to raw RPC fixtures",
-        "measure quota and freshness without exposing credentials"
+        "pin SDK/validator release and endpoint semantics",
+        "test status, reconnect, duplicate-submit and fee reconciliation with offline fixtures",
+        "do not send live transactions or expose credentials during research"
       ],
       "evidence": [
-        "https://github.com/helius-labs/helius-rust-sdk"
+        "https://github.com/helius-labs/helius-rust-sdk",
+        "https://github.com/helius-labs/helius-rust-sdk/tree/95ecc11f42bbfff79940c2d46da64c35f5b5de49"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "NO_RUNTIME_ADOPTION; PROVIDER_SCHEMA_REFERENCE"
+      "license": "MIT",
+      "decision": "WEBSOCKET_CONFIG_REFERENCE_ONLY_NO_PROVIDER_ACCESS"
     },
     {
       "id": "SRC-074",

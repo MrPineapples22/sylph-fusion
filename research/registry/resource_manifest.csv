@@ -67,11 +67,11 @@ SRC-065,github_dex_swaps_launches,https://github.com/0xsupersimon/raydium-launch
 SRC-066,github_execution_validator_jito,https://github.com/blockworks-foundation/autobahn,source_or_document_review,P1,PARTIAL_REVIEW,SRC-066-PINNED-2026-10-14,78167c7bd4c284a0ecbef0032e89df562714ad7b,AGPL-3.0_REVIEW_REQUIRED,AGPL_ROUTER_REFERENCE_ONLY
 SRC-067,github_execution_validator_jito,https://github.com/blockworks-foundation/lite-rpc,source_or_document_review,P1,PARTIAL_REVIEW,SRC-067-PINNED-2026-10-14,325dfe5a229a14370bfb6ab05f41796e3e016a69,AGPL-3.0_REVIEW_REQUIRED,AGPL_TRANSPORT_REFERENCE_ONLY
 SRC-068,github_execution_validator_jito,https://github.com/jito-foundation/jito-programs,source_or_document_review,P1,PARTIAL_REVIEW,SRC-068-PINNED-2026-10-14,ce1dfb6b3f6c423bf206ec1f24df911d292aa409,LICENSE_NOT_FOUND_REVIEW_REQUIRED,PROGRAM_RESEARCH_NO_DEPLOYMENT_VERIFICATION
-SRC-069,github_execution_validator_jito,https://github.com/jito-foundation/jito-tip-router,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-070,github_execution_validator_jito,https://github.com/jito-foundation/jito-solana,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-071,github_execution_validator_jito,https://github.com/jito-labs/jito-rust-rpc,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-072,github_execution_validator_jito,https://github.com/jito-labs/jito-go-rpc,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-073,github_execution_validator_jito,https://github.com/helius-labs/helius-rust-sdk,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
+SRC-069,github_execution_validator_jito,https://github.com/jito-foundation/jito-tip-router,source_or_document_review,P1,PARTIAL_REVIEW,SRC-069-PINNED-2026-10-14,0fa020103872fc3fe5833891d9e22b2a714ff684,MIT_OR_APACHE-2.0,ONCHAIN_TIP_DISTRIBUTION_RESEARCH_ONLY
+SRC-070,github_execution_validator_jito,https://github.com/jito-foundation/jito-solana,source_or_document_review,P1,PARTIAL_REVIEW,SRC-070-PINNED-2026-10-14,b9bbfba03b26d91da3e5606d3950c487a7b7018d,Apache-2.0,VALIDATOR_REFERENCE_ONLY_NO_DEPLOYMENT
+SRC-071,github_execution_validator_jito,https://github.com/jito-labs/jito-rust-rpc,source_or_document_review,P1,PARTIAL_REVIEW,SRC-071-PINNED-2026-10-14,a981785e0f362f980df113f944034466168b08ff,LICENSE_APACHE_CARGO_MIT_CONFLICT,RPC_STATUS_REFERENCE_LICENSE_REVIEW
+SRC-072,github_execution_validator_jito,https://github.com/jito-labs/jito-go-rpc,source_or_document_review,P1,PARTIAL_REVIEW,SRC-072-PINNED-2026-10-14,24b8c97108f2abb3153abd8d5b714465de13f7c7,Apache-2.0,RPC_STATUS_REFERENCE_NO_SEND
+SRC-073,github_execution_validator_jito,https://github.com/helius-labs/helius-rust-sdk,source_or_document_review,P1,PARTIAL_REVIEW,SRC-073-PINNED-2026-10-14,95ecc11f42bbfff79940c2d46da64c35f5b5de49,MIT,WEBSOCKET_CONFIG_REFERENCE_NO_PROVIDER_ACCESS
 SRC-074,github_execution_validator_jito,https://github.com/orca-so/tx-sender,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-075,github_execution_validator_jito,https://github.com/firedancer-io/firedancer,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-076,github_execution_validator_jito,https://github.com/jito-labs/searcher-examples,source_or_document_review,P0,PARTIAL_REVIEW,SRC-076-reviewed-f710c30,f710c30b0ec7449b5122f827b0997218ab1a0315,Apache-2.0,RESEARCH_ONLY_NO_AUTH_OR_SUBMISSION_CHANGE

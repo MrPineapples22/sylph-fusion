@@ -1,21 +1,21 @@
 {
-  "generatedAt": "2026-10-15T04:28:36.011Z",
+  "generatedAt": "2026-10-15T04:29:35.677Z",
   "manifestRows": 288,
   "uniqueManifestIds": 288,
   "batchFiles": 23,
   "catalogRecords": 288,
   "uniqueCatalogIds": 288,
-  "directlyReviewedRecords": 79,
-  "triageOnlyRecords": 209,
+  "directlyReviewedRecords": 84,
+  "triageOnlyRecords": 204,
   "manifestReviewStatusCounts": {
-    "PARTIAL_REVIEW": 79,
-    "NOT_REVIEWED": 209
+    "PARTIAL_REVIEW": 84,
+    "NOT_REVIEWED": 204
   },
   "batchStatusCounts": {
-    "PARTIAL_REVIEW": 79,
-    "CATALOG_TRIAGE": 209
+    "PARTIAL_REVIEW": 84,
+    "CATALOG_TRIAGE": 204
   },
-  "distinctDecisionCount": 168,
+  "distinctDecisionCount": 169,
   "topDecisionCounts": [
     {
       "decision": "RESEARCH_ONLY",
@@ -42,10 +42,6 @@
       "count": 2
     },
     {
-      "decision": "INFRASTRUCTURE_REFERENCE_ONLY",
-      "count": 2
-    },
-    {
       "decision": "NO_DIRECT_INTEGRATION",
       "count": 2
     },
@@ -63,6 +59,10 @@
     },
     {
       "decision": "AUTHORIZED_MANUAL_DIAGNOSTICS_ONLY; NO_RUNTIME_INGESTION",
+      "count": 1
+    },
+    {
+      "decision": "AVAILABLE_FOR_BOUNDED_PASSIVE_DIAGNOSIS_ONLY",
       "count": 1
     }
   ],
