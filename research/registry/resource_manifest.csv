@@ -19,9 +19,9 @@ SRC-017,github_streaming_rpc,https://github.com/metaplex-foundation/digital-asse
 SRC-018,github_streaming_rpc,https://github.com/metaplex-foundation/aura,source_or_document_review,P1,PARTIAL_REVIEW,SRC-018-PINNED-SOURCE-2026-10-14,7e304b493d04a317320c593df918456423d565a4,AGPL-3.0,OUT_OF_SCOPE_FOR_TRADE_TRUTH; DAS_REFERENCE_ONLY
 SRC-019,github_streaming_rpc,https://github.com/goldsky-io/streamling-community-plugins,source_or_document_review,P1,PARTIAL_REVIEW,SRC-019-PINNED-SOURCE-2026-10-14,834657a18ff07d96a758165df698d12453e09159,FSL-1.1-ALv2_FUTURE_LICENSE_COMPETING_USE_REVIEW_REQUIRED,CHECKPOINT_ACK_PATTERN_REFERENCE_ONLY; NO_RUNTIME_DEPENDENCY
 SRC-020,github_streaming_rpc,https://github.com/rpcpool/radiance-triton-faithful,source_or_document_review,P1,PARTIAL_REVIEW,SRC-020-PINNED-SOURCE-2026-10-14,53b06cb80250bb758677a26bbcabb670da88a8ee,Apache-2.0,ARCHIVE_BACKFILL_REFERENCE_ONLY; NO_RUNTIME_DEPENDENCY
-SRC-021,github_streaming_rpc,https://github.com/Astralane/shred-tools,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-022,github_streaming_rpc,https://github.com/Aditya-dom/orbshred,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-023,github_streaming_rpc,https://github.com/rpcpool/yellowstone-vixen,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
+SRC-021,github_streaming_rpc,https://github.com/Astralane/shred-tools,source_or_document_review,P1,PARTIAL_REVIEW,SRC-021-PINNED-SOURCE-2026-10-14,0a3d370fae52318a6934baef36baa2c9a4748cdb,NO_ROOT_LICENSE; shreds-audit MIT; other inspected crates MIT_OR_APACHE-2.0,BENCHMARK_REFERENCE_ONLY; NO_SHRED_FEED
+SRC-022,github_streaming_rpc,https://github.com/Aditya-dom/orbshred,source_or_document_review,P1,PARTIAL_REVIEW,SRC-022-PINNED-SOURCE-2026-10-14,c5907afcd0baa54591bc950ebc4d4b787f9858ec,MIT,BENCHMARK_REFERENCE_ONLY; NO_RUNTIME_DEPENDENCY
+SRC-023,github_streaming_rpc,https://github.com/rpcpool/yellowstone-vixen,source_or_document_review,P1,PARTIAL_REVIEW,SRC-023-REDIRECTED-SOURCE-2026-10-14,1b6902bd949cf044b08c02d975002db0b3b837ae,MIT,PARSER_AND_RECONNECT_REFERENCE_ONLY; NO_RUNTIME_DEPENDENCY
 SRC-024,github_streaming_rpc,https://github.com/0xfnzero/solana-streamer,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-025,github_streaming_rpc,https://github.com/0xfnzero/sol-shred-sdk,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-026,github_streaming_rpc,https://github.com/solsonar/solana-shred-parser,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED

@@ -1,21 +1,21 @@
 {
-  "generatedAt": "2026-10-15T04:06:13.876Z",
+  "generatedAt": "2026-10-15T04:09:01.419Z",
   "manifestRows": 288,
   "uniqueManifestIds": 288,
   "batchFiles": 23,
   "catalogRecords": 288,
   "uniqueCatalogIds": 288,
-  "directlyReviewedRecords": 35,
-  "triageOnlyRecords": 253,
+  "directlyReviewedRecords": 38,
+  "triageOnlyRecords": 250,
   "manifestReviewStatusCounts": {
-    "PARTIAL_REVIEW": 35,
-    "NOT_REVIEWED": 253
+    "PARTIAL_REVIEW": 38,
+    "NOT_REVIEWED": 250
   },
   "batchStatusCounts": {
-    "PARTIAL_REVIEW": 35,
-    "CATALOG_TRIAGE": 253
+    "PARTIAL_REVIEW": 38,
+    "CATALOG_TRIAGE": 250
   },
-  "distinctDecisionCount": 167,
+  "distinctDecisionCount": 168,
   "topDecisionCounts": [
     {
       "decision": "RESEARCH_ONLY",
@@ -36,10 +36,6 @@
     {
       "decision": "PATTERN_ONLY",
       "count": 4
-    },
-    {
-      "decision": "BENCHMARK_REFERENCE_ONLY",
-      "count": 2
     },
     {
       "decision": "CLIENT_DIVERSITY_RESEARCH_ONLY",
@@ -63,6 +59,10 @@
     },
     {
       "decision": "ASSURANCE_ONLY_UNTIL_INDEPENDENTLY_VERIFIED",
+      "count": 1
+    },
+    {
+      "decision": "AVAILABLE_FOR_BOUNDED_PASSIVE_DIAGNOSIS_ONLY",
       "count": 1
     }
   ],
