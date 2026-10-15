@@ -681,7 +681,8 @@
         ],
         "validation": {
           "build": "npm run build:engine — passed",
-          "focusedTests": "node --test test/platform/jito-fence.test.mjs — 5/5 passed"
+          "focusedTests": "node --test test/platform/jito-fence.test.mjs — 5/5 passed",
+          "platformTests": "npm run test:platform — 1,048/1,048 passed after the Jito status correction"
         },
         "authorityImpact": "No signing, broadcast, capital authorization, or risk-limit changes. No services were started, stopped, or restarted.",
         "status": "VERIFIED_LOCAL_ADAPTER_FIX; LIVE_JITO_AND_CHAIN_RECONCILIATION_UNVERIFIED"
