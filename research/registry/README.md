@@ -387,3 +387,12 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - SRC-061 Solana Copy Trading Bot is pinned at e17988b2281d25ab3a7b364cfe64aa42929c87b9. Inspected source loads a signer, submits Jito bundles and polls confirmation; README claims MIT but the pinned tree lacks LICENSE. No reuse or execution.
 - SRC-062 Pump trading bot is pinned at f21cbaabbf73d1af68314142fa8c055ddf645206. Its scripts include staged exit rules and 5% slippage, but also send an encoded private key in a request to a third-party trading API. Inspected only; never run.
 - Registry status: 75 direct source inspections and 213 catalog-triage records. No bot, key-handling flow, or execution logic was adopted.
+
+
+## Concentrated liquidity, routing and transport follow-up (2026-10-14)
+
+- SRC-064 Orca Whirlpools is pinned at cc683ec92acb5e7606caa3d8e514d9383e9c7c11. Swap state includes ordered tick arrays and a price limit; current license is Orca License after Feb. 26, 2025, so prior Apache terms are not assumed.
+- SRC-066 Autobahn is pinned at 78167c7bd4c284a0ecbef0032e89df562714ad7b (AGPL-3.0). Its adapter design emphasizes execution reliability and requires custom validator patches for self-hosted low-latency account feeds; commercial license review required.
+- SRC-067 Lite RPC is pinned at 325dfe5a229a14370bfb6ab05f41796e3e016a69 (AGPL workspace). It adds QUIC/TPU forwarding and auth mechanisms; a nested package declares MIT, so license metadata conflicts need resolution.
+- SRC-068 Jito programs is pinned at ce1dfb6b3f6c423bf206ec1f24df911d292aa409. Release steps rebuild IDLs and push tags; no root LICENSE or deployed program verification was found in this bounded pass.
+- Registry status: 79 direct source inspections and 209 catalog-triage records. No transport, routing, or on-chain program code was integrated.
