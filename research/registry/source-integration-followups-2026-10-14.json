@@ -1011,6 +1011,57 @@
         "https://docs.jito.wtf/lowlatencytxnsend/",
         "test/platform/jito-tip-floor.test.mjs"
       ]
+    },
+    {
+      "id": "INT-REALIZED-EDGE-FEE-ATTRIBUTION-001",
+      "catalogSourceIds": [
+        "SRC-255"
+      ],
+      "area": "realized edge ledger fee attribution integrity",
+      "sourceToPipeline": {
+        "upstreamFindings": [
+          "Solana network fees and Jito tips are distinct cost components; transaction metadata is the authority for realized transaction fee.",
+          "An aggregate realized fees-and-tips total does not identify how much was base fee, priority fee, or tip.",
+          "The catalog review established that missing observations must remain unknown instead of receiving synthetic accounting values."
+        ],
+        "relevantModules": [
+          "src/platform/pipeline/realized-edge-ledger.ts",
+          "src/platform/pipeline/unified-unit.ts"
+        ],
+        "existingOverlap": "RealizedEdgeLedger accepted a total feesAndTipsLamports value but filled missing fee categories with a fixed 5,000-lamport base fee and split the remainder equally between priority fee and tip. It now preserves the total, leaves absent components undefined, reports the unattributed residual and attribution status, rejects over-allocation, and includes the attribution breakdown in recordHash.",
+        "risks": [
+          "Unclassified cost remains economically charged in the aggregate; the change improves attribution and does not reduce net costs.",
+          "A caller may still provide incorrect explicit categories; this check verifies only nonnegative arithmetic and total bounds, not chain provenance.",
+          "No finalized account-delta or meta.fee reconciliation is added by this ledger change."
+        ],
+        "validationRequirements": [
+          "When no components are supplied, show the full aggregate as unclassified and expose no synthetic base, priority, or tip values.",
+          "Require supplied components to be nonnegative and their sum not to exceed the total; mark full attribution only when all categories are present and balance exactly.",
+          "Prove the record hash changes when the fee breakdown changes while the identity, timestamp, stages, and aggregate remain fixed.",
+          "Run the focused economics tests and the complete platform suite."
+        ]
+      },
+      "implementation": {
+        "change": "Removed the 5,000-lamport and equal-split fee-category defaults from RealizedEdgeLedger. The report retains the aggregate, exposes missing categories as undefined, calculates an unclassified residual/status, validates explicit sums, and hashes both attribution and comprehensive breakdowns.",
+        "files": [
+          "src/platform/pipeline/realized-edge-ledger.ts",
+          "dist/platform/pipeline/realized-edge-ledger.js",
+          "test/platform/execution-economics-and-governance.test.mjs"
+        ],
+        "validation": {
+          "redTest": "New realized-edge assertions failed before the change because the aggregate total was omitted from comprehensiveBreakdown and a fabricated 5,000-lamport base fee was emitted.",
+          "pinnedBuild": "TypeScript build with pinned scratch dependencies passed.",
+          "focusedTests": "node --test test/platform/execution-economics-and-governance.test.mjs — 5/5 passed.",
+          "fullPlatformSuite": "node --test --test-isolation=none test/platform/*.test.mjs — 1,061/1,061 passed across 23 suites from the pinned scratch project root."
+        },
+        "authorityImpact": "Analytics/accounting representation only. No signing, broadcast, custody, capital authorization, risk-limit, or live process changes.",
+        "status": "VERIFIED_NO_SYNTHETIC_FEE_SPLIT; FINALIZED_FEE_AND_TIP_PROVENANCE_RECONCILIATION_REMAINS_OPEN"
+      },
+      "evidence": [
+        "https://solana.com/docs/core/fees/fee-structure",
+        "src/platform/pipeline/realized-edge-ledger.ts",
+        "test/platform/execution-economics-and-governance.test.mjs"
+      ]
     }
   ]
 }

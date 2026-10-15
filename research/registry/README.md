@@ -113,3 +113,10 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - `SRC-254` and `SRC-255`: added bounded read-only parsing of V1 message configuration and instruction framing, anchored to an official SDK-generated fixture from `solana-foundation/transaction-v1-examples` commit `baa8b2654d1695d62c17dd8a0d2ef775ef45ad14`.
 - Focused decoder tests passed 7/7; the pinned TypeScript build passed; the full platform suite passed 1,061/1,061 across 23 suites.
 - Decoded V1 instructions remain `UNKNOWN`, all V1 results remain `complete:false`, and SigningFirewall rejects them. This does not enable V1 signing or reconcile message estimates to finalized `meta.fee`; those remain open.
+
+
+## Realized fee-attribution follow-up (2026-10-15)
+
+- `SRC-255`: `RealizedEdgeLedger` no longer invents a fixed base fee or evenly divides an aggregate between priority fee and Jito tip. It keeps the observed aggregate, leaves missing categories unknown, exposes the unclassified amount and attribution status, and rejects explicit components that exceed the total.
+- The record hash now binds its fee attribution and comprehensive breakdown. A deterministic regression pins identity and time while changing the breakdown to prove the hash changes.
+- The test failed before the patch on the fabricated base-fee field. Pinned TypeScript build passed; focused economics tests passed 5/5; full platform suite passed 1,061/1,061 across 23 suites. This does not add chain provenance or finalized fee reconciliation.
