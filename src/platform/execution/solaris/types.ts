@@ -59,6 +59,12 @@ export type GraduationStatus =
 export type AmmVenue = 'PUMPSWAP' | 'RAYDIUM' | 'METEORA' | 'ORCA' | 'OTHER';
 export type AmmObservationSource = 'CANONICAL_ON_CHAIN_RPC' | 'UNVERIFIED_CALLER';
 
+export interface AmmFeeBreakdown {
+  readonly lpFeeBps: bigint;
+  readonly protocolFeeBps: bigint;
+  readonly creatorFeeBps: bigint;
+}
+
 export interface GraduatedTokenState {
   readonly mint: string;
   readonly status: GraduationStatus;
@@ -70,8 +76,11 @@ export interface GraduatedTokenState {
   readonly poolQuoteMint?: string;
   readonly initialPoolQuoteReserves?: bigint;
   readonly currentPoolQuoteReserves?: bigint;
+  readonly poolRawQuoteReserves?: bigint;
+  readonly poolVirtualQuoteReserves?: bigint;
   readonly currentPoolTokenReserves?: bigint;
   readonly poolEffectiveFeeBps?: number;
+  readonly poolFeeBreakdown?: AmmFeeBreakdown;
   readonly poolSlot?: number;
   readonly poolObservedAtMs?: number;
   readonly poolObservationSource?: AmmObservationSource;

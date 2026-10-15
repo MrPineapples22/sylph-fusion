@@ -6,7 +6,7 @@ const sdkDecoder = {
     decodePool: info => PUMP_AMM_SDK.decodePool(info),
     decodeGlobalConfig: info => PUMP_AMM_SDK.decodeGlobalConfig(info),
     decodeFeeConfig: info => PUMP_AMM_SDK.decodeFeeConfig(info),
-    totalFeeBps: ({ pool, globalConfig, feeConfig, mint, mintSupply, baseReserves, effectiveQuoteReserves }) => {
+    feeBreakdown: ({ pool, globalConfig, feeConfig, mint, mintSupply, baseReserves, effectiveQuoteReserves }) => {
         const fees = computeFeesBps({
             globalConfig,
             feeConfig,
@@ -19,10 +19,12 @@ const sdkDecoder = {
             isMayhemMode: pool.isMayhemMode,
             creatorFeeBps: pool.creatorFeeBps,
         });
-        const creatorFeeBps = pool.coinCreator.equals(PublicKey.default)
-            ? 0n
-            : BigInt(fees.creatorFeeBps.toString());
-        return BigInt(fees.lpFeeBps.toString()) + BigInt(fees.protocolFeeBps.toString()) + creatorFeeBps;
+        const creatorFeeBps = pool.coinCreator.equals(PublicKey.default) ? 0n : BigInt(fees.creatorFeeBps.toString());
+        return {
+            lpFeeBps: BigInt(fees.lpFeeBps.toString()),
+            protocolFeeBps: BigInt(fees.protocolFeeBps.toString()),
+            creatorFeeBps,
+        };
     },
 };
 const U64_MAX = (1n << 64n) - 1n;
@@ -127,7 +129,7 @@ export async function readCanonicalPumpSwapPool(connection, mint, options = {}) 
     }
     const globalConfig = decoder.decodeGlobalConfig(globalConfigInfo);
     const feeConfig = decoder.decodeFeeConfig(feeConfigInfo);
-    const effectiveFeeBps = decoder.totalFeeBps({
+    const feeBreakdown = decoder.feeBreakdown({
         pool,
         globalConfig,
         feeConfig,
@@ -136,6 +138,7 @@ export async function readCanonicalPumpSwapPool(connection, mint, options = {}) 
         baseReserves: baseVault.amount,
         effectiveQuoteReserves,
     });
+    const effectiveFeeBps = feeBreakdown.lpFeeBps + feeBreakdown.protocolFeeBps + feeBreakdown.creatorFeeBps;
     if (effectiveFeeBps < 0n || effectiveFeeBps >= 10000n || effectiveFeeBps > BigInt(Number.MAX_SAFE_INTEGER)) {
         throw new Error('PUMP_AMM_EFFECTIVE_FEE_OUT_OF_RANGE');
     }
@@ -147,8 +150,11 @@ export async function readCanonicalPumpSwapPool(connection, mint, options = {}) 
         poolAddress: poolAddress.toBase58(),
         quoteMint: NATIVE_MINT.toBase58(),
         quoteReserves: effectiveQuoteReserves,
+        rawQuoteReserves: quoteVault.amount,
+        virtualQuoteReserves: BigInt(pool.virtualQuoteReserves.toString()),
         tokenReserves: baseVault.amount,
         effectiveFeeBps: Number(effectiveFeeBps),
+        feeBreakdown,
         slot: read.context.slot,
         observedAtMs,
         source: 'CANONICAL_ON_CHAIN_RPC',

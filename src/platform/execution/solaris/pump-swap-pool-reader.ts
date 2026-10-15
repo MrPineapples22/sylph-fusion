@@ -24,12 +24,13 @@ import {
 import BN from 'bn.js';
 import { PublicKey, type AccountInfo, type Connection } from '@solana/web3.js';
 import type { ObservedAmmPool } from './amm-bridge.js';
+import type { AmmFeeBreakdown } from './types.js';
 
 export interface PumpSwapPoolDecoder {
   decodePool(info: AccountInfo<Buffer>): Pool;
   decodeGlobalConfig(info: AccountInfo<Buffer>): GlobalConfig;
   decodeFeeConfig(info: AccountInfo<Buffer>): FeeConfig;
-  totalFeeBps(input: {
+  feeBreakdown(input: {
     readonly pool: Pool;
     readonly globalConfig: GlobalConfig;
     readonly feeConfig: FeeConfig;
@@ -37,14 +38,14 @@ export interface PumpSwapPoolDecoder {
     readonly mintSupply: bigint;
     readonly baseReserves: bigint;
     readonly effectiveQuoteReserves: bigint;
-  }): bigint;
+  }): AmmFeeBreakdown;
 }
 
 const sdkDecoder: PumpSwapPoolDecoder = {
   decodePool: info => PUMP_AMM_SDK.decodePool(info),
   decodeGlobalConfig: info => PUMP_AMM_SDK.decodeGlobalConfig(info),
   decodeFeeConfig: info => PUMP_AMM_SDK.decodeFeeConfig(info),
-  totalFeeBps: ({ pool, globalConfig, feeConfig, mint, mintSupply, baseReserves, effectiveQuoteReserves }) => {
+  feeBreakdown: ({ pool, globalConfig, feeConfig, mint, mintSupply, baseReserves, effectiveQuoteReserves }) => {
     const fees = computeFeesBps({
       globalConfig,
       feeConfig,
@@ -57,10 +58,12 @@ const sdkDecoder: PumpSwapPoolDecoder = {
       isMayhemMode: pool.isMayhemMode,
       creatorFeeBps: pool.creatorFeeBps,
     });
-    const creatorFeeBps = pool.coinCreator.equals(PublicKey.default)
-      ? 0n
-      : BigInt(fees.creatorFeeBps.toString());
-    return BigInt(fees.lpFeeBps.toString()) + BigInt(fees.protocolFeeBps.toString()) + creatorFeeBps;
+    const creatorFeeBps = pool.coinCreator.equals(PublicKey.default) ? 0n : BigInt(fees.creatorFeeBps.toString());
+    return {
+      lpFeeBps: BigInt(fees.lpFeeBps.toString()),
+      protocolFeeBps: BigInt(fees.protocolFeeBps.toString()),
+      creatorFeeBps,
+    };
   },
 };
 
@@ -182,7 +185,7 @@ export async function readCanonicalPumpSwapPool(
   }
   const globalConfig = decoder.decodeGlobalConfig(globalConfigInfo);
   const feeConfig = decoder.decodeFeeConfig(feeConfigInfo);
-  const effectiveFeeBps = decoder.totalFeeBps({
+  const feeBreakdown = decoder.feeBreakdown({
     pool,
     globalConfig,
     feeConfig,
@@ -191,6 +194,7 @@ export async function readCanonicalPumpSwapPool(
     baseReserves: baseVault.amount,
     effectiveQuoteReserves,
   });
+  const effectiveFeeBps = feeBreakdown.lpFeeBps + feeBreakdown.protocolFeeBps + feeBreakdown.creatorFeeBps;
   if (effectiveFeeBps < 0n || effectiveFeeBps >= 10_000n || effectiveFeeBps > BigInt(Number.MAX_SAFE_INTEGER)) {
     throw new Error('PUMP_AMM_EFFECTIVE_FEE_OUT_OF_RANGE');
   }
@@ -202,8 +206,11 @@ export async function readCanonicalPumpSwapPool(
     poolAddress: poolAddress.toBase58(),
     quoteMint: NATIVE_MINT.toBase58(),
     quoteReserves: effectiveQuoteReserves,
+    rawQuoteReserves: quoteVault.amount,
+    virtualQuoteReserves: BigInt(pool.virtualQuoteReserves.toString()),
     tokenReserves: baseVault.amount,
     effectiveFeeBps: Number(effectiveFeeBps),
+    feeBreakdown,
     slot: read.context.slot,
     observedAtMs,
     source: 'CANONICAL_ON_CHAIN_RPC',

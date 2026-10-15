@@ -185,15 +185,23 @@ export class Market {
     const state = this.ammBridge.getGraduatedState(mint);
     if (!state || state.poolObservationSource !== 'CANONICAL_ON_CHAIN_RPC' || !state.poolAddress || !state.poolVenue || state.poolQuoteMint !== NATIVE_MINT.toBase58() ||
         state.currentPoolQuoteReserves === undefined || state.currentPoolTokenReserves === undefined ||
-        state.poolEffectiveFeeBps === undefined || state.poolSlot === undefined ||
+        state.poolRawQuoteReserves === undefined || state.poolVirtualQuoteReserves === undefined ||
+        state.poolFeeBreakdown === undefined || state.poolEffectiveFeeBps === undefined || state.poolSlot === undefined ||
         !this.ammBridge.isPoolSnapshotFresh(state)) {
       throw new Error('GRADUATED_AMM_SNAPSHOT_INCOMPLETE_OR_NON_SOL_QUOTE');
     }
     if (tokens <= 0n) throw new Error('invalid exit tokens');
+    const fees = state.poolFeeBreakdown;
+    const totalFeeBps = fees.lpFeeBps + fees.protocolFeeBps + fees.creatorFeeBps;
     if (state.currentPoolTokenReserves <= 0n || state.currentPoolQuoteReserves <= 0n ||
-        state.poolEffectiveFeeBps < 0 || state.poolEffectiveFeeBps >= 10_000) throw new Error('GRADUATED_AMM_SNAPSHOT_INVALID');
+        state.poolRawQuoteReserves <= 0n || state.poolRawQuoteReserves + state.poolVirtualQuoteReserves !== state.currentPoolQuoteReserves ||
+        fees.lpFeeBps < 0n || fees.protocolFeeBps < 0n || fees.creatorFeeBps < 0n || totalFeeBps >= 10_000n ||
+        totalFeeBps !== BigInt(state.poolEffectiveFeeBps)) throw new Error('GRADUATED_AMM_SNAPSHOT_INVALID');
     const grossSol = (tokens * state.currentPoolQuoteReserves) / (state.currentPoolTokenReserves + tokens);
-    const netSol = (grossSol * BigInt(10_000 - state.poolEffectiveFeeBps)) / 10_000n;
+    const feeAmount = (bps: bigint) => (grossSol * bps + 9_999n) / 10_000n;
+    const lpFee = feeAmount(fees.lpFeeBps);
+    if (state.poolRawQuoteReserves < grossSol - lpFee) throw new Error('PUMP_AMM_INSUFFICIENT_REAL_QUOTE_RESERVES');
+    const netSol = grossSol - lpFee - feeAmount(fees.protocolFeeBps) - feeAmount(fees.creatorFeeBps);
     if (netSol <= 0n) throw new Error('zero executable graduated AMM exit proceeds');
     return netSol;
   }

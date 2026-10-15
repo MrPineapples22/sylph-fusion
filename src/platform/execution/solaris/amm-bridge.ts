@@ -4,7 +4,7 @@
  * A completed curve alone does not identify or price its destination venue.
  */
 
-import type { AmmObservationSource, AmmVenue, GraduatedTokenState, GraduationStatus } from './types.js';
+import type { AmmFeeBreakdown, AmmObservationSource, AmmVenue, GraduatedTokenState, GraduationStatus } from './types.js';
 import { isCanonicalPumpSwapObservation } from './pump-swap-pool-reader.js';
 
 export interface AmmBridgeConfig {
@@ -19,8 +19,11 @@ export interface ObservedAmmPool {
   readonly poolAddress: string;
   readonly quoteMint: string;
   readonly quoteReserves: bigint;
+  readonly rawQuoteReserves?: bigint;
+  readonly virtualQuoteReserves?: bigint;
   readonly tokenReserves: bigint;
   readonly effectiveFeeBps: number;
+  readonly feeBreakdown?: AmmFeeBreakdown;
   readonly slot: number;
   readonly observedAtMs: number;
 }
@@ -77,8 +80,15 @@ export class PostGraduationAmmBridge {
     if (!existing || existing.status === 'BONDING_CURVE') throw new Error('MIGRATION_NOT_REGISTERED');
     if (!pool || !pool.venue || !pool.source || !pool.poolAddress || !pool.quoteMint ||
         typeof pool.quoteReserves !== 'bigint' || pool.quoteReserves <= 0n ||
+        (pool.rawQuoteReserves !== undefined && (typeof pool.rawQuoteReserves !== 'bigint' || pool.rawQuoteReserves <= 0n)) ||
+        (pool.virtualQuoteReserves !== undefined && typeof pool.virtualQuoteReserves !== 'bigint') ||
         typeof pool.tokenReserves !== 'bigint' || pool.tokenReserves <= 0n ||
         !Number.isInteger(pool.effectiveFeeBps) || pool.effectiveFeeBps < 0 || pool.effectiveFeeBps >= 10_000 ||
+        (pool.rawQuoteReserves !== undefined && pool.virtualQuoteReserves !== undefined && pool.rawQuoteReserves + pool.virtualQuoteReserves !== pool.quoteReserves) ||
+        (pool.feeBreakdown !== undefined && (typeof pool.feeBreakdown.lpFeeBps !== 'bigint' ||
+          typeof pool.feeBreakdown.protocolFeeBps !== 'bigint' || typeof pool.feeBreakdown.creatorFeeBps !== 'bigint' ||
+          pool.feeBreakdown.lpFeeBps < 0n || pool.feeBreakdown.protocolFeeBps < 0n ||
+          pool.feeBreakdown.creatorFeeBps < 0n || pool.feeBreakdown.lpFeeBps + pool.feeBreakdown.protocolFeeBps + pool.feeBreakdown.creatorFeeBps !== BigInt(pool.effectiveFeeBps))) ||
         !Number.isSafeInteger(pool.slot) || pool.slot < existing.migrationTriggeredAtSlot ||
         !Number.isSafeInteger(pool.observedAtMs) || pool.observedAtMs <= 0 || pool.observedAtMs > Date.now()) {
       throw new Error('INVALID_AMM_POOL_SNAPSHOT');
@@ -98,8 +108,11 @@ export class PostGraduationAmmBridge {
       poolQuoteMint: pool.quoteMint,
       initialPoolQuoteReserves: existing.initialPoolQuoteReserves ?? pool.quoteReserves,
       currentPoolQuoteReserves: pool.quoteReserves,
+      poolRawQuoteReserves: pool.rawQuoteReserves,
+      poolVirtualQuoteReserves: pool.virtualQuoteReserves,
       currentPoolTokenReserves: pool.tokenReserves,
       poolEffectiveFeeBps: pool.effectiveFeeBps,
+      poolFeeBreakdown: pool.feeBreakdown,
       poolSlot: pool.slot,
       poolObservedAtMs: pool.observedAtMs,
       poolObservationAttemptedAtMs: pool.observedAtMs,

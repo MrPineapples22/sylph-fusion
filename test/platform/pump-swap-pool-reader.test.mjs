@@ -12,15 +12,17 @@ import {
   PUMP_AMM_SDK,
   canonicalPumpPoolPda,
   pumpPoolAuthorityPda,
+  sellBaseInput,
 } from '@pump-fun/pump-swap-sdk';
 import { readCanonicalPumpSwapPool } from '../../dist/platform/execution/solaris/pump-swap-pool-reader.js';
 import { PostGraduationAmmBridge } from '../../dist/platform/execution/solaris/amm-bridge.js';
+import { Market } from '../../dist/market.js';
 
 const decoder = {
   decodePool: info => PUMP_AMM_SDK.decodePool(info),
   decodeGlobalConfig: () => ({}),
   decodeFeeConfig: () => ({}),
-  totalFeeBps: () => 125n,
+  feeBreakdown: () => ({ lpFeeBps: 20n, protocolFeeBps: 5n, creatorFeeBps: 0n }),
 };
 
 function info(owner, data) {
@@ -94,7 +96,8 @@ test('PumpSwap reader verifies canonical pool, token-vault ownership, and signed
   assert.equal(observation.poolAddress, f.poolAddress.toBase58());
   assert.equal(observation.quoteReserves, 950_000_000n);
   assert.equal(observation.tokenReserves, 2_000_000_000n);
-  assert.equal(observation.effectiveFeeBps, 125);
+  assert.equal(observation.effectiveFeeBps, 25);
+  assert.deepEqual(observation.feeBreakdown, { lpFeeBps: 20n, protocolFeeBps: 5n, creatorFeeBps: 0n });
   assert.equal(observation.slot, 101);
   assert.equal(observation.observedAtMs, observedNow);
 
@@ -104,6 +107,22 @@ test('PumpSwap reader verifies canonical pool, token-vault ownership, and signed
   assert.equal(bridge.canExecuteTrade(f.mint.toBase58(), 'BUY').allowed, true);
   assert.equal(bridge.getObservationSummary(f.mint.toBase58()).status, 'OBSERVED');
   assert.equal(bridge.getObservationSummary(f.mint.toBase58()).slot, 101);
+
+  const market = new Market({ connection: {} }, {}, PublicKey.default);
+  market.ammBridge.registerMigration(f.mint.toBase58(), 100);
+  market.ammBridge.registerAmmPool(f.mint.toBase58(), observation);
+  const amountIn = 100_000_000n;
+  const sdkExactSellOut = sellBaseInput({
+    base: new BN(amountIn.toString()), slippage: 0,
+    baseReserve: new BN(observation.tokenReserves.toString()),
+    quoteReserve: new BN(observation.rawQuoteReserves.toString()),
+    virtualQuoteReserves: new BN(observation.virtualQuoteReserves.toString()),
+    globalConfig: { lpFeeBasisPoints: new BN(20), protocolFeeBasisPoints: new BN(5), coinCreatorFeeBasisPoints: new BN(0) },
+    feeConfig: null, baseMintAccount: { supply: new BN('1000000000000') }, baseMint: f.mint,
+    coinCreator: PublicKey.default, creator: pumpPoolAuthorityPda(f.mint),
+    quoteMint: NATIVE_MINT, isMayhemMode: false,
+  }).uiQuote;
+  assert.equal(market.ammExitQuote(f.mint.toBase58(), amountIn), BigInt(sdkExactSellOut.toString()));
 
   const spoofBridge = new PostGraduationAmmBridge({ sniperCooldownMs: 0, minAmmQuoteReserves: 1n });
   spoofBridge.registerMigration('spoof-mint', 100);
