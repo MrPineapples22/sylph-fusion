@@ -919,6 +919,38 @@
         "test/platform/truth-x.test.mjs",
         "test/platform/veritas-wire-decoder.test.mjs"
       ]
+    },
+    {
+      "id": "INT-JITO-TIP-FLOOR-EXACT-LAMPORTS-001",
+      "catalogSourceIds": ["SRC-257"],
+      "area": "Jito tip-floor estimate conversion",
+      "sourceToPipeline": {
+        "upstreamFindings": [
+          "The official Jito documentation describes tip amounts as part of a competitive auction and exposes the tip-floor API as a market observation, not as a guaranteed landing price.",
+          "The existing adapter converted the 75th-percentile SOL value with floating-point multiplication and Math.ceil, which can overstate at decimal boundaries and accepted coercible values such as null as zero."
+        ],
+        "relevantModules": ["src/execution.ts", "src/platform/execution/jito-tip-floor.ts"],
+        "existingOverlap": "The configured min/max tip policy remains authoritative. The observed floor is converted exactly and capped at the configured maximum before the existing panic multiplier and final cap are applied. No submission path was enabled or changed.",
+        "risks": [
+          "A tip-floor observation is not a quote or guarantee that an opportunity will land.",
+          "This does not model the finalized transaction's actual tip transfer or bundle outcome."
+        ],
+        "validationRequirements": [
+          "Test integer lamports, fractional-lamport ceilings, zero, scientific notation, malformed values, and negative values.",
+          "Check that the estimate is capped by the configured maximum before panic scaling."
+        ]
+      },
+      "implementation": {
+        "change": "Added exact decimal-SOL-to-lamport conversion using BigInt, strict input validation, and maximum-tip clamping in the Jito tip-floor refresh path.",
+        "files": ["src/platform/execution/jito-tip-floor.ts", "src/execution.ts", "test/platform/jito-tip-floor.test.mjs"],
+        "validation": {
+          "engineBuild": "npm run build:engine — passed in isolated pinned scratch copy",
+          "focusedTests": "node --test test/platform/jito-tip-floor.test.mjs test/platform/jito-fence.test.mjs — 8/8 passed"
+        },
+        "authorityImpact": "Tip estimation only; no signing, broadcast, custody, capital authorization, or risk-limit paths changed.",
+        "status": "VERIFIED_TIP_FLOOR_UNIT_CONVERSION_ONLY"
+      },
+      "evidence": ["https://docs.jito.wtf/lowlatencytxnsend/", "test/platform/jito-tip-floor.test.mjs"]
     }
   ]
 }

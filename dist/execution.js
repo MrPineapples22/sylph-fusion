@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { httpJson } from './rpc.js';
 import { log, mulBps } from './core.js';
 import { AssetDeltaEngine } from './platform/execution/asset-delta-engine.js';
+import { boundedSolTipFloorToLamports } from './platform/execution/jito-tip-floor.js';
 import { canonicalJson } from './platform/pipeline/canonical-hashing.js';
 import { globalProviderHealthTracker } from './platform/ingestion/provider-health.js';
 const JUPITER_PROGRAM = new PublicKey('JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4');
@@ -124,10 +125,10 @@ export class Executor {
         const started = Date.now();
         try {
             const rows = await httpJson('https://bundles.jito.wtf/api/v1/bundles/tip_floor', this.cfg.RPC_TIMEOUT_MS);
-            const sol = Number(rows[0]?.landed_tips_75th_percentile);
-            if (!Number.isFinite(sol) || sol < 0)
+            const floorLamports = boundedSolTipFloorToLamports(rows[0]?.landed_tips_75th_percentile, this.cfg.MAX_TIP_LAMPORTS);
+            if (floorLamports === null)
                 throw new Error('invalid tip floor');
-            this.floor = Math.ceil(sol * 1e9);
+            this.floor = Number(floorLamports);
             this.tipAt = Date.now();
             this.recordJitoSuccess(Date.now() - started);
         }

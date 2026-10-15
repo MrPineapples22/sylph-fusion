@@ -90,3 +90,8 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - Simulated filled-trade cost accounting now includes a fixed 5,000-lamport one-signature base-fee assumption alongside priority fee and Jito tip across the gateway, terminal settlement, and paper adapter. Buy basis, sell net proceeds/PnL, and terminal fee display have focused regressions.
 - Engine build and terminal production build passed; focused runtime tests passed 19/19 in a pinned scratch installation. Terminal's dependency install reported one high-severity advisory; dependency remediation is outside this fee patch.
 - This is paper accounting only. It does not implement version-aware transaction fee decoding, signature-count inference, failed-on-chain transaction reconciliation, or finalized meta.fee accounting; SRC-255 remains partial and the catalog's integration status is unchanged.
+
+## Jito tip-floor arithmetic follow-up (2026-10-15)
+
+- `SRC-257`: Jito's tip-floor endpoint reports SOL-denominated decimal values. The execution adapter now converts the 75th-percentile observation into lamports with integer ceiling arithmetic, rejects malformed/negative/non-finite input, and caps the stored floor at `MAX_TIP_LAMPORTS` before panic scaling.
+- Engine build passed and focused Jito lifecycle/conversion tests passed 8/8. This improves the local estimate only; no bundle submission, landing guarantee, or realized Jito cost integration is established.

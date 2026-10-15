@@ -10,6 +10,7 @@ import { log, mulBps, type Pending } from './core.js';
 import type { Config } from './config.js';
 import type { SigningFirewall } from './platform/signing/signing-firewall.js';
 import { AssetDeltaEngine } from './platform/execution/asset-delta-engine.js';
+import { boundedSolTipFloorToLamports } from './platform/execution/jito-tip-floor.js';
 import { canonicalJson } from './platform/pipeline/canonical-hashing.js';
 import { globalProviderHealthTracker, type ProviderHealthTracker } from './platform/ingestion/provider-health.js';
 
@@ -175,9 +176,10 @@ export class Executor {
     const started = Date.now();
     try {
       const rows = await httpJson<any[]>('https://bundles.jito.wtf/api/v1/bundles/tip_floor', this.cfg.RPC_TIMEOUT_MS);
-      const sol = Number(rows[0]?.landed_tips_75th_percentile);
-      if (!Number.isFinite(sol) || sol < 0) throw new Error('invalid tip floor');
-      this.floor = Math.ceil(sol * 1e9); this.tipAt = Date.now();
+      const floorLamports = boundedSolTipFloorToLamports(rows[0]?.landed_tips_75th_percentile, this.cfg.MAX_TIP_LAMPORTS);
+      if (floorLamports === null) throw new Error('invalid tip floor');
+      this.floor = Number(floorLamports);
+      this.tipAt = Date.now();
       this.recordJitoSuccess(Date.now() - started);
     } catch {
       this.recordJitoFailure('JITO_TIP_FLOOR_UNAVAILABLE');

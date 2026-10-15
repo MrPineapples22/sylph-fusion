@@ -141,7 +141,8 @@
         "separate submission receipt from landing/finalization evidence",
         "correlate bundle IDs to transaction signatures and settlement",
         "treat expired/missing inflight status as unresolved and reconcile finalized chain state",
-        "measure tip, priority fees, base fees, retries and failed/uncled outcomes"
+        "measure tip, priority fees, base fees, retries and failed/uncled outcomes",
+        "convert decimal SOL tip-floor observations to lamports with exact integer ceiling and clamp to the configured maximum"
       ],
       "sylphModules": [
         "terminal/jito-block-engine-health.mjs",
@@ -149,7 +150,7 @@
         "src/platform/execution/authority.ts",
         "src/platform/execution/finalized-settlement*"
       ],
-      "overlap": "SYLPH has read-only Block Engine connectivity and tip-floor research projections. The Jito lifecycle coordinator now distinguishes missing/expired inflight status from relay failure, while finalized chain reconciliation remains authoritative. Bundle submission and realized landed-cost telemetry remain unverified.",
+      "overlap": "SYLPH has read-only Block Engine connectivity and tip-floor research projections. The Jito lifecycle coordinator now distinguishes missing/expired inflight status from relay failure, while finalized chain reconciliation remains authoritative. The tip-floor parser converts the API's decimal SOL value to lamports using integer arithmetic and clamps to the configured maximum. Bundle submission and realized landed-cost telemetry remain unverified.",
       "risks": [
         "false success if receipt is shown as landing",
         "tips and priority fees can exceed expected edge",
@@ -161,10 +162,14 @@
         "test receipt-without-landing and status timeout",
         "test Invalid, null and empty inflight results as nonterminal status-not-retained outcomes",
         "reconcile bundle status, signature, finalized transaction and wallet deltas",
-        "record all fees and tips against realized outcomes"
+        "record all fees and tips against realized outcomes",
+        "test exact SOL-to-lamport ceiling, sub-lamport values, malformed values, and configured maximum"
       ],
       "evidence": [
-        "https://docs.jito.wtf/lowlatencytxnsend/"
+        "https://docs.jito.wtf/lowlatencytxnsend/",
+        "src/platform/execution/jito-tip-floor.ts",
+        "src/execution.ts",
+        "test/platform/jito-tip-floor.test.mjs"
       ],
       "license": "NOT_APPLICABLE_DOCUMENTATION",
       "decision": "RESEARCH_ONLY_NO_SUBMISSION_PATH_CHANGE"
