@@ -124,11 +124,11 @@ SRC-122,github_quant_ml_data,https://github.com/ranaroussi/quantstats,source_or_
 SRC-123,github_quant_ml_data,https://github.com/bashtage/arch,source_or_document_review,P2,PARTIAL_REVIEW,SRC-123-PINNED-SOURCE-2026-10-14,72bb33821b7c45f431defab3043aca424d89a58c,BSD-3-Clause-style terms (LICENSE.md at pinned commit; repository API does not classify license),RESEARCH_ONLY
 SRC-124,github_quant_ml_data,https://github.com/sktime/sktime,source_or_document_review,P2,PARTIAL_REVIEW,SRC-124-PINNED-SOURCE-2026-10-14,e1a1fc34c56478f0280a8518165a5be56e8a8dee,BSD-3-Clause (LICENSE at pinned commit),RESEARCH_ONLY
 SRC-125,github_quant_ml_data,https://github.com/pymc-devs/pymc,source_or_document_review,P2,PARTIAL_REVIEW,SRC-125-PINNED-SOURCE-2026-10-14,91e6da316d1139aff21dc6b7dd2e562b62cca311,Apache-2.0; repository notes included AePPL code under MIT (LICENSE at pinned commit),RESEARCH_ONLY
-SRC-126,github_quant_ml_data,https://github.com/SeldonIO/alibi-detect,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-127,github_formal_correctness,https://github.com/tlaplus/tlaplus,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-128,github_formal_correctness,https://github.com/apalache-mc/apalache,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-129,github_formal_correctness,https://github.com/AlloyTools/org.alloytools.alloy,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-130,github_formal_correctness,https://github.com/Z3Prover/z3,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
+SRC-126,github_quant_ml_data,https://github.com/SeldonIO/alibi-detect,source_or_document_review,P2,PARTIAL_REVIEW,SRC-126-PINNED-SOURCE-2026-10-14,c2fd0e05c648d353467bdb15fd6149a103b3a981,BUSL-1.1 (LICENSE; four-year change license to Apache-2.0; commercial-use restrictions apply),RESEARCH_ONLY
+SRC-127,github_formal_correctness,https://github.com/tlaplus/tlaplus,source_or_document_review,P2,PARTIAL_REVIEW,SRC-127-PINNED-SOURCE-2026-10-14,210df3af8aff4f6032bf9be459d5a911d079da6d,MIT (LICENSE; official README),RESEARCH_ONLY
+SRC-128,github_formal_correctness,https://github.com/apalache-mc/apalache,source_or_document_review,P2,PARTIAL_REVIEW,SRC-128-PINNED-SOURCE-2026-10-14,9a13950e0ebddcb3d7a79cb9e854b0866e1c5712,Apache-2.0 (repository metadata and README),RESEARCH_ONLY
+SRC-129,github_formal_correctness,https://github.com/AlloyTools/org.alloytools.alloy,source_or_document_review,P2,PARTIAL_REVIEW,SRC-129-PINNED-SOURCE-2026-10-14,ed89fdb16c58aea17a55e312c44f99e31aa63ee1,Unclear at repository level: LICENSE says code is currently under MIT but also contains Apache-2.0 text; verify file/package scope,RESEARCH_ONLY
+SRC-130,github_formal_correctness,https://github.com/Z3Prover/z3,source_or_document_review,P2,PARTIAL_REVIEW,SRC-130-PINNED-SOURCE-2026-10-14,ee33c3f646241e2eceeb398fedac7ae3670d7bc3,MIT (README and LICENSE.txt),RESEARCH_ONLY
 SRC-131,github_formal_correctness,https://github.com/pschanely/crosshair,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-132,github_formal_correctness,https://github.com/proptest-rs/proptest,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-133,github_formal_correctness,https://github.com/tokio-rs/loom,source_or_document_review,P2,NOT_REVIEWED,,,,UNASSESSED
