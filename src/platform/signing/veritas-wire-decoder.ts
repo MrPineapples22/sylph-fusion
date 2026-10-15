@@ -72,6 +72,12 @@ export class VeritasWireDecoder {
       throw new Error('VERITAS_DECODE_FAILED: messageBytes must be a non-empty Uint8Array');
     }
 
+    // web3.js 1.98.4 only decodes legacy and v0 messages. V1 starts with 0x81;
+    // reject it explicitly instead of letting an older decoder misclassify it.
+    if (messageBytes[0] === 0x81) {
+      throw new Error('VERITAS_UNSUPPORTED_TRANSACTION_VERSION: V1 message decoding is not implemented');
+    }
+
     const messageHash = createHash('sha256').update(messageBytes).digest('hex');
     let message: VersionedMessage;
     try {

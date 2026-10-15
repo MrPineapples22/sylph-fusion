@@ -14,6 +14,13 @@ const payer = new PublicKey('11111111111111111111111111111111');
 const recipient = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 const blockhash = 'GHtXQBsoZHVnNFa9YevAzFr1KkWKEpppzU6hiHjJxgjg';
 
+test('VeritasWireDecoder: explicitly rejects V1 until its message config is fully decoded', () => {
+  assert.throws(
+    () => VeritasWireDecoder.decode(Uint8Array.of(0x81)),
+    /VERITAS_UNSUPPORTED_TRANSACTION_VERSION: V1 message decoding is not implemented/,
+  );
+});
+
 test('VeritasWireDecoder: natively deserializes compiled VersionedMessage wire bytes', () => {
   const message = new TransactionMessage({
     payerKey: payer,

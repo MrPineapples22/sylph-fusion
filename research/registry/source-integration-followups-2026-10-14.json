@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-15T03:05:00Z",
+  "updatedAt": "2026-10-15T01:08:00Z",
   "interpretation": "Verified local implementation follow-ups linked to catalog source IDs. These records document changes and tests; they do not change source review status, grant integration authority, or establish profitability.",
   "followups": [
     {
@@ -830,6 +830,47 @@
         "https://solana.com/docs/core/transactions/versioned-transactions",
         "src/platform/ingestion/truth-x.ts",
         "test/platform/truth-x.test.mjs"
+      ]
+    },
+    {
+      "id": "INT-V1-SIGNING-FAIL-CLOSED-001",
+      "catalogSourceIds": ["SRC-254"],
+      "area": "transaction V1 signing decoder compatibility boundary",
+      "sourceToPipeline": {
+        "upstreamFindings": [
+          "Solana v1 messages begin with version prefix 0x81 and carry fee/resource limits in a message config rather than relying on legacy/v0 ComputeBudget instructions.",
+          "The installed @solana/web3.js 1.98.4 VersionedMessage decoder in this worktree only supports legacy and v0.",
+          "The signing decoder must fail closed until it can bind the v1 config and instruction/account structure from the exact message bytes."
+        ],
+        "relevantModules": ["src/platform/signing/veritas-wire-decoder.ts", "src/platform/signing/signing-firewall.ts"],
+        "existingOverlap": "Veritas decodes complete legacy/v0 payer-origin transfers. Before this guard, a v1 message had no explicit format rejection and was passed to the legacy/v0 deserializer. The decoder now recognizes 0x81 and rejects it with a version-specific unsupported error before parsing.",
+        "risks": [
+          "This guard does not add v1 message decoding or signing support.",
+          "The guard only recognizes the canonical v1 prefix; malformed or future formats remain subject to generic parser rejection.",
+          "The signing surface continues to depend on the installed decoder's supported versions."
+        ],
+        "validationRequirements": [
+          "Prove 0x81 V1 messages fail with an explicit unsupported-version error before legacy/v0 deserialization.",
+          "Keep legacy/v0 decoding and signing-firewall behavior unchanged.",
+          "Do not enable V1 signing until official-format fixtures cover config masks, limits, fee totals, instruction/account decoding, and canonical byte round-trips."
+        ]
+      },
+      "implementation": {
+        "change": "Added an explicit 0x81 rejection in VeritasWireDecoder and a deterministic regression test. This makes the unsupported V1 boundary observable and fail-closed without claiming V1 support.",
+        "files": ["src/platform/signing/veritas-wire-decoder.ts", "test/platform/veritas-wire-decoder.test.mjs"],
+        "validation": {
+          "build": "npm run build:engine — passed",
+          "focusedTests": "node --test test/platform/veritas-wire-decoder.test.mjs test/platform/signing-firewall.test.mjs — 11/11 passed"
+        },
+        "authorityImpact": "No signing approval expansion, transaction submission, custody, capital authorization, or risk-limit changes.",
+        "status": "VERIFIED_V1_UNSUPPORTED_VERSION_GUARD; FULL_V1_WIRE_DECODING_UNIMPLEMENTED"
+      },
+      "evidence": [
+        "https://solana.com/docs/core/fees/compute-budget",
+        "https://solana.com/docs/core/transactions/versioned-transactions",
+        "https://github.com/solana-foundation/transaction-v1-examples",
+        "src/platform/signing/veritas-wire-decoder.ts",
+        "test/platform/veritas-wire-decoder.test.mjs"
       ]
     }
   ]
