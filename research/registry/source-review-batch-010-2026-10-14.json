@@ -2,13 +2,13 @@
   "batchId": "source-review-batch-010-2026-10-14",
   "reviewedAt": "2026-10-14",
   "repository": {
-    "localHead": "d8fe1f6b259a2127e11242fc486a3a6d9d759a94",
-    "remoteHead": "d8fe1f6b259a2127e11242fc486a3a6d9d759a94",
+    "localHead": "e3f8c96",
+    "remoteHead": "e3f8c96",
     "mainAndTaskBranchMatch": true,
     "worktreeHasPreexistingEdits": true
   },
   "sourceRecords": 15,
-  "directlyReviewed": 4,
+  "directlyReviewed": 8,
   "sources": [
     {
       "id": "SRC-048",
@@ -178,19 +178,20 @@
     {
       "id": "SRC-052",
       "url": "https://github.com/MeteoraAg/damm-v2-go",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Meteora repository description and Go package"
+        "Meteora DAMM V2 Go README, Go module and state/instruction helpers",
+        "Pinned repository commit 3cc12838bce93a9cd546b22a1caaabaa81ce81f7"
       ],
       "discoveries": [
-        "Repository exposes Go support for Meteora DAMM V2 constant-product AMM program interactions.",
-        "DAMM v2 semantics are distinct from DLMM and DBC; pool family must be identified before quoting.",
-        "No executable-depth or quote parity is established by package presence alone."
+        "Examples read pool and position accounts and expose position-fee/reward operations",
+        "pool deserialization checks an 8-byte discriminator before decoding",
+        "its module path is github.com/dannwee/dbc-go despite the DAMM V2 repository name."
       ],
       "patterns": [
-        "type pool family explicitly",
-        "include protocol fee and token extension semantics",
-        "validate quote against on-chain pool state"
+        "Validate discriminator and account length before decoding",
+        "treat pool and position state as separate typed records",
+        "quote fees only from decoded protocol state."
       ],
       "sylphModules": [
         "src/platform/execution/solaris/amm-bridge.ts",
@@ -199,37 +200,39 @@
       ],
       "overlap": "Existing Meteora adapter covers DLMM research but audit states it does not cover DAMM/DBC executable quotes.",
       "risks": [
-        "cross-family account confusion",
-        "fee and reserve math drift",
-        "Go integration and license unverified"
+        "No root LICENSE found",
+        "examples require manually configured keys/RPC and were not run",
+        "module identity mismatch and generated schema provenance need review."
       ],
       "validation": [
-        "confirm exact pool program/version",
-        "compare exact-in/out math to official program fixtures",
-        "simulate failure and transfer-fee token cases"
+        "pin upstream release and protocol/account versions",
+        "validate with deterministic offline fixtures; never supply funded-wallet secrets",
+        "resolve licensing/provenance before reuse and keep execution authorization unchanged"
       ],
       "evidence": [
-        "https://github.com/MeteoraAg/damm-v2-go"
+        "https://github.com/MeteoraAg/damm-v2-go",
+        "https://github.com/MeteoraAg/damm-v2-go/tree/3cc12838bce93a9cd546b22a1caaabaa81ce81f7"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "POTENTIAL_BOUNDED_DAMM_QUOTE_GAP; NO_UNVERIFIED_EXECUTION"
+      "license": "LICENSE_NOT_FOUND_REVIEW_REQUIRED",
+      "decision": "READ_ONLY_ACCOUNT_PATTERN; NO_LICENSE_CLEARANCE"
     },
     {
       "id": "SRC-053",
       "url": "https://github.com/MeteoraAg/meteora-invent",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Meteora README and example transaction tooling"
+        "Meteora Invent README, LICENSE, root package metadata and selected action docs",
+        "Pinned repository commit dd77ef3d5aede3f0ff21d566d052097200417f5e"
       ],
       "discoveries": [
-        "Invent is a toolkit for creating Meteora launches and performing on-chain actions.",
-        "It is an operational transaction-construction tool rather than a read-only market research library.",
-        "Its launch/actions can mutate on-chain state and are unsuitable to invoke without explicit, isolated authorization."
+        "Monorepo contains DLMM/DBC launch and pool-management actions plus scaffolds",
+        "README instructions include keypair configuration and state-changing commands",
+        "LICENSE.md says MIT while root package.json declares ISC."
       ],
       "patterns": [
-        "keep launchpad actions out of market research",
-        "review generated account metas and fee assumptions",
-        "require simulation and explicit transaction approval"
+        "Keep launch configuration separate from execution",
+        "model Token-2022 transfer-hook behavior explicitly",
+        "validate pool status and token type before action."
       ],
       "sylphModules": [
         "src/platform/execution/authority.ts",
@@ -238,37 +241,39 @@
       ],
       "overlap": "No necessary runtime overlap; do not allow a launch toolkit to expand SYLPH authority.",
       "risks": [
-        "on-chain side effects",
-        "signer requirements",
-        "program/fee config drift"
+        "Root license and package metadata conflict",
+        "broad CLI can create/manage pools and keys",
+        "do not run or add as trading dependency."
       ],
       "validation": [
-        "static inspect only unless explicitly authorized",
-        "test generated transactions in isolated local validator",
-        "verify default-deny signing and no broadcast"
+        "pin upstream release and protocol/account versions",
+        "validate with deterministic offline fixtures; never supply funded-wallet secrets",
+        "resolve licensing/provenance before reuse and keep execution authorization unchanged"
       ],
       "evidence": [
-        "https://github.com/MeteoraAg/meteora-invent"
+        "https://github.com/MeteoraAg/meteora-invent",
+        "https://github.com/MeteoraAg/meteora-invent/tree/dd77ef3d5aede3f0ff21d566d052097200417f5e"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "NO_EXECUTION; STATIC_REFERENCE_ONLY"
+      "license": "MIT_REPOSITORY_ISC_PACKAGE_REVIEW_REQUIRED",
+      "decision": "DOC_AND_CONFIG_REFERENCE_ONLY; LICENSE_CONFLICT_REVIEW"
     },
     {
       "id": "SRC-054",
       "url": "https://github.com/orca-so/account-microscope",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Orca account-microscope README"
+        "Orca account-microscope README, package metadata and account serialization source",
+        "Pinned repository commit f7d0575d37225cb4b4caabbccf3efa8a29b54c4a"
       ],
       "discoveries": [
-        "Account Microscope is a tool for inspecting and decoding Solana account data, including Orca protocol account layouts.",
-        "Decoded account state is a point-in-time snapshot; it does not independently establish executable liquidity or confirmed trade economics.",
-        "It may help validate pool account fixtures without becoming a production data source."
+        "Read-only UI inspects raw Token/Token-2022 and Whirlpool accounts.",
+        "RPC account fetch preserves the context slot.",
+        "Exported account JSON hardcodes rentEpoch to zero; dependencies include an alpha Whirlpool SDK and older web3/Anchor versions."
       ],
       "patterns": [
-        "inspect account bytes alongside decoded fields",
-        "record program owner and slot context",
-        "compare independent decoders on fixtures"
+        "Preserve RPC context slot with decoded account evidence",
+        "separate raw account bytes from protocol-specific presentation",
+        "never replace original account metadata with display defaults."
       ],
       "sylphModules": [
         "src/market.ts",
@@ -277,37 +282,39 @@
       ],
       "overlap": "Could support Orca account research; current DEX integration uses other adapters and lacks established Orca quote flow.",
       "risks": [
-        "account version drift",
-        "decoder mismatch",
-        "research tool output mistaken for quote"
+        "No root LICENSE found",
+        "older/alpha dependencies",
+        "rentEpoch serialization is lossy",
+        "browser UI and account snapshots are not a canonical live feed."
       ],
       "validation": [
-        "pin Orca account schema/program IDs",
-        "fixture raw accounts at known slots",
-        "compare to official SDK and route quote"
+        "pin upstream release and protocol/account versions",
+        "validate with deterministic offline fixtures; never supply funded-wallet secrets",
+        "resolve licensing/provenance before reuse and keep execution authorization unchanged"
       ],
       "evidence": [
-        "https://github.com/orca-so/account-microscope"
+        "https://github.com/orca-so/account-microscope",
+        "https://github.com/orca-so/account-microscope/tree/f7d0575d37225cb4b4caabbccf3efa8a29b54c4a"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "RESEARCH_AND_FIXTURE_TOOL_ONLY"
+      "license": "LICENSE_NOT_FOUND_REVIEW_REQUIRED",
+      "decision": "READ_ONLY_INSPECTION_PATTERN; NO_LICENSE_CLEARANCE"
     },
     {
       "id": "SRC-055",
       "url": "https://github.com/jup-ag/metis-binary",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Jupiter repository description"
+        "Jupiter Metis Binary repository README and file inventory",
+        "Pinned repository commit f7e6cbd8c0a6ca9314ff6fc6c9887c4ad258bdb"
       ],
       "discoveries": [
-        "Repository publishes the Metis routing binary, a deployment artifact for Jupiter's swap routing engine.",
-        "Running a router binary is materially different from consuming Jupiter's hosted quote/build APIs.",
-        "No binary was downloaded, executed or compared in this review."
+        "README describes a binary distribution for Jupiter Metis routing",
+        "repository contains deployment examples and references external binary-key docs but no routing source, binary artifact, or license file in the pinned tree."
       ],
       "patterns": [
-        "pin binary digest and release",
-        "separate router operator from API client",
-        "validate route results against executable transaction simulation"
+        "Treat route construction as a provider boundary",
+        "retain an inspectable quote/route explanation",
+        "require exact build provenance before operating an external binary."
       ],
       "sylphModules": [
         "src/execution.ts",
@@ -316,21 +323,21 @@
       ],
       "overlap": "SYLPH currently consumes Jupiter APIs and does not host its own route service.",
       "risks": [
-        "binary supply chain and deployment attack surface",
-        "stale route/market state",
-        "unsupported or deprecated Metis interface"
+        "Binary internals and artifact digest are unavailable in reviewed tree",
+        "no root LICENSE",
+        "cannot inspect route correctness, signing boundary, telemetry, or security."
       ],
       "validation": [
-        "confirm current Jupiter V2 support/maintenance",
-        "verify signed release and binary hash",
-        "benchmark and differential-test route outputs without signing"
+        "pin upstream release and protocol/account versions",
+        "validate with deterministic offline fixtures; never supply funded-wallet secrets",
+        "resolve licensing/provenance before reuse and keep execution authorization unchanged"
       ],
       "evidence": [
         "https://github.com/jup-ag/metis-binary",
-        "https://developers.jup.ag/docs/swap"
+        "https://github.com/jup-ag/metis-binary/tree/f7e6cbd8c0a6ca9314ff6fc6c9887c4ad258bdb"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "NO_SELF_HOSTED_ROUTER; HOSTED_V2_PATH_REMAINS_CURRENT_REFERENCE"
+      "license": "LICENSE_NOT_FOUND_BINARY_DISTRIBUTION_UNREVIEWED",
+      "decision": "DOC_ONLY_BINARY_UNVERIFIED; NO_RUNTIME_ADOPTION"
     },
     {
       "id": "SRC-056",

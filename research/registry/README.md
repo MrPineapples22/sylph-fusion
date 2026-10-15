@@ -361,3 +361,12 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - SRC-050 Raydium CPI is pinned at 115df2779d53bacc7db9d0be2773a4b48a6d372b. It is an on-chain CPI interface, not an off-chain quote adapter; account privileges and minimum-output constraints need versioned fixtures. No root LICENSE was found.
 - SRC-051 Meteora DBC Go is pinned at 377824fc6056f10ee51074080c92362de52b09da. Its separate curve math and instruction/account helpers suggest preserving the launch-curve versus migrated-AMM boundary. No root LICENSE was found; current official IDL/fixtures and licensing are prerequisites.
 - Registry status: 64 direct source inspections and 224 catalog-triage records. This is bounded source inspection, not runtime integration or exhaustive upstream validation.
+
+
+## Liquidity, account inspection and routing references (2026-10-14)
+
+- SRC-052 Meteora DAMM V2 Go is pinned at 3cc12838bce93a9cd546b22a1caaabaa81ce81f7. Its pool decoder checks the discriminator before deserializing, but the tree has no root LICENSE and the module path still says `dbc-go`; account reference only.
+- SRC-053 Meteora Invent is pinned at dd77ef3d5aede3f0ff21d566d052097200417f5e. It documents DLMM/DBC launch actions and Token-2022 hooks; LICENSE.md says MIT while the root package declares ISC. Do not run its key/pool commands or adopt before license resolution.
+- SRC-054 Orca Account Microscope is pinned at f7d0575d37225cb4b4caabbccf3efa8a29b54c4a. It preserves RPC context slot for account inspection, but exported JSON hardcodes rentEpoch to zero; useful as a read-only UI reference only, with no root LICENSE found.
+- SRC-055 Jupiter Metis Binary is pinned at f7e6cbd8c0a6ca9314ff6fc6c9887c4ad258bdb. The repository contains deployment examples and external binary documentation, not routing source/artifact or a license file; implementation behavior remains unverified.
+- Registry status: 68 direct source inspections and 220 catalog-triage records. No external binary, key-handling workflow, dependency or trade path was integrated.

@@ -50,10 +50,10 @@ SRC-048,github_parsers_sdks,https://github.com/metaplex-foundation/blockbuster,s
 SRC-049,github_dex_swaps_launches,https://github.com/raydium-io/raydium-library,source_or_document_review,P1,PARTIAL_REVIEW,SRC-049-PINNED-2026-10-14,72a22dcd6136fdd354c47d35aaa4b035652398c5,LICENSE_NOT_FOUND_REVIEW_REQUIRED,LEGACY_REFERENCE_ONLY_NO_LICENSE_CLEARANCE
 SRC-050,github_dex_swaps_launches,https://github.com/raydium-io/raydium-cpi,source_or_document_review,P1,PARTIAL_REVIEW,SRC-050-PINNED-2026-10-14,115df2779d53bacc7db9d0be2773a4b48a6d372b,LICENSE_NOT_FOUND_REVIEW_REQUIRED,INTERFACE_REFERENCE_ONLY_NO_LICENSE_CLEARANCE
 SRC-051,github_dex_swaps_launches,https://github.com/MeteoraAg/dbc-go,source_or_document_review,P1,PARTIAL_REVIEW,SRC-051-PINNED-2026-10-14,377824fc6056f10ee51074080c92362de52b09da,LICENSE_NOT_FOUND_REVIEW_REQUIRED,RESEARCH_GAP_NO_LICENSE_CLEARANCE
-SRC-052,github_dex_swaps_launches,https://github.com/MeteoraAg/damm-v2-go,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-053,github_dex_swaps_launches,https://github.com/MeteoraAg/meteora-invent,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-054,github_dex_swaps_launches,https://github.com/orca-so/account-microscope,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-055,github_dex_swaps_launches,https://github.com/jup-ag/metis-binary,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
+SRC-052,github_dex_swaps_launches,https://github.com/MeteoraAg/damm-v2-go,source_or_document_review,P1,PARTIAL_REVIEW,SRC-052-PINNED-2026-10-14,3cc12838bce93a9cd546b22a1caaabaa81ce81f7,LICENSE_NOT_FOUND_REVIEW_REQUIRED,ACCOUNT_RESEARCH_ONLY_NO_LICENSE_CLEARANCE
+SRC-053,github_dex_swaps_launches,https://github.com/MeteoraAg/meteora-invent,source_or_document_review,P1,PARTIAL_REVIEW,SRC-053-PINNED-2026-10-14,dd77ef3d5aede3f0ff21d566d052097200417f5e,MIT_REPOSITORY_ISC_PACKAGE_REVIEW_REQUIRED,CONFIG_REFERENCE_ONLY_LICENSE_CONFLICT
+SRC-054,github_dex_swaps_launches,https://github.com/orca-so/account-microscope,source_or_document_review,P1,PARTIAL_REVIEW,SRC-054-PINNED-2026-10-14,f7d0575d37225cb4b4caabbccf3efa8a29b54c4a,LICENSE_NOT_FOUND_REVIEW_REQUIRED,READ_ONLY_REFERENCE_NO_LICENSE_CLEARANCE
+SRC-055,github_dex_swaps_launches,https://github.com/jup-ag/metis-binary,source_or_document_review,P1,PARTIAL_REVIEW,SRC-055-PINNED-2026-10-14,f7e6cbd8c0a6ca9314ff6fc6c9887c4ad258bdb,LICENSE_NOT_FOUND_BINARY_DISTRIBUTION_UNREVIEWED,BINARY_UNVERIFIED_NO_RUNTIME_ADOPTION
 SRC-056,github_dex_swaps_launches,https://github.com/jup-ag/jupiter-quote-api-node,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-057,github_dex_swaps_launches,https://github.com/jup-ag/rfq-webhook-toolkit,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-058,github_dex_swaps_launches,https://github.com/MeteoraAg/dynamic-fee-sharing,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
