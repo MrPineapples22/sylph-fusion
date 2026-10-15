@@ -1,0 +1,68 @@
+{
+  "generatedAt": "2026-10-15T00:33:30.960Z",
+  "manifestRows": 288,
+  "uniqueManifestIds": 288,
+  "batchFiles": 23,
+  "batchReviewRecords": 288,
+  "uniqueReviewedIds": 288,
+  "manifestReviewStatusCounts": {
+    "NOT_REVIEWED": 288
+  },
+  "batchStatusCounts": {
+    "PARTIAL_REVIEW": 288
+  },
+  "distinctDecisionCount": 165,
+  "topDecisionCounts": [
+    {
+      "decision": "RESEARCH_ONLY",
+      "count": 97
+    },
+    {
+      "decision": "REFERENCE_ONLY",
+      "count": 14
+    },
+    {
+      "decision": "NO_RUNTIME_INTEGRATION",
+      "count": 4
+    },
+    {
+      "decision": "OUT_OF_BAND_ONLY",
+      "count": 4
+    },
+    {
+      "decision": "PATTERN_ONLY",
+      "count": 4
+    },
+    {
+      "decision": "BENCHMARK_REFERENCE_ONLY",
+      "count": 2
+    },
+    {
+      "decision": "CLIENT_DIVERSITY_RESEARCH_ONLY",
+      "count": 2
+    },
+    {
+      "decision": "INFRASTRUCTURE_REFERENCE_ONLY",
+      "count": 2
+    },
+    {
+      "decision": "NO_DIRECT_INTEGRATION",
+      "count": 2
+    },
+    {
+      "decision": "RESEARCH_REFERENCE_ONLY",
+      "count": 2
+    },
+    {
+      "decision": "ARCHITECTURE_REFERENCE_ONLY",
+      "count": 1
+    },
+    {
+      "decision": "ASSURANCE_ONLY_UNTIL_INDEPENDENTLY_VERIFIED",
+      "count": 1
+    }
+  ],
+  "defectCount": 0,
+  "defects": [],
+  "interpretation": "Coverage validates registry record structure and manifest identity only. It does not establish exhaustive upstream inspection, current source availability, runtime integration, API authorization, profitability, or REA execution for every URL."
+}

@@ -53,6 +53,10 @@ export const schema = z.object({
   QUOTE_MAX_AGE_MS: integer(3000, 250, 10_000),
   RISK_SCAN_COOLDOWN_MS: integer(10_000, 1000, 60_000),
   RPC_TIMEOUT_MS: integer(4000, 250, 30_000),
+  // Conservative per-endpoint pacing for shared/free RPC plans. Raise only to
+  // the documented quota of each configured provider endpoint.
+  RPC_REQUESTS_PER_SECOND: integer(3, 1, 40),
+  RPC_REQUEST_BURST: integer(4, 1, 80),
   POLL_MS: integer(1000, 250, 30_000),
   MAX_TRACKED: integer(500, 20, 5000),
   MAX_QUEUE: integer(32, 1, 256),
@@ -85,4 +89,22 @@ export const schema = z.object({
   if (c.PANIC_SLIPPAGE_BPS < c.SLIPPAGE_BPS) fail('panic slippage must be at least normal slippage');
 });
 export type Config = z.infer<typeof schema>;
-export function config(env = process.env): Config { return schema.parse(env); }
+export function config(env = process.env): Config {
+  // A configured HTTPS RPC endpoint normally exposes its matching WebSocket
+  // endpoint. Keep explicitly supplied WSS URLs first, then add distinct RPC
+  // fallbacks so one provider outage cannot strand the Engine's log feed.
+  const explicitWs = Array.isArray(env.WS_URLS)
+    ? env.WS_URLS.filter((value): value is string => typeof value === 'string' && value.trim().length > 0).map(value => value.trim())
+    : typeof env.WS_URLS === 'string' ? env.WS_URLS.split(',').map(value => value.trim()).filter(Boolean) : [];
+  const derivedWs = (typeof env.RPC_URLS === 'string' ? env.RPC_URLS.split(',') : [])
+    .map(value => {
+      try {
+        const endpoint = new URL(value.trim());
+        if (endpoint.protocol !== 'https:') return null;
+        endpoint.protocol = 'wss:';
+        return endpoint.toString();
+      } catch { return null; }
+    }).filter((value): value is string => value !== null);
+  const WS_URLS = [...new Set([...explicitWs, ...derivedWs])].join(',');
+  return schema.parse({ ...env, WS_URLS });
+}

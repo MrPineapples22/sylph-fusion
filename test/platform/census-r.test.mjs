@@ -12,6 +12,7 @@ test('CENSUS-R: commits transaction event batches atomically with canonical even
   const batch = census.commitTransactionBatch({
     slot: 310000000,
     bankHash: 'bank-hash-alpha',
+    bankIdentityStatus: 'VERIFIED',
     txHash: 'tx5eUm8K9YiCqAxtyZgmmN1NGhmD3D2C9Azp2Za7nxwhiN',
     providerId: 'yellowstone-grpc-1',
     providerTimestampMs: 1790400000000,
@@ -27,9 +28,9 @@ test('CENSUS-R: commits transaction event batches atomically with canonical even
   assert.equal(census.getJournalLength(), 3);
 
   // Verify canonical event ID format: <slot>:<bank_hash>:<tx_hash>:<event_idx>
-  assert.equal(batch.events[0]?.eventId, '310000000:bank-hash-alpha:tx5eUm8K9YiCqAxtyZgmmN1NGhmD3D2C9Azp2Za7nxwhiN:0');
-  assert.equal(batch.events[1]?.eventId, '310000000:bank-hash-alpha:tx5eUm8K9YiCqAxtyZgmmN1NGhmD3D2C9Azp2Za7nxwhiN:1');
-  assert.equal(batch.events[2]?.eventId, '310000000:bank-hash-alpha:tx5eUm8K9YiCqAxtyZgmmN1NGhmD3D2C9Azp2Za7nxwhiN:2');
+  assert.equal(batch.events[0]?.eventId, '310000000:VERIFIED:bank-hash-alpha:tx5eUm8K9YiCqAxtyZgmmN1NGhmD3D2C9Azp2Za7nxwhiN:0');
+  assert.equal(batch.events[1]?.eventId, '310000000:VERIFIED:bank-hash-alpha:tx5eUm8K9YiCqAxtyZgmmN1NGhmD3D2C9Azp2Za7nxwhiN:1');
+  assert.equal(batch.events[2]?.eventId, '310000000:VERIFIED:bank-hash-alpha:tx5eUm8K9YiCqAxtyZgmmN1NGhmD3D2C9Azp2Za7nxwhiN:2');
 
   const wm = census.getWatermark();
   assert.equal(wm.highestObservedSlot, 310000000);
@@ -46,6 +47,7 @@ test('CENSUS-R: late events (event.slot < currentSlot) repair historical state w
   census.commitTransactionBatch({
     slot: 310000050,
     bankHash: 'bank-hash-1',
+    bankIdentityStatus: 'VERIFIED',
     txHash: 'tx-recent',
     providerId: 'rpc-1',
     providerTimestampMs: 1790400050000,
@@ -56,6 +58,7 @@ test('CENSUS-R: late events (event.slot < currentSlot) repair historical state w
   const late = census.ingestLateEvent({
     slot: 310000020, // < 310000050!
     bankHash: 'bank-hash-1',
+    bankIdentityStatus: 'VERIFIED',
     txHash: 'tx-late',
     eventIndex: 0,
     providerId: 'yellowstone-backup',
@@ -80,6 +83,7 @@ test('CENSUS-R: rolls back unsealed events from an abandoned bank fork (Section 
   census.commitTransactionBatch({
     slot: 310000100,
     bankHash: 'fork-main',
+    bankIdentityStatus: 'VERIFIED',
     txHash: 'tx-main',
     providerId: 'rpc-1',
     providerTimestampMs: 1790400100000,
@@ -93,6 +97,7 @@ test('CENSUS-R: rolls back unsealed events from an abandoned bank fork (Section 
   const ghostBatch = census.commitTransactionBatch({
     slot: 310000105,
     bankHash: 'fork-ghost',
+    bankIdentityStatus: 'VERIFIED',
     txHash: 'tx-ghost',
     providerId: 'rpc-1',
     providerTimestampMs: 1790400105000,
@@ -121,6 +126,7 @@ test('CENSUS-R: rolls back unsealed events from an abandoned bank fork (Section 
   assert.throws(() => census.commitTransactionBatch({
     slot: 310000105,
     bankHash: 'fork-ghost',
+    bankIdentityStatus: 'VERIFIED',
     txHash: 'tx-ghost',
     providerId: 'rpc-1',
     providerTimestampMs: 1790400105000,
@@ -132,13 +138,13 @@ test('CENSUS-R: rolls back unsealed events from an abandoned bank fork (Section 
 
 test('CENSUS-R: late-event history cannot be implicitly restored by duplicate or batch ingestion', () => {
   const census = new CensusRJournalAuthority();
-  const event = census.ingestLateEvent({slot:310000105,bankHash:'fork-ghost',txHash:'tx-late-ghost',eventIndex:0,providerId:'rpc-1',providerTimestampMs:1790400105000,eventType:'TRADE',payload:{value:1}});
+  const event = census.ingestLateEvent({slot:310000105,bankHash:'fork-ghost',bankIdentityStatus:'VERIFIED',txHash:'tx-late-ghost',eventIndex:0,providerId:'rpc-1',providerTimestampMs:1790400105000,eventType:'TRADE',payload:{value:1}});
   census.rollbackFork('fork-ghost',310000100);
   assert.equal(census.getEvent(event.eventId).stage,'REVOKED');
-  assert.throws(()=>census.ingestLateEvent({slot:310000105,bankHash:'fork-ghost',txHash:'tx-late-ghost',eventIndex:0,providerId:'rpc-1',providerTimestampMs:1790400105000,eventType:'TRADE',payload:{value:1}}),/revoked/);
-  assert.throws(()=>census.ingestLateEvent({slot:310000105,bankHash:'fork-ghost',txHash:'tx-late-ghost',eventIndex:1,providerId:'rpc-1',providerTimestampMs:1790400105000,eventType:'TRADE',payload:{value:2}}),/revoked transaction/);
+  assert.throws(()=>census.ingestLateEvent({slot:310000105,bankHash:'fork-ghost',bankIdentityStatus:'VERIFIED',txHash:'tx-late-ghost',eventIndex:0,providerId:'rpc-1',providerTimestampMs:1790400105000,eventType:'TRADE',payload:{value:1}}),/revoked/);
+  assert.throws(()=>census.ingestLateEvent({slot:310000105,bankHash:'fork-ghost',bankIdentityStatus:'VERIFIED',txHash:'tx-late-ghost',eventIndex:1,providerId:'rpc-1',providerTimestampMs:1790400105000,eventType:'TRADE',payload:{value:2}}),/revoked transaction/);
   const before=census.getWatermark();
-  assert.throws(()=>census.commitTransactionBatch({slot:310000105,bankHash:'fork-ghost',txHash:'tx-late-ghost',providerId:'rpc-1',providerTimestampMs:1790400105000,events:[{eventType:'TRADE',payload:{value:1}},{eventType:'TRADE',payload:{value:2}}]}),/revoked transaction/);
+  assert.throws(()=>census.commitTransactionBatch({slot:310000105,bankHash:'fork-ghost',bankIdentityStatus:'VERIFIED',txHash:'tx-late-ghost',providerId:'rpc-1',providerTimestampMs:1790400105000,events:[{eventType:'TRADE',payload:{value:1}},{eventType:'TRADE',payload:{value:2}}]}),/revoked transaction/);
   assert.deepEqual(census.getWatermark(),before);
   assert.equal(census.getJournalLength(),1);
 });
@@ -189,7 +195,7 @@ test('CENSUS-R: Feed integrates CensusRJournalAuthority with bank/slot awareness
   assert.ok(feed.censusJournal instanceof CensusRJournalAuthority, 'Feed must own CensusRJournalAuthority');
 
   const logs = ['Program 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P invoke [1]', 'Program 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P success'];
-  const src = { sourceId: 'src-1', providerId: 'https://rpc.example.com', transport: 'ws' };
+  const src = { sourceId: 'src-1', providerId: 'https://rpc.example.com', transport: 'ws', bankHash: '11111111111111111111111111111111', bankIdentityStatus: 'VERIFIED' };
 
   // Accept slot 1000
   await feed.accept('sig-census-1', 1000, logs, src);

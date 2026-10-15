@@ -5,6 +5,7 @@ import { SubscribeUpdate } from '@triton-one/yellowstone-grpc';
 import { Feed } from '../../dist/feed.js';
 import { config } from '../../dist/config.js';
 import { ProviderHealthTracker } from '../../dist/platform/ingestion/provider-health.js';
+import { CensusRJournalAuthority } from '../../dist/platform/ingestion/census-r.js';
 import {
   capturedPayloadBytes,
   capturedTransactionObservation,
@@ -123,4 +124,25 @@ test('accepted Yellowstone observations update provider health without exposing 
   assert.equal(provider.endpointUrlSanitized, 'https://geyser.example.invalid/stream');
   assert.ok(!JSON.stringify(tracker.getReport()).includes('private-value'));
   assert.ok(!JSON.stringify(tracker.getReport()).includes('private-token'));
+});
+
+test('failed Census-R commit cannot refresh Yellowstone validated-observation health', async t => {
+  const tracker = new ProviderHealthTracker();
+  const census = new CensusRJournalAuthority();
+  t.mock.method(census, 'commitTransactionBatch', () => { throw new Error('injected Yellowstone journal outage'); });
+  const f = new Feed(config({
+    RPC_URLS: 'https://rpc.invalid',
+    WS_URLS: 'wss://rpc.invalid',
+    YELLOWSTONE_URL: 'https://geyser.example.invalid/stream',
+    YELLOWSTONE_TOKEN: 'private-token',
+  }), {}, { submit: async () => ({ status: 'ACCEPTED' }) }, undefined, census, tracker);
+  const captured = createCapturedResponseDeserializer(SubscribeUpdate)(encodedUpdate({ slot: '790' }));
+
+  await f.acceptYellowstoneCapture(captured);
+  const provider = tracker.getReport().providers.YELLOWSTONE_GRPC;
+  assert.equal(provider.lastValidatedObservation, 0,
+    'the Geyser observation is not fully accepted until the required journal projection commits');
+  assert.equal(provider.observationValidated, false);
+  assert.equal(provider.failureReason, 'FEED_CENSUS_JOURNAL_FAILURE');
+  assert.equal(f.last, 0);
 });

@@ -134,5 +134,33 @@ test('ProviderHealthTracker: Tracks latency, error rates, circuit breaker, and s
   report = tracker.getReport(now);
   assert.equal(report.providers.DEXSCREENER_API.circuitBreakerTripped, true);
   assert.equal(report.providers.DEXSCREENER_API.state, 'CIRCUIT_OPEN');
-  assert.ok(report.activeAlerts.some(a => a.source === 'DEXSCREENER_API' && a.severity === 'CRITICAL'));
+  assert.ok(report.activeAlerts.some(a => a.source === 'DEXSCREENER_API' && a.severity === 'WARNING'));
+});
+
+test('ProviderHealthTracker: accepts the healthy Engine websocket as discovery when PumpPortal is unused', () => {
+  const tracker = new ProviderHealthTracker();
+  const now = Date.now();
+  tracker.setProviderConfiguration('SOLANA_WSS', true, true, false, 'NOT_REQUIRED');
+  tracker.setProviderConfiguration('SOLANA_RPC', true, true, true, 'REQUIRED');
+  tracker.recordValidatedObservation('SOLANA_WSS', 2, undefined, now);
+  tracker.recordValidatedObservation('SOLANA_RPC', 20, undefined, now);
+
+  const report = tracker.getReport(now);
+  assert.equal(report.isMarketFeedStale, false);
+  assert.equal(report.providers.PUMPPORTAL_WS.configured, false);
+  assert.equal(report.providers.SOLANA_WSS.capabilityAvailable, true);
+  assert.equal(report.providers.POLYMARKET_GAMMA.configured, false);
+  assert.equal(report.providers.POLYMARKET_CLOB.configured, false);
+  assert.equal(report.overallSystemState, 'NOMINAL');
+});
+
+test('ProviderHealthTracker: still blocks aggregate freshness when no configured discovery feed is current', () => {
+  const tracker = new ProviderHealthTracker();
+  const now = Date.now();
+  tracker.setProviderConfiguration('SOLANA_RPC', true, true, true, 'REQUIRED');
+  tracker.recordValidatedObservation('SOLANA_RPC', 20, undefined, now);
+
+  const report = tracker.getReport(now);
+  assert.equal(report.isMarketFeedStale, true);
+  assert.equal(report.overallSystemState, 'CRITICAL');
 });

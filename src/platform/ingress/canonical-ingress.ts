@@ -33,7 +33,7 @@ import { EventParser } from '@coral-xyz/anchor';
 import { getPumpProgram, PUMP_PROGRAM_ID } from '@pump-fun/pump-sdk';
 import { SubscribeUpdate } from '@triton-one/yellowstone-grpc';
 import bs58 from 'bs58';
-import { getStoreIngressCapability, type Store, type StoreIngressCapability } from '../../store.js';
+import { getStagingIngressBatchCapability, getStoreIngressCapability, type Store, type StoreIngressCapability } from '../../store.js';
 import { createUnvalidatedObservation } from './observation-factory.js';
 import type { ObservationIngressPort } from './port.js';
 import type {
@@ -63,6 +63,14 @@ export interface FusionEnvelopeCompiler {
 export type ValidationResult =
   | { readonly valid: true; readonly validatedEnvelope: ValidatedFusionEnvelope }
   | { readonly valid: false; readonly reason: string };
+
+type JournalDecodedEvent = {
+  readonly name?: unknown;
+  readonly signature?: unknown;
+  readonly slot?: unknown;
+  readonly received?: unknown;
+  readonly data?: unknown;
+};
 
 export interface TruthValidator {
   validate(compiled: CompiledFusionEnvelope): Promise<ValidationResult> | ValidationResult;
@@ -216,6 +224,8 @@ export class CanonicalIngress implements ObservationIngressPort {
   readonly #pendingDeliveries = new Map<string, CommittedEnvelope>();
   readonly #deliveryCursors = new Map<string, number>();
   #deliveryMutex: Promise<void> = Promise.resolve();
+  #journalCommitMutex: Promise<void> = Promise.resolve();
+  #journalCommitFailure: string | null = null;
   readonly #telemetry?: RuntimeTelemetryCapture;
 
   constructor(options: CanonicalIngressOptions) {
@@ -385,57 +395,73 @@ export class CanonicalIngress implements ObservationIngressPort {
       };
     }
 
-    // 5. Commit to Durable Journal
+    // Serialize journal sequence assignment with terminal projection/ACK. A
+    // durable sequence must never be projected after a later sequence simply
+    // because its async validator or subscriber resumed first.
     if (!rawEvidenceMatches(observation)) {
       return { status: 'REJECTED', observationId: observation.observationId, reason: 'RAW_PAYLOAD_MUTATED_BEFORE_JOURNAL' };
     }
-    let journalRecord: IngressJournalRecord;
+    let release!: () => void;
+    const previousCommit = this.#journalCommitMutex;
+    this.#journalCommitMutex = new Promise<void>(resolve => { release = resolve; });
+    await previousCommit;
     try {
-      journalRecord = this.#telemetry ? await this.#telemetry.measure('ingress.commit', trace!, () => this.#journal.append(validated)) : await this.#journal.append(validated);
-    } catch (err) {
-      return {
+      if (this.#journalCommitFailure) {
+        return { status: 'REJECTED', observationId: observation.observationId,
+          reason: `INGRESS_COMMIT_HALTED:${this.#journalCommitFailure}` };
+      }
+
+      // 5. Commit to Durable Journal
+      let journalRecord: IngressJournalRecord;
+      try {
+        journalRecord = this.#telemetry ? await this.#telemetry.measure('ingress.commit', trace!, () => this.#journal.append(validated)) : await this.#journal.append(validated);
+      } catch (err) {
+        const reason = `JOURNAL_APPEND_FAILED: ${err instanceof Error ? err.message : String(err)}`;
+        this.#journalCommitFailure = reason;
+        return { status: 'REJECTED', observationId: observation.observationId, reason };
+      }
+
+      // 6. Construct CommittedEnvelope (Only permitted with FSYNC_COMMITTED)
+      const committedData: CommittedEnvelopeData = {
+        journalSeq: journalRecord.sequence,
+        envelopeHash: journalRecord.entryHash,
+        validatedEnvelope: validated,
+        committedAtMs: Date.now(),
+        durability: 'FSYNC_COMMITTED',
+      };
+
+      const committed = deepFreezeEnvelope(committedData) as CommittedEnvelope;
+      this.#authenticCommittedEnvelopes.add(committed);
+
+      // 7. Authoritatively commit deduplication state
+      this.#seenObservations.add(observation.observationId);
+
+      // 8. Downstream Authoritative Notification
+      // Keep sequence allocation and projection acknowledgement in one ordered lane.
+      this.#pendingDeliveries.set(observation.observationId, committed);
+      const delivered = await this.deliverPending(observation.observationId, trace);
+      if (!delivered) this.#journalCommitFailure = 'COMMITTED_DELIVERY_PENDING_RETRY';
+
+      return delivered ? {
+        status: 'ACCEPTED',
+        observationId: observation.observationId,
+        journalSeq: committed.journalSeq,
+        envelopeHash: committed.envelopeHash,
+      } : {
         status: 'REJECTED',
         observationId: observation.observationId,
-        reason: `JOURNAL_APPEND_FAILED: ${err instanceof Error ? err.message : String(err)}`,
+        reason: 'COMMITTED_DELIVERY_PENDING_RETRY',
       };
+    } finally {
+      release();
     }
-
-    // 6. Construct CommittedEnvelope (Only permitted with FSYNC_COMMITTED)
-    const committedData: CommittedEnvelopeData = {
-      journalSeq: journalRecord.sequence,
-      envelopeHash: journalRecord.entryHash,
-      validatedEnvelope: validated,
-      committedAtMs: Date.now(),
-      durability: 'FSYNC_COMMITTED',
-    };
-
-    const committed = deepFreezeEnvelope(committedData) as CommittedEnvelope;
-    this.#authenticCommittedEnvelopes.add(committed);
-
-    // 7. Authoritatively commit deduplication state
-    this.#seenObservations.add(observation.observationId);
-
-    // 8. Downstream Authoritative Notification
-    // Invariant: Strictly executed ONLY AFTER durable journal commit.
-    this.#pendingDeliveries.set(observation.observationId, committed);
-    const delivered = await this.deliverPending(observation.observationId, trace);
-
-    return delivered ? {
-      status: 'ACCEPTED',
-      observationId: observation.observationId,
-      journalSeq: committed.journalSeq,
-      envelopeHash: committed.envelopeHash,
-    } : {
-      status: 'REJECTED',
-      observationId: observation.observationId,
-      reason: 'COMMITTED_DELIVERY_PENDING_RETRY',
-    };
   }
 
   public async retryPendingDeliveries(): Promise<number> {
     let delivered = 0;
     for (const observationId of this.#pendingDeliveries.keys()) {
       if (await this.deliverPending(observationId)) delivered++;
+      else break;
     }
     return delivered;
   }
@@ -456,6 +482,10 @@ export class CanonicalIngress implements ObservationIngressPort {
         this.#seenObservations.add(observationId);
         this.#pendingDeliveries.set(observationId, committed);
         if (await this.deliverPending(observationId)) recovered++;
+        else {
+          this.#journalCommitFailure = 'COMMITTED_DELIVERY_PENDING_RETRY';
+          throw new Error('INGRESS_OUTBOX_RECOVERY_PENDING');
+        }
       }
       if (page.length < 500) break;
     }
@@ -867,6 +897,7 @@ export interface CreateCanonicalSolanaIngressOptions {
 /** Adapts the Store audit transaction to the ingress journal contract. Before writing,
  * the worker must prove its live connection is file-backed, in WAL mode, and synchronous=FULL. */
 export class StoreIngressJournal implements IngressDurableJournal {
+  readonly #storeInstance: Store;
   readonly #store: StoreIngressCapability;
   readonly #storeCall: (operation: string, body?: string) => Promise<string | null>;
 
@@ -874,6 +905,7 @@ export class StoreIngressJournal implements IngressDurableJournal {
     if (new.target !== StoreIngressJournal) throw new Error('INGRESS_UNTRUSTED_JOURNAL_SUBCLASS');
     const capability = getStoreIngressCapability(store);
     if (!capability) throw new Error('INGRESS_DURABLE_JOURNAL_REQUIRED');
+    this.#storeInstance = store;
     this.#store = capability;
     this.#storeCall = (operation, body) => store.call(operation, body);
     storeIngressJournalCapabilities.set(this, capability);
@@ -942,6 +974,89 @@ export class StoreIngressJournal implements IngressDurableJournal {
     const durableRecord = await this.findByObservationId(observation.observationId);
     if (!durableRecord || durableRecord.sequence !== BigInt(sequence!)) throw new Error('INGRESS_JOURNAL_COMMIT_NOT_READABLE');
     return durableRecord;
+  }
+
+  /** Staging replay only. Production CanonicalIngress continues to call append() one event at a time. */
+  async appendStagingBatch(validatedRows: readonly ValidatedFusionEnvelope[]): Promise<readonly (IngressJournalRecord & { inserted: boolean })[]> {
+    const appendBatch = getStagingIngressBatchCapability(this.#storeInstance);
+    if (!appendBatch) throw new Error('STAGING_INGRESS_CAPABILITY_REQUIRED');
+    if (!Array.isArray(validatedRows) || validatedRows.length < 1 || validatedRows.length > 64) {
+      throw new Error('STAGING_INGRESS_BATCH_LIMIT');
+    }
+    await this.#store.assertDurable();
+    const rows = validatedRows.map(validated => {
+      const { observation, envelopeId, compilerVersion, decodedEvents } = validated.compiledEnvelope;
+      const rawPayload = Uint8Array.from(observation.rawPayload);
+      if (createHash('sha256').update(rawPayload).digest('hex') !== observation.rawPayloadHash) {
+        throw new Error('RAW_PAYLOAD_HASH_MISMATCH_BEFORE_JOURNAL_SERIALIZATION');
+      }
+      const { truthEvidence, validationId, validatorVersion } = validated;
+      const payload = {
+        schemaVersion: 1,
+        observationId: observation.observationId,
+        sourceId: observation.sourceId,
+        providerId: observation.providerId,
+        transport: observation.transport,
+        receivedAtMs: observation.receivedAtMs,
+        observedAtMs: observation.observedAtMs,
+        slot: observation.slot,
+        commitment: observation.commitment,
+        signature: observation.signature,
+        transactionVersion: observation.transactionVersion,
+        rawPayloadBase64: Buffer.from(rawPayload).toString('base64'),
+        rawPayloadHash: observation.rawPayloadHash,
+        ...(observation.rawPayloadEncoding && observation.rawPayloadEncoding !== 'UNSPECIFIED'
+          ? { rawPayloadEncoding: observation.rawPayloadEncoding }
+          : {}),
+        schema: observation.schemaVersion,
+        processingIntent: observation.processingIntent,
+        envelopeId,
+        compilerVersion,
+        validatedAtMs: validated.validatedAtMs,
+        validatorVersion,
+        validationId,
+        truthEvidence,
+        decodedEvents: decodedEvents.map((event: JournalDecodedEvent) => ({
+          name: String(event?.name ?? ''),
+          signature: String(event?.signature ?? ''),
+          slot: Number.isSafeInteger(event?.slot) ? event.slot : null,
+          received: Number.isFinite(event?.received) ? event.received : null,
+          data: JSON.parse(JSON.stringify(event?.data ?? null, (_key, value) =>
+            typeof value === 'bigint' ? value.toString() : value?.toBase58?.() ?? value
+          )),
+        })),
+      };
+      const entryHash = createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+      const body = JSON.stringify({ ...payload, entryHash });
+      return { observationId: observation.observationId, eventId: `ingress:${observation.observationId}`,
+        eventHash: createHash('sha256').update(`canonical_ingress_committed_v1:${body}`).digest('hex'), body };
+    });
+    if (new Set(rows.map(row => row.observationId)).size !== rows.length) {
+      throw new Error('STAGING_INGRESS_BATCH_LIMIT');
+    }
+    const chunks: (typeof rows)[] = [];
+    let chunk: typeof rows = [];
+    let chunkBytes = 0;
+    for (const row of rows) {
+      const bytes = Buffer.byteLength(row.body);
+      if (bytes > 65_536) throw new Error('STAGING_INGRESS_BATCH_ROW_LIMIT');
+      if (chunk.length >= 64 || chunkBytes + bytes > 2 * 1024 * 1024) {
+        chunks.push(chunk);
+        chunk = [];
+        chunkBytes = 0;
+      }
+      chunk.push(row);
+      chunkBytes += bytes;
+    }
+    if (chunk.length) chunks.push(chunk);
+    const committed = [];
+    for (const rowsInChunk of chunks) committed.push(...await appendBatch(rowsInChunk));
+    let previous = 0;
+    return Object.freeze(committed.map(row => {
+      if (row.auditId <= previous) throw new Error('STAGING_INGRESS_BATCH_SEQUENCE_INVALID');
+      previous = row.auditId;
+      return Object.freeze({ sequence: BigInt(row.auditId), entryHash: row.eventHash as Hash256, inserted: row.inserted });
+    }));
   }
 
   async findByObservationId(observationId: string): Promise<IngressJournalRecord | null> {

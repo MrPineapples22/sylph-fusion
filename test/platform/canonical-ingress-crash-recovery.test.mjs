@@ -3,9 +3,13 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Store, getStoreIngressCapability } from '../../dist/store.js';
+import { DatabaseSync } from 'node:sqlite';
+import { Store, getInternalEngineProjectionCapability, getStoreIngressCapability } from '../../dist/store.js';
 import { Engine } from '../../dist/fusion.js';
 import { Keypair, PublicKey } from '@solana/web3.js';
+import BN from 'bn.js';
+import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { getPumpProgram, PUMP_PROGRAM_ID } from '@pump-fun/pump-sdk';
 import { CanonicalReducer } from '../../dist/platform/reducer/index.js';
 import { createUnvalidatedObservation } from '../../dist/platform/ingress/observation-factory.js';
 import {
@@ -17,31 +21,26 @@ import {
 } from '../../dist/platform/ingress/canonical-ingress.js';
 
 function encodeCreateEventLogs({ mint, creator, user, timestamp }) {
-  const u32 = value => { const out = Buffer.alloc(4); out.writeUInt32LE(value); return out; };
-  const string = value => { const bytes = Buffer.from(value); return Buffer.concat([u32(bytes.length), bytes]); };
-  const pubkey = value => new PublicKey(value).toBuffer();
-  const u64 = value => { const out = Buffer.alloc(8); out.writeBigUInt64LE(BigInt(value)); return out; };
-  const i64 = value => { const out = Buffer.alloc(8); out.writeBigInt64LE(BigInt(value)); return out; };
-  const bool = value => Buffer.from([value ? 1 : 0]);
-  const event = Buffer.concat([
-    Buffer.from([27, 114, 169, 77, 222, 235, 99, 118]),
-    string('Fixture token'), string('FIX'), string('https://example.invalid/metadata'),
-    pubkey(mint), pubkey(Keypair.generate().publicKey), pubkey(user), pubkey(creator),
-    i64(timestamp), u64(1_000_000), u64(2_000_000), u64(3_000_000), u64(4_000_000),
-    pubkey(PublicKey.default), bool(false), bool(false), pubkey(PublicKey.default),
-    u64(2_000_000), u64(100), bool(false),
-  ]);
-  const programId = '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
+  const program = getPumpProgram({}), zero = new BN(0);
+  const data = { name: 'Fixture token', symbol: 'FIX', uri: 'https://example.invalid/metadata',
+    mint: new PublicKey(mint), bondingCurve: Keypair.generate().publicKey, user: new PublicKey(user),
+    creator: new PublicKey(creator), timestamp: new BN(timestamp), virtualTokenReserves: zero,
+    virtualSolReserves: zero, realTokenReserves: zero, tokenTotalSupply: zero, tokenProgram: TOKEN_PROGRAM_ID,
+    isMayhemMode: false, isCashbackEnabled: false, quoteMint: PublicKey.default,
+    virtualQuoteReserves: zero, creatorFeeBps: zero, isHolderReward: false };
+  const definition = program.idl.events.find(event => event.name === 'createEvent');
+  if (!definition) throw new Error('CRASH_RECOVERY_CREATE_EVENT_IDL_MISSING');
+  const event = Buffer.concat([Buffer.from(definition.discriminator), program.coder.types.encode('createEvent', data)]);
   return [
-    `Program ${programId} invoke [1]`,
+    `Program ${PUMP_PROGRAM_ID} invoke [1]`,
     `Program data: ${event.toString('base64')}`,
-    `Program ${programId} success`,
+    `Program ${PUMP_PROGRAM_ID} success`,
   ];
 }
 
-function createSampleObservation(receivedAtMs = Date.now()) {
+function createSampleObservation(receivedAtMs = Date.now(), sourceId = 'crash-recovery-source') {
   return createUnvalidatedObservation({
-    sourceId: 'crash-recovery-source',
+    sourceId,
     providerId: 'quicknode-mainnet',
     transport: 'websocket.logsSubscribe',
     receivedAtMs,
@@ -53,6 +52,17 @@ function createSampleObservation(receivedAtMs = Date.now()) {
     schemaVersion: 'solana-program-logs/v1',
     processingIntent: 'LIVE',
   });
+}
+
+function createValidProjectionObservation(sourceId, signature) {
+  const receivedAtMs = Date.now();
+  const mint = Keypair.generate().publicKey.toBase58();
+  const creator = Keypair.generate().publicKey.toBase58();
+  const user = Keypair.generate().publicKey.toBase58();
+  return createUnvalidatedObservation({sourceId, providerId:'fixture-provider', transport:'fixture', receivedAtMs, observedAtMs:receivedAtMs,
+    slot:301, commitment:'confirmed', signature,
+    rawPayload:Buffer.from(JSON.stringify(encodeCreateEventLogs({mint,creator,user,timestamp:Math.floor(receivedAtMs/1000)}))),
+    schemaVersion:'solana-program-logs/v1', processingIntent:'DETERMINISTIC_REPLAY'});
 }
 
 test('Canonical ingress redispatches a durably committed delivery after restart', async t => {
@@ -113,6 +123,81 @@ test('Canonical ingress redispatches a durably committed delivery after restart'
   assert.equal(firstAttempts, 1);
 });
 
+test('Engine projection cannot pass an earlier unresolved ingress delivery', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'ingress-projection-order-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const dbPath = join(dir, 'state.sqlite');
+  const store = new Store(dbPath);
+  const journal = new StoreIngressJournal(store);
+  const firstObservation = createSampleObservation(Date.now(), 'earlier-pending-delivery');
+  const laterObservation = createSampleObservation(Date.now(), 'later-pending-delivery');
+  const firstIngress = new CanonicalIngress({
+    compiler: new DefaultFusionEnvelopeCompiler(), validator: new DefaultTruthValidator(), journal,
+    downstreamSubscriber: async () => { throw new Error('SIMULATED_EARLIER_PROJECTION_FAILURE'); },
+  });
+  const laterIngress = new CanonicalIngress({
+    compiler: new DefaultFusionEnvelopeCompiler(), validator: new DefaultTruthValidator(), journal,
+    downstreamSubscriber: async () => { throw new Error('SIMULATED_LATER_PROJECTION_FAILURE'); },
+  });
+  try {
+    assert.equal((await firstIngress.submit(firstObservation)).status, 'REJECTED');
+    assert.equal((await laterIngress.submit(laterObservation)).status, 'REJECTED');
+    const pending = await journal.getPendingDeliveries(0, 10);
+    assert.equal(pending.length, 2);
+    assert.ok(pending[0].sequence < pending[1].sequence);
+    const projectionCapability = getInternalEngineProjectionCapability(store);
+    assert.ok(projectionCapability);
+    const stateJson = JSON.stringify({version: 1, wallet: 'projection-order-fixture', mode: 'paper_standard'});
+    const projectionJson = (row, observationId, revision) => JSON.stringify({
+      schemaVersion: 1,
+      sequence: row.sequence,
+      observationId,
+      entryHash: row.entryHash,
+      canonicalState: {revision: String(revision)},
+    });
+
+    await assert.rejects(projectionCapability.commitEngineProjection(
+      laterObservation.observationId, pending[1].sequence, pending[1].entryHash,
+      projectionJson(pending[1], laterObservation.observationId, 2), stateJson,
+    ), /ENGINE_PROJECTION_BLOCKED_BY_EARLIER_DELIVERY/);
+    assert.equal(await projectionCapability.loadEngineProjection(), null,
+      'rejecting the later projection must leave the checkpoint unchanged');
+    assert.equal((await journal.getPendingDeliveries(0, 10)).length, 2,
+      'neither pending outbox row may be acknowledged by a rejected checkpoint');
+
+    const statusDb = new DatabaseSync(dbPath);
+    try {
+      statusDb.prepare(`UPDATE canonical_ingress_delivery_v1 SET delivery_status='LEGACY_UNKNOWN' WHERE audit_id=?`)
+        .run(pending[0].sequence);
+    } finally { statusDb.close(); }
+    await assert.rejects(projectionCapability.commitEngineProjection(
+      laterObservation.observationId, pending[1].sequence, pending[1].entryHash,
+      projectionJson(pending[1], laterObservation.observationId, 2), stateJson,
+    ), /ENGINE_PROJECTION_BLOCKED_BY_EARLIER_DELIVERY/);
+    assert.equal(await projectionCapability.loadEngineProjection(), null,
+      'an earlier legacy-unknown row must also leave the checkpoint unchanged');
+    const restoreStatusDb = new DatabaseSync(dbPath);
+    try {
+      restoreStatusDb.prepare(`UPDATE canonical_ingress_delivery_v1 SET delivery_status='PENDING' WHERE audit_id=?`)
+        .run(pending[0].sequence);
+    } finally { restoreStatusDb.close(); }
+
+    await projectionCapability.commitEngineProjection(
+      firstObservation.observationId, pending[0].sequence, pending[0].entryHash,
+      projectionJson(pending[0], firstObservation.observationId, 1), stateJson,
+    );
+    const afterFirst = await journal.getPendingDeliveries(0, 10);
+    assert.equal(afterFirst.length, 1);
+    assert.equal(afterFirst[0].sequence, pending[1].sequence);
+    await projectionCapability.commitEngineProjection(
+      laterObservation.observationId, pending[1].sequence, pending[1].entryHash,
+      projectionJson(pending[1], laterObservation.observationId, 2), stateJson,
+    );
+    assert.equal((await journal.getPendingDeliveries(0, 10)).length, 0,
+      'once the earlier delivery is committed, the later projection can advance');
+  } finally { await store.close(); }
+});
+
 test('general ingress adapters cannot bind Engine or commit projection acknowledgements', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'ingress-projection-atomic-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
@@ -131,6 +216,324 @@ test('general ingress adapters cannot bind Engine or commit projection acknowled
     const journal = reviewedJournal;
     await assert.rejects(journal.acknowledgeDelivery('a'.repeat(64), 1, 'b'.repeat(64)), /INGRESS_ENGINE_ATOMIC_ACK_REQUIRED/);
     assert.equal((await journal.getPendingDeliveries(0, 10)).length, 0);
+  } finally { await store.close(); }
+});
+
+test('Engine refuses a pending delivery at or below restored projection without dispatch or acknowledgment', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'engine-pending-before-projection-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const dbPath = join(dir, 'state.sqlite');
+  const cfg = { MODE: 'paper_standard', MAX_TRACKED: 20, MAX_AGE_MS: 300_000, MIN_AGE_MS: 1_000,
+    MIN_BUYERS: 2, MIN_BUY_SELL_RATIO_BPS: 1_000, POLL_MS: 10, CHECKPOINT_INTERVAL_MS: 60_000 };
+  const stateFor = () => ({ version: 1, wallet: 'projection-order-wallet', mode: 'paper_standard', positions: {}, closed: {},
+    pending: null, cash: '1000000000', day: new Date().toISOString().slice(0, 10), dayPnl: '0', halted: false });
+  const makeEngine = (store, state, ingress, feedCounters) => {
+    let engine;
+    const feed = {isIngressBound: port => port === ingress, gapReconciler: {setRecoveryCertificateJournal() {}},
+      run: async () => { feedCounters.started++; engine.stop(); }, stop() {}, healthy: () => false, last: 0, slot: 0};
+    engine = new Engine(cfg, { connection: {} }, {}, {}, store, state, undefined, undefined,
+      'deterministic_only', undefined, undefined, undefined, ingress, feed);
+    return engine;
+  };
+  let store = new Store(dbPath);
+  try {
+    await store.save(stateFor());
+    const initialIngress = createCanonicalSolanaIngress({journal: new StoreIngressJournal(store)});
+    makeEngine(store, stateFor(), initialIngress, {started: 0});
+    const observation = createValidProjectionObservation('checkpointed-delivery','projection-stale-pending-1');
+    const firstReceipt = await initialIngress.submit(observation);
+    assert.equal(firstReceipt.status, 'ACCEPTED', firstReceipt.reason);
+    const committed = await getInternalEngineProjectionCapability(store).loadEngineProjection();
+    assert.ok(committed.sequence > 0);
+    assert.equal((await new StoreIngressJournal(store).getPendingDeliveries(0, 10)).length, 0);
+    // Corruption fixture: simulate a stale PENDING status after a successful projection+ACK commit.
+    const db = new DatabaseSync(dbPath);
+    try { db.prepare("UPDATE canonical_ingress_delivery_v1 SET delivery_status='PENDING',acknowledged_at_ms=NULL WHERE audit_id=?").run(committed.sequence); }
+    finally { db.close(); }
+  } finally { await store.close(); }
+
+  store = new Store(dbPath);
+  const feedCounters = {started: 0};
+  let subscriberEffects = 0;
+  const pendingIngress = createCanonicalSolanaIngress({journal: new StoreIngressJournal(store)});
+  pendingIngress.subscribe(() => { subscriberEffects++; });
+  const restarted = makeEngine(store, await store.load(), pendingIngress, feedCounters);
+  try {
+    const beforeProjection = await getInternalEngineProjectionCapability(store).loadEngineProjection();
+    const beforePending = await new StoreIngressJournal(store).getPendingDeliveries(0, 1);
+    assert.equal(beforePending.length, 1);
+    assert.equal(beforePending[0].sequence, beforeProjection.sequence);
+    await assert.rejects(restarted.run(), /ENGINE_PENDING_INGRESS_NOT_AFTER_PROJECTION/);
+    assert.equal(subscriberEffects, 0, 'pending delivery must not reach ordinary or terminal subscribers');
+    assert.equal(feedCounters.started, 0, 'feed production must not start after the startup guard fails');
+    assert.deepEqual(await getInternalEngineProjectionCapability(store).loadEngineProjection(), beforeProjection,
+      'projection checkpoint must remain unchanged');
+    const afterPending = await new StoreIngressJournal(store).getPendingDeliveries(0, 1);
+    assert.equal(afterPending.length, 1);
+    assert.equal(afterPending[0].sequence, beforePending[0].sequence);
+    const db = new DatabaseSync(dbPath, {readOnly: true});
+    try {
+      const status = db.prepare('SELECT delivery_status,acknowledged_at_ms FROM canonical_ingress_delivery_v1 WHERE audit_id=?').get(beforePending[0].sequence);
+      assert.equal(status.delivery_status, 'PENDING');
+      assert.equal(status.acknowledged_at_ms, null);
+    } finally { db.close(); }
+  } finally { await store.close(); }
+});
+
+test('Engine normally replays a pending delivery strictly after the restored projection', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'engine-pending-after-projection-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const dbPath = join(dir, 'state.sqlite');
+  const cfg = { MODE: 'paper_standard', MAX_TRACKED: 20, MAX_AGE_MS: 300_000, MIN_AGE_MS: 1_000,
+    MIN_BUYERS: 2, MIN_BUY_SELL_RATIO_BPS: 1_000, POLL_MS: 10, CHECKPOINT_INTERVAL_MS: 60_000 };
+  const stateFor = () => ({ version: 1, wallet: 'projection-order-wallet', mode: 'paper_standard', positions: {}, closed: {},
+    pending: null, cash: '1000000000', day: new Date().toISOString().slice(0, 10), dayPnl: '0', halted: false });
+  const makeEngine = (store, state, ingress, feedCounters) => {
+    let engine;
+    const feed = {isIngressBound: port => port === ingress, gapReconciler: {setRecoveryCertificateJournal() {}},
+      run: async () => { feedCounters.started++; engine.stop(); }, stop() {}, healthy: () => false, last: 0, slot: 0};
+    engine = new Engine(cfg, { connection: {} }, {}, {}, store, state, undefined, undefined,
+      'deterministic_only', undefined, undefined, undefined, ingress, feed);
+    return engine;
+  };
+  let store = new Store(dbPath);
+  let pendingSequence;
+  try {
+    await store.save(stateFor());
+    const firstIngress = createCanonicalSolanaIngress({journal: new StoreIngressJournal(store)});
+    makeEngine(store, stateFor(), firstIngress, {started: 0});
+    const firstReceipt = await firstIngress.submit(createValidProjectionObservation('checkpoint-before-pending','projection-later-pending-1'));
+    assert.equal(firstReceipt.status, 'ACCEPTED', firstReceipt.reason);
+    const firstProjection = await getInternalEngineProjectionCapability(store).loadEngineProjection();
+    assert.ok(firstProjection.sequence > 0);
+
+    const pendingIngress = createCanonicalSolanaIngress({journal: new StoreIngressJournal(store)});
+    pendingIngress.subscribe(() => { throw new Error('LEAVE_SECOND_DELIVERY_PENDING'); });
+    assert.equal((await pendingIngress.submit(createValidProjectionObservation('strictly-later-pending','projection-later-pending-2'))).status, 'REJECTED');
+    const pending = await new StoreIngressJournal(store).getPendingDeliveries(0, 10);
+    assert.equal(pending.length, 1);
+    assert.ok(pending[0].sequence > firstProjection.sequence);
+    pendingSequence = pending[0].sequence;
+  } finally { await store.close(); }
+
+  store = new Store(dbPath);
+  const feedCounters = {started: 0};
+  let subscriberEffects = 0;
+  const recoveredIngress = createCanonicalSolanaIngress({journal: new StoreIngressJournal(store)});
+  recoveredIngress.subscribe(() => { subscriberEffects++; });
+  const restarted = makeEngine(store, await store.load(), recoveredIngress, feedCounters);
+  try {
+    await restarted.run();
+    assert.equal(subscriberEffects, 1);
+    assert.equal(feedCounters.started, 1);
+    const projection = await getInternalEngineProjectionCapability(store).loadEngineProjection();
+    assert.equal(projection.sequence, pendingSequence);
+    assert.equal((await new StoreIngressJournal(store).getPendingDeliveries(0, 10)).length, 0);
+  } finally { await store.close(); }
+});
+
+test('fresh database with no ingress history passes preflight and starts the feed', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'engine-fresh-ingress-startup-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const dbPath = join(dir, 'state.sqlite');
+  const store = new Store(dbPath);
+  const state = { version: 1, wallet: 'fresh-ingress-wallet', mode: 'paper_standard', positions: {}, closed: {},
+    pending: null, cash: '1000000000', day: new Date().toISOString().slice(0, 10), dayPnl: '0', halted: false };
+  const cfg = { MODE: 'paper_standard', MAX_TRACKED: 20, MAX_AGE_MS: 300_000, MIN_AGE_MS: 1_000,
+    MIN_BUYERS: 2, MIN_BUY_SELL_RATIO_BPS: 1_000, POLL_MS: 10, CHECKPOINT_INTERVAL_MS: 60_000 };
+  const ingress = createCanonicalSolanaIngress({ journal: new StoreIngressJournal(store) });
+  let engine;
+  let feedStarts = 0;
+  const feed = { isIngressBound: port => port === ingress, gapReconciler: {setRecoveryCertificateJournal() {}},
+    run: async () => { feedStarts++; engine.stop(); }, stop() {}, healthy: () => false, last: 0, slot: 0 };
+  engine = new Engine(cfg, {connection: {}}, {}, {}, store, state, undefined, undefined,
+    'deterministic_only', undefined, undefined, undefined, ingress, feed);
+  try {
+    await store.save(state);
+    const db = new DatabaseSync(dbPath, {readOnly: true});
+    try {
+      assert.equal(db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='canonical_ingress_delivery_v1'").get(), undefined);
+      assert.equal(db.prepare("SELECT 1 FROM audit WHERE event='canonical_ingress_committed_v1' LIMIT 1").get(), undefined);
+    } finally { db.close(); }
+    await engine.run();
+    assert.equal(feedStarts, 1, 'fresh no-ingress database must reach feed startup');
+  } finally { await store.close(); }
+});
+
+test('missing outbox with historical committed ingress fails closed without creating the outbox', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'engine-missing-ingress-outbox-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const dbPath = join(dir, 'state.sqlite');
+  const store = new Store(dbPath);
+  const state = { version: 1, wallet: 'missing-outbox-wallet', mode: 'paper_standard', positions: {}, closed: {},
+    pending: null, cash: '1000000000', day: new Date().toISOString().slice(0, 10), dayPnl: '0', halted: false };
+  const cfg = { MODE: 'paper_standard', MAX_TRACKED: 20, MAX_AGE_MS: 300_000, MIN_AGE_MS: 1_000,
+    MIN_BUYERS: 2, MIN_BUY_SELL_RATIO_BPS: 1_000, POLL_MS: 10, CHECKPOINT_INTERVAL_MS: 60_000 };
+  const ingress = createCanonicalSolanaIngress({journal: new StoreIngressJournal(store)});
+  let feedStarts = 0;
+  const feed = {isIngressBound: port => port === ingress, gapReconciler: {setRecoveryCertificateJournal() {}},
+    run: async () => { feedStarts++; }, stop() {}, healthy: () => false, last: 0, slot: 0};
+  const engine = new Engine(cfg, {connection: {}}, {}, {}, store, state, undefined, undefined,
+    'deterministic_only', undefined, undefined, undefined, ingress, feed);
+  try {
+    await store.save(state);
+    const db = new DatabaseSync(dbPath);
+    try { db.prepare("INSERT INTO audit(at,event,body) VALUES(?,?,?)").run(Date.now(), 'canonical_ingress_committed_v1', '{}'); }
+    finally { db.close(); }
+    await assert.rejects(engine.run(), /INGRESS_OUTBOX_REBUILD_REQUIRED/);
+    assert.equal(feedStarts, 0);
+    const verify = new DatabaseSync(dbPath, {readOnly: true});
+    try {
+      assert.equal(verify.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='canonical_ingress_delivery_v1'").get(), undefined,
+        'read-only preflight must not create or migrate the outbox');
+      assert.ok(verify.prepare("SELECT 1 FROM audit WHERE event='canonical_ingress_committed_v1' LIMIT 1").get());
+    } finally { verify.close(); }
+  } finally { await store.close(); }
+});
+
+test('missing outbox fails closed when the prune ledger records removed committed ingress', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'engine-pruned-ingress-outbox-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const dbPath = join(dir, 'state.sqlite');
+  const store = new Store(dbPath);
+  const state = { version: 1, wallet: 'pruned-ingress-wallet', mode: 'paper_standard', positions: {}, closed: {},
+    pending: null, cash: '1000000000', day: new Date().toISOString().slice(0, 10), dayPnl: '0', halted: false };
+  const cfg = { MODE: 'paper_standard', MAX_TRACKED: 20, MAX_AGE_MS: 300_000, MIN_AGE_MS: 1_000,
+    MIN_BUYERS: 2, MIN_BUY_SELL_RATIO_BPS: 1_000, POLL_MS: 10, CHECKPOINT_INTERVAL_MS: 60_000 };
+  const ingress = createCanonicalSolanaIngress({journal: new StoreIngressJournal(store)});
+  let feedStarts = 0;
+  const feed = {isIngressBound: port => port === ingress, gapReconciler: {setRecoveryCertificateJournal() {}},
+    run: async () => { feedStarts++; }, stop() {}, healthy: () => false, last: 0, slot: 0};
+  const engine = new Engine(cfg, {connection: {}}, {}, {}, store, state, undefined, undefined,
+    'deterministic_only', undefined, undefined, undefined, ingress, feed);
+  try {
+    await store.save(state);
+    const db = new DatabaseSync(dbPath);
+    try {
+      db.prepare(`INSERT INTO audit_prune_ledger(pruned_at_ms,cutoff_at_ms,deleted_row_count,first_id,last_id,id_ranges_json,
+        event_counts_json,first_audit_at_ms,last_audit_at_ms) VALUES(?,?,?,?,?,?,?,?,?)`).run(
+        Date.now(), Date.now(), 1, 1, 1, '[[1,1]]', JSON.stringify({canonical_ingress_committed_v1: 1}), Date.now(), Date.now());
+    } finally { db.close(); }
+    const before = new DatabaseSync(dbPath, {readOnly: true});
+    try { assert.equal(before.prepare("SELECT 1 FROM audit WHERE event='canonical_ingress_committed_v1' LIMIT 1").get(), undefined); }
+    finally { before.close(); }
+    await assert.rejects(engine.run(), /INGRESS_OUTBOX_REBUILD_REQUIRED/);
+    assert.equal(feedStarts, 0);
+    const verify = new DatabaseSync(dbPath, {readOnly: true});
+    try {
+      assert.equal(verify.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='canonical_ingress_delivery_v1'").get(), undefined,
+        'read-only preflight must not create or migrate the outbox');
+    } finally { verify.close(); }
+  } finally { await store.close(); }
+});
+
+test('missing outbox and unavailable prune summary schema fail closed', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'engine-unavailable-prune-ledger-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const dbPath = join(dir, 'state.sqlite');
+  const store = new Store(dbPath);
+  const state = { version: 1, wallet: 'unavailable-ledger-wallet', mode: 'paper_standard', positions: {}, closed: {},
+    pending: null, cash: '1000000000', day: new Date().toISOString().slice(0, 10), dayPnl: '0', halted: false };
+  const cfg = { MODE: 'paper_standard', MAX_TRACKED: 20, MAX_AGE_MS: 300_000, MIN_AGE_MS: 1_000,
+    MIN_BUYERS: 2, MIN_BUY_SELL_RATIO_BPS: 1_000, POLL_MS: 10, CHECKPOINT_INTERVAL_MS: 60_000 };
+  const ingress = createCanonicalSolanaIngress({journal: new StoreIngressJournal(store)});
+  let feedStarts = 0;
+  const feed = {isIngressBound: port => port === ingress, gapReconciler: {setRecoveryCertificateJournal() {}},
+    run: async () => { feedStarts++; }, stop() {}, healthy: () => false, last: 0, slot: 0};
+  const engine = new Engine(cfg, {connection: {}}, {}, {}, store, state, undefined, undefined,
+    'deterministic_only', undefined, undefined, undefined, ingress, feed);
+  try {
+    await store.save(state);
+    const db = new DatabaseSync(dbPath);
+    try { db.exec('DROP TABLE audit_prune_ledger'); }
+    finally { db.close(); }
+    await assert.rejects(engine.run(), /INGRESS_AUDIT_PRUNE_LEDGER_UNAVAILABLE/);
+    assert.equal(feedStarts, 0);
+  } finally { await store.close(); }
+});
+
+test('missing outbox rejects a noninteger committed-ingress prune count', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'engine-malformed-ingress-prune-count-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const dbPath = join(dir, 'state.sqlite');
+  const store = new Store(dbPath);
+  const state = { version: 1, wallet: 'malformed-prune-count-wallet', mode: 'paper_standard', positions: {}, closed: {},
+    pending: null, cash: '1000000000', day: new Date().toISOString().slice(0, 10), dayPnl: '0', halted: false };
+  const cfg = { MODE: 'paper_standard', MAX_TRACKED: 20, MAX_AGE_MS: 300_000, MIN_AGE_MS: 1_000,
+    MIN_BUYERS: 2, MIN_BUY_SELL_RATIO_BPS: 1_000, POLL_MS: 10, CHECKPOINT_INTERVAL_MS: 60_000 };
+  const ingress = createCanonicalSolanaIngress({journal: new StoreIngressJournal(store)});
+  let feedStarts = 0;
+  const feed = {isIngressBound: port => port === ingress, gapReconciler: {setRecoveryCertificateJournal() {}},
+    run: async () => { feedStarts++; }, stop() {}, healthy: () => false, last: 0, slot: 0};
+  const engine = new Engine(cfg, {connection: {}}, {}, {}, store, state, undefined, undefined,
+    'deterministic_only', undefined, undefined, undefined, ingress, feed);
+  try {
+    await store.save(state);
+    const db = new DatabaseSync(dbPath);
+    try {
+      db.prepare(`INSERT INTO audit_prune_ledger(pruned_at_ms,cutoff_at_ms,deleted_row_count,first_id,last_id,id_ranges_json,
+        event_counts_json,first_audit_at_ms,last_audit_at_ms) VALUES(?,?,?,?,?,?,?,?,?)`).run(
+        Date.now(), Date.now(), 1, 1, 1, '[[1,1]]', JSON.stringify({canonical_ingress_committed_v1: 'bogus'}), Date.now(), Date.now());
+    } finally { db.close(); }
+    await assert.rejects(engine.run(), /INGRESS_AUDIT_PRUNE_LEDGER_INVALID/);
+    assert.equal(feedStarts, 0);
+  } finally { await store.close(); }
+});
+
+test('LEGACY_UNKNOWN delivery blocks startup even when its sequence follows the restored projection', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'engine-legacy-unknown-startup-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const dbPath = join(dir, 'state.sqlite');
+  const cfg = { MODE: 'paper_standard', MAX_TRACKED: 20, MAX_AGE_MS: 300_000, MIN_AGE_MS: 1_000,
+    MIN_BUYERS: 2, MIN_BUY_SELL_RATIO_BPS: 1_000, POLL_MS: 10, CHECKPOINT_INTERVAL_MS: 60_000 };
+  const state = { version: 1, wallet: 'legacy-ingress-wallet', mode: 'paper_standard', positions: {}, closed: {},
+    pending: null, cash: '1000000000', day: new Date().toISOString().slice(0, 10), dayPnl: '0', halted: false };
+  const makeEngine = (store, ingress, counters) => {
+    let engine;
+    const feed = {isIngressBound: port => port === ingress, gapReconciler: {setRecoveryCertificateJournal() {}},
+      run: async () => { counters.feedStarts++; engine.stop(); }, stop() {}, healthy: () => false, last: 0, slot: 0};
+    engine = new Engine(cfg, {connection: {}}, {}, {}, store, state, undefined, undefined,
+      'deterministic_only', undefined, undefined, undefined, ingress, feed);
+    return engine;
+  };
+  let store = new Store(dbPath);
+  try {
+    await store.save(state);
+    const firstIngress = createCanonicalSolanaIngress({journal: new StoreIngressJournal(store)});
+    makeEngine(store, firstIngress, {feedStarts: 0});
+    assert.equal((await firstIngress.submit(createValidProjectionObservation('committed-before-legacy', 'legacy-before-checkpoint'))).status, 'ACCEPTED');
+    const checkpoint = await getInternalEngineProjectionCapability(store).loadEngineProjection();
+    const laterIngress = createCanonicalSolanaIngress({journal: new StoreIngressJournal(store)});
+    laterIngress.subscribe(() => { throw new Error('LEAVE_LATER_DELIVERY_PENDING'); });
+    assert.equal((await laterIngress.submit(createValidProjectionObservation('later-legacy', 'legacy-after-checkpoint'))).status, 'REJECTED');
+    const pending = await new StoreIngressJournal(store).getPendingDeliveries(checkpoint.sequence, 1);
+    assert.equal(pending.length, 1);
+    assert.ok(pending[0].sequence > checkpoint.sequence);
+    const db = new DatabaseSync(dbPath);
+    try { db.prepare("UPDATE canonical_ingress_delivery_v1 SET delivery_status='LEGACY_UNKNOWN',acknowledged_at_ms=NULL WHERE audit_id=?").run(pending[0].sequence); }
+    finally { db.close(); }
+  } finally { await store.close(); }
+
+  store = new Store(dbPath);
+  const counters = {feedStarts: 0};
+  let subscriberEffects = 0;
+  const recovered = createCanonicalSolanaIngress({journal: new StoreIngressJournal(store)});
+  recovered.subscribe(() => { subscriberEffects++; });
+  const engine = makeEngine(store, recovered, counters);
+  try {
+    const checkpoint = await getInternalEngineProjectionCapability(store).loadEngineProjection();
+    const startupState = await getStoreIngressCapability(store).inspectIngressStartupState();
+    assert.equal(startupState.hasLegacyUnknown, true);
+    assert.ok(startupState.oldestPendingSequence === null || startupState.oldestPendingSequence > checkpoint.sequence);
+    await assert.rejects(engine.run(), /ENGINE_INGRESS_LEGACY_UNKNOWN_REQUIRES_REBUILD/);
+    assert.equal(subscriberEffects, 0);
+    assert.equal(counters.feedStarts, 0, 'legacy-unknown must block before feed startup');
+    const db = new DatabaseSync(dbPath, {readOnly: true});
+    try {
+      const row = db.prepare("SELECT delivery_status,acknowledged_at_ms FROM canonical_ingress_delivery_v1 WHERE delivery_status='LEGACY_UNKNOWN' LIMIT 1").get();
+      assert.equal(row.delivery_status, 'LEGACY_UNKNOWN');
+      assert.equal(row.acknowledged_at_ms, null);
+    } finally { db.close(); }
   } finally { await store.close(); }
 });
 
@@ -179,6 +582,22 @@ test('Engine restores canonical state and active candidate projection before ing
     assert.equal(JSON.parse(checkpoint.projectionJson).candidates.length, 1);
     assert.equal((await new StoreIngressJournal(store).getPendingDeliveries(0, 10)).length, 0);
   } finally { await store.close(); }
+
+  const receiptDb = new DatabaseSync(dbPath, { readOnly: true });
+  try {
+    const receipt = receiptDb.prepare(`SELECT sequence,observation_id AS observationId,entry_hash AS entryHash,
+      previous_sequence AS previousSequence,previous_projection_hash AS previousProjectionHash,
+      canonical_revision AS canonicalRevision,projection_hash AS projectionHash,state_hash AS stateHash
+      FROM canonical_ingress_projection_history_v1`).get();
+    assert.equal(receipt.sequence, 1);
+    assert.equal(receipt.observationId.length, 64);
+    assert.equal(receipt.entryHash.length, 64);
+    assert.equal(receipt.previousSequence, null);
+    assert.equal(receipt.previousProjectionHash, null);
+    assert.equal(receipt.canonicalRevision, '1');
+    assert.match(receipt.projectionHash, /^[a-f0-9]{64}$/);
+    assert.match(receipt.stateHash, /^[a-f0-9]{64}$/);
+  } finally { receiptDb.close(); }
 
   store = new Store(dbPath);
   try {

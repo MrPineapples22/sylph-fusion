@@ -1,0 +1,139 @@
+{
+  "batchId": "source-review-batch-004-2026-10-14",
+  "reviewedAt": "2026-10-14",
+  "repository": {
+    "localHead": "f5c31177f2b8d79cdf5e3662e4049ac44b9562b2",
+    "remoteHead": "f5c31177f2b8d79cdf5e3662e4049ac44b9562b2",
+    "mainAndTaskBranchMatch": true,
+    "worktreeHasPreexistingEdits": true
+  },
+  "sourcesReviewed": 6,
+  "sources": [
+    {
+      "id": "SRC-029",
+      "url": "https://github.com/helius-labs/yellowstone-grpc",
+      "status": "PARTIAL_REVIEW",
+      "provenance": ["GitHub repository metadata and README", "Comparison to rpcpool/yellowstone-grpc SRC-028"],
+      "discoveries": [
+        "GitHub identifies this repository as a fork of rpcpool/yellowstone-grpc, not a separately specified stream protocol.",
+        "The visible README documents Geyser gRPC streaming and block reconstruction, including the caveat that reconstructed block entry counts may be zero.",
+        "The repository is AGPL-3.0 licensed. No independent feature delta or SYLPH-specific capability was established in this bounded review."
+      ],
+      "patterns": ["treat forks as related provenance, not independent-provider corroboration", "compare exact commits and schemas before claiming independent implementations", "preserve source license with provenance"],
+      "sylphModules": ["src/feed.ts", "src/platform/ingestion/yellowstone-captured-client.ts", "src/platform/ingress/canonical-ingress.ts"],
+      "overlap": "SYLPH currently uses @triton-one/yellowstone-grpc 4.0.2, not this server fork. No Helius Yellowstone source code is installed or executed.",
+      "risks": ["AGPL-3.0 compatibility is unreviewed", "a fork of the same protocol is not an independent source for consensus verification", "fork-specific patch state and server/client compatibility were not audited"],
+      "validation": ["compare pinned fork commit to upstream diff and license obligations before reuse", "use separate provider/operator identity for independent evidence", "test identical finalized fixtures against distinct infrastructure"],
+      "evidence": ["https://github.com/helius-labs/yellowstone-grpc", "https://github.com/rpcpool/yellowstone-grpc"],
+      "license": "AGPL-3.0_REVIEW_REQUIRED",
+      "decision": "NO_DEPENDENCY_OR_SECONDARY_TRUTH_PROMOTION"
+    },
+    {
+      "id": "SRC-181",
+      "url": "https://github.com/anza-xyz/kit",
+      "status": "PARTIAL_REVIEW",
+      "provenance": ["Official Anza Kit README", "Local package/dependency inventory", "Current Solana SDK migration documentation"],
+      "discoveries": [
+        "Anza Kit is the renamed 2.x line of @solana/web3.js and is MIT licensed; the local project currently pins @solana/web3.js 1.98.4 and many Anchor/web3.js-class APIs.",
+        "Kit separates RPC, subscriptions, codecs and address/key handling into typed packages; its docs describe explicitly handling failed subscriptions and catching up missed state with a one-shot RPC read.",
+        "Kit's general API evolution and documented support for legacy/v0 transaction-message construction do not by themselves establish support for the newer Solana transaction format or fee semantics."
+      ],
+      "patterns": ["explicit subscription failure and catch-up", "typed codecs and versioned message contracts", "migrate incrementally behind adapter boundaries with cross-SDK fixtures"],
+      "sylphModules": ["src/feed.ts", "src/rpc.ts", "src/platform/ingestion/yellowstone-captured-client.ts", "src/platform/signing/veritas-wire-decoder.ts", "src/platform/ingress/types.ts"],
+      "overlap": "The project has reconnect/replay logic and typed canonical ingress; it also depends heavily on web3.js v1. A Kit migration would be broad and is not justified as a drop-in fix. The gap-recovery approach is useful as a comparison, while Yellowstone/archive paths carry the chain-completeness workload.",
+      "risks": ["SDK migration could change address, transaction serialization, RPC, signer and Anchor interfaces", "version-aware message types do not equal support for all runtime transaction versions", "additional SDK dependencies can create duplicate classes/address identity issues"],
+      "validation": ["inventory all web3.js v1 imports and runtime class-identity assumptions", "test serialization/decoding against byte fixtures for each claimed transaction version", "dual-run RPC/subscription results on a fixed fixture set", "avoid signer changes without CRITICAL Astra review"],
+      "evidence": ["https://github.com/anza-xyz/kit", "https://github.com/anza-xyz/kit/blob/main/README.md", "https://github.com/anza-xyz/kit/blob/main/LICENSE"],
+      "license": "MIT",
+      "decision": "NO_WHOLESALE_SDK_MIGRATION; EVALUATE_BOUNDED_READ_ONLY_ADAPTERS"
+    },
+    {
+      "id": "SRC-176",
+      "url": "https://github.com/MrPineapples22/sylph-fusion",
+      "status": "PARTIAL_REVIEW",
+      "provenance": ["Local Git commit and remote refs", "Working-tree status", "AGENTS.md project routing policy"],
+      "discoveries": [
+        "Local HEAD, remote HEAD and remote main/task branch were all f5c31177f2b8d79cdf5e3662e4049ac44b9562b2 at review time.",
+        "The working tree contains extensive pre-existing modified and untracked files; they are not represented in that commit and must not be discarded or implicitly attributed to upstream main.",
+        "AGENTS.md routes canonical-state, financial protocol semantics and execution changes through critical Astra author/reviewer evidence gates; research-only external sources gain no authority."
+      ],
+      "patterns": ["separate commit provenance from working-tree evidence", "preserve unrelated in-progress changes", "classify changes by financial consequence"],
+      "sylphModules": ["AGENTS.md", "src/feed.ts", "src/platform/ingress/canonical-ingress.ts", "src/execution.ts", "src/platform/signing/veritas-wire-decoder.ts"],
+      "overlap": "This is the project repository itself. All local findings are evaluated against the committed baseline plus explicitly observed working-tree changes; no remote contribution was created.",
+      "risks": ["source link to main omits uncommitted code currently in the local checkout", "large dirty tree makes broad staging or PR creation unsafe", "status observations may be stale after future operator/process changes"],
+      "validation": ["capture exact base SHA and file status per batch", "stage only task-owned files for any future PR", "run current deterministic tests and rebuild before claiming code changes verified"],
+      "evidence": ["git ls-remote origin HEAD refs/heads/main refs/heads/feat/certification-layer-c1-c4", "git rev-parse HEAD", "AGENTS.md"],
+      "license": "PROJECT_LICENSE_REQUIRES_REPO_REVIEW",
+      "decision": "CONTINUE_LOCAL_RESEARCH; NO_BROAD_COMMIT_OR_PR"
+    },
+    {
+      "id": "SRC-269",
+      "url": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/feed.ts",
+      "status": "PARTIAL_REVIEW",
+      "provenance": ["Local src/feed.ts inspection", "feed-processing-intent-health and backpressure tests"],
+      "discoveries": [
+        "Feed derives an explicit processingIntent from the source and routes historical repair through canonical processing while keeping live-feed freshness/provider health separated.",
+        "The current source latches live ingress queue overflow only for LIVE observations; non-live overflow does not contaminate live health.",
+        "Focused tests exercise newer-slot historical replay, rejected historical evidence, legacy isRepair precedence, non-LIVE overflow, stop/drain behavior, historical post-commit retry through canonical DUPLICATE, live provider-health ordering, and queued-input immutability. A live Census-R failure previously stamped SOLANA_WSS as newly validated before the feed halted, while a queued frame could be mutated before the serial worker read it; provider-health refresh now follows both journal commits and queued logs/bytes are snapshotted after capacity admission."
+      ],
+      "patterns": ["explicit LIVE versus HISTORICAL_REPAIR state partition", "bounded admission with fail-closed live overflow", "test shutdown drains accepted work"],
+      "sylphModules": ["src/feed.ts", "src/platform/ingestion/feed-session-latch.ts", "src/platform/ingestion/provider-health.ts"],
+      "overlap": "The live/historical health partition remains in place. Deterministic failure injections found that a canonical ACCEPTED observation could be marked seen before a subsequent Census-R write failed; the returned receipt hid that incomplete projection and same-process retry was suppressed. Feed now exposes a post-commit warning and retains retryability; a canonical DUPLICATE can finish the Census-R write without affecting live freshness. Provider-health validation was also moved after both journal commits so a failed secondary projection cannot mint a fresh LIVE observation timestamp.",
+      "risks": ["running service may not load current edited source/dist", "Census-R remains a secondary in-memory journal in this path; warning/retryability do not establish crash-durable parity", "feed healthy predicate still depends on live freshness and stabilization, not historical coverage alone"],
+      "validation": ["inject post-canonical Census-R failure, assert warning and retry through canonical duplicate", "inject LIVE WSS and Yellowstone Census-R failures and assert no fresh validated-observation timestamp is recorded", "mutate caller-owned logs and raw frame after queue admission; assert processing uses the admission-time snapshot", "verify live fields/provider health remain unchanged for historical retries", "verify current build ID and process snapshot after operator-controlled rollout", "continue independent contiguous coverage checks"],
+      "evidence": ["src/feed.ts", "src/platform/ingestion/census-r.ts", "test/feed-processing-intent-health.test.mjs", "test/platform/yellowstone-captured-client.test.mjs", "test/feed-ingress-backpressure.test.mjs"],
+      "license": "PROJECT_LICENSE_REQUIRES_REPO_REVIEW",
+      "decision": "CURRENT_SOURCE_REGRESSION_CONFIRMED; NO_LIVE_STATE_CHANGE"
+    },
+    {
+      "id": "SRC-274",
+      "url": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/platform/ingress/canonical-ingress.ts",
+      "status": "PARTIAL_REVIEW",
+      "provenance": ["Local canonical-ingress.ts inspection", "canonical ingress durability tests"],
+      "discoveries": [
+        "Production append requires durable Store capability, validates the envelope and raw-payload hash, journals an immutable record, and reads back the committed observation identity.",
+        "A separate appendStagingBatch path is explicitly staging-only, bounded to 64 rows, and requires an unforgeable staging capability; regular production append remains one event at a time.",
+        "Durability tests reject caller-supplied journal authority, serialize sequence assignment, and verify tamper/replay recovery behavior."
+      ],
+      "patterns": ["capability-gate staging-only bulk writes", "hash raw evidence before canonical serialization", "read-after-write verify journal identity", "separate source observation from projection acknowledgement"],
+      "sylphModules": ["src/platform/ingress/canonical-ingress.ts", "src/platform/ingestion/truth-x.ts", "src/platform/ingestion/census-r.ts", "test/platform/canonical-ingress-durability.test.mjs"],
+      "overlap": "This is the canonical evidence boundary for the staged feed-recovery path; no duplicate ingress authority was identified in the reviewed portion.",
+      "risks": ["historical/captured observations require provenance and must not be relabeled LIVE", "staging capability must remain unavailable to normal composition", "journal durability does not prove external source completeness"],
+      "validation": ["continue crash/replay/idempotency and raw-hash tamper fixtures", "prove staging capability is absent from production composition", "compare confirmed block/transaction coverage with independent sources"],
+      "evidence": ["src/platform/ingress/canonical-ingress.ts", "test/platform/canonical-ingress-durability.test.mjs"],
+      "license": "PROJECT_LICENSE_REQUIRES_REPO_REVIEW",
+      "decision": "PRESERVE_CANONICAL_BOUNDARY; RETRY_SECONDARY_PROJECTION_ON_DUPLICATE"
+    },
+    {
+      "id": "SRC-278",
+      "url": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/platform/ingestion/gap-reconciler.ts",
+      "status": "PARTIAL_REVIEW",
+      "provenance": ["Local gap-reconciler.ts inspection", "PASS-24 recovery and gap-recovery tests"],
+      "discoveries": [
+        "The reconciler classifies missing slot intervals and only shrinks coverage gaps using compatible contiguous-source receipts.",
+        "Legacy persisted coverage frontier data without immutable recovery certificates is rejected rather than trusted to advance canonical continuity.",
+        "Recovery certificates, bounded pending backfills and provider-generation checks prevent replaced provider work from silently certifying gaps."
+      ],
+      "patterns": ["coverage lane and source provenance on slot receipts", "immutable certificate before advancing verified coverage", "bounded queue and overflow visibility", "provider generation fencing"],
+      "sylphModules": ["src/platform/ingestion/gap-reconciler.ts", "src/platform/ingestion/recovery-certificate.ts", "src/platform/ingestion/census-r.ts"],
+      "overlap": "The current design separates gap recovery from Feed freshness and uses certificate lineage. It does not on its own guarantee recovery throughput can keep up with the advancing chain tip.",
+      "risks": ["verified prefix can remain far behind live finalized tip", "filtered slot receipts cannot prove complete block coverage", "provider agreement may be correlated or share upstream data"],
+      "validation": ["measure sustainable finalized slot throughput and lag", "validate exact contiguous ranges against independently operated sources", "test restart/checkpoint recovery and bounded overflow", "require verified live-tail handoff evidence"],
+      "evidence": ["src/platform/ingestion/gap-reconciler.ts", "test/platform/pass-24-gap-recovery-fabric.test.mjs", "docs/ECOSYSTEM_LIVE_STATUS_2026-10-14.md"],
+      "license": "PROJECT_LICENSE_REQUIRES_REPO_REVIEW",
+      "decision": "RETAIN_CERTIFICATE_GATED_RECOVERY; NO_UNCONDITIONAL_UNLATCH"
+    }
+  ],
+  "verification": {
+    "command": "node --test test/feed-processing-intent-health.test.mjs test/platform/canonical-ingress-durability.test.mjs test/platform/pass-24-gap-recovery-fabric.test.mjs",
+    "passed": 31,
+    "failed": 0,
+    "notes": "Focused source-boundary tests passed; they do not establish external archive completeness or currently running process parity."
+  },
+  "safety": {
+    "signingOrBroadcastChanged": false,
+    "capitalAuthorizationChanged": false,
+    "riskLimitsChanged": false,
+    "servicesStartedStoppedOrRestarted": false
+  }
+}

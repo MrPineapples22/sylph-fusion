@@ -1,0 +1,648 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-10-15T00:45:00Z",
+  "interpretation": "Verified local implementation follow-ups linked to catalog source IDs. These records document changes and tests; they do not change source review status, grant integration authority, or establish profitability.",
+  "followups": [
+    {
+      "id": "INT-FEED-CENSUS-RETRY-001",
+      "catalogSourceIds": [
+        "SRC-269",
+        "SRC-274",
+        "SRC-276"
+      ],
+      "area": "feed admission snapshot, journal commit boundary, and provider-health projection",
+      "sourceToPipeline": {
+        "localFinding": "Feed committed an observation to canonical ingress, immediately marked its signature seen, then wrote Census-R. If that secondary write failed, the method returned canonical ACCEPTED without exposing incomplete projection and same-process retry was suppressed. In the live path, provider health was also refreshed before Census-R, so a failed secondary projection could still mint a fresh validated-observation timestamp.",
+        "relevantModules": [
+          "src/feed.ts",
+          "src/platform/ingress/canonical-ingress.ts",
+          "src/platform/ingestion/census-r.ts"
+        ],
+        "existingOverlap": "Canonical ingress remains the durable acceptance authority. Census-R remains a secondary ordered projection. The change exposes post-commit incompleteness and lets an identical canonical duplicate retry that projection; it does not turn secondary-journal success into LIVE feed evidence.",
+        "risks": [
+          "The Census-R journal used in this path is not proven crash-durable by this test; process restart may require separate recovery design.",
+          "A canonical ACCEPTED receipt can now carry a warning because downstream local projection is incomplete; callers must inspect postCommitWarning.",
+          "Historical retries must not update live freshness, provider health or slot watermark.",
+          "A live provider observation must not refresh provider capability health until canonical ingress and Census-R projection both commit.",
+          "Queued feed work must own snapshots of caller-provided log arrays and raw payload bytes, while checking queue capacity before allocating copies."
+        ],
+        "validationRequirements": [
+          "Inject Census-R failure after canonical acceptance and assert an explicit postCommitWarning.",
+          "Retry the same observation and require canonical DUPLICATE plus successful idempotent Census-R projection.",
+          "Assert historical failure and retry do not alter live timestamp, slot or provider health.",
+          "Inject a LIVE Census-R failure and assert Yellowstone/WSS provider health is not refreshed before both journal commits."
+        ]
+      },
+      "implementation": {
+        "change": "Feed snapshots source metadata, log arrays, and raw payload bytes after admission capacity succeeds and before queueing, preventing mutation while waiting under backpressure. It adds signatures to its bounded dedupe set only after Census-R succeeds; a failed side projection returns CENSUS_JOURNAL_WRITE_FAILED and remains retryable. Canonical DUPLICATE receipts proceed through the idempotent secondary projection path. Yellowstone and WSS validated-observation health updates occur only after canonical ingress and Census-R commit.",
+        "files": [
+          "src/feed.ts",
+          "src/platform/ingress/types.ts",
+          "dist/feed.js",
+          "dist/platform/ingress/types.js",
+          "test/feed-processing-intent-health.test.mjs",
+          "test/platform/yellowstone-captured-client.test.mjs"
+        ],
+        "validation": {
+          "build": "npm run build:engine — passed",
+          "focusedTests": "node --test test/feed-processing-intent-health.test.mjs test/platform/provider-health.test.mjs test/platform/census-r.test.mjs test/platform/canonical-ingress-durability.test.mjs — 51/51 passed",
+          "yellowstoneRegression": "node --test test/feed-processing-intent-health.test.mjs test/platform/yellowstone-captured-client.test.mjs — 14/14 passed; includes an injected Geyser Census-R failure with no fresh validated-observation timestamp",
+          "backpressureSnapshot": "npm run build:engine && node --test test/feed-processing-intent-health.test.mjs test/platform/yellowstone-captured-client.test.mjs test/feed-ingress-backpressure.test.mjs — build passed; 28/28 passed.",
+          "platformTests": "npm run test:platform — 1,074/1,074 passed; completed 2026-10-14 with TEMP/TMP/TMPDIR on D: after the C: temporary volume was full.",
+          "regression": "Historical post-commit retry, live provider-health-before-Census-R, and queued mutable-input snapshot regressions all failed before their respective fixes. The live failure previously refreshed SOLANA_WSS.lastValidatedObservation despite the required Census-R write failing; the queued-input case previously compiled a mutated/invalid frame after it was modified while waiting."
+        },
+        "authorityImpact": "Historical retries do not update live health. No signing, authorization, broadcast, capital, or risk-limit paths changed. No process restarted.",
+        "status": "VERIFIED_FEED_COMMIT_ORDER_AND_RETRY; SECONDARY JOURNAL CRASH DURABILITY NOT ESTABLISHED"
+      },
+      "evidence": [
+        "research/registry/source-review-batch-004-2026-10-14.json",
+        "test/feed-processing-intent-health.test.mjs"
+      ]
+    },
+    {
+      "id": "INT-VERITAS-V1-BOUNDARY-001",
+      "catalogSourceIds": [
+        "SRC-254",
+        "SRC-255"
+      ],
+      "area": "Solana V1 wire compatibility at signing decoder",
+      "sourceToPipeline": {
+        "upstreamFindings": [
+          "Current official Solana docs list legacy, v0 and v1 formats and state that v1 is active; v1 places compute, loaded-data and total-priority-fee values in message configuration.",
+          "ComputeBudget instructions do not configure v1 messages; they are no-op instructions that still consume an instruction slot and compute.",
+          "The Veritas decoder uses pinned web3.js 1.98.4 VersionedMessage.deserialize and only returns legacy/v0 types; previously, v1 was rejected as a generic deserialization failure."
+        ],
+        "relevantModules": [
+          "src/platform/signing/veritas-wire-decoder.ts",
+          "src/platform/execution/transaction-compatibility.ts",
+          "src/platform/execution/asset-delta-engine.ts"
+        ],
+        "existingOverlap": "TransactionCompatibilityAuthority can model V1 resource limits, but that is not a raw wire decoder. AssetDeltaEngine is still limited to the legacy/v0 message objects supplied by the pinned web3.js response path.",
+        "risks": [
+          "V1 signing, transaction decoding and fee-component extraction remain unsupported.",
+          "An explicit rejection improves observability only; it does not make a v1 message compatible or authorize a signing path.",
+          "A future custom decoder is security-sensitive and requires official wire fixtures, independent review and end-to-end authorization tests."
+        ],
+        "validationRequirements": [
+          "Keep unsupported V1 wire messages fail-closed with a specific compatibility error.",
+          "Before adding V1 decoding, validate all config-mask combinations, instruction headers/payload boundaries, account writability and signature binding against an official SDK/runtime fixture.",
+          "Verify fee components against finalized metadata, including failed transactions; never infer realized fee from the message alone."
+        ]
+      },
+      "implementation": {
+        "change": "Veritas now recognizes the V1 0x81 message prefix and throws VERITAS_UNSUPPORTED_TRANSACTION_VERSION: V1 before invoking the legacy/v0 decoder. A regression first failed with the prior generic error, then passed after the boundary change.",
+        "files": [
+          "src/platform/signing/veritas-wire-decoder.ts",
+          "dist/platform/signing/veritas-wire-decoder.js",
+          "test/platform/veritas-wire-decoder.test.mjs",
+          "research/registry/source-review-batch-002-2026-10-14.json"
+        ],
+        "validation": {
+          "build": "npm run build:engine — passed",
+          "focusedTests": "node --test test/platform/veritas-wire-decoder.test.mjs test/platform/transaction-compatibility-2026.test.mjs — 13/13 passed"
+        },
+        "authorityImpact": "No signing, authorization, broadcast, capital, or risk-limit changes; no process restarted.",
+        "status": "VERIFIED_FAIL_CLOSED_COMPATIBILITY_DIAGNOSTIC; V1 NOT DECODED OR ENABLED"
+      },
+      "evidence": [
+        "https://solana.com/docs/core/transactions/versioned-transactions",
+        "https://solana.com/docs/core/fees/compute-budget",
+        "https://solana.com/docs/core/fees/fee-structure",
+        "test/platform/veritas-wire-decoder.test.mjs"
+      ]
+    },
+    {
+      "id": "INT-TX-FEE-VERSION-001",
+      "catalogSourceIds": [
+        "SRC-254",
+        "SRC-255"
+      ],
+      "area": "finalized transaction fee and version visibility",
+      "sourceToPipeline": {
+        "upstreamFindings": [
+          "Finalized metadata exposes the transaction fee and versioned message; v0 account keys require the lookup-table addresses returned in transaction metadata.",
+          "The existing asset-delta engine already decodes address lookups and validates balance conservation, but callers dropped the reported fee and decoded transaction version; wallet-paid fees must be distinguished from transaction-level network fees.",
+          "Gross wallet SOL delta already includes transaction costs; fee must be exposed as a separate field and must not be subtracted a second time."
+        ],
+        "relevantModules": [
+          "src/platform/execution/asset-delta-engine.ts",
+          "src/execution.ts",
+          "test/core.test.mjs"
+        ],
+        "existingOverlap": "Extends the existing finalized asset-delta calculation and reconciliation result; does not add another settlement engine or change transaction support beyond legacy/v0.",
+        "risks": [
+          "Direct Executor broadcast/signing remains quarantined; this local reconciliation result does not establish live execution readiness.",
+          "The pinned SDK reader supports legacy and v0 only; other versions remain unresolved.",
+          "When the observing wallet is not the fee payer, feeLamports is zero even though transaction metadata reports a nonzero networkFeeLamports."
+        ],
+        "validationRequirements": [
+          "Cover legacy and v0 finalized fixtures and preserve gross SOL balance delta unchanged.",
+          "Propagate fee and decoded version through successful reconciliation only when all configured RPCs agree on finalized effects.",
+          "Keep unsupported versions and inconsistent provider observations pending."
+        ]
+      },
+      "implementation": {
+        "change": "AssetDeltaEngine now reports the decoded legacy/v0 message version and separates transaction-level networkFeeLamports from wallet-paid txFeeLamports; transactionDeltas and successful finalized reconciliation expose both separately from gross SOL delta.",
+        "files": [
+          "src/platform/execution/asset-delta-engine.ts",
+          "src/execution.ts",
+          "dist/platform/execution/asset-delta-engine.js",
+          "dist/execution.js",
+          "test/core.test.mjs"
+        ],
+        "validation": {
+          "build": "npm run build:engine — passed",
+          "combinedFocusedTests": "npm run build:engine && node --test test/core.test.mjs test/platform/certified-execution-authority.test.mjs test/platform/transaction-compatibility-2026.test.mjs — build passed; 63/63 tests passed"
+        },
+        "authorityImpact": "No signing, authorization, broadcast, capital, or risk-limit changes. No live process was restarted.",
+        "status": "VERIFIED_LOCAL_FIX; LEGACY RECONCILIATION VISIBILITY ONLY"
+      },
+      "evidence": [
+        "https://solana.com/docs/core/transactions/versioned-transactions",
+        "https://solana.com/docs/core/fees/fee-structure",
+        "src/platform/execution/asset-delta-engine.ts",
+        "test/core.test.mjs"
+      ]
+    },
+    {
+      "id": "INT-EXEC-ECON-001",
+      "catalogSourceIds": [
+        "SRC-214",
+        "SRC-215",
+        "SRC-220"
+      ],
+      "area": "execution-cost accounting",
+      "sourceToPipeline": {
+        "catalogPatterns": [
+          "Separate submission evidence from confirmed landing and settlement.",
+          "Account explicitly for priority fees, provider tips, and route-level costs.",
+          "Version and validate the execution route and transaction contract."
+        ],
+        "localFinding": "RealSlippageObservatory.decomposeExecutionLoss converted bigint notionals to Number and only attributed 60% of gross price loss, silently omitting the remaining 40%.",
+        "relevantModules": [
+          "src/platform/pipeline/execution-economics.ts",
+          "src/platform/pipeline/realized-edge-ledger.ts",
+          "src/platform/execution/authority.ts"
+        ],
+        "overlap": "The repository already has explicit fee/tip accounting in settlement and execution authority. This patch corrects the standalone decomposition helper and does not add a second execution engine.",
+        "integrationRisks": [
+          "Market-drift, transport-latency and self-impact splits remain heuristics rather than measured causal estimates.",
+          "The helper has no production call sites in src/ at this revision; do not describe the correction as a production PnL pipeline integration.",
+          "The direction-aware price calculation still depends on quote and landed prices being comparable observations for the same token, size, and market state."
+        ],
+        "validationRequirements": [
+          "Require explicit BUY/SELL direction, keep all lamport calculations in bigint, and conserve gross price loss across named and unattributed components.",
+          "Preserve explicit provider/network fees and tips as separate cost fields.",
+          "Use direction-bound quote/fill fixtures before connecting the helper to settlement or learning."
+        ]
+      },
+      "implementation": {
+        "change": "Price-ratio computation now requires BUY/SELL direction, uses decimal integer ratios and bigint notional arithmetic. The residual price loss is retained as otherFrictionLamports. Invalid direction, price, age and fee inputs are rejected.",
+        "files": [
+          "src/platform/pipeline/execution-economics.ts",
+          "dist/platform/pipeline/execution-economics.js",
+          "test/platform/execution-economics-and-governance.test.mjs"
+        ],
+        "failingRegressionObserved": true,
+        "validation": {
+          "build": "npm run build:engine — passed",
+          "focusedTests": "execution-economics and transaction-compatibility — 15/15 passed",
+          "platformTests": "npm run test:platform — 1060/1060 passed",
+          "registryValidation": "288 manifest rows, 288 matching review records, zero structural defects"
+        },
+        "authorityImpact": "No signing, authorization, broadcast, capital, or risk-limit changes. No live process was restarted.",
+        "status": "VERIFIED_LOCAL_FIX; NOT A PRODUCTION SETTLEMENT INTEGRATION"
+      },
+      "evidence": [
+        "https://developers.jup.ag/docs/swap/order-and-execute",
+        "research/registry/source-review-batch-021-2026-10-14.json",
+        "docs/UPSTREAM_RESEARCH_INTEGRATION.md"
+      ]
+    },
+    {
+      "id": "INT-JUP-QUOTE-002",
+      "catalogSourceIds": [
+        "SRC-220"
+      ],
+      "area": "Jupiter Swap V2 quote boundary",
+      "sourceToPipeline": {
+        "upstreamFindings": [
+          "Official Order & Execute docs say GET /swap/v2/order without taker returns a quote without an assembled transaction.",
+          "Jupiter docs describe transactionVersion as v0 by default and v1 only when specifically requested and supported by the winning route; local v1 signing remains unsupported.",
+          "The /execute response separates total wallet input/output from route input/output and identifies feeMint, so quote output is not realized wallet PnL."
+        ],
+        "relevantModules": [
+          "terminal/jupiter-research.mjs",
+          "terminal/test/jupiter-research.test.mjs",
+          "terminal/jev-market-context.mjs"
+        ],
+        "existingOverlap": "JupiterResearchQuoteService requests /swap/v2/order without a taker, calculates a size-specific two-sided quote estimate, and has no transaction assembly, signing or execute path. Provider health now treats the built-in quote endpoint as configured without requiring a taker; an API key, when present, is reflected as optional authentication.",
+        "risks": [
+          "A quote-only round trip is two sequential snapshots and does not guarantee the second side can execute at the displayed value.",
+          "Jupiter supports v1 output only for a subset of Order routes; the local web3.js V1 wire decoder remains fail-closed.",
+          "Do not promote this quote adapter to execution without transaction-version compatibility, authorization, confirmed settlement, and fee-mint reconciliation."
+        ],
+        "validationRequirements": [
+          "Keep the no-taker quote path incapable of signing or submitting.",
+          "If execution is separately implemented, bind /order requestId, router, transactionVersion and feeMint to decoded bytes and confirmed wallet deltas.",
+          "Use /execute total input/output only as provider observations and reconcile them with finalized chain evidence."
+        ]
+      },
+      "implementation": {
+        "change": "The Terminal research adapter always omits taker, requires the response to contain no transaction, and projects quote-only amounts. Its provider configuration no longer requires a taker address and accurately represents optional API-key authentication.",
+        "validation": {
+          "adapterTests": "node --test terminal/test/jupiter-research.test.mjs — 7/7 passed, including no-taker configuration, ignored legacy taker-env, empty-transaction quote handling, and executable-payload rejection.",
+          "fullTerminalSuite": "npm test in terminal/ — 475/475 passed after the quote-only configuration and response validation changes.",
+          "terminalBuild": "npm run build in terminal/ — passed; production UI and execution-engine bundles completed."
+        },
+        "authorityImpact": "Quote-only; no transaction is assembled, signed, submitted, or executed. No live authorization or signer path changed.",
+        "status": "VERIFIED_NO_TAKER_QUOTE_ONLY; V1_AND_EXECUTION_REMAIN_UNSUPPORTED"
+      },
+      "evidence": [
+        "https://developers.jup.ag/docs/swap/order-and-execute",
+        "research/registry/source-review-batch-021-2026-10-14.json",
+        "terminal/test/jupiter-research.test.mjs"
+      ]
+    },
+    {
+      "id": "INT-CALIBRATION-EVIDENCE-003",
+      "catalogSourceIds": [
+        "SRC-109",
+        "SRC-117",
+        "SRC-220"
+      ],
+      "area": "point-in-time execution calibration evidence",
+      "sourceToPipeline": {
+        "catalogPatterns": [
+          "Bind features to event and availability timestamps to prevent point-in-time leakage.",
+          "Keep delayed-event chronology explicit and validate it deterministically.",
+          "Retain exact Jupiter quote output and distinguish it from landed wallet output."
+        ],
+        "localFinding": "ExecutionCalibrationDataset silently substituted synthetic quote/simulation/landing timestamps and default 5,000-lamport fees when observations were absent; its basis-point conversion also truncated fractional bps.",
+        "relevantModules": [
+          "src/platform/calibration/execution-calibration-dataset.ts",
+          "src/intelligence/",
+          "research/"
+        ],
+        "overlap": "The repository already has a quote-simulation-landed calibration record shape. This change hardens evidence admission and precision without adding a feature-store dependency or a second calibration service.",
+        "integrationRisks": [
+          "The dataset currently has no production call sites; these records must not be described as active live calibration.",
+          "A valid triple still requires correct market/pool identity and independently verified landed output before it can train a model.",
+          "Price and liquidity fields remain Number-valued source observations and need explicit scale/provenance before cross-source aggregation."
+        ],
+        "validationRequirements": [
+          "Require observed quote, simulation, and landing times and require monotone event/slot order.",
+          "Require explicit nonnegative simulation/landing fees and positive quote/simulated/landed outputs.",
+          "Compute normalized slippage from bigint values and test fractional bps plus rejected missing evidence.",
+          "Keep rejected rows out of calibration cohorts."
+        ]
+      },
+      "implementation": {
+        "change": "Removed generated timestamps and default fee values; added runtime checks for explicit monotone time/slot evidence, outputs, prices, costs and capacity; preserved sub-bps slippage precision with bigint scaling.",
+        "files": [
+          "src/platform/calibration/execution-calibration-dataset.ts",
+          "dist/platform/calibration/execution-calibration-dataset.js",
+          "test/platform/blueprint-truth-semantics.test.mjs"
+        ],
+        "failingRegressionObserved": true,
+        "validation": {
+          "build": "npm run build:engine — passed",
+          "focusedTests": "node --test test/platform/blueprint-truth-semantics.test.mjs — 8/8 passed"
+        },
+        "authorityImpact": "Research/calibration evidence admission only; no signing, authorization, broadcast, capital, or risk-limit changes.",
+        "status": "VERIFIED_EVIDENCE_BOUNDARY_FIX; NOT A LIVE CALIBRATION INTEGRATION"
+      },
+      "evidence": [
+        "https://github.com/feast-dev/feast",
+        "https://github.com/dubzzz/fast-check",
+        "https://developers.jup.ag/docs/swap/order-and-execute",
+        "research/registry/source-review-batch-014-2026-10-14.json",
+        "research/registry/source-review-batch-021-2026-10-14.json"
+      ]
+    },
+    {
+      "id": "INT-TOKEN-SEMANTICS-004",
+      "catalogSourceIds": [
+        "SRC-178"
+      ],
+      "area": "token-program and mint-state evidence admission",
+      "sourceToPipeline": {
+        "catalogStatus": "SRC-178 has a PARTIAL_REVIEW in source-review-batch-018. The official transfer-fee implementation was re-opened during this follow-up; its calculate_fee method returns zero for zero input/rate, otherwise uses ceiling division, caps at maximum_fee, and returns None on checked-arithmetic failure. This corroborates the existing catalog note; exhaustive repository review remains incomplete.",
+        "localFinding": "TokenSemanticEngine inferred the SPL Token program when owner-program evidence was absent, defaulted missing mint fields to safe-looking values, and evaluated scheduled transfer fees against a hard-coded epoch. The actual Fusion entry path calls Market.snapshot() then Market.validateEntry(); snapshot already reads the mint bytes, owner and slot. ParserZeroCrossValidator previously compared only selected fields before reporting EXACT agreement. A follow-up protocol audit also found that the local decoder mapped extension ID 11 to PermanentDelegate, while the official enum assigns 11 to CpiGuard and 12 to PermanentDelegate; default account state 0 (uninitialized) had also been collapsed into initialized/absent.",
+        "relevantModules": [
+          "src/platform/truth/token-semantic-root.ts",
+          "src/platform/security/veto/parser-zero.ts",
+          "src/intelligence/master-orchestrator.ts",
+          "src/market.ts",
+          "src/fusion.ts"
+        ],
+        "overlap": "The repository already has a dual-path mint decoder and an exitability gate. The change uses those existing boundaries and does not add a second token-security engine.",
+        "integrationRisks": [
+          "The master-orchestrator helper still has no production src/ call site; the runtime integration is through Market.snapshot() in Fusion.",
+          "The dual decoder and the SPL SDK parse the mint on each snapshot, adding CPU to the entry/position-refresh path; latency impact has not been benchmarked.",
+          "A missing epoch selects the higher configured fee conservatively; it does not assert which fee is active on chain."
+        ],
+        "validationRequirements": [
+          "Missing or unsupported token program and incomplete mint state must block both buy and sell feasibility.",
+          "Unknown extensions must block feasibility.",
+          "Without a current epoch, fee assessment must use the higher scheduled basis-point rate.",
+          "Keep raw bytes, account owner, mint identity and snapshot slot bound at the Market.snapshot() boundary.",
+          "Retain the stricter existing extension allowlist and execution authorization checks even when semantic feasibility passes."
+        ]
+      },
+      "implementation": {
+        "change": "Removed implicit SPL owner inference and synthetic safe defaults; exposed explicit supported-program/state-completeness fields; blocked feasibility for incomplete state and unknown extensions; removed the hard-coded epoch default and selected the higher scheduled fee when epoch evidence is absent. Tightened dual-decoder agreement to compare the entire decoded state and wired raw mint bytes, RPC-reported owner, mint identity and context slot through Market.snapshot() into the existing entrySafe gate. Corrected Token-2022 extension discriminants (11=CpiGuard, 12=PermanentDelegate), exact payload-size checks, and default-account-state handling for uninitialized/initialized/frozen/invalid values; unsupported behaviors remain unknown and fail closed.",
+        "files": [
+          "src/platform/truth/token-semantic-root.ts",
+          "src/platform/security/veto/parser-zero.ts",
+          "src/market.ts",
+          "src/fusion.ts",
+          "src/intelligence/master-orchestrator.ts",
+          "test/market-token-semantics.test.mjs",
+          "test/platform/blueprint-truth-semantics.test.mjs",
+          "test/intelligence/pass-58-exitability-unwind-certificate.test.mjs",
+          "test/intelligence/blueprint-intelligence-lifecycle.test.mjs"
+        ],
+        "failingRegressionObserved": true,
+        "validation": {
+          "build": "npm run build:engine — passed after Token-2022 enum/default-state correction",
+          "marketEntryTests": "node --test test/market-token-semantics.test.mjs — 4/4 passed",
+          "dualDecoderTests": "node --test test/platform/blueprint-truth-semantics.test.mjs test/platform/pass-23-architectural-upgrades.test.mjs test/platform/veto-god-tier.test.mjs test/market-token-semantics.test.mjs — 34/34 passed, including the enum and all default-state regression cases",
+          "fullPlatformSuite": "npm run test:platform — 1,065/1,065 passed after the Token-2022 enum/default-state correction",
+          "fullProjectChain": "npm test traversed build, core, intelligence, platform and terminal stages; terminal reported 472/472 passed. The command uses && between stages, so later stages ran only after earlier zero exits.",
+          "intelligenceSuite": "npm run test:intelligence — 784/784 passed"
+        },
+        "authorityImpact": "Fail-closed eligibility analysis only; no signing, authorization, broadcast, capital, or risk-limit bypass added.",
+        "status": "VERIFIED_RUNTIME_ENTRY_GATE_CHANGE; NOT LIVE SIGNING AUTHORIZATION OR EXHAUSTIVE SOURCE REVIEW"
+      },
+      "evidence": [
+        "https://github.com/solana-program/token-2022/blob/main/clients/js/src/generated/types/extensionType.ts",
+        "https://github.com/solana-program/token-2022/blob/main/interface/src/extension/transfer_fee/mod.rs#L1230-L1252",
+        "research/registry/source-review-batch-018-2026-10-14.json",
+        "research/registry/resource_manifest.csv",
+        "src/platform/security/veto/parser-zero.ts",
+        "src/platform/truth/token-semantic-root.ts",
+        "src/market.ts",
+        "src/fusion.ts"
+      ]
+    },
+    {
+      "id": "INT-GRADUATED-AMM-QUOTE-002",
+      "catalogSourceIds": [
+        "SRC-063",
+        "SRC-259"
+      ],
+      "area": "graduated token pool observation and simulation quote inputs",
+      "sourceToPipeline": {
+        "catalogStatus": "SRC-063 and SRC-259 have PARTIAL_REVIEW records. The Raydium SDK repository identifies GPL-3.0 licensing and exposes pool/token account utilities; Pump's official public docs describe PumpSwap as a post-curve venue, require effective quote reserves (raw quote vault balance plus signed virtual quote reserves), and document pool-specific fee behavior. A follow-up verified installed @pump-fun/pump-sdk 4.0.0 V3 helpers and added narrowly scoped V3 synthetic-migration crossing-buy support. Current docs reference SDK 4.1.0; no dependency upgrade was made. Neither source review is exhaustive.",
+        "localFinding": "PostGraduationAmmBridge previously represented completion with an assumed 85 SOL pool reserve, hard-coded a Raydium-only active state, and Market.ammExitQuote used a fixed token reserve and 25 bps fee. This could create a graduated estimate without destination-pool evidence, and the API could not describe PumpSwap-specific effective quote reserves.",
+        "relevantModules": [
+          "src/platform/execution/solaris/amm-bridge.ts",
+          "src/platform/execution/solaris/types.ts",
+          "src/market.ts",
+          "src/platform/execution/authority.ts",
+          "src/fusion.ts"
+        ],
+        "overlap": "The existing bridge already owns migration/cooldown state and Market already owns simulation quote calculation. The patch extends these boundaries instead of adding another venue engine. Raydium's GPL SDK was not added or copied.",
+        "integrationRisks": [
+          "The new pool observation is still caller-supplied in-memory data; no canonical on-chain pool decoder/receipt adapter was added, so it does not prove live pool state.",
+          "The quote is a constant-product simulation estimate, not an executable route or confirmed fill.",
+          "PumpSwap callers must supply effective quote reserves including signed virtual quote reserves and an up-to-date combined fee; feeding raw vault balances is invalid.",
+          "Raydium CLMM, Meteora DLMM, Orca Whirlpool, non-SOL quote assets and unsupported pool families remain unsupported.",
+          "The Raydium SDK is GPL-3.0; package or code adoption needs a separate license review."
+        ],
+        "validationRequirements": [
+          "Curve completion alone must leave destination-pool reserves absent and quote calculation unavailable.",
+          "Require explicit venue, pool identity, token reserves, effective quote reserves, fee and slot for a pool observation.",
+          "Reject malformed, pre-migration and out-of-order pool observations.",
+          "Calculate simulated exit outputs only from observed reserve/fee inputs; retain the buy-side cooldown and permit observed sell-side marking.",
+          "Before live integration, bind pool bytes, program identity, mint identities, token decimals, slot and effective-fee derivation to independent on-chain evidence."
+        ]
+      },
+      "implementation": {
+        "change": "Removed synthetic destination reserves from migration state; replaced Raydium-specific state with PumpSwap/Raydium CPMM venue-aware pool observations; required explicit token reserve, venue-normalized effective quote reserve, combined fee and observation slot; rejected stale/pre-migration observations; removed hard-coded pool reserves/fee from Market.ammExitQuote; preserved an already-observed pool when migration evidence repeats; and made the migration-pending reason venue-neutral with a regression assertion.",
+        "files": [
+          "src/platform/execution/solaris/amm-bridge.ts",
+          "src/platform/execution/solaris/types.ts",
+          "src/market.ts",
+          "src/platform/execution/authority.ts",
+          "src/fusion.ts",
+          "test/platform/solaris-nexus.test.mjs",
+          "test/fusion-graduated-exit.test.mjs"
+        ],
+        "failingRegressionObserved": true,
+        "validation": {
+          "build": "npm run build:engine — passed",
+          "focusedTests": "node --test test/platform/solaris-nexus.test.mjs test/fusion-graduated-exit.test.mjs — 9/9 passed after venue-neutral reason assertion",
+          "fullPlatformSuite": "npm run test:platform — 1,065/1,065 passed after the graduated AMM observation change"
+        },
+        "authorityImpact": "Simulation-only quote evidence; no live signing, authorization, broadcast, custody or risk-limit changes.",
+        "status": "VERIFIED_SIMULATION_INPUT_CORRECTION; NO_CANONICAL_POOL_INGRESS_OR_LIVE_AMM_EXECUTION"
+      },
+      "evidence": [
+        "https://github.com/raydium-io/raydium-sdk-V2",
+        "https://github.com/pump-fun/pump-public-docs",
+        "research/registry/source-review-batch-003-2026-10-14.json",
+        "src/platform/execution/solaris/amm-bridge.ts",
+        "src/market.ts",
+        "test/fusion-graduated-exit.test.mjs"
+      ]
+    },
+    {
+      "id": "INT-PUMP-V3-SYNTHETIC-CROSSING-001",
+      "catalogSourceIds": [
+        "SRC-259"
+      ],
+      "area": "Pump V3 synthetic-migration crossing buy",
+      "sourceToPipeline": {
+        "upstreamFindings": [
+          "Official Pump docs state V3 buys/sells are supported for SOL-paired coins, V2 remains supported, and cashback coins are the V3 exception.",
+          "A buy crossing remaining curve inventory can include the synthetic post-completion PumpSwap leg; its exact-input quote requires the actual curve base-token balance.",
+          "The installed @pump-fun/pump-sdk 4.0.0 exports V3 quote/instruction methods; current Pump docs reference SDK 4.1.0."
+        ],
+        "relevantModules": [
+          "src/market.ts",
+          "src/execution.ts",
+          "test/platform/pump-v3-synthetic-migration.test.mjs"
+        ],
+        "overlap": "Market owns curve snapshots and quote semantics; Executor owns the paper-only builder. The change extends those components and retains V2 instructions for ordinary buys and sells.",
+        "risks": [
+          "The V3 instruction path is confined to the quarantined paper builder; it does not authorize live signing or submission.",
+          "A missing curve ATA balance cannot support a crossing quote and fails closed; no balance is synthesized from realTokenReserves.",
+          "Cashback and Mayhem crossing buys are unsupported; token-paired quotes and post-migration PumpSwap execution remain outside this integration.",
+          "V3 fee retention and later sweep events are not reconciled into live settlement or creator-fee accounting."
+        ],
+        "validationRequirements": [
+          "Read and verify curve base ATA mint, token program, and PDA owner in the same contextual RPC batch as curve/global/fee state.",
+          "Use the SDK V3 exact-input quote with observed curve base balance to detect synthetic crossing output.",
+          "Select V3 instructions only at or above the curve inventory boundary; keep ordinary V2 instruction routing intact.",
+          "Reject missing balance evidence and unsupported cashback crossings; retain live authority quarantine."
+        ]
+      },
+      "implementation": {
+        "change": "Market.snapshot now includes an optional validated curve base ATA balance. Market.buyQuote uses the pinned SDK V3 exact-input quote when balance evidence is available. Executor selects buyV3Instructions only when output reaches/exceeds remaining curve inventory; ordinary V2 instructions remain the path otherwise. Missing balance and cashback crossing quotes fail closed.",
+        "files": [
+          "src/market.ts",
+          "src/execution.ts",
+          "dist/market.js",
+          "dist/execution.js",
+          "test/platform/pump-v3-synthetic-migration.test.mjs"
+        ],
+        "validation": {
+          "build": "npm run build:engine — passed",
+          "focusedTests": "node --test test/platform/executor-signing-firewall.test.mjs test/platform/pump-v3-synthetic-migration.test.mjs — 19/19 passed, including same-slot ATA capture and wrong-PDA rejection",
+          "platformTests": "npm run test:platform — 1,071/1,071 passed"
+        },
+        "authorityImpact": "Paper-only; no live signing, authorization, broadcast, custody, capital, or risk-limit changes.",
+        "status": "VERIFIED_PAPER_CROSSING_BUY; NO_LIVE_PUMP_V3_EXECUTION_OR_FEE_SWEEP_RECONCILIATION"
+      },
+      "evidence": [
+        "https://github.com/pump-fun/pump-public-docs/blob/main/docs/instructions/TRADE_V3.md",
+        "https://github.com/pump-fun/pump-public-docs/blob/main/docs/SYNTHETIC_MIGRATION.md",
+        "https://www.npmjs.com/package/%40pump-fun/pump-sdk",
+        "research/registry/source-review-batch-001-2026-10-14.json",
+        "src/market.ts",
+        "src/execution.ts",
+        "test/platform/pump-v3-synthetic-migration.test.mjs"
+      ]
+    },
+    {
+      "id": "INT-SETTLEMENT-WALLET-CONSERVATION-001",
+      "catalogSourceIds": [
+        "SRC-214",
+        "SRC-215",
+        "SRC-220"
+      ],
+      "area": "observed wallet delta and cost conservation",
+      "sourceToPipeline": {
+        "localFinding": "The standalone transport settlement helper accepted one ambiguous solDeltaLamports field, subtracted fees and rent from it, and called the result an observed economic settlement. That shape could double-subtract costs if solDelta was the finalized wallet post-minus-pre delta, and it counted recoverable rent funding as friction.",
+        "relevantModules": [
+          "src/platform/pipeline/transport-reconciliation.ts",
+          "test/platform/transport-reconciliation.test.mjs"
+        ],
+        "existingOverlap": "This remains a standalone reconciliation helper with no production call sites. It now takes explicit gross trade SOL flow and finalized wallet SOL delta, proves exact conservation against wallet-paid fees and rent, records rent separately, and returns the already-net wallet delta without subtracting it twice.",
+        "integrationRisks": [
+          "The caller must supply gross trade flow and wallet-paid cost components derived from the same finalized signature and wallet; mismatched payers or omitted movements fail conservation.",
+          "This helper is not wired into production settlement, accounting, or learning, and the check does not establish live execution readiness.",
+          "Rent is separately reported as funded capital, not trading friction; rent recovery on account closure requires a separate finalized event."
+        ],
+        "validationRequirements": [
+          "Require exact equality between gross trade flow less wallet-paid base/priority/tip costs and rent funding, and finalized observed wallet delta.",
+          "Reject a delta that subtracts fee or rent components twice.",
+          "Keep token-denominated Token-2022 withheld fees out of SOL totals and bind every settlement field into its hash."
+        ]
+      },
+      "implementation": {
+        "change": "Replaced the ambiguous input contract with GrossTradeSettlementEvidence. Settlement now checks conservation, reports observed wallet delta as net proceeds without a second deduction, excludes rent deposits from trading friction, and hashes explicit gross flow, observed delta, fee attribution, and rent funding.",
+        "files": [
+          "src/platform/pipeline/transport-reconciliation.ts",
+          "dist/platform/pipeline/transport-reconciliation.js",
+          "test/platform/transport-reconciliation.test.mjs"
+        ],
+        "validation": {
+          "build": "npm run build:engine — passed",
+          "focusedTests": "node --test test/platform/transport-reconciliation.test.mjs test/platform/execution-economics-and-governance.test.mjs — 12/12 passed",
+          "platformTests": "npm run test:platform — 1,073/1,073 passed",
+          "regression": "The explicit malformed-conservation test rejects a wallet delta that subtracts the same fees and rent a second time."
+        },
+        "authorityImpact": "No signer, authorization, broadcast, custody, capital, or risk-limit path changed. No production callsite or live process was modified.",
+        "status": "VERIFIED_STANDALONE_CONSERVATION; NOT_CONNECTED_TO_PRODUCTION_SETTLEMENT"
+      },
+      "evidence": [
+        "research/registry/source-review-batch-021-2026-10-14.json",
+        "docs/UPSTREAM_RESEARCH_INTEGRATION.md",
+        "test/platform/transport-reconciliation.test.mjs"
+      ]
+    },
+    {
+      "id": "INT-FEED-SESSION-RECOVERY-001",
+      "catalogSourceIds": [
+        "SRC-028",
+        "SRC-029",
+        "SRC-269",
+        "SRC-274",
+        "SRC-276"
+      ],
+      "area": "bounded feed ingress, historical/live health isolation, and restart-safe recovery",
+      "sourceToPipeline": {
+        "localFinding": "The feed accepts observations through canonical ingress and projects them into Census-R. Process-local queue overflow or a durable journal/projection failure must be visible as an ingress incident; historical repair must not advance live timestamps/provider health. A restart must not infer a clean session solely from a healthy newly constructed Feed.",
+        "relevantModules": [
+          "src/feed.ts",
+          "src/fusion.ts",
+          "src/platform/ingestion/feed-session-latch.ts",
+          "src/platform/ingestion/census-r.ts",
+          "src/platform/ingress/canonical-ingress.ts",
+          "src/store.ts",
+          "src/db-worker.ts"
+        ],
+        "existingOverlap": "Canonical ingress remains the durable observation authority, Census-R remains an ordered secondary projection, and the staging batch capability remains replay-only. The new session latch is a restart-safety marker, not evidence that a historical observation is live or that live trading is ready.",
+        "discoveries": [
+          "Feed admission is bounded by item count and bytes, snapshots mutable source data only after capacity is available, and shares an in-flight result for duplicate signatures.",
+          "Provider health updates only after accepted LIVE canonical ingress and Census-R projection; HISTORICAL_REPAIR does not update live freshness or provider health.",
+          "A feed-session sidecar is written atomically and fsynced before subscription startup; unresolved ACTIVE/INCIDENT state restores an explicit hold on restart."
+        ],
+        "patterns": [
+          "Keep replay intent explicit and separate live-health state from historical coverage.",
+          "Use bounded serial admission with backpressure, immutable queue snapshots, and drain-on-stop.",
+          "Persist recovery uncertainty independently of the main queue so storage pressure cannot erase the hold; gate entries until an operator-reviewed recovery clears it."
+        ],
+        "risks": [
+          "This changes canonical ingestion and Engine entry gating, so independent Astra Architecture, Verification, Risk, and Certification review is required before merge or release.",
+          "A clean simulated restart test does not prove external provider recovery, current endpoint health, or production availability.",
+          "The Windows sidecar identity and atomic-replace behavior require verification on the intended filesystem and operator recovery procedure."
+        ],
+        "validationRequirements": [
+          "Build the pinned TypeScript engine and run deterministic feed, Yellowstone, canonical-ingress, Census-R, replay, and staging-batch regressions.",
+          "Exercise older/newer HISTORICAL_REPAIR and failed LIVE projection with before/after live fields, provider health, and dashboard snapshot.",
+          "Verify unclean restart blocks entries, clean drained shutdown removes only its own latch, and entry execution remains fail-closed under PAPER_MAX_RISK.",
+          "Complete independent critical-change review and release-gate evaluation before merge or deployment."
+        ],
+        "decision": "INTEGRATE_WITH_CRITICAL_REVIEW_GATE"
+      },
+      "implementation": {
+        "change": "Added bounded feed admission/backpressure and retryable Census-R projection behavior; separated historical/live health transitions; persisted feed-session incidents across restart; added Engine startup checks for ambiguous pending canonical ingress before feed startup; and added an atomic, bounded staging batch path for deterministic replay.",
+        "files": [
+          "src/feed.ts",
+          "src/fusion.ts",
+          "src/platform/ingestion/feed-session-latch.ts",
+          "src/platform/ingestion/census-r.ts",
+          "src/platform/ingestion/provider-health.ts",
+          "src/platform/ingress/canonical-ingress.ts",
+          "src/platform/ingress/types.ts",
+          "src/store.ts",
+          "src/db-worker.ts",
+          "test/feed-processing-intent-health.test.mjs",
+          "test/feed-ingress-backpressure.test.mjs",
+          "test/platform/yellowstone-captured-client.test.mjs",
+          "test/platform/canonical-ingress-crash-recovery.test.mjs",
+          "test/platform/canonical-ingress-durability.test.mjs",
+          "test/platform/staging-ingress-batch.test.mjs",
+          "ui/app.js",
+          "test/dashboard.test.mjs"
+        ],
+        "validation": {
+          "build": "npm run build:engine — passed after the feed incident snapshot was added.",
+          "focusedTests": "Feed/Yellowstone/backpressure: 28/28 passed; canonical crash recovery: 13/13 passed; canonical durability/Census-R/provider health/staging replay: 51/51 passed; dashboard snapshot and warning: 4/4 passed.",
+          "platformTests": "npm run test:platform — 1,045/1,045 passed before the final dashboard snapshot field change; dashboard regression passed afterward.",
+          "intelligenceTests": "npm run test:intelligence — 777/777 passed.",
+          "terminalTests": "npm run test:terminal — 350/350 passed with the local terminal dependency junction present.",
+          "coreTests": "npm run test:core — 646/648 after restoring the ignored scorecard fixture. Two test-receipt cases failed because the isolated worktree terminal/node_modules junction is rejected by the test inventory as TEST_RECEIPT_UNSAFE_SYMLINK. The junction removal/copy attempt was rejected by the automatic safety review; no bypass was attempted. Core suite is not green.",
+          "liveRuntime": "No live provider connection, signing, broadcast, capital, or production runtime test was performed."
+        },
+        "authorityImpact": "Tightens entry eligibility after feed/recovery incidents. Does not add signer, custody, broadcast, or capital authorization. Requires independent critical-change review before merge/release.",
+        "status": "VERIFIED_TARGETED_AND_PLATFORM_TESTS_PENDING_CORE_ENVIRONMENT_AND_INDEPENDENT_CRITICAL_REVIEW"
+      },
+      "evidence": [
+        "https://github.com/rpcpool/yellowstone-grpc",
+        "https://github.com/helius-labs/yellowstone-grpc",
+        "test/feed-processing-intent-health.test.mjs",
+        "test/feed-ingress-backpressure.test.mjs",
+        "test/platform/canonical-ingress-crash-recovery.test.mjs",
+        "test/platform/canonical-ingress-durability.test.mjs",
+        "test/platform/staging-ingress-batch.test.mjs",
+        "test/dashboard.test.mjs",
+        "ui/app.js"
+      ]
+    }
+  ]
+}

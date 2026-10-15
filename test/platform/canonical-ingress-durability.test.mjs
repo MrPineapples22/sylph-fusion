@@ -12,6 +12,7 @@ import {
   DefaultFusionEnvelopeCompiler,
   DefaultIngressVersionRegistry,
   DefaultTruthValidator,
+  InMemoryIngressJournal,
   StoreIngressJournal,
   createCanonicalSolanaIngress,
   isDurableCanonicalIngress,
@@ -43,6 +44,57 @@ test('canonical ingress cannot issue a committed envelope from a caller supplied
   assert.equal(receipt.status, 'REJECTED');
   assert.match(receipt.reason, /DURABLE_STORE_INGRESS_JOURNAL_REQUIRED/);
   assert.equal(notifications, 0);
+});
+
+test('concurrent observations serialize journal sequence assignment through downstream acknowledgement', async t => {
+  class DelayedInMemoryJournal extends InMemoryIngressJournal {
+    async append(validated) {
+      const record = await super.append(validated);
+      if (validated.compiledEnvelope.observation.sourceId === 'slow-append') await new Promise(resolve => setTimeout(resolve, 30));
+      return record;
+    }
+  }
+  const journal = new DelayedInMemoryJournal();
+  const deliveredSequences = [];
+  const ingress = new CanonicalIngress({
+    compiler: new DefaultFusionEnvelopeCompiler(), validator: new DefaultTruthValidator(), journal,
+    downstreamSubscriber: committed => deliveredSequences.push(Number(committed.journalSeq)),
+  });
+  const makeObservation = sourceId => createUnvalidatedObservation({
+    sourceId, providerId: 'test-provider', transport: 'mock', receivedAtMs: Date.now(),
+    slot: 42, commitment: 'confirmed', signature: `signature-${sourceId}-1234567890`,
+    rawPayload: Buffer.from(JSON.stringify([sourceId])), schemaVersion: 'fixture/v1', processingIntent: 'DETERMINISTIC_REPLAY',
+  });
+
+  const results = await Promise.all([ingress.submit(makeObservation('slow-append')), ingress.submit(makeObservation('fast-append'))]);
+  assert.deepEqual(results.map(result => result.status), ['ACCEPTED', 'ACCEPTED']);
+  assert.deepEqual(deliveredSequences, [1, 2]);
+});
+
+test('a failed projection delivery halts later journal commits until recovery', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'canonical-ingress-halt-on-pending-'));
+  t.after(() => rm(dir, {recursive: true, force: true}));
+  const store = new Store(join(dir, 'state.sqlite'));
+  try {
+    const journal = new StoreIngressJournal(store);
+    const ingress = new CanonicalIngress({
+      compiler: new DefaultFusionEnvelopeCompiler(), validator: new DefaultTruthValidator(), journal,
+      downstreamSubscriber: async committed => {
+        if (Number(committed.journalSeq) === 1) throw new Error('SIMULATED_PROJECTION_FAILURE');
+      },
+    });
+    const makeObservation = sourceId => createUnvalidatedObservation({
+      sourceId, providerId: 'test-provider', transport: 'mock', receivedAtMs: Date.now(),
+      slot: 42, commitment: 'confirmed', signature: `signature-${sourceId}-1234567890`,
+      rawPayload: Buffer.from(JSON.stringify([sourceId])), schemaVersion: 'fixture/v1', processingIntent: 'DETERMINISTIC_REPLAY',
+    });
+
+    const results = await Promise.all([ingress.submit(makeObservation('failed-delivery')), ingress.submit(makeObservation('later-delivery'))]);
+    assert.ok(results.every(result => result.status === 'REJECTED'));
+    assert.equal(results.filter(result => result.reason === 'COMMITTED_DELIVERY_PENDING_RETRY').length, 1);
+    assert.equal(results.filter(result => result.reason.startsWith('INGRESS_COMMIT_HALTED:')).length, 1);
+    assert.equal((await journal.getPendingDeliveries(0, 10)).length, 1, 'the failed sequence remains the only durable unacknowledged commit');
+  } finally { await store.close(); }
 });
 
 test('only the reviewed Solana factory grants Engine-accepted ingress provenance', async t => {
@@ -386,6 +438,33 @@ test('rawPayloadEncoding is validated, preserved in observation, archived in out
     const recovered = await restartedIngress.recoverPendingDeliveries();
     assert.equal(recovered, 1);
     assert.equal(recoveredEncoding, 'JSON_FRAME_BYTES');
+  } finally { await store.close(); }
+});
+
+test('failed durable outbox recovery rejects startup instead of accepting later records', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'ingress-recovery-stops-on-pending-'));
+  t.after(() => rm(dir, {recursive: true, force: true}));
+  const dbPath = join(dir, 'state.sqlite');
+  let store = new Store(dbPath);
+  try {
+    const journal = new StoreIngressJournal(store);
+    const ingress = new CanonicalIngress({
+      compiler: new DefaultFusionEnvelopeCompiler(), validator: new DefaultTruthValidator(), journal,
+      downstreamSubscriber: async () => { throw new Error('SIMULATED_REPLAY_FAILURE'); },
+    });
+    const receipt = await ingress.submit(observation());
+    assert.equal(receipt.status, 'REJECTED');
+  } finally { await store.close(); }
+
+  store = new Store(dbPath);
+  try {
+    const journal = new StoreIngressJournal(store);
+    const restartedIngress = new CanonicalIngress({
+      compiler: new DefaultFusionEnvelopeCompiler(), validator: new DefaultTruthValidator(), journal,
+      downstreamSubscriber: async () => { throw new Error('SIMULATED_REPLAY_FAILURE'); },
+    });
+    await assert.rejects(restartedIngress.recoverPendingDeliveries(), /INGRESS_OUTBOX_RECOVERY_PENDING/);
+    assert.equal((await journal.getPendingDeliveries(0, 10)).length, 1);
   } finally { await store.close(); }
 });
 
