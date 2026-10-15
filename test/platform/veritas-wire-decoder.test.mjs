@@ -14,11 +14,85 @@ const payer = new PublicKey('11111111111111111111111111111111');
 const recipient = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 const blockhash = 'GHtXQBsoZHVnNFa9YevAzFr1KkWKEpppzU6hiHjJxgjg';
 
-test('VeritasWireDecoder: explicitly rejects V1 until its message config is fully decoded', () => {
-  assert.throws(
-    () => VeritasWireDecoder.decode(Uint8Array.of(0x81)),
-    /VERITAS_UNSUPPORTED_TRANSACTION_VERSION: V1 message decoding is not implemented/,
+function v1Message({ configMask = 0b1_1111, trailing = Buffer.alloc(0), programIndex = 2 } = {}) {
+  const config = Buffer.concat([
+    Buffer.from([0x57, 0x04, 0, 0, 0, 0, 0, 0]), // 1111 lamports priority fee
+    Buffer.from([0x40, 0x0d, 0x03, 0]), // 200,000 CU
+    Buffer.from([0, 0, 1, 0]), // 65,536 loaded-account data bytes
+    Buffer.from([0, 0x80, 0, 0]), // 32,768-byte heap
+  ]);
+  const instructions = Buffer.concat([
+    Buffer.from([programIndex, 2, 12, 0]), // program index, account count, data length
+    Buffer.from([0, 1]), // payer and recipient account indexes
+    Buffer.from([2, 0, 0, 0, 0x40, 0x4b, 0x4c, 0, 0, 0, 0, 0]), // System transfer 5,000,000 lamports
+  ]);
+  const mask = Buffer.alloc(4); mask.writeUInt32LE(configMask);
+  const keys = Buffer.concat([payer.toBuffer(), recipient.toBuffer(), SystemProgram.programId.toBuffer()]);
+  const fixed = Buffer.concat([
+    Buffer.from([0x81, 1, 0, 1]), // version, one writable signer, one readonly unsigned key
+    mask,
+    new PublicKey(blockhash).toBuffer(),
+    Buffer.from([1, 3]), // one instruction, three inline addresses
+    keys,
+  ]);
+  return new Uint8Array(Buffer.concat([fixed, config, instructions, trailing]));
+}
+
+test('VeritasWireDecoder: decodes V1 message config fees but keeps the message signing-incomplete', () => {
+  const bytes = v1Message();
+  const view = VeritasWireDecoder.decode(bytes, { simulationId: 'v1-observation' });
+  assert.equal(view.version, 1);
+  assert.equal(view.priorityFeeLamports, 1111n);
+  assert.equal(view.computeUnitLimit, 200_000);
+  assert.equal(view.loadedAccountsDataSizeLimit, 65_536);
+  assert.equal(view.requestedHeapSize, 32_768);
+  assert.equal(view.computeUnitPriceMicroLamports, undefined);
+  assert.equal(view.feePayer, payer.toBase58());
+  assert.equal(view.recentBlockhash, blockhash);
+  assert.equal(view.complete, false);
+  assert.equal(view.instructions[0].instructionType, 'UNKNOWN');
+});
+
+test('VeritasWireDecoder: reads an SDK-serialized v1 fixture from Solana Foundation examples', () => {
+  // Generated offline with @solana/kit 8.4.0 at upstream commit
+  // solana-foundation/transaction-v1-examples baa8b2654d1695d62c17dd8a0d2ef775ef45ad14.
+  const bytes = Buffer.from(
+    '810100011f00000000000000000000000000000000000000000000000000000000000000000000000103321cfa5add185e8893a5fd88013ec4d7e122ded46354cadff50d956395e75b607e8c088760bfde1dddcf32c17f209b8242ee52aaf131facd88d0ea2c6d0b06f200000000000000000000000000000000000000000000000000000000000000005704000000000000400d0300000001000080000002020c00000102000000404b4c0000000000',
+    'hex',
   );
+  const view = VeritasWireDecoder.decode(bytes);
+  assert.equal(view.version, 1);
+  assert.equal(view.feePayer, '4Nd1mBQtrMJVYVfKf2PJy9NZUZdTAsp7D4xWLs4gDB4T');
+  assert.equal(view.recentBlockhash, '11111111111111111111111111111111');
+  assert.equal(view.priorityFeeLamports, 1111n);
+  assert.equal(view.computeUnitLimit, 200_000);
+  assert.equal(view.loadedAccountsDataSizeLimit, 65_536);
+  assert.equal(view.requestedHeapSize, 32_768);
+  assert.equal(view.complete, false);
+});
+
+test('VeritasWireDecoder: rejects malformed V1 config masks and trailing wire bytes', () => {
+  assert.throws(() => VeritasWireDecoder.decode(v1Message({ configMask: 1 })), /priority fee mask must set both bits/);
+  assert.throws(() => VeritasWireDecoder.decode(v1Message({ configMask: 0x8000_0000 })), /config mask contains unknown bits/);
+  assert.throws(() => VeritasWireDecoder.decode(v1Message({ trailing: Buffer.from([0]) })), /message contains trailing bytes/);
+  assert.throws(() => VeritasWireDecoder.decode(Uint8Array.of(0x81)), /V1 message is truncated/);
+});
+
+test('SigningFirewall: decoded V1 message remains rejected until its effects are authority-complete', () => {
+  const firewall = new SigningFirewall();
+  const messageBytes = v1Message();
+  const messageHash = createHash('sha256').update(messageBytes).digest('hex');
+  const decision = firewall.evaluate({
+    requestId: 'req_v1_observation', environment: 'devnet', messageBytes, messageHash,
+    expectedSigner: payer.toBase58(), feePayer: payer.toBase58(), policyVersion: 'v1', policyHash: 'hash_v1',
+    intentId: 'intent_v1', simulationId: 'v1-observation', expiresAt: Date.now() + 60_000,
+  }, null, {
+    version: 'v1', hash: 'hash_v1', allowedPrograms: [SystemProgram.programId.toBase58()],
+    allowedFeePayers: [payer.toBase58()], maxAmountLamports: 10_000_000n, maxSlippageBps: 0,
+    maxPriorityFeeLamports: 10_000n, expectedMint: '', expectedDestination: '', mainnetEnabled: false,
+  }, { journalHealthy: true, killSwitchClear: true, providerGateHealthy: true, simulationPassed: true });
+  assert.equal(decision.approved, false);
+  assert.ok(decision.reasonCodes.includes('TRANSACTION_DECODER_INCOMPLETE'));
 });
 
 test('VeritasWireDecoder: natively deserializes compiled VersionedMessage wire bytes', () => {

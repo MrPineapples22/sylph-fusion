@@ -1,13 +1,13 @@
 {
-  "generatedAt": "2026-10-15T02:35:59.422Z",
+  "generatedAt": "2026-10-15T02:50:25.742Z",
   "manifestRows": 288,
   "uniqueManifestIds": 288,
   "batchFiles": 23,
   "batchReviewRecords": 288,
   "uniqueReviewedIds": 288,
   "manifestReviewStatusCounts": {
-    "NOT_REVIEWED": 283,
-    "PARTIAL_REVIEW": 5
+    "NOT_REVIEWED": 281,
+    "PARTIAL_REVIEW": 7
   },
   "batchStatusCounts": {
     "PARTIAL_REVIEW": 288

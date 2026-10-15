@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-15T01:12:00Z",
+  "updatedAt": "2026-10-15",
   "interpretation": "Verified local implementation follow-ups linked to catalog source IDs. These records document changes and tests; they do not change source review status, grant integration authority, or establish profitability.",
   "followups": [
     {
@@ -65,32 +65,34 @@
         "SRC-254",
         "SRC-255"
       ],
-      "area": "Solana V1 wire compatibility at signing decoder",
+      "area": "Solana V1 diagnostic wire decoding and signing boundary",
       "sourceToPipeline": {
         "upstreamFindings": [
           "Current official Solana docs list legacy, v0 and v1 formats and state that v1 is active; v1 places compute, loaded-data and total-priority-fee values in message configuration.",
           "ComputeBudget instructions do not configure v1 messages; they are no-op instructions that still consume an instruction slot and compute.",
-          "The Veritas decoder uses pinned web3.js 1.98.4 VersionedMessage.deserialize and only returns legacy/v0 types; previously, v1 was rejected as a generic deserialization failure."
+          "The Veritas decoder uses pinned web3.js 1.98.4 VersionedMessage.deserialize and only returns legacy/v0 types; previously, v1 was rejected as a generic deserialization failure.",
+          "The Solana Foundation transaction-v1-examples repository at commit baa8b2654d1695d62c17dd8a0d2ef775ef45ad14 includes a TypeScript @solana/kit 8.4.0 serialized V1 fixture with message config and inline account keys."
         ],
         "relevantModules": [
           "src/platform/signing/veritas-wire-decoder.ts",
           "src/platform/execution/transaction-compatibility.ts",
           "src/platform/execution/asset-delta-engine.ts"
         ],
-        "existingOverlap": "TransactionCompatibilityAuthority can model V1 resource limits, but that is not a raw wire decoder. AssetDeltaEngine is still limited to the legacy/v0 message objects supplied by the pinned web3.js response path.",
+        "existingOverlap": "Veritas now uses a bounded read-only parser to extract the V1 config values and structural instruction/account boundaries. It deliberately labels all V1 instructions UNKNOWN and returns complete:false; SigningFirewall rejects the message as TRANSACTION_DECODER_INCOMPLETE. This is diagnostic compatibility only, not transaction authorization or realized-fee accounting.",
         "risks": [
-          "V1 signing, transaction decoding and fee-component extraction remain unsupported.",
-          "An explicit rejection improves observability only; it does not make a v1 message compatible or authorize a signing path.",
-          "A future custom decoder is security-sensitive and requires official wire fixtures, independent review and end-to-end authorization tests."
+          "The custom parser is not a runtime validator and does not fully interpret instruction effects, bind authorized signatures, or support address lookup tables; V1 signing remains disabled.",
+          "The declared total priority fee does not include or prove the actual transaction total fee; canonical confirmed meta.fee remains authoritative.",
+          "Adversarial review and broader property/fuzz testing remain required before expanding use of decoded V1 fields."
         ],
         "validationRequirements": [
-          "Keep unsupported V1 wire messages fail-closed with a specific compatibility error.",
-          "Before adding V1 decoding, validate all config-mask combinations, instruction headers/payload boundaries, account writability and signature binding against an official SDK/runtime fixture.",
-          "Verify fee components against finalized metadata, including failed transactions; never infer realized fee from the message alone."
+          "Compare fields against official SDK-generated fixtures and preserve bounded malformed-input rejection.",
+          "Keep all V1 results complete:false and confirm SigningFirewall rejects the decoded message.",
+          "Do not enable V1 signing until official runtime fixtures cover every config combination, full instruction/account semantics, signer binding, canonical round trips, and independent protocol/security review.",
+          "Reconcile confirmed meta.fee for successful and failed transactions; do not treat message config as realized fee."
         ]
       },
       "implementation": {
-        "change": "Veritas now recognizes the V1 0x81 message prefix and throws VERITAS_UNSUPPORTED_TRANSACTION_VERSION: V1 before invoking the legacy/v0 decoder. A regression first failed with the prior generic error, then passed after the boundary change.",
+        "change": "Added a bounded read-only V1 wire parser for the config mask, total priority fee, CU limit, loaded-account data cap, heap request, inline addresses, and instruction framing. All V1 instructions remain UNKNOWN and every decoded V1 result remains complete:false, preserving SigningFirewall rejection. Added deterministic SDK-fixture, malformed-message, and firewall regressions.",
         "files": [
           "src/platform/signing/veritas-wire-decoder.ts",
           "dist/platform/signing/veritas-wire-decoder.js",
@@ -98,17 +100,21 @@
           "research/registry/source-review-batch-002-2026-10-14.json"
         ],
         "validation": {
-          "build": "npm run build:engine — passed",
-          "focusedTests": "node --test test/platform/veritas-wire-decoder.test.mjs test/platform/transaction-compatibility-2026.test.mjs — 13/13 passed"
+          "pinnedBuild": "TypeScript build with the repository pinned scratch dependency install — passed",
+          "focusedTests": "node --test test/platform/veritas-wire-decoder.test.mjs — 7/7 passed",
+          "platformSuite": "node --test --test-isolation=none test/platform/*.test.mjs — 1,061/1,061 passed across 23 suites from the pinned scratch project root",
+          "fixture": "Official Solana Foundation transaction-v1-examples commit baa8b2654d1695d62c17dd8a0d2ef775ef45ad14; @solana/kit 8.4.0 serialized fixture",
+          "limitations": "External example repository Vitest suite did not run because its optional Windows Yellowstone native binding was absent after install with scripts disabled; no claim is made for that upstream suite."
         },
-        "authorityImpact": "No signing, authorization, broadcast, capital, or risk-limit changes; no process restarted.",
-        "status": "VERIFIED_FAIL_CLOSED_COMPATIBILITY_DIAGNOSTIC; V1 NOT DECODED OR ENABLED"
+        "authorityImpact": "Diagnostic decoding only. Every V1 transaction remains incomplete and blocked by SigningFirewall. No signing approval expansion, transaction submission, custody, capital authorization, risk-limit, or live process changes.",
+        "status": "VERIFIED_READ_ONLY_V1_CONFIG_DECODING; SIGNING_AND_REALIZED_FEE_RECONCILIATION_REMAIN_OPEN"
       },
       "evidence": [
         "https://solana.com/docs/core/transactions/versioned-transactions",
         "https://solana.com/docs/core/fees/compute-budget",
         "https://solana.com/docs/core/fees/fee-structure",
-        "test/platform/veritas-wire-decoder.test.mjs"
+        "test/platform/veritas-wire-decoder.test.mjs",
+        "https://github.com/solana-foundation/transaction-v1-examples/tree/baa8b2654d1695d62c17dd8a0d2ef775ef45ad14"
       ]
     },
     {
@@ -653,14 +659,18 @@
     },
     {
       "id": "INT-JITO-STATUS-WINDOW-001",
-      "catalogSourceIds": ["SRC-257"],
+      "catalogSourceIds": [
+        "SRC-257"
+      ],
       "area": "Jito inflight status interpretation",
       "sourceToPipeline": {
         "upstreamFindings": [
           "Jito inflight bundle statuses are only retained for a five-minute lookback; Invalid and missing status results do not establish relay failure or transaction non-landing.",
           "An accepted sendBundle response establishes receipt, not chain landing; finalized chain reconciliation remains authoritative."
         ],
-        "relevantModules": ["src/platform/execution/jito-lifecycle-coordinator.ts"],
+        "relevantModules": [
+          "src/platform/execution/jito-lifecycle-coordinator.ts"
+        ],
         "existingOverlap": "The coordinator already separated inflight status polling from settlement reconciliation. The correction preserves that boundary and uses a nonterminal STATUS_NOT_RETAINED result for absent-window outcomes.",
         "risks": [
           "Callers must continue reconciliation after status retention expires.",
@@ -695,14 +705,18 @@
     },
     {
       "id": "INT-JUPITER-QUOTE-U64-001",
-      "catalogSourceIds": ["SRC-258"],
+      "catalogSourceIds": [
+        "SRC-258"
+      ],
       "area": "Jupiter quote-only response bounds",
       "sourceToPipeline": {
         "upstreamFindings": [
           "Jupiter /order returns a quote with transaction null when taker is omitted; the API can return a transaction when taker is supplied.",
           "Solana token raw amounts are represented by u64 values; quote output outside that range cannot be a valid token amount for the downstream sell quote."
         ],
-        "relevantModules": ["terminal/jupiter-research.mjs"],
+        "relevantModules": [
+          "terminal/jupiter-research.mjs"
+        ],
         "existingOverlap": "The adapter already omits taker, strips response data down to quote fields, enforces QUOTE_ONLY authority and validates response size. This adds a bounded-u64 check before any BigInt arithmetic or second quote.",
         "risks": [
           "The adapter remains an untrusted provider snapshot; a valid range does not establish quote freshness, execution, or profit.",
@@ -716,7 +730,10 @@
       },
       "implementation": {
         "change": "JupiterResearchQuoteService now validates outAmount as a canonical positive u64 before returning the quote, preventing out-of-range provider values from entering BigInt round-trip arithmetic or becoming the sell input.",
-        "files": ["terminal/jupiter-research.mjs", "terminal/test/jupiter-research.test.mjs"],
+        "files": [
+          "terminal/jupiter-research.mjs",
+          "terminal/test/jupiter-research.test.mjs"
+        ],
         "validation": {
           "focusedTests": "node --test terminal/test/jupiter-research.test.mjs — 4/4 passed",
           "terminalTests": "npm run test:terminal — 351/351 passed"
@@ -733,7 +750,11 @@
     },
     {
       "id": "INT-AMM-POOL-STATE-001",
-      "catalogSourceIds": ["SRC-259", "SRC-063", "SRC-077"],
+      "catalogSourceIds": [
+        "SRC-259",
+        "SRC-063",
+        "SRC-077"
+      ],
       "area": "graduated AMM state and execution-aware exit marks",
       "sourceToPipeline": {
         "upstreamFindings": [
@@ -793,7 +814,9 @@
     },
     {
       "id": "INT-FEE-COMPONENT-CONSISTENCY-001",
-      "catalogSourceIds": ["SRC-255"],
+      "catalogSourceIds": [
+        "SRC-255"
+      ],
       "area": "observed transaction fee component reconciliation",
       "sourceToPipeline": {
         "upstreamFindings": [
@@ -801,7 +824,10 @@
           "The v1 priority fee is a total lamport amount, while legacy/v0 derive it from requested compute limit and micro-lamports per CU.",
           "A reported burned amount must be bounded by base fee, not just by total transaction fee."
         ],
-        "relevantModules": ["src/platform/ingestion/truth-x.ts", "test/platform/truth-x.test.mjs"],
+        "relevantModules": [
+          "src/platform/ingestion/truth-x.ts",
+          "test/platform/truth-x.test.mjs"
+        ],
         "existingOverlap": "EconomicDeltaEngine accepted feeBurnedLamports and priorityFeeLamports when each was individually no greater than feeLamports, even when burned fees exceeded the base fee left after priority fees. It now derives baseFeeLamports only when priority-fee evidence is explicitly present and rejects that contradictory decomposition.",
         "risks": [
           "This consistency check does not prove that supplied fee components were decoded correctly for a given transaction version.",
@@ -816,7 +842,10 @@
       },
       "implementation": {
         "change": "EconomicDeltaEngine now exposes baseFeeLamports = feeLamports - priorityFeeLamports when priority fee is supplied and rejects feeBurnedLamports above the derived base fee. Added deterministic regression assertions for contradictory and incomplete decompositions.",
-        "files": ["src/platform/ingestion/truth-x.ts", "test/platform/truth-x.test.mjs"],
+        "files": [
+          "src/platform/ingestion/truth-x.ts",
+          "test/platform/truth-x.test.mjs"
+        ],
         "validation": {
           "redTest": "Before the implementation, the updated Truth-X test failed because baseFeeLamports was absent.",
           "build": "npm run build:engine — passed",
@@ -834,7 +863,9 @@
     },
     {
       "id": "INT-V1-SIGNING-FAIL-CLOSED-001",
-      "catalogSourceIds": ["SRC-254"],
+      "catalogSourceIds": [
+        "SRC-254"
+      ],
       "area": "transaction V1 signing decoder compatibility boundary",
       "sourceToPipeline": {
         "upstreamFindings": [
@@ -842,7 +873,10 @@
           "The installed @solana/web3.js 1.98.4 VersionedMessage decoder in this worktree only supports legacy and v0.",
           "The signing decoder must fail closed until it can bind the v1 config and instruction/account structure from the exact message bytes."
         ],
-        "relevantModules": ["src/platform/signing/veritas-wire-decoder.ts", "src/platform/signing/signing-firewall.ts"],
+        "relevantModules": [
+          "src/platform/signing/veritas-wire-decoder.ts",
+          "src/platform/signing/signing-firewall.ts"
+        ],
         "existingOverlap": "Veritas decodes complete legacy/v0 payer-origin transfers. Before this guard, a v1 message had no explicit format rejection and was passed to the legacy/v0 deserializer. The decoder now recognizes 0x81 and rejects it with a version-specific unsupported error before parsing.",
         "risks": [
           "This guard does not add v1 message decoding or signing support.",
@@ -857,7 +891,10 @@
       },
       "implementation": {
         "change": "Added an explicit 0x81 rejection in VeritasWireDecoder and a deterministic regression test. This makes the unsupported V1 boundary observable and fail-closed without claiming V1 support.",
-        "files": ["src/platform/signing/veritas-wire-decoder.ts", "test/platform/veritas-wire-decoder.test.mjs"],
+        "files": [
+          "src/platform/signing/veritas-wire-decoder.ts",
+          "test/platform/veritas-wire-decoder.test.mjs"
+        ],
         "validation": {
           "build": "npm run build:engine — passed",
           "focusedTests": "node --test test/platform/veritas-wire-decoder.test.mjs test/platform/signing-firewall.test.mjs — 11/11 passed"
@@ -875,7 +912,9 @@
     },
     {
       "id": "INT-LOCKFILE-CLEAN-INSTALL-001",
-      "catalogSourceIds": ["SRC-256"],
+      "catalogSourceIds": [
+        "SRC-256"
+      ],
       "area": "pinned dependency installation and build reproducibility",
       "sourceToPipeline": {
         "upstreamFindings": [
@@ -883,7 +922,12 @@
           "The candidate pnpm lock did not include two declared direct packages, so a frozen install correctly failed.",
           "The shared worktree node_modules junction resolved @pump-fun/pump-sdk 4.0.0 while package.json and pnpm lock specify 2.0.0; compilation against that junction was not sufficient evidence for the locked source set."
         ],
-        "relevantModules": ["package.json", "pnpm-lock.yaml", "package-lock.json", "tsconfig.json"],
+        "relevantModules": [
+          "package.json",
+          "pnpm-lock.yaml",
+          "package-lock.json",
+          "tsconfig.json"
+        ],
         "existingOverlap": "A scratch copy of the source and manifests was used to reconcile both lockfiles, install dependencies without lifecycle scripts, verify Pump SDK 2.0.0 and transitive PumpSwap SDK 1.20.0, then build and run targeted tests. The user's existing node_modules junction was left untouched.",
         "risks": [
           "A checked-in lockfile does not install dependencies into an existing worktree automatically.",
@@ -899,7 +943,10 @@
       },
       "implementation": {
         "change": "Reconciled pnpm-lock.yaml and package-lock.json with the exact dependencies declared in package.json. No runtime code or installed worktree dependencies were modified.",
-        "files": ["pnpm-lock.yaml", "package-lock.json"],
+        "files": [
+          "pnpm-lock.yaml",
+          "package-lock.json"
+        ],
         "validation": {
           "frozenPnpmInstall": "pnpm install --frozen-lockfile --ignore-scripts — passed in isolated scratch copy",
           "cleanNpmInstall": "npm ci --ignore-scripts --no-audit --no-fund — passed in isolated scratch copy",
@@ -922,14 +969,19 @@
     },
     {
       "id": "INT-JITO-TIP-FLOOR-EXACT-LAMPORTS-001",
-      "catalogSourceIds": ["SRC-257"],
+      "catalogSourceIds": [
+        "SRC-257"
+      ],
       "area": "Jito tip-floor estimate conversion",
       "sourceToPipeline": {
         "upstreamFindings": [
           "The official Jito documentation describes tip amounts as part of a competitive auction and exposes the tip-floor API as a market observation, not as a guaranteed landing price.",
           "The existing adapter converted the 75th-percentile SOL value with floating-point multiplication and Math.ceil, which can overstate at decimal boundaries and accepted coercible values such as null as zero."
         ],
-        "relevantModules": ["src/execution.ts", "src/platform/execution/jito-tip-floor.ts"],
+        "relevantModules": [
+          "src/execution.ts",
+          "src/platform/execution/jito-tip-floor.ts"
+        ],
         "existingOverlap": "The configured min/max tip policy remains authoritative. The observed floor is converted exactly and capped at the configured maximum before the existing panic multiplier and final cap are applied. No submission path was enabled or changed.",
         "risks": [
           "A tip-floor observation is not a quote or guarantee that an opportunity will land.",
@@ -942,7 +994,11 @@
       },
       "implementation": {
         "change": "Added exact decimal-SOL-to-lamport conversion using BigInt, strict input validation, and maximum-tip clamping in the Jito tip-floor refresh path.",
-        "files": ["src/platform/execution/jito-tip-floor.ts", "src/execution.ts", "test/platform/jito-tip-floor.test.mjs"],
+        "files": [
+          "src/platform/execution/jito-tip-floor.ts",
+          "src/execution.ts",
+          "test/platform/jito-tip-floor.test.mjs"
+        ],
         "validation": {
           "engineBuild": "npm run build:engine — passed in isolated pinned scratch copy",
           "focusedTests": "node --test test/platform/jito-tip-floor.test.mjs test/platform/jito-fence.test.mjs — 8/8 passed",
@@ -951,7 +1007,10 @@
         "authorityImpact": "Tip estimation only; no signing, broadcast, custody, capital authorization, or risk-limit paths changed.",
         "status": "VERIFIED_TIP_FLOOR_UNIT_CONVERSION_ONLY"
       },
-      "evidence": ["https://docs.jito.wtf/lowlatencytxnsend/", "test/platform/jito-tip-floor.test.mjs"]
+      "evidence": [
+        "https://docs.jito.wtf/lowlatencytxnsend/",
+        "test/platform/jito-tip-floor.test.mjs"
+      ]
     }
   ]
 }

@@ -7,7 +7,7 @@
  * program IDs, instruction discriminators, writable accounts, and value transfers directly
  * from the exact byte stream to be signed.
  */
-import { VersionedMessage } from '@solana/web3.js';
+import { PublicKey, VersionedMessage } from '@solana/web3.js';
 import { createHash } from 'node:crypto';
 const PUMP_PROGRAM_ID = '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
 const COMPUTE_BUDGET_ID = 'ComputeBudget111111111111111111111111111111';
@@ -18,6 +18,129 @@ const ATA_PROGRAM_ID = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL';
 const JUPITER_V6_ID = 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4';
 const PUMP_BUY_DISCRIMINATOR = '66063d1201daebea';
 const PUMP_SELL_DISCRIMINATOR = '33e685a4017f83ad';
+function decodeV1Message(messageBytes, simulationId) {
+    const fail = (reason) => { throw new Error(`VERITAS_DECODE_FAILED: V1 ${reason}`); };
+    if (messageBytes.byteLength > 4096)
+        fail('message exceeds the active 4,096-byte format limit');
+    if (messageBytes.byteLength < 42)
+        fail('message is truncated before its fixed header');
+    const header = { numRequiredSignatures: messageBytes[1], numReadonlySignedAccounts: messageBytes[2], numReadonlyUnsignedAccounts: messageBytes[3] };
+    const configMask = Buffer.from(messageBytes.buffer, messageBytes.byteOffset, messageBytes.byteLength).readUInt32LE(4);
+    const knownMask = 0x1f;
+    if ((configMask & ~knownMask) !== 0)
+        fail('config mask contains unknown bits');
+    const priorityMask = configMask & 0b11;
+    if (priorityMask !== 0 && priorityMask !== 0b11)
+        fail('priority fee mask must set both bits or neither');
+    const instructionCount = messageBytes[40];
+    const addressCount = messageBytes[41];
+    if (instructionCount > 64 || addressCount > 96 || addressCount === 0)
+        fail('instruction or address count is out of range');
+    if (header.numRequiredSignatures === 0 || header.numRequiredSignatures > addressCount ||
+        header.numReadonlySignedAccounts >= header.numRequiredSignatures ||
+        header.numReadonlyUnsignedAccounts > addressCount - header.numRequiredSignatures) {
+        fail('message header counts are inconsistent');
+    }
+    const bytes = Buffer.from(messageBytes.buffer, messageBytes.byteOffset, messageBytes.byteLength);
+    let offset = 42;
+    const take = (length, label) => {
+        if (!Number.isSafeInteger(length) || length < 0 || offset + length > bytes.length)
+            fail(`${label} is truncated`);
+        const value = bytes.subarray(offset, offset + length);
+        offset += length;
+        return value;
+    };
+    const accountKeys = [];
+    for (let i = 0; i < addressCount; i++)
+        accountKeys.push(new PublicKey(take(32, 'address table')).toBase58());
+    const configValues = new Map();
+    for (let bit = 0; bit <= 4; bit++) {
+        if ((configMask & (1 << bit)) === 0 || (bit === 1))
+            continue;
+        const width = bit <= 1 ? 8 : 4;
+        const value = take(width, `config field ${bit}`);
+        configValues.set(bit, width === 8 ? value.readBigUInt64LE(0) : BigInt(value.readUInt32LE(0)));
+    }
+    const priorityFeeLamports = configValues.get(0) ?? 0n;
+    const computeUnitLimitRaw = configValues.get(2);
+    const loadedAccountsDataSizeLimitRaw = configValues.get(3);
+    const requestedHeapSizeRaw = configValues.get(4);
+    const computeUnitLimit = computeUnitLimitRaw === undefined ? undefined : Number(computeUnitLimitRaw);
+    const loadedAccountsDataSizeLimit = loadedAccountsDataSizeLimitRaw === undefined ? undefined : Number(loadedAccountsDataSizeLimitRaw);
+    const requestedHeapSize = requestedHeapSizeRaw === undefined ? undefined : Number(requestedHeapSizeRaw);
+    const instructionHeaders = [];
+    for (let i = 0; i < instructionCount; i++) {
+        const item = take(4, `instruction header ${i}`);
+        instructionHeaders.push({ programIdIndex: item[0], accountCount: item[1], dataLength: item.readUInt16LE(2) });
+    }
+    const instructions = [];
+    const programIds = new Set();
+    const writable = new Set();
+    const readonly = new Set();
+    const writableSignerCount = header.numRequiredSignatures - header.numReadonlySignedAccounts;
+    const writableUnsignedEnd = header.numRequiredSignatures + (addressCount - header.numRequiredSignatures - header.numReadonlyUnsignedAccounts);
+    for (let index = 0; index < writableSignerCount; index++)
+        writable.add(accountKeys[index]);
+    for (let index = writableSignerCount; index < header.numRequiredSignatures; index++)
+        readonly.add(accountKeys[index]);
+    for (let index = header.numRequiredSignatures; index < writableUnsignedEnd; index++)
+        writable.add(accountKeys[index]);
+    for (let index = writableUnsignedEnd; index < addressCount; index++)
+        readonly.add(accountKeys[index]);
+    for (let i = 0; i < instructionHeaders.length; i++) {
+        const item = instructionHeaders[i];
+        const programId = accountKeys[item.programIdIndex];
+        if (!programId)
+            fail(`instruction ${i} references an unknown program index`);
+        const accountIndexes = take(item.accountCount, `instruction ${i} account indices`);
+        const accounts = [...accountIndexes].map(accountIndex => {
+            const key = accountKeys[accountIndex];
+            if (!key)
+                fail(`instruction ${i} references an unknown account index`);
+            return key;
+        });
+        const data = take(item.dataLength, `instruction ${i} data`);
+        const ixWritable = accounts.filter(key => writable.has(key));
+        programIds.add(programId);
+        // V1 ignores ComputeBudget instructions for configuration. All V1 instructions
+        // remain diagnostic only here; the V1 message is never signing-complete.
+        instructions.push(Object.freeze({
+            programId,
+            accounts: Object.freeze(accounts),
+            writableAccounts: Object.freeze(ixWritable),
+            dataLength: data.length,
+            discriminatorHex: data.subarray(0, Math.min(8, data.length)).toString('hex'),
+            instructionType: 'UNKNOWN',
+        }));
+    }
+    if (offset !== bytes.length)
+        fail('message contains trailing bytes');
+    const messageHash = createHash('sha256').update(messageBytes).digest('hex');
+    const feePayer = accountKeys[0];
+    return Object.freeze({
+        complete: false,
+        frozen: true,
+        messageHash,
+        version: 1,
+        recentBlockhash: new PublicKey(bytes.subarray(8, 40)).toBase58(),
+        signer: feePayer,
+        feePayer,
+        allAccountKeys: Object.freeze(accountKeys),
+        programIds: Object.freeze([...programIds]),
+        writableAccounts: Object.freeze([...writable]),
+        readonlyAccounts: Object.freeze([...readonly]),
+        amountLamports: 0n,
+        mint: '',
+        destination: '',
+        maxSlippageBps: 0,
+        priorityFeeLamports,
+        simulationId: simulationId ?? `sim_${messageHash.slice(0, 16)}`,
+        instructions: Object.freeze(instructions),
+        computeUnitLimit,
+        loadedAccountsDataSizeLimit,
+        requestedHeapSize,
+    });
+}
 export class VeritasWireDecoder {
     /**
      * Extracts observed message facts. `complete` supports only payer-origin native
@@ -30,10 +153,10 @@ export class VeritasWireDecoder {
         if (!(messageBytes instanceof Uint8Array) || messageBytes.byteLength === 0) {
             throw new Error('VERITAS_DECODE_FAILED: messageBytes must be a non-empty Uint8Array');
         }
-        // web3.js 1.98.4 only decodes legacy and v0 messages. V1 starts with 0x81;
-        // reject it explicitly instead of letting an older decoder misclassify it.
+        // V1 is decoded by the bounded read-only parser below. It deliberately remains
+        // `complete: false`, so adding observability does not extend signing authority.
         if (messageBytes[0] === 0x81) {
-            throw new Error('VERITAS_UNSUPPORTED_TRANSACTION_VERSION: V1 message decoding is not implemented');
+            return decodeV1Message(messageBytes, options.simulationId);
         }
         const messageHash = createHash('sha256').update(messageBytes).digest('hex');
         let message;

@@ -252,8 +252,8 @@ SRC-250,web_visual_debug_rea,https://rea.tools/showcase/,public_doc_or_opt_in_pa
 SRC-251,web_visual_debug_rea,https://www.npmjs.com/package/rea-agents,public_doc_or_opt_in_passive_browser,P2,NOT_REVIEWED,,,,UNASSESSED
 SRC-252,web_visual_debug_rea,https://skills.sh/morluto/rea/reverse-engineer-anything,public_doc_or_opt_in_passive_browser,P0,NOT_REVIEWED,,,,UNASSESSED
 SRC-253,web_visual_debug_rea,https://github.com,public_doc_or_opt_in_passive_browser,P2,NOT_REVIEWED,,,,UNASSESSED
-SRC-254,docs_solana_trading,https://solana.com/docs/core/fees/compute-budget,documentation_review,P0,NOT_REVIEWED,,,,UNASSESSED
-SRC-255,docs_solana_trading,https://solana.com/docs/core/fees/fee-structure,documentation_review,P0,NOT_REVIEWED,,,,UNASSESSED
+SRC-254,docs_solana_trading,https://solana.com/docs/core/fees/compute-budget,documentation_review,P0,PARTIAL_REVIEW,EV-SOLANA-V1-WIRE-20261015,baa8b2654d1695d62c17dd8a0d2ef775ef45ad14,NOT_APPLICABLE_DOCUMENTATION,READ_ONLY_V1_CONFIG_DECODE; SIGNING_AND_REALIZED_FEE_RECONCILIATION_OPEN
+SRC-255,docs_solana_trading,https://solana.com/docs/core/fees/fee-structure,documentation_review,P0,PARTIAL_REVIEW,EV-SOLANA-V1-WIRE-20261015,baa8b2654d1695d62c17dd8a0d2ef775ef45ad14,NOT_APPLICABLE_DOCUMENTATION,READ_ONLY_V1_CONFIG_DECODE; SIGNING_AND_REALIZED_FEE_RECONCILIATION_OPEN
 SRC-256,docs_solana_trading,https://solana.com/docs/tools/production-readiness,documentation_review,P0,NOT_REVIEWED,,,,UNASSESSED
 SRC-257,docs_solana_trading,https://docs.jito.wtf/lowlatencytxnsend/,documentation_review,P0,NOT_REVIEWED,,,,UNASSESSED
 SRC-258,docs_solana_trading,https://developers.jup.ag/docs/swap/index.md,documentation_review,P0,NOT_REVIEWED,,,,UNASSESSED
