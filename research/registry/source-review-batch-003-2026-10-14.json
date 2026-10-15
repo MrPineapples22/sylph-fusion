@@ -27,18 +27,18 @@
       "id": "SRC-076",
       "url": "https://github.com/jito-labs/searcher-examples",
       "status": "PARTIAL_REVIEW",
-      "provenance": ["Official Jito Searcher Examples README", "Official Jito low-latency transaction docs", "Local SYLPH Jito probe module"],
+      "provenance": ["Official Jito Searcher Examples README", "Official Jito low-latency transaction docs", "Read-only checkout at f710c30b0ec7449b5122f827b0997218ab1a0315 including searcher_client/src/lib.rs, token_authenticator.rs, cli/src/main.rs, and pinned mev-protos submodule c9614089ef48fb83f01767d87e8f73e6c2e59c0b", "Local SYLPH Jito probe module"],
       "discoveries": [
-        "The examples cover Block Engine searcher authentication, protobuf service definitions and a CLI that can send test bundles.",
-        "The repository requires a local keypair and Block Engine access/API credentials for examples that send; those flows were inspected only and not run.",
-        "SYLPH's current Jito client only calls getTipAccounts and explicitly reports `bundleSubmissionTested:false`, so the examples do not prove local submission or landing behavior."
+        "Searcher auth signs the challenge string `<pubkey>-<challenge>`, exchanges the signature for access/refresh tokens, and refreshes access tokens before expiry; this protocol is distinct from the JSON-RPC x-jito-auth UUID header.",
+        "The sample captures every transaction signature before bundle send, subscribes to bundle acceptance/rejection results, then checks each signature through processed-commitment RPC after a bounded wait. Its processed result is useful landing telemetry but is not finalized settlement proof.",
+        "The CLI learns the next connected leader and tip accounts, builds the tip transfer into transactions, and sends at most five transactions per bundle; those signing/submission examples require a funded local keypair and authenticated Block Engine access and were not executed."
       ],
-      "patterns": ["use challenge-response for authenticated searcher channels", "track subscription results/rejections separately from submission receipt", "correlate bundle id, transaction signatures and finalized outcomes"],
+      "patterns": ["use challenge-response for authenticated searcher gRPC channels and keep it distinct from HTTP UUID auth", "snapshot all transaction signatures before submission", "track subscription acceptance/rejections and processed RPC status as diagnostics, then wait for finalized canonical chain evidence before settlement"],
       "sylphModules": ["terminal/jito-block-engine-health.mjs", "terminal/jito-tip-floor-research.mjs", "src/platform/execution/authority.ts", "src/platform/execution/finalized-settlement*"],
-      "overlap": "Health/tip research exists; Jito searcher gRPC submission is not integrated. No SDK or key material was added.",
+      "overlap": "Health/tip research and inflight JSON-RPC status checks exist; Jito searcher gRPC auth/submission and streamed bundle-result handling are not integrated. The local status remains advisory and finalized multi-RPC reconciliation remains authoritative. No SDK or key material was added.",
       "risks": ["sample code has signing, fees and tip requirements", "bundle subscription may time out or return rejected/dropped outcomes", "an accepted bundle is not confirmed settlement", "upstream examples may age with protobuf/API changes"],
-      "validation": ["pin repo revision/protobuf before adapter work", "never run sample submission with user credentials absent separate authorization", "exercise mock acceptance/rejection/timeout in deterministic tests", "future integration must reconcile chain confirmation and actual tip/fees"],
-      "evidence": ["https://github.com/jito-labs/searcher-examples", "https://docs.jito.wtf/lowlatencytxnsend/"],
+      "validation": ["pin repo revision/protobuf before adapter work", "never run sample submission with user credentials absent separate authorization", "exercise mock acceptance/rejection/timeout in deterministic tests", "treat processed RPC evidence as provisional and reconcile finalized chain state plus actual fee/tip account deltas"],
+      "evidence": ["https://github.com/jito-labs/searcher-examples", "https://github.com/jito-labs/searcher-examples/blob/master/searcher_client/src/lib.rs", "https://github.com/jito-labs/searcher-examples/blob/master/searcher_client/src/token_authenticator.rs", "https://github.com/jito-labs/searcher-examples/blob/master/jito_protos/protos/searcher.proto", "https://docs.jito.wtf/lowlatencytxnsend/"],
       "license": "Apache-2.0",
       "decision": "RESEARCH_ONLY_NO_AUTH_OR_SUBMISSION_CHANGE"
     },
