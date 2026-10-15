@@ -4,7 +4,8 @@
  * A completed curve alone does not identify or price its destination venue.
  */
 
-import type { AmmVenue, GraduatedTokenState, GraduationStatus } from './types.js';
+import type { AmmObservationSource, AmmVenue, GraduatedTokenState, GraduationStatus } from './types.js';
+import { isCanonicalPumpSwapObservation } from './pump-swap-pool-reader.js';
 
 export interface AmmBridgeConfig {
   readonly sniperCooldownMs?: number;
@@ -14,6 +15,7 @@ export interface AmmBridgeConfig {
 
 export interface ObservedAmmPool {
   readonly venue: AmmVenue;
+  readonly source: AmmObservationSource;
   readonly poolAddress: string;
   readonly quoteMint: string;
   readonly quoteReserves: bigint;
@@ -62,7 +64,7 @@ export class PostGraduationAmmBridge {
   public registerAmmPool(mint: string, pool: ObservedAmmPool): GraduatedTokenState {
     const existing = this.tokens.get(mint);
     if (!existing || existing.status === 'BONDING_CURVE') throw new Error('MIGRATION_NOT_REGISTERED');
-    if (!pool || !pool.venue || !pool.poolAddress || !pool.quoteMint ||
+    if (!pool || !pool.venue || !pool.source || !pool.poolAddress || !pool.quoteMint ||
         typeof pool.quoteReserves !== 'bigint' || pool.quoteReserves <= 0n ||
         typeof pool.tokenReserves !== 'bigint' || pool.tokenReserves <= 0n ||
         !Number.isInteger(pool.effectiveFeeBps) || pool.effectiveFeeBps < 0 || pool.effectiveFeeBps >= 10_000 ||
@@ -89,6 +91,11 @@ export class PostGraduationAmmBridge {
       poolEffectiveFeeBps: pool.effectiveFeeBps,
       poolSlot: pool.slot,
       poolObservedAtMs: pool.observedAtMs,
+      // Do not trust the caller-supplied source string. Only the exact frozen
+      // object produced by the canonical RPC reader can authorize an AMM buy.
+      poolObservationSource: isCanonicalPumpSwapObservation(pool)
+        ? 'CANONICAL_ON_CHAIN_RPC'
+        : 'UNVERIFIED_CALLER',
     };
     this.tokens.set(mint, state);
     return state;
@@ -132,6 +139,9 @@ export class PostGraduationAmmBridge {
         reason: `Sniper stabilization cooldown active (${Math.ceil(remainingMs / 1000)}s remaining)` };
     }
     if (state.status === 'AMM_ACTIVE' || state.status === 'AMM_STABILIZED') {
+      if (state.poolObservationSource !== 'CANONICAL_ON_CHAIN_RPC') return {
+        allowed: false, status: state.status, reason: 'AMM pool observation is not canonical RPC evidence',
+      };
       if (!this.isPoolSnapshotFresh(state)) return { allowed: false, status: state.status, reason: 'AMM pool snapshot is stale or unavailable' };
       if (state.poolQuoteMint !== 'So11111111111111111111111111111111111111112') return {
         allowed: false, status: state.status, reason: 'AMM quote mint is not valued in native SOL',

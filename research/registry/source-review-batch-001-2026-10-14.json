@@ -244,9 +244,9 @@
         "test/fusion-graduated-exit.test.mjs",
         "test/platform/solaris-nexus.test.mjs"
       ],
-      "overlap": "Market supports native-SOL bonding-curve reads and quotes. The graduation bridge previously fabricated default SOL/token reserves, hard-coded a fee, and labeled the destination Raydium. It now requires caller-supplied pool venue, address, quote mint, both reserves, effective fee, and slot; repeated complete-curve snapshots preserve the existing migration/cooldown state. The exit quote remains simulation-only, SOL-quote-only, and lacks a canonical AMM pool-state ingestion/certificate path.",
+      "overlap": "Market supports native-SOL bonding-curve reads and quotes. The graduation bridge now requires supplied pool venue, address, quote mint, reserves, fee and slot, and rejects AMM buys unless the observation is labeled canonical RPC. A new PumpSwap reader derives the canonical SOL pool, refetches pool/mint/vault/global/fee accounts in one context, validates account owners and mints, handles signed virtual quote reserves, and computes fees through the pinned PumpSwap SDK. Market calls it after curve completion and keeps migration pending on failure. The path is SOL-quote only; broader PumpSwap lifecycle, alternate quote conversion, route execution and a recovery certificate are not implemented.",
       "risks": [
-        "unverified caller-supplied pool snapshots can still be stale or forged",
+        "the reader supports the canonical native-SOL pool path only and does not yet certify alternate quote pools or all account-layout generations",
         "non-SOL quote pools cannot be converted into SOL exit proceeds without an independently observed conversion quote",
         "instruction/account layouts evolve",
         "curve completion is not proof of destination-pool liquidity",
@@ -257,7 +257,8 @@
         "differentially decode versioned raw transactions/account fixtures",
         "add signed i128, non-SOL quote mint, fee accrual/sweep and synthetic-migration fixtures",
         "derive post-migration executable quotes from verified pool state and test sell-side feasibility",
-        "keep simulation valuation unknown when pool identity, reserves, effective fees, SOL quote mint or source slot are missing"
+        "keep simulation valuation unknown when pool identity, reserves, effective fees, SOL quote mint or source slot are missing",
+        "run protocol golden vectors and deterministic account-context, owner, vault-mint and signed-reserve regression tests before expanding runtime execution support"
       ],
       "evidence": [
         "https://github.com/pump-fun/pump-public-docs",
@@ -265,11 +266,15 @@
         "https://github.com/pump-fun/pump-public-docs/blob/main/docs/instructions/TRADE_V3.md",
         "https://github.com/pump-fun/pump-public-docs/blob/main/docs/VIRTUAL_QUOTE_RESERVES_FEE_ADJUSTMENT.md",
         "https://github.com/pump-fun/pump-public-docs/blob/main/docs/SYNTHETIC_MIGRATION.md",
+        "https://github.com/pump-fun/pump-public-docs/blob/main/docs/PUMP_SWAP_README.md",
+        "src/platform/execution/solaris/pump-swap-pool-reader.ts",
         "src/market.ts",
-        "src/platform/execution/solaris/amm-bridge.ts"
+        "src/platform/execution/solaris/amm-bridge.ts",
+        "test/platform/pump-swap-pool-reader.test.mjs",
+        "isolated npm ci + TypeScript engine build; focused tests: 13 passed, 0 failed; full platform suite: 1,052 passed, 0 failed (2026-10-15)"
       ],
       "license": "NOT_REVIEWED",
-      "decision": "SIMULATION_MARK_HARDENING_ONLY_NO_CANONICAL_POOL_INGESTION"
+      "decision": "CANONICAL_PUMPSWAP_SOL_POOL_READ_PATH_ADDED; EXECUTION_REMAINS_UNVERIFIED"
     }
   ],
   "safety": {

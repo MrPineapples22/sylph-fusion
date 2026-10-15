@@ -57,6 +57,7 @@ export type GraduationStatus =
   | 'AMM_STABILIZED';
 
 export type AmmVenue = 'PUMPSWAP' | 'RAYDIUM' | 'METEORA' | 'ORCA' | 'OTHER';
+export type AmmObservationSource = 'CANONICAL_ON_CHAIN_RPC' | 'UNVERIFIED_CALLER';
 
 export interface GraduatedTokenState {
   readonly mint: string;
@@ -73,6 +74,7 @@ export interface GraduatedTokenState {
   readonly poolEffectiveFeeBps?: number;
   readonly poolSlot?: number;
   readonly poolObservedAtMs?: number;
+  readonly poolObservationSource?: AmmObservationSource;
   readonly sniperDumpObserved: boolean;
   readonly fairPriceSol?: number;
 }

@@ -4,7 +4,7 @@ import { PublicKey } from '@solana/web3.js';
 import { Market } from '../dist/market.js';
 import { SimulationExecutionAuthority } from '../dist/platform/execution/authority.js';
 
-test('REQ-016: Graduated positions maintain valid AMM marks and executable exit routes', async () => {
+test('REQ-016: Caller-asserted AMM state cannot price or build a graduated exit', async () => {
   const mint = new PublicKey('4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R');
   const creator = 'DevWallet111111111111111111111111111111111111';
   const dummyWallet = new PublicKey('11111111111111111111111111111111');
@@ -87,48 +87,19 @@ test('REQ-016: Graduated positions maintain valid AMM marks and executable exit 
 
   // 3. Register an explicit PumpSwap pool snapshot with both reserve sides and its fee.
   const poolAddress = 'PumpSwapPoolObserved111111111111111111111';
-  const initialPoolSolReserves = 85_000_000_000n; // 85 SOL
-  const initialPoolTokenReserves = 206_900_000_000_000n;
-  const poolFeeBps = 25;
   const wrappedSol = 'So11111111111111111111111111111111111111112';
   market.ammBridge.registerAmmPool(mintStr, {
-    venue: 'PUMPSWAP', poolAddress, quoteMint: wrappedSol,
-    quoteReserves: initialPoolSolReserves, tokenReserves: initialPoolTokenReserves,
-    effectiveFeeBps: poolFeeBps, slot: 250_000_050, observedAtMs: Date.now(),
+    venue: 'PUMPSWAP', source: 'CANONICAL_ON_CHAIN_RPC', poolAddress, quoteMint: wrappedSol,
+    quoteReserves: 85_000_000_000n, tokenReserves: 206_900_000_000_000n,
+    effectiveFeeBps: 25, slot: 250_000_050, observedAtMs: Date.now(),
   });
 
-  // Mark AMM active in lifecycle
-  const c2 = market.lifecycle.transitionLifecycle(mintStr, {
-    evidenceId: 'EV-AMM-VERIFIED',
-    slot: 250_000_050,
-    timestampMs: Date.now(),
-    source: 'ON_CHAIN_PROGRAM',
-    destinationPoolAddress: poolAddress,
-    migrationProgramId: 'pumpswap',
-    details: 'Verified AMM liquidity open',
-  }, 'AMM_ACTIVE');
-
-  assert.equal(c2.currentState, 'AMM_ACTIVE');
-  assert.equal(c2.valuationStatus, 'PRICED_AMM');
-
-  // 4. Test market.ammExitQuote() constant-product calculation
-  const quote = market.ammExitQuote(mintStr, tokenAmount);
-  assert.ok(quote > 0n, 'Graduated AMM quote must be positive');
-
-  // Expected math uses observed token and quote reserves plus observed fee.
-  const expectedGross = (tokenAmount * initialPoolSolReserves) / (initialPoolTokenReserves + tokenAmount);
-  const expectedNet = (expectedGross * BigInt(10_000 - poolFeeBps)) / 10_000n;
-  assert.equal(quote, expectedNet);
-
-  // 5. Test that authority.build() successfully builds executable exit order on graduated venue
-  const built = await authority.build(completedCurveSnapshot, 'sell', tokenAmount, creator, 1, 'exit_graduated', false);
-  assert.ok(built);
-  assert.equal(built.pending.side, 'sell');
-  assert.equal(built.pending.mint, mintStr);
-  assert.equal(built.quotedOutput, quote);
-  assert.equal(built.tokenDelta, -tokenAmount);
-  assert.ok(built.solDelta > 0n);
-  assert.ok(built.pending.signature.startsWith('sim_'));
+  // A caller-supplied source label is not canonical account evidence.
+  assert.throws(() => market.ammExitQuote(mintStr, tokenAmount), /SNAPSHOT_INCOMPLETE_OR_NON_SOL_QUOTE/);
+  await assert.rejects(
+    authority.build(completedCurveSnapshot, 'sell', tokenAmount, creator, 1, 'exit_unverified', false),
+    /Graduated-curve execution quote unavailable in simulation/,
+  );
 });
 
 test('graduated AMM quote refuses missing reserves, non-SOL quote mints, and stale-identity pool data', () => {
@@ -137,14 +108,14 @@ test('graduated AMM quote refuses missing reserves, non-SOL quote mints, and sta
   market.ammBridge.registerMigration(mintStr, 100);
   assert.throws(() => market.ammExitQuote(mintStr, 1_000n), /INCOMPLETE_OR_NON_SOL_QUOTE/);
   market.ammBridge.registerAmmPool(mintStr, {
-    venue: 'PUMPSWAP', poolAddress: 'pool', quoteMint: 'USDC', quoteReserves: 10_000n,
+    venue: 'PUMPSWAP', source: 'CANONICAL_ON_CHAIN_RPC', poolAddress: 'pool', quoteMint: 'USDC', quoteReserves: 10_000n,
     tokenReserves: 100_000n, effectiveFeeBps: 25, slot: 100, observedAtMs: Date.now(),
   });
   assert.throws(() => market.ammExitQuote(mintStr, 1_000n), /INCOMPLETE_OR_NON_SOL_QUOTE/);
   const solMarket = new Market({ connection: {} }, {}, new PublicKey('11111111111111111111111111111111'));
   solMarket.ammBridge.registerMigration(mintStr, 100);
   const solPool = {
-    venue: 'PUMPSWAP', poolAddress: 'pool', quoteMint: 'So11111111111111111111111111111111111111112',
+    venue: 'PUMPSWAP', source: 'CANONICAL_ON_CHAIN_RPC', poolAddress: 'pool', quoteMint: 'So11111111111111111111111111111111111111112',
     quoteReserves: 10_000n, tokenReserves: 100_000n, effectiveFeeBps: 25, slot: 100, observedAtMs: Date.now(),
   };
   solMarket.ammBridge.registerAmmPool(mintStr, solPool);

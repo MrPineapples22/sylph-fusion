@@ -5,6 +5,7 @@ import BN from 'bn.js';
 import { httpJson } from './rpc.js';
 import { mulBps } from './core.js';
 import { PostGraduationAmmBridge } from './platform/execution/solaris/amm-bridge.js';
+import { readCanonicalPumpSwapPool } from './platform/execution/solaris/pump-swap-pool-reader.js';
 import { TokenLifecycleOmegaAuthority } from './platform/lifecycle/token-lifecycle-omega.js';
 import { VenueEconomicsAuthority } from './platform/execution/venue-economics.js';
 const UNSAFE_REPORTED_EXTENSION = /permanent.?delegate|transfer.?hook|default(?:account)?.?state/i;
@@ -116,7 +117,22 @@ export class Market {
         const curve = PUMP_SDK.decodeBondingCurve(curveInfo);
         if (!curve.quoteMint.equals(PublicKey.default))
             throw new Error('only native SOL curves supported');
-        return { mint: key, tokenProgram, supply: mintState.supply, curve, global: PUMP_SDK.decodeGlobal(globalInfo), fee: PUMP_SDK.decodeFeeConfig(feeInfo), info: curveInfo, ata, slot: result.context.slot, at: Date.now(), entrySafe };
+        const snapshot = { mint: key, tokenProgram, supply: mintState.supply, curve, global: PUMP_SDK.decodeGlobal(globalInfo), fee: PUMP_SDK.decodeFeeConfig(feeInfo), info: curveInfo, ata, slot: result.context.slot, at: Date.now(), entrySafe };
+        if (curve.complete) {
+            const mintString = key.toBase58();
+            this.ammBridge.registerMigration(mintString, result.context.slot);
+            try {
+                const pool = await readCanonicalPumpSwapPool(c, key, { minContextSlot: result.context.slot });
+                this.ammBridge.registerAmmPool(mintString, pool);
+                this.latestSlot = Math.max(this.latestSlot, pool.slot);
+                snapshot.ammPoolObservationStatus = 'OBSERVED';
+            }
+            catch (error) {
+                snapshot.ammPoolObservationStatus = 'UNAVAILABLE';
+                snapshot.ammPoolObservationError = (error instanceof Error ? error.message : String(error)).replace(/[\r\n]/g, ' ').slice(0, 120);
+            }
+        }
+        return snapshot;
     }
     buyQuote(s, lamports) {
         if (lamports <= 0n || s.supply <= 0n || BigInt(s.curve.virtualQuoteReserves.toString()) <= 0n || BigInt(s.curve.virtualTokenReserves.toString()) <= 0n)
@@ -153,7 +169,7 @@ export class Market {
     }
     ammExitQuote(mint, tokens) {
         const state = this.ammBridge.getGraduatedState(mint);
-        if (!state || !state.poolAddress || !state.poolVenue || state.poolQuoteMint !== NATIVE_MINT.toBase58() ||
+        if (!state || state.poolObservationSource !== 'CANONICAL_ON_CHAIN_RPC' || !state.poolAddress || !state.poolVenue || state.poolQuoteMint !== NATIVE_MINT.toBase58() ||
             state.currentPoolQuoteReserves === undefined || state.currentPoolTokenReserves === undefined ||
             state.poolEffectiveFeeBps === undefined || state.poolSlot === undefined ||
             !this.ammBridge.isPoolSnapshotFresh(state)) {
