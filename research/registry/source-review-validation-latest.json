@@ -1,16 +1,19 @@
 {
-  "generatedAt": "2026-10-15T03:58:30.237Z",
+  "generatedAt": "2026-10-15T04:06:13.876Z",
   "manifestRows": 288,
   "uniqueManifestIds": 288,
   "batchFiles": 23,
-  "batchReviewRecords": 288,
-  "uniqueReviewedIds": 288,
+  "catalogRecords": 288,
+  "uniqueCatalogIds": 288,
+  "directlyReviewedRecords": 35,
+  "triageOnlyRecords": 253,
   "manifestReviewStatusCounts": {
-    "PARTIAL_REVIEW": 32,
-    "NOT_REVIEWED": 256
+    "PARTIAL_REVIEW": 35,
+    "NOT_REVIEWED": 253
   },
   "batchStatusCounts": {
-    "PARTIAL_REVIEW": 288
+    "PARTIAL_REVIEW": 35,
+    "CATALOG_TRIAGE": 253
   },
   "distinctDecisionCount": 167,
   "topDecisionCounts": [
@@ -55,15 +58,15 @@
       "count": 2
     },
     {
-      "decision": "ASSURANCE_ONLY_UNTIL_INDEPENDENTLY_VERIFIED",
+      "decision": "ARCHIVE_BACKFILL_REFERENCE_ONLY; NO_RUNTIME_DEPENDENCY",
       "count": 1
     },
     {
-      "decision": "AVAILABLE_FOR_BOUNDED_PASSIVE_DIAGNOSIS_ONLY",
+      "decision": "ASSURANCE_ONLY_UNTIL_INDEPENDENTLY_VERIFIED",
       "count": 1
     }
   ],
   "defectCount": 0,
   "defects": [],
-  "interpretation": "Coverage validates registry record structure and manifest identity only. It does not establish exhaustive upstream inspection, current source availability, runtime integration, API authorization, profitability, or REA execution for every URL."
+  "interpretation": "Coverage validates catalog record structure and manifest identity. PARTIAL_REVIEW means pinned source/document inspection was performed; CATALOG_TRIAGE is not direct source review. Neither status establishes exhaustive upstream inspection, current source availability, runtime integration, API authorization, profitability, or REA execution."
 }

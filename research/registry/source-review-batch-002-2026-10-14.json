@@ -2,7 +2,7 @@
   "batchId": "source-review-batch-002-2026-10-14",
   "reviewedAt": "2026-10-14",
   "repositoryHead": "f5c31177f2b8d79cdf5e3662e4049ac44b9562b2",
-  "sourcesReviewed": 3,
+  "sourceRecords":3,"directlyReviewed":3,
   "sources": [
     {
       "id": "SRC-254",

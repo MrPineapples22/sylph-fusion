@@ -1,14 +1,14 @@
 {
   "batch": 21,
   "date": "2026-10-14",
-  "sourcesReviewed": 15,
+  "sourceRecords":15,"directlyReviewed":0,
   "scope": "Solana transaction delivery, routers, venues and trading terminals",
   "method": "Official protocol/vendor documentation reviewed where accessible. Product claims are not independent benchmarks; no credentials or live transaction paths used.",
   "sources": [
     {
       "id": "SRC-214",
       "url": "https://temporal.xyz",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": [
         "Official Temporal product page; accessed 2026-10-14."
       ],
@@ -44,7 +44,7 @@
     {
       "id": "SRC-215",
       "url": "https://astralane.io",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": [
         "Astralane official quickstart and public docs; accessed 2026-10-14."
       ],
@@ -82,7 +82,7 @@
     {
       "id": "SRC-216",
       "url": "https://harmonic.gg",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": [
         "Official provider website entry; exact public API contract not established in this pass."
       ],
@@ -118,7 +118,7 @@
     {
       "id": "SRC-217",
       "url": "https://www.ironforge.cloud",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": [
         "Official Ironforge product website entry; accessed 2026-10-14."
       ],
@@ -154,7 +154,7 @@
     {
       "id": "SRC-218",
       "url": "https://jup.ag",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": [
         "Jupiter official product site; developer API reviewed separately in SRC-220."
       ],
@@ -191,7 +191,7 @@
     {
       "id": "SRC-219",
       "url": "https://jup.ag/portfolio",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": [
         "Jupiter portfolio product page; accessed 2026-10-14."
       ],
@@ -227,7 +227,7 @@
     {
       "id": "SRC-220",
       "url": "https://dev.jup.ag",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": [
         "Current official Jupiter Order & Execute documentation, accessed 2026-10-14."
       ],
@@ -269,7 +269,7 @@
     {
       "id": "SRC-221",
       "url": "https://pump.fun",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": [
         "Official Pump.fun bonding curve documentation; accessed 2026-10-14."
       ],
@@ -306,7 +306,7 @@
     {
       "id": "SRC-222",
       "url": "https://pumpportal.fun",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": [
         "Official PumpPortal website/docs entry; prior catalog notes indicate metered trade streams and distinct Local/Lightning APIs; current details not independently revalidated in this pass."
       ],
@@ -342,7 +342,7 @@
     {
       "id": "SRC-223",
       "url": "https://raydium.io",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": [
         "Official Raydium product/docs entry; detailed SDK source reviewed in earlier repository batch."
       ],
@@ -379,7 +379,7 @@
     {
       "id": "SRC-224",
       "url": "https://meteora.ag",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": [
         "Official Meteora site and DBC developer guide; accessed 2026-10-14."
       ],
@@ -416,7 +416,7 @@
     {
       "id": "SRC-225",
       "url": "https://www.orca.so",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": [
         "Official Orca website; Whirlpools source/docs reviewed in earlier batch."
       ],
@@ -453,7 +453,7 @@
     {
       "id": "SRC-226",
       "url": "https://gmgn.ai",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": [
         "Official GMGN product website; accessed 2026-10-14."
       ],
@@ -489,7 +489,7 @@
     {
       "id": "SRC-227",
       "url": "https://photon-sol.tinyastro.io",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": [
         "Official Photon product website; accessed 2026-10-14."
       ],
@@ -525,7 +525,7 @@
     {
       "id": "SRC-228",
       "url": "https://trojan.com",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": [
         "Official Trojan site and documentation; accessed 2026-10-14."
       ],

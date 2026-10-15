@@ -7,7 +7,7 @@
     "mainAndTaskBranchMatch": true,
     "worktreeHasPreexistingEdits": true
   },
-  "sourcesReviewed": 6,
+  "sourceRecords":6,"directlyReviewed":1,
   "sources": [
     {
       "id": "SRC-029",
@@ -32,7 +32,7 @@
     {
       "id": "SRC-181",
       "url": "https://github.com/anza-xyz/kit",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": ["Official Anza Kit README", "Local package/dependency inventory", "Current Solana SDK migration documentation"],
       "discoveries": [
         "Anza Kit is the renamed 2.x line of @solana/web3.js and is MIT licensed; the local project currently pins @solana/web3.js 1.98.4 and many Anchor/web3.js-class APIs.",
@@ -51,7 +51,7 @@
     {
       "id": "SRC-176",
       "url": "https://github.com/MrPineapples22/sylph-fusion",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": ["Local Git commit and remote refs", "Working-tree status", "AGENTS.md project routing policy"],
       "discoveries": [
         "Local HEAD, remote HEAD and remote main/task branch were all f5c31177f2b8d79cdf5e3662e4049ac44b9562b2 at review time.",
@@ -70,7 +70,7 @@
     {
       "id": "SRC-269",
       "url": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/feed.ts",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": ["Local src/feed.ts inspection", "feed-processing-intent-health and backpressure tests"],
       "discoveries": [
         "Feed derives an explicit processingIntent from the source and routes historical repair through canonical processing while keeping live-feed freshness/provider health separated.",
@@ -89,7 +89,7 @@
     {
       "id": "SRC-274",
       "url": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/platform/ingress/canonical-ingress.ts",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": ["Local canonical-ingress.ts inspection", "canonical ingress durability tests"],
       "discoveries": [
         "Production append requires durable Store capability, validates the envelope and raw-payload hash, journals an immutable record, and reads back the committed observation identity.",
@@ -108,7 +108,7 @@
     {
       "id": "SRC-278",
       "url": "https://github.com/MrPineapples22/sylph-fusion/blob/main/src/platform/ingestion/gap-reconciler.ts",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": ["Local gap-reconciler.ts inspection", "PASS-24 recovery and gap-recovery tests"],
       "discoveries": [
         "The reconciler classifies missing slot intervals and only shrinks coverage gaps using compatible contiguous-source receipts.",

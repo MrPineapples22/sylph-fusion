@@ -88,7 +88,7 @@
     {
       "id": "SRC-177",
       "url": "https://github.com/morluto/rea",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": [
         "REA upstream README",
         "REA documentation links in manifest",

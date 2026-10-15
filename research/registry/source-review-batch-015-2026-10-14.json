@@ -1,12 +1,12 @@
 {
   "batch": 15,
   "date": "2026-10-14",
-  "sourcesReviewed": 15,
+  "sourceRecords":15,"directlyReviewed":0,
   "scope": "Change detection, portfolio risk, probabilistic modeling and formal/concurrency testing",
   "method": "Official repository pages and project documentation reviewed as available. Findings are research notes, not an endorsement or runtime integration approval. No REA execution or SYLPH runtime tests were performed in this batch.",
   "sources": [
     {
-      "id": "SRC-121", "url": "https://github.com/deepcharles/ruptures", "status": "PARTIAL_REVIEW",
+      "id": "SRC-121", "url": "https://github.com/deepcharles/ruptures", "status": "CATALOG_TRIAGE",
       "provenance": ["Official GitHub repository README and project description; accessed 2026-10-14."],
       "discoveries": ["Python library for offline change-point detection in non-stationary signals.", "Algorithms identify breakpoints in a supplied signal; this is retrospective segmentation, not a live alert guarantee."],
       "patterns": ["Run regime segmentation over timestamped, point-in-time feature series.", "Keep change-point output labeled as offline research evidence."],
@@ -17,7 +17,7 @@
       "evidence": ["https://github.com/deepcharles/ruptures"], "license": "BSD-2-Clause (repository metadata)", "decision": "RESEARCH_ONLY"
     },
     {
-      "id": "SRC-122", "url": "https://github.com/ranaroussi/quantstats", "status": "PARTIAL_REVIEW",
+      "id": "SRC-122", "url": "https://github.com/ranaroussi/quantstats", "status": "CATALOG_TRIAGE",
       "provenance": ["Official GitHub repository README and project description; accessed 2026-10-14."],
       "discoveries": ["Python toolkit for portfolio performance and risk statistics with reporting/visualization support.", "Inputs are return series; correct cash flows, fees and valuation marks are prerequisites for meaningful metrics."],
       "patterns": ["Calculate risk-adjusted and drawdown metrics from reconciled net returns.", "Keep analytics output separate from trade authorization."],
@@ -28,7 +28,7 @@
       "evidence": ["https://github.com/ranaroussi/quantstats"], "license": "Apache-2.0 (repository metadata)", "decision": "RESEARCH_ONLY"
     },
     {
-      "id": "SRC-123", "url": "https://github.com/bashtage/arch", "status": "PARTIAL_REVIEW",
+      "id": "SRC-123", "url": "https://github.com/bashtage/arch", "status": "CATALOG_TRIAGE",
       "provenance": ["Official GitHub repository page and documentation links; accessed 2026-10-14."],
       "discoveries": ["Python project provides econometric tools including ARCH-family volatility models and unit-root/time-series utilities.", "Model fitting assumptions and diagnostics matter; volatility forecasts are uncertain estimates."],
       "patterns": ["Use volatility estimates for offline regime/risk research with explicit model versioning.", "Record calibration window and diagnostics with every forecast."],
@@ -39,7 +39,7 @@
       "evidence": ["https://github.com/bashtage/arch"], "license": "Not independently verified in this review", "decision": "RESEARCH_ONLY"
     },
     {
-      "id": "SRC-124", "url": "https://github.com/sktime/sktime", "status": "PARTIAL_REVIEW",
+      "id": "SRC-124", "url": "https://github.com/sktime/sktime", "status": "CATALOG_TRIAGE",
       "provenance": ["Official GitHub repository README and linked documentation; accessed 2026-10-14."],
       "discoveries": ["Open-source Python framework for time-series machine learning, with task-specific estimators and composable workflows.", "Its broad estimator ecosystem makes explicit task and evaluation protocol selection important."],
       "patterns": ["Define reusable chronological evaluation pipelines and compare baselines consistently.", "Separate forecasting, classification and anomaly-detection targets."],
@@ -50,7 +50,7 @@
       "evidence": ["https://github.com/sktime/sktime"], "license": "BSD-3-Clause (repository metadata)", "decision": "RESEARCH_ONLY"
     },
     {
-      "id": "SRC-125", "url": "https://github.com/pymc-devs/pymc", "status": "PARTIAL_REVIEW",
+      "id": "SRC-125", "url": "https://github.com/pymc-devs/pymc", "status": "CATALOG_TRIAGE",
       "provenance": ["Official GitHub repository and PyMC documentation; accessed 2026-10-14."],
       "discoveries": ["Python package for Bayesian statistical modeling and probabilistic inference.", "Posterior uncertainty and diagnostics are part of the result, not optional decorations."],
       "patterns": ["Represent uncertainty in sparse-token estimates and report intervals rather than point certainty.", "Use posterior predictive checks for research models."],
@@ -61,7 +61,7 @@
       "evidence": ["https://github.com/pymc-devs/pymc"], "license": "Apache-2.0 (repository metadata)", "decision": "RESEARCH_ONLY"
     },
     {
-      "id": "SRC-126", "url": "https://github.com/SeldonIO/alibi-detect", "status": "PARTIAL_REVIEW",
+      "id": "SRC-126", "url": "https://github.com/SeldonIO/alibi-detect", "status": "CATALOG_TRIAGE",
       "provenance": ["Official GitHub repository README and documentation; accessed 2026-10-14."],
       "discoveries": ["Python library for detecting outliers, adversarial examples and data/concept drift.", "Detection methods depend on reference data, representation and threshold choices."],
       "patterns": ["Track feature-distribution drift against versioned reference cohorts.", "Emit an advisory monitoring signal with the detector version and threshold."],
@@ -72,7 +72,7 @@
       "evidence": ["https://github.com/SeldonIO/alibi-detect"], "license": "MPL-2.0 (repository metadata)", "decision": "RESEARCH_ONLY"
     },
     {
-      "id": "SRC-127", "url": "https://github.com/tlaplus/tlaplus", "status": "PARTIAL_REVIEW",
+      "id": "SRC-127", "url": "https://github.com/tlaplus/tlaplus", "status": "CATALOG_TRIAGE",
       "provenance": ["Official TLA+ tools repository and documentation; accessed 2026-10-14."],
       "discoveries": ["TLA+ tools support specification and model checking of concurrent/distributed system behavior.", "Finite-state models can explore interleavings that ordinary example tests may miss."],
       "patterns": ["Specify feed liveness, replay isolation and authorization invariants as state transitions.", "Model bounded scenarios before implementing coordination changes."],
@@ -83,7 +83,7 @@
       "evidence": ["https://github.com/tlaplus/tlaplus"], "license": "Not independently verified in this review", "decision": "RESEARCH_ONLY"
     },
     {
-      "id": "SRC-128", "url": "https://github.com/apalache-mc/apalache", "status": "PARTIAL_REVIEW",
+      "id": "SRC-128", "url": "https://github.com/apalache-mc/apalache", "status": "CATALOG_TRIAGE",
       "provenance": ["Official Apalache repository and project documentation; accessed 2026-10-14."],
       "discoveries": ["Apalache is a symbolic model checker for TLA+ specifications.", "Symbolic checking can explore bounded state spaces using SMT solving."],
       "patterns": ["Check bounded invariants for retry, checkpoint and handoff state machines.", "Keep model configuration and counterexamples under version control."],
@@ -94,7 +94,7 @@
       "evidence": ["https://github.com/apalache-mc/apalache"], "license": "Not independently verified in this review", "decision": "RESEARCH_ONLY"
     },
     {
-      "id": "SRC-129", "url": "https://github.com/AlloyTools/org.alloytools.alloy", "status": "PARTIAL_REVIEW",
+      "id": "SRC-129", "url": "https://github.com/AlloyTools/org.alloytools.alloy", "status": "CATALOG_TRIAGE",
       "provenance": ["Official Alloy repository and documentation links; accessed 2026-10-14."],
       "discoveries": ["Alloy is a relational modeling language with bounded analysis of structures and assertions.", "Small scopes can expose structural counterexamples in identity and relationship rules."],
       "patterns": ["Model provider-to-observation provenance and token/pool identity constraints.", "Use minimal counterexample instances to sharpen invariants."],
@@ -105,7 +105,7 @@
       "evidence": ["https://github.com/AlloyTools/org.alloytools.alloy"], "license": "Not independently verified in this review", "decision": "RESEARCH_ONLY"
     },
     {
-      "id": "SRC-130", "url": "https://github.com/Z3Prover/z3", "status": "PARTIAL_REVIEW",
+      "id": "SRC-130", "url": "https://github.com/Z3Prover/z3", "status": "CATALOG_TRIAGE",
       "provenance": ["Official Z3 repository and project documentation; accessed 2026-10-14."],
       "discoveries": ["Z3 is an SMT solver supporting satisfiability and theory reasoning for constraints.", "Solver output is useful for bounded proofs and counterexample generation when assumptions are explicit."],
       "patterns": ["Check arithmetic invariants for fee and position accounting in an offline verification harness.", "Use solver-generated boundary cases as test vectors."],
@@ -116,7 +116,7 @@
       "evidence": ["https://github.com/Z3Prover/z3"], "license": "MIT (repository metadata)", "decision": "RESEARCH_ONLY"
     },
     {
-      "id": "SRC-131", "url": "https://github.com/pschanely/crosshair", "status": "PARTIAL_REVIEW",
+      "id": "SRC-131", "url": "https://github.com/pschanely/crosshair", "status": "CATALOG_TRIAGE",
       "provenance": ["Official CrossHair repository and documentation; accessed 2026-10-14."],
       "discoveries": ["CrossHair analyzes Python contracts by executing paths symbolically.", "It targets Python code and cannot directly establish TypeScript behavior."],
       "patterns": ["Apply contract-based symbolic checks to any isolated Python research utilities.", "Use it as a pattern for explicit preconditions/postconditions in other languages."],
@@ -127,7 +127,7 @@
       "evidence": ["https://github.com/pschanely/crosshair"], "license": "MIT (repository metadata)", "decision": "NO_DIRECT_INTEGRATION"
     },
     {
-      "id": "SRC-132", "url": "https://github.com/proptest-rs/proptest", "status": "PARTIAL_REVIEW",
+      "id": "SRC-132", "url": "https://github.com/proptest-rs/proptest", "status": "CATALOG_TRIAGE",
       "provenance": ["Official proptest repository and Rust documentation; accessed 2026-10-14."],
       "discoveries": ["Rust property-testing framework generates inputs and shrinks failures to smaller counterexamples.", "The library is Rust-specific; its testing strategy can inform equivalent TS property tests."],
       "patterns": ["Generate slot-order permutations, duplicate deliveries and malformed parser inputs.", "Persist minimized counterexamples as regression fixtures."],
@@ -138,7 +138,7 @@
       "evidence": ["https://github.com/proptest-rs/proptest"], "license": "MIT OR Apache-2.0 (repository metadata)", "decision": "PATTERN_ONLY"
     },
     {
-      "id": "SRC-133", "url": "https://github.com/tokio-rs/loom", "status": "PARTIAL_REVIEW",
+      "id": "SRC-133", "url": "https://github.com/tokio-rs/loom", "status": "CATALOG_TRIAGE",
       "provenance": ["Official Loom repository and Rust documentation; accessed 2026-10-14."],
       "discoveries": ["Loom explores concurrent execution interleavings in Rust code using instrumented synchronization primitives.", "It is designed for Rust concurrency tests, not JavaScript event-loop semantics."],
       "patterns": ["Enumerate race-sensitive state transitions in concurrent Rust components.", "Translate interleaving scenarios into deterministic TypeScript scheduling tests where applicable."],
@@ -149,7 +149,7 @@
       "evidence": ["https://github.com/tokio-rs/loom"], "license": "MIT (repository metadata)", "decision": "NO_DIRECT_INTEGRATION"
     },
     {
-      "id": "SRC-134", "url": "https://github.com/jepsen-io/jepsen", "status": "PARTIAL_REVIEW",
+      "id": "SRC-134", "url": "https://github.com/jepsen-io/jepsen", "status": "CATALOG_TRIAGE",
       "provenance": ["Official Jepsen repository and documentation; accessed 2026-10-14."],
       "discoveries": ["Jepsen is a framework for testing distributed systems under faults and checking histories against consistency models.", "A Jepsen test requires an explicit system under test, workload, fault model and checker."],
       "patterns": ["Design fault scenarios for stream disconnects, duplicate delivery, checkpoint recovery and delayed acknowledgements.", "Check observed histories against explicit recovery invariants."],
@@ -160,7 +160,7 @@
       "evidence": ["https://github.com/jepsen-io/jepsen"], "license": "EPL-1.0 (repository metadata)", "decision": "PATTERN_ONLY"
     },
     {
-      "id": "SRC-135", "url": "https://github.com/quint-co/quint", "status": "PARTIAL_REVIEW",
+      "id": "SRC-135", "url": "https://github.com/quint-co/quint", "status": "CATALOG_TRIAGE",
       "provenance": ["Official Quint repository and documentation; accessed 2026-10-14."],
       "discoveries": ["Quint is a state-machine specification language and model checker in the TLA+ family.", "Executable specifications support simulation and bounded model exploration."],
       "patterns": ["Specify separation between historical recovery coverage and live-feed health.", "Model fail-closed transitions for checkpoint validation and live-tail handoff."],

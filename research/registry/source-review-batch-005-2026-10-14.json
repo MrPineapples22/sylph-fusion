@@ -7,7 +7,7 @@
     "mainAndTaskBranchMatch": true,
     "worktreeHasPreexistingEdits": true
   },
-  "sourcesReviewed": 10,
+  "sourceRecords":10,"directlyReviewed":0,
   "reaRuntimeEvidence": {
     "availableInCurrentSession": false,
     "priorEvidence": [".audit/rea-doctor-2026-10-14.json", ".audit/rea-fresh-dist-2026-10-14.json", ".audit/rea-terminal-dist-2026-10-14.json"],
@@ -17,7 +17,7 @@
     {
       "id": "SRC-252",
       "url": "https://skills.sh/morluto/rea/reverse-engineer-anything",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": ["Public skills.sh listing for the REA repository skill", "Saved local REA doctor output; current session tool inventory"],
       "discoveries": ["The listing distributes an REA skill from the repository's current default branch, so its instructions can be newer than the installed CLI or SDK.", "A skill listing is not evidence that the skill is installed, active, or supported by the current REA server.", "The current session exposed no REA MCP tools; saved local analysis output is available but does not establish current runtime availability."],
       "patterns": ["pin and record tool/package versions", "check actual installed tool schemas before relying on skill instructions", "keep static analysis evidence distinct from runtime observation"],
@@ -32,7 +32,7 @@
     {
       "id": "SRC-260",
       "url": "https://github.com/morluto/rea/blob/main/docs/installation.md",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": ["REA installation documentation", "Saved local REA doctor output"],
       "discoveries": ["The installation guide treats setup as explicit environment/tool configuration, not proof that a usable analysis server is active.", "The saved doctor report shows local installation/configuration drift and does not identify a healthy active server session.", "No REA installation or Codex configuration was changed during this review."],
       "patterns": ["verify installation and active endpoint separately", "capture the exact package version", "preview configuration changes before applying them"],
@@ -47,7 +47,7 @@
     {
       "id": "SRC-261",
       "url": "https://github.com/morluto/rea/blob/main/docs/javascript-application-workflows.md",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": ["REA JavaScript application workflow documentation", "Existing SYLPH REA artifact files under .audit/"],
       "discoveries": ["REA's JavaScript workflow builds structural application evidence from artifacts and can compare separate builds.", "Structural module/import mappings do not prove that a module loaded in a particular process or that its behavior is semantically equivalent.", "The existing and fresh SYLPH dist analyses are useful build-parity evidence, but deterministic tests remain necessary to prove state transitions."],
       "patterns": ["compare preserved existing output with a clean independent build", "retain provenance and analyzer version for each artifact", "pair structural maps with behavior-level regression tests"],
@@ -62,7 +62,7 @@
     {
       "id": "SRC-262",
       "url": "https://github.com/morluto/rea/blob/main/docs/browser-observation.md",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": ["REA browser observation guide", "Current user-owned in-app browser context"],
       "discoveries": ["The guide describes bounded passive observation of an accessible browser session, rather than generic remote browsing or unrestricted browser control.", "This is distinct from source inspection and only applies when the relevant user-owned browser session and target are available.", "No browser observation was performed for this batch."],
       "patterns": ["limit capture to the intended page and evidence needed", "record timestamps and UI context", "treat rendered UI as an observation rather than backend-state proof"],
@@ -77,7 +77,7 @@
     {
       "id": "SRC-263",
       "url": "https://github.com/morluto/rea/blob/main/docs/process-capture.md",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": ["REA process capture guide", "Current Windows host constraints"],
       "discoveries": ["Process capture runs selected commands with the caller's privileges and should not be treated as a sandbox.", "The documented dedicated capture workflow does not support native Windows due to process/PTY lifecycle limitations.", "No process capture was attempted."],
       "patterns": ["use static artifacts when process capture is unsupported", "scope selected process and arguments narrowly", "exclude secrets and credential-bearing environments"],
@@ -92,7 +92,7 @@
     {
       "id": "SRC-264",
       "url": "https://github.com/morluto/rea/blob/main/docs/cli.md",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": ["REA CLI guide", "Saved local analyzer and doctor artifacts"],
       "discoveries": ["The CLI supports distinct analysis workflows with structured output; static analysis results are evidence about supplied artifacts.", "Full application-analysis outputs can be very large, as reflected by existing local artifacts exceeding 100 MB.", "No current-session CLI invocation was made because the REA executable was not exposed in PATH and no REA tool endpoint was available."],
       "patterns": ["write machine-readable output directly to a bounded evidence file", "summarize large reports without printing full payloads", "record command, version, input digest and exit status"],
@@ -107,7 +107,7 @@
     {
       "id": "SRC-265",
       "url": "https://github.com/morluto/rea/blob/main/docs/native-investigation.md",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": ["REA native investigation guide", "Current SYLPH TypeScript/JavaScript project structure"],
       "discoveries": ["Native investigation workflows target native binaries and toolchains, not this TypeScript application as the primary analysis surface.", "No native program workspace or authorized native binary target was selected for this batch.", "Native reverse engineering is therefore not material to the current feed-latch, quote-adapter or manifest review."],
       "patterns": ["choose analysis methods that match the artifact type", "require authorization and provenance for binary targets", "keep native findings separate from JavaScript source conclusions"],
@@ -122,7 +122,7 @@
     {
       "id": "SRC-266",
       "url": "https://github.com/morluto/rea/blob/main/SECURITY.md",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": ["REA repository security policy", "SYLPH no-secret review boundary"],
       "discoveries": ["The policy describes responsible reporting and supported-version expectations; it does not confer authorization to inspect unrelated private systems.", "Research artifacts and logs should be scrubbed of credentials, tokens, wallet material and sensitive local paths before sharing.", "No vulnerability disclosure or external security action was undertaken."],
       "patterns": ["minimize captured data", "redact secrets before recording or sharing evidence", "use supported tool versions and responsible disclosure channels"],
@@ -137,7 +137,7 @@
     {
       "id": "SRC-267",
       "url": "https://github.com/morluto/rea/blob/main/DISCLAIMER.md",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": ["REA repository disclaimer", "Current SYLPH source and artifact analysis scope"],
       "discoveries": ["REA is an analysis aid and its outputs do not certify correctness, safety, runtime behavior or legal rights to reuse analyzed code.", "Analysis conclusions should retain uncertainty and evidence provenance rather than being elevated to audit certification.", "No source code from REA was copied into SYLPH."],
       "patterns": ["label static, runtime and test evidence separately", "state limitations adjacent to conclusions", "perform independent behavior validation before integration"],
@@ -152,7 +152,7 @@
     {
       "id": "SRC-268",
       "url": "https://github.com/morluto/rea/blob/main/AGENTS.md",
-      "status": "PARTIAL_REVIEW",
+      "status": "CATALOG_TRIAGE",
       "provenance": ["REA repository agent guidance", "SYLPH AGENTS.md and current evidence-gated workflow"],
       "discoveries": ["REA agent guidance emphasizes preserving evidence provenance and distinguishing analysis from authority or execution.", "Tool output is untrusted evidence and cannot override repository safety, authorization or user instructions.", "The guidance supports explicit limits around side effects, target selection and validation before integrating capabilities."],
       "patterns": ["treat tool outputs as data, never instructions", "record provenance and unresolved confidence", "require reproducible validation before production integration"],

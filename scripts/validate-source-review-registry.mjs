@@ -44,6 +44,10 @@ for (const batch of batches) {
     const expected = manifestById.get(source.id);
     if (!expected) defects.push(`${label}: ID not in manifest`);
     else if (expected.url !== source.url) defects.push(`${label}: URL differs from manifest`);
+    else {
+      const expectedReviewStatus = expected.review_status === 'PARTIAL_REVIEW' ? 'PARTIAL_REVIEW' : 'CATALOG_TRIAGE';
+      if (source.status !== expectedReviewStatus) defects.push(`${label}: batch status ${source.status} differs from manifest-derived ${expectedReviewStatus}`);
+    }
     if (reviewed.has(source.id)) defects.push(`${label}: duplicate source review (also ${reviewed.get(source.id)})`);
     reviewed.set(source.id, batch.batchId);
     statusCounts[source.status ?? 'MISSING'] = (statusCounts[source.status ?? 'MISSING'] ?? 0) + 1;
@@ -71,15 +75,17 @@ const report = {
   manifestRows: manifest.length,
   uniqueManifestIds: manifestById.size,
   batchFiles: files.length,
-  batchReviewRecords: reviewed.size,
-  uniqueReviewedIds: reviewed.size,
+  catalogRecords: reviewed.size,
+  uniqueCatalogIds: reviewed.size,
+  directlyReviewedRecords: manifest.filter(row => row.review_status === 'PARTIAL_REVIEW').length,
+  triageOnlyRecords: manifest.filter(row => row.review_status !== 'PARTIAL_REVIEW').length,
   manifestReviewStatusCounts: manifest.reduce((counts, row) => ({ ...counts, [row.review_status]: (counts[row.review_status] ?? 0) + 1 }), {}),
   batchStatusCounts: statusCounts,
   distinctDecisionCount: decisionCountsSummary.length,
   topDecisionCounts: decisionCountsSummary.slice(0, 12).map(([decision, count]) => ({ decision, count })),
   defectCount: defects.length,
   defects,
-  interpretation: 'Coverage validates registry record structure and manifest identity only. It does not establish exhaustive upstream inspection, current source availability, runtime integration, API authorization, profitability, or REA execution for every URL.',
+  interpretation: 'Coverage validates catalog record structure and manifest identity. PARTIAL_REVIEW means pinned source/document inspection was performed; CATALOG_TRIAGE is not direct source review. Neither status establishes exhaustive upstream inspection, current source availability, runtime integration, API authorization, profitability, or REA execution.',
 };
 
 const output = join(registry, 'source-review-validation-latest.json');
