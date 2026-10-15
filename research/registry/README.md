@@ -415,3 +415,23 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - SRC-077 Jito solana-analysis is pinned at ea809c1ebf368f26e488bb8a24c4d92652e92ae0. Its historical fee utility separates success/failure, compute, vote/non-vote and tip measures; no root license found and it was not run.
 - SRC-078 FireBAM is pinned at 30249d2b0869a5c0cd37287d4453734e96a8621e (LICENSE/NOTICE). It adds BAM scheduling to a validator fork; this is infrastructure context, not Jito bundle transport or a client send path.
 - Registry status: 88 direct source inspections and 200 catalog-triage records. No external sender or validator was run.
+
+
+## SVM, SBPF and conformance-testing references (2026-10-14)
+
+- SRC-081 Anza SVM is pinned at 11d56df5e356e0a68ac9cef4a001346b4c9475d8 (Apache-2.0). A bounded sparse review found workspace-inherited crate metadata and durable-nonce/account-override code; no production SVM integration is proposed.
+- SRC-082 Anza SBPF is pinned at 3e1510b1eac344af15c99dcdb4c3b3e6dc2b3d7b (Apache-2.0), crate 0.25.0. VM verifier behavior is a test-layer reference, not a transaction or token parser.
+- SRC-083 Solfuzz-Agave is pinned at 4e9fdeed80d1c67e4c8e89a49d2ade21a5ce9612 (Apache-2.0). It provides Linux/x86_64 differential-fuzz bindings; tests were not run.
+- SRC-084 Firedancer test-vectors is pinned at 07967b11a161388b30c675c4684cadce00cc67fc. Its README documents protobuf mismatch fixtures and CI regression coverage; no root LICENSE found and binary inputs were not decoded.
+- SRC-085 Solana PoC Framework is pinned at afb00cad6c0c32fb4e89c1b974e79a1b46e39d02 (MIT OR Apache-2.0). Its local, versioned PoC setup can support authorized deterministic reproductions; it is not production-runtime certification.
+- Registry status: 93 direct source inspections and 195 catalog-triage records. No VM/runtime code or fuzz tests were added or run.
+
+
+## SVM, SBPF and conformance-testing references (2026-10-14)
+
+- SRC-081 Anza SVM is pinned at 11d56df5e356e0a68ac9cef4a001346b4c9475d8 (Apache-2.0). A bounded sparse review found workspace-inherited crate metadata and durable-nonce/account-override code; no production SVM integration is proposed.
+- SRC-082 Anza SBPF is pinned at 3e1510b1eac344af15c99dcdb4c3b3e6dc2b3d7b (Apache-2.0), crate 0.25.0. VM verifier behavior is a test-layer reference, not a transaction or token parser.
+- SRC-083 Solfuzz-Agave is pinned at 4e9fdeed80d1c67e4c8e89a49d2ade21a5ce9612 (Apache-2.0). It provides Linux/x86_64 differential-fuzz bindings; tests were not run.
+- SRC-084 Firedancer test-vectors is pinned at 07967b11a161388b30c675c4684cadce00cc67fc. Its README documents protobuf mismatch fixtures and CI regression coverage; no root LICENSE found and binary inputs were not decoded.
+- SRC-085 Solana PoC Framework is pinned at afb00cad6c0c32fb4e89c1b974e79a1b46e39d02 (MIT OR Apache-2.0). Its local, versioned PoC setup can support authorized deterministic reproductions; it is not production-runtime certification.
+- Registry status: 93 direct source inspections and 195 catalog-triage records. No VM/runtime code or fuzz tests were added or run.

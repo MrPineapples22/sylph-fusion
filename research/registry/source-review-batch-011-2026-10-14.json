@@ -2,13 +2,13 @@
   "batchId": "source-review-batch-011-2026-10-14",
   "reviewedAt": "2026-10-14",
   "repository": {
-    "localHead": "8cb5500",
-    "remoteHead": "8cb5500",
+    "localHead": "4151265ea7a87127cf957d0fb2b2ef0beb959b0b",
+    "remoteHead": "4151265ea7a87127cf957d0fb2b2ef0beb959b0b",
     "mainAndTaskBranchMatch": true,
     "worktreeHasPreexistingEdits": true
   },
   "sourceRecords": 15,
-  "directlyReviewed": 14,
+  "directlyReviewed": 15,
   "sources": [
     {
       "id": "SRC-064",
@@ -585,19 +585,20 @@
     {
       "id": "SRC-081",
       "url": "https://github.com/anza-xyz/svm",
-      "status": "CATALOG_TRIAGE",
+      "status": "PARTIAL_REVIEW",
       "provenance": [
-        "Official Anza SVM repository README and programmatic usage docs"
+        "Anza SVM sparse checkout, root LICENSE and svm crate manifest/source",
+        "Pinned repository commit 11d56df5e356e0a68ac9cef4a001346b4c9475d8"
       ],
       "discoveries": [
-        "Anza SVM repository provides a modular Solana Virtual Machine for local transaction/program execution.",
-        "A local SVM is appropriate for deterministic program simulation/testing, not network finality or provider response validation.",
-        "No on-chain Rust program workspace was identified as a direct consumer in current SYLPH project."
+        "SVM crate is a component of Anza transaction execution.",
+        "Its manifest inherits workspace-wide license/version/toolchain settings.",
+        "Selected source includes account overrides and durable-nonce state handling."
       ],
       "patterns": [
-        "use local deterministic runtime for adversarial program fixtures",
-        "separate simulation result from live execution truth",
-        "pin feature set and runtime version"
+        "Keep transaction execution semantics as a versioned adapter boundary.",
+        "Validate durable nonce and account-override paths separately.",
+        "Pin crate and workspace commits together."
       ],
       "sylphModules": [
         "src/platform/execution/authority.ts",
@@ -606,20 +607,21 @@
       ],
       "overlap": "Potential future protocol fixture harness; existing project has Node tests but no current SVM integration.",
       "risks": [
-        "runtime feature mismatch with mainnet",
-        "simulation can omit external accounts/slot context",
-        "false confidence from local success"
+        "Bounded sparse checkout did not include the complete workspace manifest/tree.",
+        "SVM internals are execution-critical.",
+        "This is not a client market adapter."
       ],
       "validation": [
-        "pin SVM revision and feature set",
-        "compare local results to known validator fixtures",
-        "retain explicit simulation-only labels"
+        "Pin runtime/version and preserve exact reproducer as offline fixture.",
+        "Compare behavior using deterministic controlled state.",
+        "No production VM/runtime change or unauthorized exploit activity."
       ],
       "evidence": [
-        "https://github.com/anza-xyz/svm"
+        "https://github.com/anza-xyz/svm",
+        "https://github.com/anza-xyz/svm/tree/11d56df5e356e0a68ac9cef4a001346b4c9475d8"
       ],
-      "license": "REPOSITORY_LICENSE_NOT_VERIFIED",
-      "decision": "SIMULATION_TEST_CANDIDATE_ONLY; NO_LIVE_TRUTH"
+      "license": "Apache-2.0",
+      "decision": "SVM_REFERENCE_ONLY_NO_ENGINE_INTEGRATION"
     }
   ]
 }

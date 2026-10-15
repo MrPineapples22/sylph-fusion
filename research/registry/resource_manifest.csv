@@ -79,11 +79,11 @@ SRC-077,github_execution_validator_jito,https://github.com/jito-foundation/solan
 SRC-078,github_execution_validator_jito,https://github.com/jito-foundation/firebam,source_or_document_review,P1,PARTIAL_REVIEW,SRC-078-PINNED-2026-10-14,30249d2b0869a5c0cd37287d4453734e96a8621e,Apache-2.0_PER_NOTICE,BAM_VALIDATOR_REFERENCE_ONLY
 SRC-079,github_simulation_testing_security,https://github.com/LiteSVM/litesvm,source_or_document_review,P0,PARTIAL_REVIEW,LITESVM-2026-10-14,1dda337d22521a4310ec959ebabce0aa4910c497,Apache-2.0,TEST_TOOLING_REFERENCE_ONLY_NO_CURRENT_SBF_TARGET
 SRC-080,github_simulation_testing_security,https://github.com/LiteSVM/anchor-litesvm,source_or_document_review,P0,PARTIAL_REVIEW,ANCHOR-LITESVM-2026-10-14,0afefab1a2a97ccf9441099b19455f6cb1037617,MIT,NO_CURRENT_ANCHOR_TARGET_AND_OLD_LITESVM_API
-SRC-081,github_simulation_testing_security,https://github.com/anza-xyz/svm,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-082,github_simulation_testing_security,https://github.com/anza-xyz/sbpf,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-083,github_simulation_testing_security,https://github.com/firedancer-io/solfuzz-agave,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-084,github_simulation_testing_security,https://github.com/firedancer-io/test-vectors,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
-SRC-085,github_simulation_testing_security,https://github.com/neodyme-labs/solana-poc-framework,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
+SRC-081,github_simulation_testing_security,https://github.com/anza-xyz/svm,source_or_document_review,P1,PARTIAL_REVIEW,SRC-081-PINNED-2026-10-14,11d56df5e356e0a68ac9cef4a001346b4c9475d8,Apache-2.0,SVM_REFERENCE_ONLY_NO_ENGINE_INTEGRATION
+SRC-082,github_simulation_testing_security,https://github.com/anza-xyz/sbpf,source_or_document_review,P1,PARTIAL_REVIEW,SRC-082-PINNED-2026-10-14,3e1510b1eac344af15c99dcdb4c3b3e6dc2b3d7b,Apache-2.0,VM_TEST_REFERENCE_ONLY_NO_RUNTIME_ADOPTION
+SRC-083,github_simulation_testing_security,https://github.com/firedancer-io/solfuzz-agave,source_or_document_review,P1,PARTIAL_REVIEW,SRC-083-PINNED-2026-10-14,4e9fdeed80d1c67e4c8e89a49d2ade21a5ce9612,Apache-2.0,DIFFERENTIAL_FUZZ_REFERENCE_ONLY_NOT_RUN
+SRC-084,github_simulation_testing_security,https://github.com/firedancer-io/test-vectors,source_or_document_review,P1,PARTIAL_REVIEW,SRC-084-PINNED-2026-10-14,07967b11a161388b30c675c4684cadce00cc67fc,LICENSE_NOT_FOUND_REVIEW_REQUIRED,FIXTURE_REFERENCE_ONLY_LICENSE_REVIEW
+SRC-085,github_simulation_testing_security,https://github.com/neodyme-labs/solana-poc-framework,source_or_document_review,P1,PARTIAL_REVIEW,SRC-085-PINNED-2026-10-14,afb00cad6c0c32fb4e89c1b974e79a1b46e39d02,MIT_OR_APACHE-2.0,AUTHORIZED_LOCAL_POC_TESTS_ONLY
 SRC-086,github_simulation_testing_security,https://github.com/Ackee-Blockchain/public-audit-reports,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-087,github_simulation_testing_security,https://github.com/Shopify/toxiproxy,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-088,github_simulation_testing_security,https://github.com/Syndica/sig,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
