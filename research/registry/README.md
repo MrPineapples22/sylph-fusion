@@ -235,3 +235,10 @@ These checks do not convert catalog triage into exhaustive upstream review or pr
 - SRC-008 was inspected at a7cb8dae343486773e1535729bdcc4c45a7f6e44. It is a standalone single-node columnar pipeline runtime; its documented checkpoint protocol is at-least-once and requires idempotent sink handling for replay duplicates.
 - The current license is FSL-1.1 with a future Apache-2.0 grant on each version’s second anniversary, and includes competing-use restrictions. No code or dependency was adopted.
 - Its checkpoint/ack pattern may inform future offline training ETL, but it cannot replace SYLPH’s canonical chain journal or capital ledger. Registry count is 23 partial reviews and 265 not reviewed.
+
+
+## Firedancer Yellowstone sample review (2026-10-15)
+
+- SRC-009 was inspected at 0a5a7ce4c06d917afaea39e3e7f594fd413e60e5. Its README calls it a sample Firedancer Geyser implementation; no LICENSE file was found in the repository checkout.
+- Although the copied schema includes from_slot and replay-info fields, the current filter/server implementation does not consume from_slot and returns an empty successful replay-info response. Schema similarity is not replay-capability evidence.
+- No code/dependency was adopted. Treat the repository as a future protocol-conformance target only after a pinned Firedancer build and license review; catalog status is 24 partial and 264 not reviewed.

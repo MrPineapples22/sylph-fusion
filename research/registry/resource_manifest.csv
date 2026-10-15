@@ -7,7 +7,7 @@ SRC-005,github_streaming_rpc,https://github.com/blockworks-foundation/geyser-grp
 SRC-006,github_streaming_rpc,https://github.com/streamingfast/firehose-solana,source_or_document_review,P1,PARTIAL_REVIEW,FIREHOSE-SOLANA-2026-10-15,9e577f496581d907a79b4f051dc596dfecae4142,Apache-2.0,OFFLINE_SCHEMA_AND_DECODER_REFERENCE_NO_PARALLEL_RUNTIME_INDEXER
 SRC-007,github_streaming_rpc,https://github.com/streamingfast/substreams-solana,source_or_document_review,P1,PARTIAL_REVIEW,SUBSTREAMS-SOLANA-2026-10-15,1ab1476471d654e03e486763ea3a2e2bec698cae,Apache-2.0,SCHEMA_GENERATION_PATTERN_ONLY_NO_RUNTIME_DEPENDENCY
 SRC-008,github_streaming_rpc,https://github.com/goldsky-io/streamling,source_or_document_review,P1,PARTIAL_REVIEW,STREAMLING-2026-10-15,a7cb8dae343486773e1535729bdcc4c45a7f6e44,FSL-1.1-ALv2_FUTURE_COMPETING_USE_REVIEW_REQUIRED,OFFLINE_ETL_PATTERN_ONLY_NO_DEPENDENCY
-SRC-009,github_streaming_rpc,https://github.com/firedancer-io/fd-yellowstone,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
+SRC-009,github_streaming_rpc,https://github.com/firedancer-io/fd-yellowstone,source_or_document_review,P1,PARTIAL_REVIEW,FD-YELLOWSTONE-2026-10-15,0a5a7ce4c06d917afaea39e3e7f594fd413e60e5,LICENSE_FILE_NOT_FOUND_UNVERIFIED,NO_ADOPTION_SAMPLE_VALIDATION_TARGET_ONLY
 SRC-010,github_streaming_rpc,https://github.com/streamingfast/substreams-foundational-modules,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-011,github_streaming_rpc,https://github.com/streamingfast/substreams,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
 SRC-012,github_streaming_rpc,https://github.com/streamingfast/substreams-rs,source_or_document_review,P1,NOT_REVIEWED,,,,UNASSESSED
