@@ -1,0 +1,22 @@
+{
+  "schema": "sylph-prime-lifecycle-v1",
+  "opportunities": [
+    {
+      "id": "SYNTHETIC_MASSIVE_LIKE_REVERSAL",
+      "mint": "SYNTHETIC_TOKEN_NOT_REAL",
+      "symbol": "DEMO",
+      "signal": {"atMs": 100000, "receivedAtMs": 100100, "referencePriceUsd": 1},
+      "budgetUsd": 100,
+      "horizonEndMs": 150000,
+      "quotes": [
+        {"id":"buy","side":"BUY","quotedAtMs":100200,"availableAtMs":100300,"expiresAtMs":102000,"provider":"SYNTHETIC","routeId":"demo-buy","simulatedOk":true,"feeUsd":0,"inputUsd":100,"outputTokenQty":100},
+        {"id":"peak","side":"SELL","quotedAtMs":119900,"availableAtMs":120000,"expiresAtMs":121500,"provider":"SYNTHETIC","routeId":"demo-peak","simulatedOk":true,"feeUsd":0,"inputTokenQty":100,"outputUsd":180},
+        {"id":"tail","side":"SELL","quotedAtMs":148900,"availableAtMs":149000,"expiresAtMs":150500,"provider":"SYNTHETIC","routeId":"demo-tail","simulatedOk":true,"feeUsd":0,"inputTokenQty":100,"outputUsd":60}
+      ],
+      "fills": [
+        {"id":"buy","side":"BUY","atMs":101000,"observedAtMs":101050,"kind":"PAPER","tokenQty":100,"grossUsd":100,"feeUsd":0},
+        {"id":"sell","side":"SELL","atMs":148000,"observedAtMs":148050,"kind":"PAPER","tokenQty":100,"grossUsd":60,"feeUsd":0}
+      ]
+    }
+  ]
+}
