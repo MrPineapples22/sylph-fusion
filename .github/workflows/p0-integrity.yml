@@ -61,11 +61,15 @@ jobs:
               const file = path.join(process.env.RUNNER_TEMP, suite + '-test.log');
               if (!fs.existsSync(file)) continue;
               const lines = fs.readFileSync(file,'utf8').split(/\r?\n/);
-              const failures = lines.filter(x => /^\s*not ok \d+\s+-\s+/.test(x)).slice(0,25);
+              const errors = lines.filter(x => /not ok|ERR_|error|failed|# fail|cannot find module|module not found|syntaxerror/i.test(x)).slice(-18);
               const totals = lines.filter(x => /^\s*#\s+(?:tests|pass|fail|cancelled|skipped)\s+/.test(x)).slice(-5);
-              if (failures.length || totals.some(x => /^\s*#\s+fail\s+[1-9]/.test(x))) {
-                reports.push('**'+suite+'**\n'+'\x60\x60\x60text\n'+[...failures,...totals].join('\n').slice(0,3500)+'\n\x60\x60\x60');
-              }
+              const excerpts = [...errors,...totals];
+              if (excerpts.length === 0) excerpts.push(...lines.filter(Boolean).slice(-10));
+              const redacted = excerpts.map(line => {
+                const short = line.slice(0,240);
+                return /(?:bearer\s+\S+|api[_-]?key|secret|authorization:|token=)/i.test(short) ? '[redacted line]' : short;
+              });
+              reports.push('**'+suite+'**\n'+'\x60\x60\x60text\n'+redacted.join('\n').slice(0,3500)+'\n\x60\x60\x60');
             }
             if (reports.length) {
               await github.rest.issues.createComment({
