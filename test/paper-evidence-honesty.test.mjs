@@ -154,7 +154,7 @@ for (const scenario of ['permitted', 'throttled', 'denied']) {
     assert.equal(policy.inputs.modelUncertainty, 0.15);
     assert.equal(policy.inputs.executionReliability, 0.95);
     assert.equal(policy.inputProvenance.modelUncertainty, 'FIXED_UNVALIDATED_ASSUMPTION');
-    assert.equal(policy.inputProvenance.stressedExitCapacitySol, 'OBSERVED_RESERVE_BASED_HEURISTIC_WITH_FLOOR');
+    assert.equal(policy.inputProvenance.stressedExitCapacitySol, 'OBSERVED_RESERVE_BASED_HEURISTIC_NO_POSITIVE_FLOOR');
     assert.deepEqual(Object.keys(policy.inputProvenance).sort(), Object.keys(policy.inputs).sort());
     assert.ok(!f.events.some(e => /ultimate_execution|capital_barrier_verdict/.test(e.event)));
     if (scenario === 'denied') {

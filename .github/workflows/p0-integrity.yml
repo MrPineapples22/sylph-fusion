@@ -15,12 +15,21 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Historical integrity fixtures are pinned to prior commits
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: npm
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+          run_install: false
       - name: Restore locked dependencies
-        run: npm ci
+        run: |
+          npm ci
+          npm --prefix terminal ci
+          pnpm --version
       - name: Compile Engine
         run: npm run build:engine
       - name: P0 integrity regressions
@@ -101,3 +110,19 @@ jobs:
         run: |
           grep -q 'PRODUCTION RELEASE BLOCKED' ARCHITECTURE_GAPS.md
           grep -q 'UNVERIFIED CANDIDATE' RELEASE_CERTIFICATION.md
+
+  windows-runtime-attestation:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Restore locked dependencies
+        run: npm ci
+      - name: Compile Engine
+        run: npm run build:engine
+      - name: Verify real Windows C5 process-image attestation
+        run: node --test --test-isolation=none test/platform/runtime-telemetry-producer.test.mjs

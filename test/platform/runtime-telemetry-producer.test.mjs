@@ -1,4 +1,6 @@
 import test from 'node:test';
+// C5 binds to real Windows process image identity; Linux cannot truthfully assert it.
+const windowsTest = process.platform === 'win32' ? test : test.skip;
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, readFile, rename } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -35,7 +37,7 @@ async function fixture(t, telemetry = options(), subscriber = () => {}) {
   return { directory, path, store, ingress };
 }
 
-test('C5 producer records actual ingress spans, persists before signing, and verifies against reopened exact Store', async t => {
+windowsTest('C5 producer records actual ingress spans, persists before signing, and verifies against reopened exact Store', async t => {
   const telemetry = options();
   const f = await fixture(t, telemetry);
   let signed = 0;
@@ -78,7 +80,7 @@ test('C5 producer records actual ingress spans, persists before signing, and ver
   assert.equal(verifyRuntimeTelemetryStoreBinding(evidence, { databasePath: f.path }).valid, true);
 });
 
-test('C5 signer failure retains exact durable batch and retries idempotently without redelivering ingress', async t => {
+windowsTest('C5 signer failure retains exact durable batch and retries idempotently without redelivering ingress', async t => {
   let calls = 0, deliveries = 0;
   const telemetry = options();
   telemetry.signer.signRuntimeTelemetryRoot = async root => {
@@ -125,7 +127,7 @@ test('C5 producer fails closed when the trusted Windows process-query environmen
   }
 });
 
-test('C5 V3 signature and evidence hashing follow verifier NFC canonicalization for Unicode paths', async t => {
+windowsTest('C5 V3 signature and evidence hashing follow verifier NFC canonicalization for Unicode paths', async t => {
   const f = await fixture(t);
   await f.ingress.submit(observation());
   const evidence = await f.ingress.captureRuntimeTelemetry();
@@ -144,7 +146,7 @@ test('C5 V3 signature and evidence hashing follow verifier NFC canonicalization 
     'the verifier accepts exactly the V10 preimage despite a decomposed Unicode OS path');
 });
 
-test('C5 Store binding rejects wrong identity, changed body bytes and consistently rehashed span mismatch', async t => {
+windowsTest('C5 Store binding rejects wrong identity, changed body bytes and consistently rehashed span mismatch', async t => {
   const f = await fixture(t);
   await f.ingress.submit(observation());
   const artifact = await f.ingress.captureRuntimeTelemetry();
@@ -169,7 +171,7 @@ test('C5 Store binding rejects wrong identity, changed body bytes and consistent
   } finally { db.close(); }
 });
 
-test('C5 lifecycle captures delivery failure and explicit retry, without inventing successful spans', async t => {
+windowsTest('C5 lifecycle captures delivery failure and explicit retry, without inventing successful spans', async t => {
   let attempts = 0;
   const f = await fixture(t, options(), () => { if (++attempts === 1) throw new Error('consumer unavailable'); });
   assert.equal((await f.ingress.submit(observation())).reason, 'COMMITTED_DELIVERY_PENDING_RETRY');
@@ -182,7 +184,7 @@ test('C5 lifecycle captures delivery failure and explicit retry, without inventi
   assert.equal(verifyRuntimeTelemetryStoreBinding(artifact, { databasePath: f.path }).valid, true);
 });
 
-test('C5 observation root is ERROR when the compiler returns a rejected ingress receipt', async t => {
+windowsTest('C5 observation root is ERROR when the compiler returns a rejected ingress receipt', async t => {
   const f = await fixture(t);
   const ingress = new CanonicalIngress({ compiler: { compile() { throw new Error('invalid input'); } },
     validator: new DefaultTruthValidator(), journal: new StoreIngressJournal(f.store), runtimeTelemetry: options() });
@@ -192,7 +194,7 @@ test('C5 observation root is ERROR when the compiler returns a rejected ingress 
   assert.equal(verifyRuntimeTelemetryEvidence(artifact, { trustedPublicKeyPem }).valid, true);
 });
 
-test('runtime publication commit point prevents false timeout during delayed rename and fences duplicate publication', async t => {
+windowsTest('runtime publication commit point prevents false timeout during delayed rename and fences duplicate publication', async t => {
   const f = await fixture(t);
   await f.ingress.submit(observation());
   const precomputedArtifact = await f.ingress.captureRuntimeTelemetry();
@@ -230,7 +232,7 @@ test('runtime publication commit point prevents false timeout during delayed ren
   assert.deepEqual(errors, []);
 });
 
-test('C5 V3 verifier rejects independently re-signed disconnected, cross-trace and out-of-root spans', async t => {
+windowsTest('C5 V3 verifier rejects independently re-signed disconnected, cross-trace and out-of-root spans', async t => {
   const f = await fixture(t);
   await f.ingress.submit(observation());
   const artifact = await f.ingress.captureRuntimeTelemetry();
@@ -245,7 +247,7 @@ test('C5 V3 verifier rejects independently re-signed disconnected, cross-trace a
   }
 });
 
-test('runtime export publishes verified evidence periodically and drains final ingress before Store cleanup', async t => {
+windowsTest('runtime export publishes verified evidence periodically and drains final ingress before Store cleanup', async t => {
   const f = await fixture(t);
   const artifactPath = join(f.directory, 'evidence.json');
   const errors = [];

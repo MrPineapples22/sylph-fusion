@@ -324,9 +324,12 @@ test('6. Live Readiness Evaluator: distinguishes failed, unknown, and passing ob
     releaseRootDigest: 'a'.repeat(64),
   });
 
-  assert.equal(certifiedReport.liveReady, true);
-  assert.equal(certifiedReport.liveSigningUnavailable, false);
-  assert.equal(certifiedReport.productionCapitalAuthorityBlocked, false);
+  assert.equal(certifiedReport.reportedPrerequisitesPass, true, 'Caller-reported conditions can all appear passing');
+  assert.equal(certifiedReport.evidenceClass, 'CALLER_ASSERTIONS_NOT_VERIFIED');
+  assert.equal(certifiedReport.authorizesSigningOrBroadcast, false);
+  assert.equal(certifiedReport.liveReady, false, 'Self-attested results cannot grant live capability');
+  assert.equal(certifiedReport.liveSigningUnavailable, true);
+  assert.equal(certifiedReport.productionCapitalAuthorityBlocked, true);
   assert.equal(certifiedReport.passedGatesCount, 10);
   assert.equal(certifiedReport.unknownGatesCount, 0);
 });
