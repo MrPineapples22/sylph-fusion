@@ -119,23 +119,23 @@ test('Step 7 Certificate Generator: Stable fixture identity and level across run
 });
 
 test('Step 7 Certificate Generator: Root mutation causes certificate divergence', () => {
-  const base = generateSystemIntegrationCertificate({
+  const base = generateSystemIntegrationCertificate(fixtureOptions({
     dryRun: true,
     physicalAudit: { root: '1'.repeat(64) },
     manifest: {
       manifestRoot: 'a'.repeat(64),
       certifiedPayload: { repositoryCommitSha: 'sha1' },
     },
-  }).certificate;
+  })).certificate;
 
-  const mutated = generateSystemIntegrationCertificate({
+  const mutated = generateSystemIntegrationCertificate(fixtureOptions({
     dryRun: true,
     physicalAudit: { root: '2'.repeat(64) },
     manifest: {
       manifestRoot: 'b'.repeat(64),
       certifiedPayload: { repositoryCommitSha: 'sha2' },
     },
-  }).certificate;
+  })).certificate;
 
   assert.notEqual(base.certificateRoot, mutated.certificateRoot);
 });
