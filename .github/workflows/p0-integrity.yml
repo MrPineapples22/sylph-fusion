@@ -1,8 +1,11 @@
 name: P0 evidence integrity (paper only)
 on:
   push:
-    branches: [main, 'fix/p0-*']
+    branches: [main]
   pull_request:
+concurrency:
+  group: p0-integrity-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
