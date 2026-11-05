@@ -44,7 +44,7 @@ export class PaperPortfolio {
     }
     if (stored !== undefined) {
       const x: any = stored;
-      const validInt = (v: unknown) => typeof v === 'string' && /^-?\\d+$/.test(v);
+      const validInt = (v: unknown) => typeof v === 'string' && /^-?\d+$/.test(v);
       const valid = x?.version === 1 && validInt(x.cash) && BigInt(x.cash) >= 0n &&
         validInt(x.realized) && x.positions && typeof x.positions === 'object' && !Array.isArray(x.positions) &&
         Array.isArray(x.fills) && x.fills.length <= 100_000 &&
