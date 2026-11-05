@@ -222,15 +222,14 @@ export class LiveExecutionAuthority implements ExecutionAuthority {
   }
 
   canExecuteLive(): boolean {
-    return (
-      this.isLive &&
-      this.cfg.MODE === 'live' &&
-      !this.walletPublicKey.equals(PublicKey.default) &&
-      this.rpc.endpoints.length > 0
-    );
+    // Wallet, RPC and mode alone do not establish usable execution authority.
+    // This class is deliberately quarantined until a separately reviewed
+    // transaction firewall, signer coordinator and reconciliation path exist.
+    return false;
   }
 
   async warm(): Promise<void> {
+    // Warming transport is not equivalent to authorizing transactions.
     await this.executor.warm();
   }
 
