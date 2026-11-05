@@ -40,6 +40,18 @@ jobs:
         id: terminal
         continue-on-error: true
         run: npm run test:terminal
+      - name: Core suite failures detected
+        if: ${{ always() && steps.core.outcome == 'failure' }}
+        run: exit 1
+      - name: Intelligence suite failures detected
+        if: ${{ always() && steps.intelligence.outcome == 'failure' }}
+        run: exit 1
+      - name: Platform suite failures detected
+        if: ${{ always() && steps.platform.outcome == 'failure' }}
+        run: exit 1
+      - name: Terminal suite failures detected
+        if: ${{ always() && steps.terminal.outcome == 'failure' }}
+        run: exit 1
       - name: Enforce all test-suite outcomes
         if: always()
         run: |
