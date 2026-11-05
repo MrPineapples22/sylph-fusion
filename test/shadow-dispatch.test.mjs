@@ -14,7 +14,7 @@ for (const mode of ['shadow','ml_gated']) for (const [name,evaluator,incomplete]
   test(`${mode}: ${name} ${mode==='shadow'?'preserves':'blocks'} deterministic entry`, async()=>{
     const engine=Object.create(Engine.prototype);
     const events=[],rejections=[],trades=[];
-    const candidate={mint:'test-mint',creator:'creator',born:Date.now()-15000,slot:100,next:0,
+    const candidate={mint:'test-mint',candidateGenerationId:'test-generation-1',entryBuildAttemptCount:0,creator:'creator',born:Date.now()-15000,slot:100,next:0,
       buyers:new Map(Array.from({length:6},(_,i)=>['buyer'+i,1])),buy:100n,sell:0n,devSold:false};
     const snapshot={curve:{complete:false,isMayhemMode:false,realQuoteReserves:1000000000n,
       virtualQuoteReserves:31000000000n,virtualTokenReserves:1000000000000n}};
