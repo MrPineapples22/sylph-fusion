@@ -167,7 +167,7 @@ test('CENSUS-R: canonical content ignores object key order and rejects batch con
   assert.equal(late.getJournalLength(),1);
 });
 
-test('CENSUS-R: Feed integrates CensusRJournalAuthority with bank/slot awareness and causal replay (REQ-001)', async () => {
+test('CENSUS-R: provider transactions cannot invent a canonical bank from slot alone', async () => {
   const events = [];
   const cfg = {
     FEED_STALE_MS: 5000,
@@ -179,35 +179,21 @@ test('CENSUS-R: Feed integrates CensusRJournalAuthority with bank/slot awareness
   const ingress = createTestIngress({
     parser: { parseLogs: () => [{ name: 'TradeEvent', data: { mint: 'mint123', solAmount: 100 } }] },
     onCommitted: (committed) => {
-      for (const ev of committed.validatedEnvelope.compiledEnvelope.decodedEvents) {
-        events.push(ev);
-      }
-    }
+      for (const ev of committed.validatedEnvelope.compiledEnvelope.decodedEvents) events.push(ev);
+    },
   });
-
   const feed = new Feed(cfg, conn, ingress);
-  assert.ok(feed.censusJournal instanceof CensusRJournalAuthority, 'Feed must own CensusRJournalAuthority');
-
+  assert.ok(feed.censusJournal instanceof CensusRJournalAuthority);
   const logs = ['Program 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P invoke [1]', 'Program 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P success'];
   const src = { sourceId: 'src-1', providerId: 'https://rpc.example.com', transport: 'ws' };
-
-  // Accept slot 1000
-  await feed.accept('sig-census-1', 1000, logs, src);
-  assert.equal(feed.censusJournal.getJournalLength(), 1);
-  const wm = feed.censusJournal.getWatermark();
-  assert.equal(wm.highestObservedSlot, 1000);
-  assert.equal(wm.highestCanonicalSlot, 1000);
-
-  // Accept late repair slot 900
-  const repairSrc = { ...src, isRepair: true, allowLate: true };
-  await feed.accept('sig-census-2', 900, logs, repairSrc);
-  assert.equal(feed.censusJournal.getJournalLength(), 2);
-
-  // Verify deterministic causal replay orders slot 900 before slot 1000
-  const replayed = feed.censusJournal.replayJournal();
-  assert.equal(replayed.length, 2);
-  assert.equal(replayed[0].slot, 900);
-  assert.equal(replayed[1].slot, 1000);
-  assert.equal(replayed[0].txHash, 'sig-census-2');
-  assert.equal(replayed[1].txHash, 'sig-census-1');
+  const first = await feed.accept('sig-census-1', 1000, logs, src);
+  assert.equal(first.status, 'ACCEPTED');
+  assert.equal(feed.censusJournal.getJournalLength(), 0);
+  assert.equal(feed.censusJournal.getWatermark().highestCanonicalSlot, 0);
+  const second = await feed.accept('sig-census-2', 900, logs, { ...src, isRepair: true, allowLate: true });
+  assert.equal(second.status, 'ACCEPTED');
+  assert.equal(feed.getUnanchoredBankObservationCount(), 2);
+  assert.equal(feed.censusJournal.getJournalLength(), 0, 'no forged bank-slot identity');
+  assert.deepEqual(feed.censusJournal.replayJournal(), []);
+  assert.equal(events.length, 2, 'canonical ingress retains both provider observations');
 });
