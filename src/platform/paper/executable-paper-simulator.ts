@@ -94,7 +94,7 @@ export class ExecutablePaperSimulator {
         actualSlippageBps: 0,
         priorityFeePaidLamports: 0n,
         jitoTipPaidLamports: 0n,
-        networkFeePaidLamports: ExecutablePaperSimulator.BASE_NETWORK_FEE_LAMPORTS,
+        networkFeePaidLamports: 0n,
         landedSlot,
         latencyMs,
         reason: 'BLOCKHASH_EXPIRED',
@@ -110,9 +110,9 @@ export class ExecutablePaperSimulator {
         solDeltaLamports: 0n,
         priceImpactBps: 0,
         actualSlippageBps: 0,
-        priorityFeePaidLamports: input.priorityFeeLamports,
+        priorityFeePaidLamports: 0n,
         jitoTipPaidLamports: 0n, // Tips only land if bundled
-        networkFeePaidLamports: ExecutablePaperSimulator.BASE_NETWORK_FEE_LAMPORTS,
+        networkFeePaidLamports: 0n,
         landedSlot,
         latencyMs,
         reason: `TRANSPORT_FAULT_${input.transportCondition}`,
@@ -130,9 +130,9 @@ export class ExecutablePaperSimulator {
           solDeltaLamports: 0n,
           priceImpactBps: 0,
           actualSlippageBps: 0,
-          priorityFeePaidLamports: input.priorityFeeLamports,
+          priorityFeePaidLamports: 0n,
           jitoTipPaidLamports: 0n,
-          networkFeePaidLamports: ExecutablePaperSimulator.BASE_NETWORK_FEE_LAMPORTS,
+          networkFeePaidLamports: 0n,
           landedSlot,
           latencyMs,
           reason: 'OUTBID_BY_COMPETITOR_TIP',
@@ -295,17 +295,18 @@ export class ExecutablePaperSimulator {
       const priceImpactBps = Math.round(((initialPriceSol - executionPriceSol) / initialPriceSol) * 10_000);
 
       if (priceImpactBps > 8_000) {
-        // More than 80% loss to exit liquidity -> unexitability hazard
+        // A rejected exitability scenario is NOT a sale. Never debit token
+        // inventory or credit SOL without a modeled executable fill.
         return {
           outcome: 'SIMULATED_UNEXITABLE',
           fillPriceSol: executionPriceSol,
-          tokenDeltaRaw: -tokensIn,
-          solDeltaLamports: solOut,
+          tokenDeltaRaw: 0n,
+          solDeltaLamports: 0n,
           priceImpactBps,
           actualSlippageBps: priceImpactBps,
-          priorityFeePaidLamports: input.priorityFeeLamports,
-          jitoTipPaidLamports: input.jitoTipLamports,
-          networkFeePaidLamports: ExecutablePaperSimulator.BASE_NETWORK_FEE_LAMPORTS,
+          priorityFeePaidLamports: 0n,
+          jitoTipPaidLamports: 0n,
+          networkFeePaidLamports: 0n,
           landedSlot,
           latencyMs,
           reason: 'CATASTROPHIC_EXIT_IMPACT_UNEXITABLE',
