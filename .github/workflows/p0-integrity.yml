@@ -8,6 +8,7 @@ concurrency:
   cancel-in-progress: true
 permissions:
   contents: read
+  pull-requests: write
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -27,19 +28,52 @@ jobs:
       - name: Core test suite
         id: core
         continue-on-error: true
-        run: npm run test:core
+        run: |
+          set -o pipefail
+          npm run test:core 2>&1 | tee "$RUNNER_TEMP/core-test.log"
       - name: Intelligence test suite
         id: intelligence
         continue-on-error: true
-        run: npm run test:intelligence
+        run: |
+          set -o pipefail
+          npm run test:intelligence 2>&1 | tee "$RUNNER_TEMP/intelligence-test.log"
       - name: Platform test suite
         id: platform
         continue-on-error: true
-        run: npm run test:platform
+        run: |
+          set -o pipefail
+          npm run test:platform 2>&1 | tee "$RUNNER_TEMP/platform-test.log"
       - name: Terminal test suite
         id: terminal
         continue-on-error: true
-        run: npm run test:terminal
+        run: |
+          set -o pipefail
+          npm run test:terminal 2>&1 | tee "$RUNNER_TEMP/terminal-test.log"
+      - name: Post bounded CI failure details on draft PR
+        if: ${{ always() && github.event_name == 'pull_request' && (steps.core.outcome == 'failure' || steps.intelligence.outcome == 'failure' || steps.platform.outcome == 'failure' || steps.terminal.outcome == 'failure') }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const reports = [];
+            for (const suite of ['core','intelligence','platform','terminal']) {
+              const file = path.join(process.env.RUNNER_TEMP, suite + '-test.log');
+              if (!fs.existsSync(file)) continue;
+              const lines = fs.readFileSync(file,'utf8').split(/\r?\n/);
+              const failures = lines.filter(x => /^\s*not ok \d+\s+-\s+/.test(x)).slice(0,25);
+              const totals = lines.filter(x => /^\s*#\s+(?:tests|pass|fail|cancelled|skipped)\s+/.test(x)).slice(-5);
+              if (failures.length || totals.some(x => /^\s*#\s+fail\s+[1-9]/.test(x))) {
+                reports.push('**'+suite+'**\n'+'\x60\x60\x60text\n'+[...failures,...totals].join('\n').slice(0,3500)+'\n\x60\x60\x60');
+              }
+            }
+            if (reports.length) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: 'CI diagnostics for commit '+context.sha.slice(0,12)+' (test titles and counts only):\n\n'+reports.join('\n\n'),
+              });
+            }
       - name: Core suite failures detected
         if: ${{ always() && steps.core.outcome == 'failure' }}
         run: exit 1
