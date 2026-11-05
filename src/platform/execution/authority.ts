@@ -242,10 +242,8 @@ export class LiveExecutionAuthority implements ExecutionAuthority {
     reason: string,
     panic: boolean
   ): Promise<Built> {
-    if (!this.canExecuteLive()) {
-      throw new Error('LiveExecutionAuthority pre-conditions not satisfied');
-    }
-
+    // This legacy adapter never possesses a verified live execution permit.
+    // Even valid wallet/RPC configuration cannot bypass the quarantine.
     // Direct uncoordinated invocation of build() is quarantined to prevent unfenced execution.
     // The unfinished coordinator's signing and submission are also quarantined.
     throw new Error(
