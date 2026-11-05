@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { RuntimeDivergenceAuditor } from '../../dist/platform/pipeline/runtime-divergence.js';
 import { CapitalBarrierKernel } from '../../dist/intelligence/capital/capital-barrier-kernel.js';
 import { PaperPortfolio } from '../../dist/paper.js';
+import { SqliteFusionJournalStore } from '../../dist/platform/pipeline/fusion-journal-store.js';
 
 test('missing independent shadow evaluation cannot count as parity', () => {
   const audit = new RuntimeDivergenceAuditor();
@@ -88,4 +89,57 @@ test('existing corrupt paper snapshots cannot silently reinitialize funds', asyn
     await writeFile(file, 'null');
     await assert.rejects(new PaperPortfolio(file).start(), /PAPER_SNAPSHOT_INVALID/);
   } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('SQLite Fusion journal commits and recovers atomic revisions and hash-chain head', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'sylph-p0-fusion-store-'));
+  const file = join(dir, 'fusion.sqlite');
+  const transition = {
+    economicFactId: 'economic-fact-A',
+    expectedRevision: 0n,
+    newRevision: 1n,
+    fromState: 'OBSERVED',
+    toState: 'EVIDENCE_CERTIFIED',
+    previousStateRoot: 'root-before',
+    nextStateRoot: 'root-after',
+    transitionPayloadRoot: 'payload',
+    certificate: 'certificate',
+    certificateHash: 'certificate-hash',
+    journalEntryId: 'entry-A',
+    envelopeId: 'envelope-A',
+    envelopeRoot: 'envelope-root',
+    observedAt: '2026-11-05T00:00:00.000Z',
+  };
+  let store;
+  try {
+    assert.throws(() => new SqliteFusionJournalStore(':memory:'), /DURABLE_PATH_REQUIRED/);
+    store = new SqliteFusionJournalStore(file);
+    const first = await store.appendTransitionAtomic(transition);
+    assert.equal(first.sequence, 1n);
+    assert.equal((await store.loadHead()).lastEntryHash, first.entryHash);
+    store.close(); store = null;
+
+    store = new SqliteFusionJournalStore(file);
+    assert.equal((await store.loadHead()).sequence, 1n);
+    assert.equal((await store.readByEconomicFact('economic-fact-A'))[0].entryHash, first.entryHash);
+    await assert.rejects(store.appendTransitionAtomic(transition), /STALE_PROPOSAL/);
+    await assert.rejects(store.compareAndSwapRevision('economic-fact-A', 1n, 2n), /REQUIRES_ATOMIC_TRANSITION/);
+
+    const second = await store.appendTransitionAtomic({
+      ...transition,
+      expectedRevision: 1n,
+      newRevision: 2n,
+      journalEntryId: 'entry-B',
+      fromState: 'EVIDENCE_CERTIFIED',
+      toState: 'TEMPORALLY_VALID',
+      previousStateRoot: 'root-after',
+      nextStateRoot: 'root-final',
+    });
+    assert.equal(second.previousEntryHash, first.entryHash);
+    assert.equal((await store.readFromSequence(1n)).length, 2);
+    assert.equal((await store.loadHead()).totalEntries, 2);
+  } finally {
+    store?.close();
+    await rm(dir, { recursive: true, force: true });
+  }
 });
