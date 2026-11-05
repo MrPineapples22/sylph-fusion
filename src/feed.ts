@@ -38,6 +38,13 @@ export class Feed implements ObservationSource {
   private readonly shutdown = new AbortController();
   readonly gapReconciler = new IngestionGapReconciler();
   readonly censusJournal: CensusRJournalAuthority;
+  // Accepted source observations lacking a verified blockhash must not become
+  // canonical CENSUS-R bank events keyed by fabricated slot-only identities.
+  private unanchoredBankObservationCount = 0;
+
+  public getUnanchoredBankObservationCount(): number {
+    return this.unanchoredBankObservationCount;
+  }
   private readonly providerHealth: ProviderHealthTracker;
   last = 0;
   slot = 0;
@@ -209,38 +216,19 @@ export class Feed implements ObservationSource {
       this.providerHealth.recordValidatedObservation('YELLOWSTONE_GRPC', 0);
     }
 
-    // Durably journal accepted observation in Census-R canonical event journal
-    try {
-      const bankHash = `bank-slot-${slot}`;
-      const providerTimestamp = source.observedAt ?? now;
-      if (isHistoricalRepair || source.allowLate) {
-        this.censusJournal.ingestLateEvent({
-          slot,
-          bankHash,
-          txHash: signature,
-          eventIndex: 0,
-          providerId: source.providerId,
-          providerTimestampMs: providerTimestamp,
-          eventType: 'SOLANA_TRANSACTION_OBSERVATION',
-          payload: { logsCount: logs.length, signature, transport: source.transport },
-        });
-      } else {
-        this.censusJournal.commitTransactionBatch({
-          slot,
-          bankHash,
-          txHash: signature,
-          providerId: source.providerId,
-          providerTimestampMs: providerTimestamp,
-          events: [
-            {
-              eventType: 'SOLANA_TRANSACTION_OBSERVATION',
-              payload: { logsCount: logs.length, signature, transport: source.transport },
-            },
-          ],
-        });
-      }
-    } catch (journalErr) {
-      log('feed_census_journal_commit_failed', { error: String(journalErr) });
+    // CanonicalIngress has durably accepted the provider observation above.
+    // It does NOT prove a particular Solana bank or finalized block membership.
+    // No validated blockhash/bank identity is present in this feed API, so
+    // do not fabricate `bank-slot-${slot}` or promote it to CENSUS-R truth.
+    // A separate block-membership reconciliation adapter must supply real
+    // bank-specific evidence before that journal can be populated.
+    this.unanchoredBankObservationCount++;
+    if (this.unanchoredBankObservationCount === 1 ||
+        this.unanchoredBankObservationCount % 1024 === 0) {
+      log('feed_bank_identity_unverified', {
+        count: this.unanchoredBankObservationCount,
+        reason: 'BANK_HASH_NOT_PRESENT_IN_SOURCE_OBSERVATION',
+      });
     }
 
     this.gapReconciler.registerSlot(slot, 1, false);
