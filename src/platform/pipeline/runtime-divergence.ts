@@ -30,9 +30,20 @@ export interface RuntimeDivergenceCertificate {
   readonly certificateHash: string;
 }
 
+export interface ShadowEvaluationGap {
+  readonly status: 'NOT_EVALUATED';
+  readonly mint: string;
+  readonly candidateGenerationId: string;
+  readonly stage: 'RESTRICTION' | 'ENTRY_ATTEMPT';
+  readonly reason: 'INDEPENDENT_SHADOW_DECISION_NOT_RUN';
+  readonly evaluatedAt: string;
+  readonly recordHash: string;
+}
+
 export class RuntimeDivergenceAuditor {
   private readonly certificates: RuntimeDivergenceCertificate[] = [];
   private readonly evaluations: RuntimeDivergenceCertificate[] = [];
+  private readonly unassessed: ShadowEvaluationGap[] = [];
 
   /**
    * Compares the authoritative legacy runtime decision against the UnifiedPipelineUnit shadow decision.
@@ -108,6 +119,32 @@ export class RuntimeDivergenceAuditor {
     }
 
     return certificate;
+  }
+
+  /** A missing independent result is neither parity nor divergence. */
+  public recordNotEvaluated(params: {
+    mint: string;
+    candidateGenerationId: string;
+    stage: ShadowEvaluationGap['stage'];
+    reason: ShadowEvaluationGap['reason'];
+    evaluatedAt?: string;
+  }): ShadowEvaluationGap {
+    if (!params.mint || !params.candidateGenerationId) throw new Error('SHADOW_EVIDENCE_IDENTITY_MISSING');
+    const payload = {
+      status: 'NOT_EVALUATED' as const,
+      mint: params.mint,
+      candidateGenerationId: params.candidateGenerationId,
+      stage: params.stage,
+      reason: params.reason,
+      evaluatedAt: params.evaluatedAt ?? new Date().toISOString(),
+    };
+    const gap = Object.freeze({ ...payload, recordHash: hashCanonical(payload) });
+    this.unassessed.push(gap);
+    return gap;
+  }
+
+  public getUnassessed(): readonly ShadowEvaluationGap[] {
+    return Object.freeze([...this.unassessed]);
   }
 
   public getDivergenceCount(): number {
