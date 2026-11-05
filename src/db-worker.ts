@@ -668,7 +668,7 @@ parentPort!.on('message', (m: { id: number; op: string; body?: string; event?: s
       try {
         ensureIngressDeliverySchema();
         const select = db.prepare(`SELECT a.id,a.at,substr(a.event,1,256) AS event FROM audit a
-          WHERE a.at < ? AND NOT EXISTS (
+          WHERE a.at <= ? AND NOT EXISTS (
             SELECT 1 FROM canonical_ingress_delivery_v1 d WHERE d.audit_id=a.id AND d.delivery_status='PENDING'
           ) ORDER BY a.id LIMIT 50000`);
         select.setReadBigInts(true);
