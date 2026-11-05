@@ -14,10 +14,10 @@
  * 10. releaseCertification: Immutable release root digest verified
  *
  * Invariants:
- * - liveReady = true ONLY when ALL 10 gates pass
- * - LIVE_SIGNING_UNAVAILABLE = false ONLY when signingAuthority passes
- * - PRODUCTION_CAPITAL_AUTHORITY_BLOCKED = false ONLY when liveReady is true
- * - Never hardcoded; always derived dynamically from live runtime verification
+ * - Observations are caller-supplied assertions, not authenticated proof.
+ * - Even ten reported PASS results cannot issue signing or capital authority.
+ * - Only the separately reviewed, cryptographically verified live coordinator
+ *   may eventually authorize an exact transaction. This evaluator never can.
  */
 
 export interface ProductionGateResult {
@@ -28,7 +28,10 @@ export interface ProductionGateResult {
 }
 
 export interface LiveReadinessReport {
-  readonly liveReady: boolean;
+  readonly liveReady: false;
+  readonly reportedPrerequisitesPass: boolean;
+  readonly evidenceClass: 'CALLER_ASSERTIONS_NOT_VERIFIED';
+  readonly authorizesSigningOrBroadcast: false;
   readonly liveSigningUnavailable: boolean;
   readonly productionCapitalAuthorityBlocked: boolean;
   readonly passedGatesCount: number;
@@ -233,14 +236,20 @@ export class LiveReadinessEvaluator {
     const passedCount = allGates.filter(g => g.status === 'PASS').length;
     const failedCount = allGates.filter(g => g.status === 'FAIL').length;
     const unknownCount = allGates.filter(g => g.status === 'UNKNOWN').length;
-    const liveReady = passedCount === allGates.length;
+    const reportedPrerequisitesPass = passedCount === allGates.length;
 
-    // Derived states (NEVER hardcoded):
-    const liveSigningUnavailable = !signingPass;
-    const productionCapitalAuthorityBlocked = !liveReady;
+    // This is a diagnostic aggregator: the supplied booleans, pubkey string and
+    // release digest have no issuer authentication or transaction-byte binding.
+    // Do not promote their values into financial authority.
+    const liveReady = false as const;
+    const liveSigningUnavailable = true;
+    const productionCapitalAuthorityBlocked = true;
 
     return Object.freeze({
       liveReady,
+      reportedPrerequisitesPass,
+      evidenceClass: 'CALLER_ASSERTIONS_NOT_VERIFIED' as const,
+      authorizesSigningOrBroadcast: false as const,
       liveSigningUnavailable,
       productionCapitalAuthorityBlocked,
       passedGatesCount: passedCount,
