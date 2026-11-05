@@ -32,12 +32,27 @@ export class PaperPortfolio {
   private state: Disk = initial(); private write: Promise<void> = Promise.resolve(); private csvWrite: Promise<void> = Promise.resolve(); private tickTask: Promise<void> | null = null; private autoUsed = new Set<string>();
   constructor(private file: string, private maxPositions = 3, private buyLamports = 100_000_000, private csvFile = file.replace(/\.json$/i, '_trades.csv')) {}
   async start() {
+    // Only a missing file creates a fresh paper account. Existing corrupt
+    // snapshots must remain recoverable evidence, not be replaced with funds.
+    let stored: unknown;
     try {
-      const x = JSON.parse(await readFile(this.file, 'utf8'));
+      stored = JSON.parse(await readFile(this.file, 'utf8'));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+        throw new Error('PAPER_SNAPSHOT_UNREADABLE: existing account requires recovery', { cause: error });
+      }
+    }
+    if (stored !== undefined) {
+      const x: any = stored;
       const validInt = (v: unknown) => typeof v === 'string' && /^-?\d+$/.test(v);
-      const valid = x?.version === 1 && validInt(x.cash) && validInt(x.realized) && x.positions && typeof x.positions === 'object' && !Array.isArray(x.positions) && Array.isArray(x.fills) && x.fills.length <= 300 && x.fills.every((f: any) => f && validInt(f.lamports) && validInt(f.pnl) && Number.isFinite(f.at) && f.at > 0);
-      if (valid) this.state = { ...initial(), ...x, autoUsed: Array.isArray(x.autoUsed) ? x.autoUsed.filter((m: unknown): m is string => typeof m === 'string').slice(-1000) : [] };
-    } catch { /* Corrupt snapshots fall back to a clean paper wallet. */ }
+      const valid = x?.version === 1 && validInt(x.cash) && BigInt(x.cash) >= 0n &&
+        validInt(x.realized) && x.positions && typeof x.positions === 'object' && !Array.isArray(x.positions) &&
+        Array.isArray(x.fills) && x.fills.length <= 100_000 &&
+        x.fills.every((f: any) => f && validInt(f.lamports) && validInt(f.pnl) && Number.isFinite(f.at) && f.at > 0);
+      if (!valid) throw new Error('PAPER_SNAPSHOT_INVALID: existing account requires recovery');
+      this.state = { ...initial(), ...x, autoUsed: Array.isArray(x.autoUsed) ?
+        x.autoUsed.filter((m: unknown): m is string => typeof m === 'string').slice(-1000) : [] };
+    }
     // Legacy quantities were stored in lamports/USD. Migrate only with the exact opening fill's exchange rate.
     for (const p of Object.values(this.state.positions)) {
       if (p.economicsVersion === 2 && positive(p.qty) && positive(p.entryUsd) && positive(p.entrySolPriceUsd)) continue;

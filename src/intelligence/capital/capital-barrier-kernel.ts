@@ -73,6 +73,29 @@ export class CapitalBarrierKernel {
     const denialReasons: string[] = [];
     const throttlingReductions: Record<string, number> = {};
     const evaluatedAtMs = Date.now();
+    // Invalid risk evidence must not create permission via arithmetic fallback.
+    const inputKeys: (keyof CapitalBarrierInputs)[] = [
+      'proposedSizeSol', 'totalBankrollSol', 'currentDrawdownPct',
+      'dailyRealizedLossSol', 'maxDailyLossSol', 'creatorClusterExposureSol',
+      'maxCreatorExposureSol', 'routeExposureSol', 'maxRouteExposureSol',
+      'stressedExitCapacitySol', 'modelUncertainty', 'executionReliability',
+      'truthDebtCount',
+    ];
+    const valid = inputKeys.every(key => Number.isFinite(inputs[key]) && inputs[key] >= 0) &&
+      proposedSizeSol > 0 && totalBankrollSol > 0 &&
+      modelUncertainty <= 1 && executionReliability <= 1 &&
+      Number.isSafeInteger(truthDebtCount);
+    if (!valid) {
+      return {
+        status: 'DENIED',
+        requestedSizeSol: proposedSizeSol,
+        authorizedSizeSol: 0,
+        denialReasons: Object.freeze(['INVALID_CAPITAL_BARRIER_INPUT']),
+        throttlingReductions: Object.freeze({}),
+        capitalBarrierHash: this.computeBarrierHash(inputs, 'DENIED', 0, evaluatedAtMs),
+        evaluatedAtMs,
+      };
+    }
 
     // 1. Invariant: Truth Debt circuit-breaker (Section 78)
     if (truthDebtCount >= this.TRUTH_DEBT_HALT_THRESHOLD) {
@@ -200,14 +223,21 @@ export class CapitalBarrierKernel {
     authorizedSize: number,
     evaluatedAtMs: number
   ): string {
-    return createHash('sha256')
-      .update('CAPITAL_BARRIER:')
-      .update(inputs.proposedSizeSol.toString())
-      .update(inputs.totalBankrollSol.toString())
-      .update(inputs.currentDrawdownPct.toString())
-      .update(status)
-      .update(authorizedSize.toString())
-      .update(evaluatedAtMs.toString())
-      .digest('hex');
+    // The digest must bind *all* inputs affecting a decision, including
+    // previously omitted capacity, uncertainty, exposure, and truth debt.
+    const keys: (keyof CapitalBarrierInputs)[] = [
+      'proposedSizeSol', 'totalBankrollSol', 'currentDrawdownPct',
+      'dailyRealizedLossSol', 'maxDailyLossSol', 'creatorClusterExposureSol',
+      'maxCreatorExposureSol', 'routeExposureSol', 'maxRouteExposureSol',
+      'stressedExitCapacitySol', 'modelUncertainty', 'executionReliability',
+      'truthDebtCount',
+    ];
+    return createHash('sha256').update(JSON.stringify({
+      schemaVersion: 2,
+      inputs: keys.map(key => [key, String(inputs[key])]),
+      status,
+      authorizedSize: String(authorizedSize),
+      evaluatedAtMs,
+    })).digest('hex');
   }
 }

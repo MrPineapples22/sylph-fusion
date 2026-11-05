@@ -1,0 +1,103 @@
+name: P0 evidence integrity (paper only)
+on:
+  push:
+    branches: [main]
+  pull_request:
+concurrency:
+  group: p0-integrity-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Restore locked dependencies
+        run: npm ci
+      - name: Compile Engine
+        run: npm run build:engine
+      - name: P0 integrity regressions
+        run: node --test --test-isolation=none test/platform/p0-integrity.test.mjs
+      - name: Core test suite
+        id: core
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npm run test:core 2>&1 | tee "$RUNNER_TEMP/core-test.log"
+      - name: Intelligence test suite
+        id: intelligence
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npm run test:intelligence 2>&1 | tee "$RUNNER_TEMP/intelligence-test.log"
+      - name: Platform test suite
+        id: platform
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npm run test:platform 2>&1 | tee "$RUNNER_TEMP/platform-test.log"
+      - name: Terminal test suite
+        id: terminal
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npm run test:terminal 2>&1 | tee "$RUNNER_TEMP/terminal-test.log"
+      - name: Post bounded CI failure details on draft PR
+        if: ${{ always() && github.event_name == 'pull_request' && (steps.core.outcome == 'failure' || steps.intelligence.outcome == 'failure' || steps.platform.outcome == 'failure' || steps.terminal.outcome == 'failure') }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const reports = [];
+            for (const suite of ['core','intelligence','platform','terminal']) {
+              const file = path.join(process.env.RUNNER_TEMP, suite + '-test.log');
+              if (!fs.existsSync(file)) continue;
+              const lines = fs.readFileSync(file,'utf8').split(/\r?\n/);
+              const errors = lines.filter(x => /not ok|ERR_|error|failed|# fail|cannot find module|module not found|syntaxerror/i.test(x)).slice(-18);
+              const totals = lines.filter(x => /^\s*#\s+(?:tests|pass|fail|cancelled|skipped)\s+/.test(x)).slice(-5);
+              const excerpts = [...errors,...totals];
+              if (excerpts.length === 0) excerpts.push(...lines.filter(Boolean).slice(-10));
+              const redacted = excerpts.map(line => {
+                const short = line.slice(0,240);
+                return /(?:bearer\s+\S+|api[_-]?key|secret|authorization:|token=)/i.test(short) ? '[redacted line]' : short;
+              });
+              reports.push('**'+suite+'**\n'+'\x60\x60\x60text\n'+redacted.join('\n').slice(0,3500)+'\n\x60\x60\x60');
+            }
+            if (reports.length) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: 'CI diagnostics for commit '+context.sha.slice(0,12)+' (test titles and counts only):\n\n'+reports.join('\n\n'),
+              });
+            }
+      - name: Core suite failures detected
+        if: ${{ always() && steps.core.outcome == 'failure' }}
+        run: exit 1
+      - name: Intelligence suite failures detected
+        if: ${{ always() && steps.intelligence.outcome == 'failure' }}
+        run: exit 1
+      - name: Platform suite failures detected
+        if: ${{ always() && steps.platform.outcome == 'failure' }}
+        run: exit 1
+      - name: Terminal suite failures detected
+        if: ${{ always() && steps.terminal.outcome == 'failure' }}
+        run: exit 1
+      - name: Enforce all test-suite outcomes
+        if: always()
+        run: |
+          test "${{ steps.core.outcome }}" = success
+          test "${{ steps.intelligence.outcome }}" = success
+          test "${{ steps.platform.outcome }}" = success
+          test "${{ steps.terminal.outcome }}" = success
+      - name: Keep release authority blocked
+        run: |
+          grep -q 'PRODUCTION RELEASE BLOCKED' ARCHITECTURE_GAPS.md
+          grep -q 'UNVERIFIED CANDIDATE' RELEASE_CERTIFICATION.md

@@ -48,7 +48,7 @@ import {
 } from './candidate-snapshot.js';
 import { composePaperRuntime } from './runtime-composition.js';
 import { UnifiedPipelineUnit } from './platform/pipeline/unified-unit.js';
-import { RuntimeDivergenceAuditor, type DecisionVector } from './platform/pipeline/runtime-divergence.js';
+import { RuntimeDivergenceAuditor } from './platform/pipeline/runtime-divergence.js';
 import type { PaperAuthorityMode } from './platform/paper/paper-authority-policy.js';
 import { StartupHealthAuditor } from './platform/assurance/startup-health-audit.js';
 import type { RawObservationEnvelope } from './platform/ingestion/types.js';
@@ -701,14 +701,15 @@ export class Engine {
       if (!this.divergenceAuditor) {
         this.divergenceAuditor = new RuntimeDivergenceAuditor();
       }
-      const isSafety = scope === 'MARKET' || scope === 'ACTOR';
-      const oldDecision: DecisionVector = { pass: false, edgeBps: 0, safetyPassed: !isSafety };
-      const newDecision: DecisionVector = { pass: false, edgeBps: 0, safetyPassed: !isSafety };
-      this.divergenceAuditor.evaluateDivergence({
-        mint: c.mint,
-        candidateGenerationId: c.candidateGenerationId,
-        oldDecision,
-        newDecision,
+      // A restriction does not execute the independent unified evaluator.
+      // Constructed identical vectors are not valid evidence of parity.
+      const gap = this.divergenceAuditor.recordNotEvaluated({
+        mint: c.mint, candidateGenerationId: c.candidateGenerationId,
+        stage: 'RESTRICTION', reason: 'INDEPENDENT_SHADOW_DECISION_NOT_RUN',
+      });
+      this.sessionLogger?.writeEvent('shadow_comparison_unavailable', {
+        mint: c.mint, candidateGenerationId: c.candidateGenerationId,
+        stage: gap.stage, evidenceHash: gap.recordHash, reason: gap.reason,
       });
       const snapshot = this.snapshotCandidate(c, 'notEvaluated', `${scope}:${reason}`, { ...(meta as any), s: observed });
       this.persistResearchObservation('candidate_restriction_v1', {
@@ -1666,18 +1667,18 @@ export class Engine {
       const openPositions = Object.values(this.state.positions);
       const creatorExposureSol = openPositions.filter(p => p.creator === candidate.creator).reduce((acc, p) => acc + (Number(p.cost) / 1e9), 0);
       const routeExposureSol = openPositions.reduce((acc, p) => acc + (Number(p.cost) / 1e9), 0);
-      const stressedExitCapacitySol = Math.max(0.5, poolSolReserve * 0.25);
+      const stressedExitCapacitySol = Number.isFinite(poolSolReserve) ? Math.max(0, poolSolReserve * 0.25) : Number.NaN;
 
       const barrierInputs = {
         proposedSizeSol,
-        totalBankrollSol: Math.max(1, totalBankrollSol),
+        totalBankrollSol,
         currentDrawdownPct,
         dailyRealizedLossSol,
         maxDailyLossSol: Number(this.cfg.MAX_DAILY_LOSS_LAMPORTS) / 1e9,
         creatorClusterExposureSol: creatorExposureSol,
-        maxCreatorExposureSol: Math.max(0.5, totalBankrollSol * 0.15),
+        maxCreatorExposureSol: totalBankrollSol * 0.15,
         routeExposureSol,
-        maxRouteExposureSol: Math.max(2, totalBankrollSol * 0.60),
+        maxRouteExposureSol: totalBankrollSol * 0.60,
         stressedExitCapacitySol,
         modelUncertainty: 0.15,
         executionReliability: 0.95,
@@ -1694,15 +1695,15 @@ export class Engine {
           inputs: barrierInputs,
           inputProvenance: {
             proposedSizeSol: 'CONFIGURED_AMOUNT_CAPPED_BY_LOCAL_CASH_POLICY',
-            totalBankrollSol: 'LOCAL_PAPER_CASH_WITH_HEURISTIC_FLOOR',
+            totalBankrollSol: 'LOCAL_PAPER_CASH_NO_POSITIVE_FLOOR',
             currentDrawdownPct: 'LOCAL_PAPER_CASH_AND_HIGH_WATER_CALCULATION',
             dailyRealizedLossSol: 'LOCAL_PAPER_ACCOUNTING',
             maxDailyLossSol: 'CONFIGURED_POLICY',
             creatorClusterExposureSol: 'LOCAL_PAPER_POSITIONS_FILTERED_BY_CREATOR',
-            maxCreatorExposureSol: 'LOCAL_CASH_BASED_POLICY_WITH_FLOOR',
+            maxCreatorExposureSol: 'LOCAL_CASH_BASED_POLICY_WITHOUT_FLOOR',
             routeExposureSol: 'LOCAL_PAPER_POSITION_COST_SUM',
-            maxRouteExposureSol: 'LOCAL_CASH_BASED_POLICY_WITH_FLOOR',
-            stressedExitCapacitySol: 'OBSERVED_RESERVE_BASED_HEURISTIC_WITH_FLOOR',
+            maxRouteExposureSol: 'LOCAL_CASH_BASED_POLICY_WITHOUT_FLOOR',
+            stressedExitCapacitySol: 'OBSERVED_RESERVE_BASED_HEURISTIC_NO_POSITIVE_FLOOR',
             modelUncertainty: 'FIXED_UNVALIDATED_ASSUMPTION',
             executionReliability: 'FIXED_UNVALIDATED_ASSUMPTION',
             truthDebtCount: 'LOCAL_RECONCILIATION_FLAG_PROXY',
@@ -1751,27 +1752,25 @@ export class Engine {
         realSolReservesLamports: s.curve.realQuoteReserves.toString(),
         slot: s.slot,
       });
-      // The retry cooldown above serializes safety rechecks. Once every entry
-      // gate has passed, it must not veto the submission it was protecting.
-      const oldDecision: DecisionVector = { pass: true, edgeBps: 250, safetyPassed: true };
-      const newDecision: DecisionVector = { pass: true, edgeBps: 250, safetyPassed: true };
+      // This entry path has no independently evaluated UnifiedPipelineUnit
+      // decision. Record the gap, never fabricate legacy/shadow agreement.
       if (!this.divergenceAuditor) {
         this.divergenceAuditor = new RuntimeDivergenceAuditor();
       }
-      const divCert = this.divergenceAuditor.evaluateDivergence({
-        mint: candidate.mint,
-        candidateGenerationId: candidate.candidateGenerationId,
-        oldDecision,
-        newDecision,
+      const shadowGap = this.divergenceAuditor.recordNotEvaluated({
+        mint: candidate.mint, candidateGenerationId: candidate.candidateGenerationId,
+        stage: 'ENTRY_ATTEMPT', reason: 'INDEPENDENT_SHADOW_DECISION_NOT_RUN',
       });
-      if (divCert.hasDivergence) {
-        this.sessionLogger?.writeEvent('runtime_divergence_detected', {
-          certificateId: divCert.certificateId,
-          mint: divCert.mint,
-          reasons: divCert.divergenceReasons,
-          certificateHash: divCert.certificateHash,
-        });
-      }
+      this.sessionLogger?.writeEvent('shadow_comparison_unavailable', {
+        mint: candidate.mint, candidateGenerationId: candidate.candidateGenerationId,
+        stage: shadowGap.stage, evidenceHash: shadowGap.recordHash, reason: shadowGap.reason,
+      });
+      this.persistResearchObservation('candidate_shadow_unassessed_v1', {
+        schemaVersion: 1, candidateGenerationId: candidate.candidateGenerationId,
+        mint: candidate.mint, entryAttemptId: entryAttempt.attemptId,
+        status: 'NOT_EVALUATED', reason: shadowGap.reason,
+        evidenceHash: shadowGap.recordHash,
+      }, `${candidate.candidateGenerationId}:${entryAttempt.attemptNumber}:shadow`);
       candidate.next = Date.now();
       await this.trade(s, 'buy', entryAmount, candidate.creator, 0, 'buyer-accumulation', false, candidate, entryAttempt);
     } catch (err) {
