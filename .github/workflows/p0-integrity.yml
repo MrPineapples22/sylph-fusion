@@ -21,8 +21,29 @@ jobs:
         run: npm run build:engine
       - name: P0 integrity regressions
         run: node --test --test-isolation=none test/platform/p0-integrity.test.mjs
-      - name: Existing project test suites
-        run: npm run test:all
+      - name: Core test suite
+        id: core
+        continue-on-error: true
+        run: npm run test:core
+      - name: Intelligence test suite
+        id: intelligence
+        continue-on-error: true
+        run: npm run test:intelligence
+      - name: Platform test suite
+        id: platform
+        continue-on-error: true
+        run: npm run test:platform
+      - name: Terminal test suite
+        id: terminal
+        continue-on-error: true
+        run: npm run test:terminal
+      - name: Enforce all test-suite outcomes
+        if: always()
+        run: |
+          test "${{ steps.core.outcome }}" = success
+          test "${{ steps.intelligence.outcome }}" = success
+          test "${{ steps.platform.outcome }}" = success
+          test "${{ steps.terminal.outcome }}" = success
       - name: Keep release authority blocked
         run: |
           grep -q 'PRODUCTION RELEASE BLOCKED' ARCHITECTURE_GAPS.md
