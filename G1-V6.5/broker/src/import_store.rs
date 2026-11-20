@@ -132,6 +132,9 @@ impl DurableImportStore {
         validate_schema(&inspection)?;
         DurableImportStore {
             connection: inspection,
+            _storage_guard: storage_guard
+                .try_clone()
+                .map_err(|error| format!("IMPORT_STORE_CLONE_GUARD:{error}"))?,
             base_anchor: expected_anchor.clone(),
             approved_head: approved_head.clone(),
         }
