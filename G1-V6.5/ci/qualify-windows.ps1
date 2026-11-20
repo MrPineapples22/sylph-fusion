@@ -843,7 +843,7 @@ try {
   Save-Record 'running-broker-db-alias-read.json' $runningBrokerAliasRead
   $result.phases.CI_P2_Running = 'PASS_AUTHORIZED_BROKER_WRITE_AND_ERROR_ACCESS_DENIED_ON_LEGACY_AND_BROKER_OBJECT_NAMES'
 
-  $experimentCStop = Stop-SylphProbeService -Name $serviceName
+  $experimentCStop = Stop-SylphProbeService -Name $serviceName -DataDir $brokerRoot
   if ($experimentCStop.state -ne 'Stopped') { throw "EXPERIMENT_C_REQUIRES_CLOSED_BROKER_DATABASE:$($experimentCStop.state)" }
   Save-Record 'experiment-c-broker-closed-before-byte-comparison.json' $experimentCStop
   $brokerDbBeforeLegacyHandleMutation = (Get-FileHash -Algorithm SHA256 -LiteralPath $brokerDb).Hash

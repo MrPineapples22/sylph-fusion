@@ -49,7 +49,6 @@ const ERROR_PIPE_BUSY: DWORD = 231;
 const ERROR_IO_PENDING: DWORD = 997;
 const WAIT_OBJECT_0: DWORD = 0;
 const WAIT_TIMEOUT: DWORD = 258;
-const INFINITE: DWORD = 0xFFFF_FFFF;
 const IPC_FRAME_TIMEOUT_MS: u64 = 2500;
 const OPEN_EXISTING: DWORD = 3;
 const GENERIC_READ: DWORD = 0x8000_0000;
@@ -1230,7 +1229,8 @@ pub mod pipe {
                 return Ok(transferred);
             }
             if wait != WAIT_TIMEOUT {
-                return Err(format!("{operation}_WAIT_FAILED:{wait}:{}", error_text()));
+                return cancel_and_drain(pipe, overlapped)
+                    .map_err(|error| format!("{operation}_WAIT_FAILED:{wait}:IO:{error}"));
             }
             let timed_out = timeout_ms
                 .is_some_and(|limit| unsafe { GetTickCount64() }.saturating_sub(started) >= limit);
@@ -1238,28 +1238,39 @@ pub mod pipe {
                 continue;
             }
 
-            // Do not release OVERLAPPED storage while the kernel may still own
-            // the request. Cancel it and drain completion before returning.
-            unsafe {
-                let _ = CancelIoEx(pipe, overlapped);
-                if WaitForSingleObject(overlapped.hEvent, INFINITE) != WAIT_OBJECT_0 {
-                    return Err(format!("{operation}_CANCEL_DRAIN_FAILED:{}", error_text()));
+            // Cancel, then use GetOverlappedResult(wait=true) as the completion
+            // barrier. The caller may release buffers/events only after this
+            // call returns, including when cancellation races completion.
+            match cancel_and_drain(pipe, overlapped) {
+                Ok(completed) => return Ok(completed),
+                Err(error) if error == 995 && service::stopping() => {
+                    return Err("IPC_STOPPED".into())
                 }
-                let mut transferred = 0;
-                if GetOverlappedResult(pipe, overlapped, &mut transferred, 0) != 0 {
-                    return Ok(transferred);
+                Err(error) if error == 995 && timed_out => return Err("IPC_FRAME_TIMEOUT".into()),
+                Err(error) if is_client_disconnect_error(error) => {
+                    return Err("IPC_CLIENT_DISCONNECTED".into())
                 }
+                Err(error) => {
+                    return Err(format!("{operation}_CANCELLED:{error}:{}", error_text()))
+                }
+            }
+        }
+    }
+    fn cancel_and_drain(pipe: HANDLE, overlapped: &mut OVERLAPPED) -> Result<DWORD, DWORD> {
+        unsafe {
+            let _ = CancelIoEx(pipe, overlapped);
+            let mut transferred = 0;
+            if GetOverlappedResult(pipe, overlapped, &mut transferred, 1) != 0 {
+                Ok(transferred)
+            } else {
                 let error = GetLastError();
-                if service::stopping() {
-                    return Err("IPC_STOPPED".into());
+                if error == 6 {
+                    // The handle was invalidated, so the kernel cannot retain
+                    // a request against it. Keep this explicit in diagnostics.
+                    Err(error)
+                } else {
+                    Err(error)
                 }
-                if timed_out && error == 995 {
-                    return Err("IPC_FRAME_TIMEOUT".into());
-                }
-                if is_client_disconnect_error(error) {
-                    return Err("IPC_CLIENT_DISCONNECTED".into());
-                }
-                return Err(format!("{operation}_CANCELLED:{error}:{}", error_text()));
             }
         }
     }
@@ -1630,23 +1641,35 @@ pub mod pipe {
                 let result = match read_message(handle) {
                     Err(error) if error == "IPC_STOPPED" => Ok(()),
                     Err(error) if error == "IPC_CLIENT_DISCONNECTED" => Ok(()),
+                    Err(error) if error.starts_with("IPC_READ_WAIT_FAILED") => Err(error),
                     Err(_) => {
                         let _ = write_message(handle, "ERR|MALFORMED_REQUEST");
                         Ok(())
                     }
+                    Ok(_) if service::stopping() => Ok(()),
                     Ok(request) => match client_identity_matches(handle, client_sid) {
-                        Ok(false) => {
-                            let _ = write_message(handle, "ERR|CLIENT_IDENTITY_DENIED");
-                            Ok(())
-                        }
+                        Ok(false) => write_message(handle, "ERR|CLIENT_IDENTITY_DENIED")
+                            .map_err(|error| format!("IPC_RESPONSE_WRITE_FAILED:{error}")),
                         Err(fatal) => Err(fatal),
                         Ok(true) => {
                             let response = dispatch(&request, registry);
-                            let _ = write_message(handle, &response);
-                            Ok(())
+                            write_message(handle, &response)
+                                .map_err(|error| format!("IPC_RESPONSE_WRITE_FAILED:{error}"))
                         }
                     },
                 };
+                if let Err(error) = &result {
+                    if error.starts_with("IPC_READ_WAIT_FAILED")
+                        || error.starts_with("IPC_RESPONSE_WRITE_FAILED")
+                    {
+                        // The operation has been drained or failed before
+                        // dispatch. Retire readiness and stop this endpoint;
+                        // an unknown acknowledgement must not leave a
+                        // healthy-looking broker accepting new writes.
+                        close(handle);
+                        return Err(error.clone());
+                    }
+                }
                 let disconnected = DisconnectNamedPipe(handle);
                 if disconnected == 0 {
                     let error = GetLastError();
@@ -1740,7 +1763,7 @@ pub mod pipe {
                 0,
                 null_mut(),
                 OPEN_EXISTING,
-                0,
+                FILE_FLAG_OVERLAPPED,
                 null_mut(),
             );
             if handle == INVALID_HANDLE_VALUE {
@@ -1767,6 +1790,9 @@ pub mod service {
     use super::*;
     use std::io::Write;
     static STOP: AtomicBool = AtomicBool::new(false);
+    static READINESS_PATH: OnceLock<PathBuf> = OnceLock::new();
+    static READINESS_WITHDRAWAL_ERROR: std::sync::Mutex<Option<String>> =
+        std::sync::Mutex::new(None);
     static STATUS_HANDLE: AtomicIsize = AtomicIsize::new(SERVICE_STATUS_HANDLE_INVALID);
     static CURRENT_SERVICE_STATE: AtomicU32 = AtomicU32::new(SERVICE_STOPPED);
     static CURRENT_AUTHORITY_STATE: AtomicU32 = AtomicU32::new(0);
@@ -1825,6 +1851,16 @@ pub mod service {
     pub fn stopping() -> bool {
         STOP.load(Ordering::SeqCst)
     }
+    fn withdraw_readiness_on_stop() -> Result<(), String> {
+        let path = READINESS_PATH
+            .get()
+            .ok_or("READINESS_PATH_NOT_INITIALIZED")?;
+        match std::fs::remove_file(path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(format!("READINESS_STOP_WITHDRAWAL_FAILED:{error}")),
+        }
+    }
     fn remove_stale_readiness(cfg: &Config) -> Result<(), String> {
         match std::fs::remove_file(cfg.data_dir.join("broker-ready.json")) {
             Ok(()) => Ok(()),
@@ -1872,6 +1908,11 @@ pub mod service {
             SERVICE_CONTROL_STOP => {
                 STOP.store(true, Ordering::SeqCst);
                 set_authority_state(AUTHORITY_STOPPING);
+                if let Err(error) = withdraw_readiness_on_stop() {
+                    *READINESS_WITHDRAWAL_ERROR
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(error);
+                }
                 set_status(SERVICE_STOP_PENDING, 0);
                 0
             }
@@ -1900,6 +1941,13 @@ pub mod service {
         set_authority_state(AUTHORITY_STARTING);
         let _ = std::fs::remove_file(cfg.data_dir.join("broker-startup-error.txt"));
         let mut result = run_service(&cfg);
+        if let Some(error) = READINESS_WITHDRAWAL_ERROR
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+        {
+            result = Err(error);
+        }
         if stopping() {
             set_authority_state(AUTHORITY_STOPPING);
         } else if result.is_err() {
@@ -1968,6 +2016,12 @@ pub mod service {
     }
     pub fn run() -> Result<(), String> {
         let cfg = parse_args()?;
+        READINESS_PATH
+            .set(cfg.data_dir.join("broker-ready.json"))
+            .map_err(|_| "READINESS_PATH_ALREADY_SET")?;
+        *READINESS_WITHDRAWAL_ERROR
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
         CONFIG.set(cfg.clone()).map_err(|_| "CONFIG_ALREADY_SET")?;
         let name = wide(&cfg.service_name);
         let table = [

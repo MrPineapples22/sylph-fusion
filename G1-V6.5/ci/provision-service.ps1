@@ -230,15 +230,45 @@ function Start-SylphProbeService {
 
 function Stop-SylphProbeService {
   [CmdletBinding()]
-  param([Parameter(Mandatory)][string]$Name)
+  param([Parameter(Mandatory)][string]$Name,[string]$DataDir)
   $output = & sc.exe stop $Name 2>&1
   $code = $LASTEXITCODE
+  $readinessAbsentOnStopAccepted = $false
+  if ($DataDir) {
+    $readyPath = Join-Path $DataDir 'broker-ready.json'
+    $readinessAbsentOnStopAccepted = -not (Test-Path -LiteralPath $readyPath)
+    if (-not $readinessAbsentOnStopAccepted) {
+      throw "STALE_READINESS_AFTER_STOP_CONTROL:${Name}:${readyPath}"
+    }
+  }
   $deadline = [DateTime]::UtcNow.AddSeconds(15)
+  $observedStopPending = $false
+  $readinessAbsentDuringStopPending = $false
   do {
-    Start-Sleep -Milliseconds 250
+    Start-Sleep -Milliseconds 25
     $service = Get-Service -Name $Name -ErrorAction SilentlyContinue
+    if ($service -and $service.Status.ToString() -eq 'StopPending') {
+      $observedStopPending = $true
+      if ($DataDir) {
+        $readyPath = Join-Path $DataDir 'broker-ready.json'
+        if (Test-Path -LiteralPath $readyPath) {
+          throw "STALE_READINESS_DURING_STOP_PENDING:${Name}:${readyPath}"
+        }
+        $readinessAbsentDuringStopPending = $true
+      }
+    }
   } while ($service -and $service.Status -ne 'Stopped' -and [DateTime]::UtcNow -lt $deadline)
-  [pscustomobject]@{ serviceName=$Name; stopExitCode=$code; stopOutput=($output -join ' '); state=if($service){$service.Status.ToString()}else{'MISSING'} }
+  if ($DataDir -and (Test-Path -LiteralPath (Join-Path $DataDir 'broker-ready.json'))) {
+    throw "STALE_READINESS_AFTER_STOP:${Name}"
+  }
+  [pscustomobject]@{
+    serviceName=$Name; stopExitCode=$code; stopOutput=($output -join ' ')
+    state=if($service){$service.Status.ToString()}else{'MISSING'}
+    observedStopPending=$observedStopPending
+    readinessAbsentOnStopAccepted=$readinessAbsentOnStopAccepted
+    readinessAbsentDuringStopPending=$readinessAbsentDuringStopPending
+    readinessAbsentAfterStop=($DataDir -and -not (Test-Path -LiteralPath (Join-Path $DataDir 'broker-ready.json')))
+  }
 }
 
 function Remove-SylphProbeService {

@@ -262,6 +262,9 @@ fn valid_state(value: &str) -> bool {
 /// Unambiguous, length-prefixed serialization of every content-bearing field.
 /// The signature envelope is excluded so renewal cannot change history identity.
 fn canonical_claim(bundle: &ImportBundle) -> Result<Vec<u8>, String> {
+    if canonical_claim_encoded_size(bundle)? > MAX_BUNDLE_BYTES {
+        return Err("IMPORT_CANONICAL_CLAIM_TOO_LARGE".into());
+    }
     let mut output = Vec::new();
     output.extend_from_slice(b"SYLPH-IMPORT-CONTENT-V1\0");
     put_u32(&mut output, bundle.schema);
@@ -282,9 +285,6 @@ fn canonical_claim(bundle: &ImportBundle) -> Result<Vec<u8>, String> {
         put_str(&mut output, &obligation.state)?;
         put_str(&mut output, &obligation.external_identity)?;
     }
-    if output.len() > MAX_BUNDLE_BYTES {
-        return Err("IMPORT_CANONICAL_CLAIM_TOO_LARGE".into());
-    }
     Ok(output)
 }
 
@@ -292,6 +292,9 @@ fn canonical_claim(bundle: &ImportBundle) -> Result<Vec<u8>, String> {
 /// obligation inventory. The signed envelope authenticates this claim later;
 /// a caller-provided root is never accepted as its own proof.
 fn state_root(bundle: &ImportBundle) -> Result<String, String> {
+    if state_root_encoded_size(bundle)? > MAX_BUNDLE_BYTES {
+        return Err("IMPORT_STATE_ROOT_CONTENT_TOO_LARGE".into());
+    }
     let mut state = Vec::new();
     state.extend_from_slice(b"SYLPH-AUTHORITY-STATE-ROOT-V1\0");
     put_str(&mut state, &bundle.chain_identity)?;
@@ -310,11 +313,65 @@ fn state_root(bundle: &ImportBundle) -> Result<String, String> {
         put_str(&mut state, &obligation.state)?;
         put_str(&mut state, &obligation.external_identity)?;
     }
-    if state.len() > MAX_BUNDLE_BYTES {
-        return Err("IMPORT_STATE_ROOT_CONTENT_TOO_LARGE".into());
-    }
     let digest = sha256(&state)?;
     Ok(digest.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+fn canonical_claim_encoded_size(bundle: &ImportBundle) -> Result<usize, String> {
+    let mut size = b"SYLPH-IMPORT-CONTENT-V1\0".len();
+    add_size(&mut size, 4)?;
+    add_sized_field(&mut size, bundle.chain_identity.len())?;
+    add_size(&mut size, 16)?;
+    add_sized_field(&mut size, bundle.parent_state_root.len())?;
+    add_sized_field(&mut size, bundle.state_root.len())?;
+    add_size(&mut size, 8)?;
+    for receipt in &bundle.receipts {
+        add_sized_field(&mut size, receipt.identity.len())?;
+        add_sized_field(&mut size, receipt.parent_identity.len())?;
+        add_sized_field(&mut size, receipt.payload.len())?;
+    }
+    add_size(&mut size, 8)?;
+    for obligation in &bundle.obligations {
+        add_sized_field(&mut size, obligation.identity.len())?;
+        add_sized_field(&mut size, obligation.state.len())?;
+        add_sized_field(&mut size, obligation.external_identity.len())?;
+    }
+    Ok(size)
+}
+
+fn state_root_encoded_size(bundle: &ImportBundle) -> Result<usize, String> {
+    let mut size = b"SYLPH-AUTHORITY-STATE-ROOT-V1\0".len();
+    add_sized_field(&mut size, bundle.chain_identity.len())?;
+    add_size(&mut size, 16)?;
+    add_sized_field(&mut size, bundle.parent_state_root.len())?;
+    add_size(&mut size, 8)?;
+    for receipt in &bundle.receipts {
+        add_sized_field(&mut size, receipt.identity.len())?;
+        add_sized_field(&mut size, receipt.parent_identity.len())?;
+        add_sized_field(&mut size, receipt.payload.len())?;
+    }
+    add_size(&mut size, 8)?;
+    for obligation in &bundle.obligations {
+        add_sized_field(&mut size, obligation.identity.len())?;
+        add_sized_field(&mut size, obligation.state.len())?;
+        add_sized_field(&mut size, obligation.external_identity.len())?;
+    }
+    Ok(size)
+}
+
+fn add_sized_field(total: &mut usize, field_length: usize) -> Result<(), String> {
+    if field_length > MAX_FIELD_BYTES {
+        return Err("IMPORT_FIELD_TOO_LARGE".into());
+    }
+    add_size(total, 8)?;
+    add_size(total, field_length)
+}
+
+fn add_size(total: &mut usize, additional: usize) -> Result<(), String> {
+    *total = total
+        .checked_add(additional)
+        .ok_or("IMPORT_ENCODED_SIZE_OVERFLOW")?;
+    Ok(())
 }
 
 fn sha256(input: &[u8]) -> Result<[u8; 32], String> {
@@ -509,18 +566,21 @@ mod tests {
         };
         let mut missing_parent = bundle();
         missing_parent.receipts[0].parent_identity = "absent".into();
+        missing_parent.state_root = state_root(&missing_parent).unwrap();
         assert!(matches!(
             ImportKernel::validate(&anchor(), missing_parent, &auth),
             ImportDecision::Rejected(_)
         ));
         let mut duplicate = bundle();
         duplicate.receipts[1].identity = duplicate.receipts[0].identity.clone();
+        duplicate.state_root = state_root(&duplicate).unwrap();
         assert!(matches!(
             ImportKernel::validate(&anchor(), duplicate, &auth),
             ImportDecision::Rejected(_)
         ));
         let mut dropped = bundle();
         dropped.obligations.clear();
+        dropped.state_root = state_root(&dropped).unwrap();
         assert!(
             matches!(ImportKernel::validate(&anchor(), dropped, &auth), ImportDecision::Rejected(reason) if reason.starts_with("IMPORT_OBLIGATION_DROPPED"))
         );
@@ -551,6 +611,7 @@ mod tests {
         };
         let mut changed = candidate;
         changed.obligations[0].state = "RESOLVED".into();
+        changed.state_root = state_root(&changed).unwrap();
         assert!(
             matches!(ImportKernel::validate(&anchor(), changed, &auth), ImportDecision::Rejected(reason) if reason.starts_with("IMPORT_OBLIGATION_CHANGED_WITHOUT_PROOF"))
         );
@@ -566,6 +627,7 @@ mod tests {
         };
         let mut branched = candidate;
         branched.receipts[1].parent_identity = "receipt-4".into();
+        branched.state_root = state_root(&branched).unwrap();
         assert!(
             matches!(ImportKernel::validate(&anchor(), branched, &auth), ImportDecision::Rejected(reason) if reason == "IMPORT_RECEIPT_PARENT_MISSING_OR_OUT_OF_ORDER:1")
         );
@@ -598,5 +660,24 @@ mod tests {
                 .collect::<String>(),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
+    }
+
+    #[test]
+    fn canonicalization_rejects_oversized_inventory_before_building_claim_bytes() {
+        let mut candidate = bundle();
+        let mut parent = "receipt-5b".to_string();
+        for index in 0..65 {
+            let identity = format!("large-receipt-{index}");
+            candidate.receipts.push(ReceiptRecord {
+                identity: identity.clone(),
+                parent_identity: parent,
+                payload: vec![b'x'; MAX_FIELD_BYTES],
+            });
+            parent = identity;
+        }
+        assert!(matches!(
+            canonical_claim(&candidate),
+            Err(reason) if reason == "IMPORT_CANONICAL_CLAIM_TOO_LARGE"
+        ));
     }
 }
