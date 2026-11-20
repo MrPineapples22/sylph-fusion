@@ -2703,7 +2703,10 @@ pub mod service {
                 crate::win::pipe::synthetic_maintenance_exchange(&valid_request(), false)
                     .expect("named pipe roundtrip must reach the endpoint");
             assert!(accepted.contains("\"authority\":\"SYNTHETIC_TEST_ONLY\""));
-            assert!(accepted.contains("\"result\":\"ACTIVATED\""));
+            assert!(
+                accepted.contains("\"result\":\"ACTIVATED\""),
+                "unexpected synthetic import response: {accepted}"
+            );
             let rejected = crate::win::pipe::synthetic_maintenance_exchange(b"RESET", false)
                 .expect("malformed request should receive a rejection");
             assert!(rejected.contains("\"result\":\"REJECTED\""));
