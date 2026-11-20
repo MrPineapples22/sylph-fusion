@@ -1166,7 +1166,7 @@ pub mod pipe {
     ) -> Result<(*mut c_void, SECURITY_ATTRIBUTES), String> {
         unsafe {
             let sddl = wide(&format!(
-                "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;{service_sid})(A;;0x00100003;;;{client_sid})"
+                "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;{service_sid})(A;;0x0012019F;;;{client_sid})"
             ));
             let mut descriptor = null_mut();
             check(
