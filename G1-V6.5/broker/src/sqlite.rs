@@ -175,7 +175,7 @@ impl Registry {
             path,
             OpenFlags::SQLITE_OPEN_READ_WRITE
                 | OpenFlags::SQLITE_OPEN_CREATE
-                | OpenFlags::from_bits_retain(rusqlite::ffi::SQLITE_OPEN_EXCLUSIVE as u32)
+                | OpenFlags::from_bits_retain(rusqlite::ffi::SQLITE_OPEN_EXCLUSIVE as i32)
                 | OpenFlags::SQLITE_OPEN_FULL_MUTEX,
         )
         .map_err(|e| map_error("SQLITE_INITIALIZE_CREATE_EXCLUSIVE", e))?;
@@ -667,3 +667,4 @@ mod tests {
         cleanup(&path);
     }
 }
+

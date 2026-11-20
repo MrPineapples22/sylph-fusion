@@ -49,7 +49,7 @@ impl DurableImportStore {
             path,
             OpenFlags::SQLITE_OPEN_READ_WRITE
                 | OpenFlags::SQLITE_OPEN_CREATE
-                | OpenFlags::from_bits_retain(rusqlite::ffi::SQLITE_OPEN_EXCLUSIVE as u32)
+                | OpenFlags::from_bits_retain(rusqlite::ffi::SQLITE_OPEN_EXCLUSIVE as i32)
                 | OpenFlags::SQLITE_OPEN_FULL_MUTEX,
         )
         .map_err(|error| format!("IMPORT_STORE_CREATE_EXCLUSIVE:{error}"))?;
@@ -1068,3 +1068,4 @@ mod tests {
         let _ = std::fs::remove_file(path);
     }
 }
+
