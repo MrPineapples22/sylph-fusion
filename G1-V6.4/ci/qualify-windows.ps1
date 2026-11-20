@@ -789,7 +789,20 @@ try {
         $virtual.token.pragmas.journalMode -ne 'wal' -or $virtual.token.pragmas.synchronous -ne 2 -or
         $virtual.token.pragmas.foreignKeys -ne 1 -or $virtual.token.pragmas.trustedSchema -ne 0 -or
         -not $virtual.token.databaseIdentity) {
-      throw 'VIRTUAL_ACCOUNT_TOKEN_REPORT_INCOMPLETE'
+      $tokenFacts = [ordered]@{
+        identityMode=$virtual.token.identityMode
+        tokenUserSid=$virtual.token.tokenUserSid
+        serviceSid=$virtual.token.serviceSid
+        serviceSidMember=$virtual.token.serviceSidMember
+        serviceSidGroupPresent=$virtual.token.serviceSidGroupPresent
+        serviceSidInRestrictedList=$virtual.token.serviceSidInRestrictedList
+        integrityRid=$virtual.token.integrityRid
+        sqliteVersion=$virtual.token.sqliteVersion
+        sqliteSourceId=$virtual.token.sqliteSourceId
+        pragmas=$virtual.token.pragmas
+        databaseIdentityPresent=[bool]$virtual.token.databaseIdentity
+      }
+      throw "VIRTUAL_ACCOUNT_TOKEN_REPORT_INCOMPLETE:$(ConvertTo-Json -InputObject $tokenFacts -Depth 8 -Compress)"
     }
     Assert-PrivilegeReport $virtual.token 'VirtualAccount'
     $virtualStatus = Test-ClientOperation -Label 'virtual-account-client-status' -Verb 'status'
