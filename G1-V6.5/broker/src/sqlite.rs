@@ -1,9 +1,11 @@
 use rusqlite::config::DbConfig;
 use rusqlite::limits::Limit;
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
-use std::path::Path;
+use std::fs::OpenOptions;
+use std::path::{Path, PathBuf};
 
 const EXPECTED_SQLITE_VERSION: &str = "3.54.1";
+const EXPECTED_SCHEMA_VERSION: i32 = 1;
 
 pub struct Registry {
     connection: Connection,
@@ -24,7 +26,11 @@ fn map_error(prefix: &str, error: impl std::fmt::Display) -> String {
     format!("{prefix}:{error}")
 }
 
-fn configure_connection(connection: &Connection, writable: bool) -> Result<(), String> {
+fn configure_connection(
+    connection: &Connection,
+    writable: bool,
+    initialize_wal: bool,
+) -> Result<(), String> {
     connection
         .set_db_config(DbConfig::SQLITE_DBCONFIG_DEFENSIVE, true)
         .map_err(|e| map_error("SQLITE_DEFENSIVE_ENABLE", e))?;
@@ -75,11 +81,13 @@ fn configure_connection(connection: &Connection, writable: bool) -> Result<(), S
     }
 
     if writable {
-        let mode: String = connection
-            .query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))
-            .map_err(|e| map_error("SQLITE_JOURNAL_MODE_SET", e))?;
-        if !mode.eq_ignore_ascii_case("wal") {
-            return Err(format!("SQLITE_JOURNAL_MODE_MISMATCH:{mode}"));
+        if initialize_wal {
+            let mode: String = connection
+                .query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))
+                .map_err(|e| map_error("SQLITE_JOURNAL_MODE_SET", e))?;
+            if !mode.eq_ignore_ascii_case("wal") {
+                return Err(format!("SQLITE_JOURNAL_MODE_MISMATCH:{mode}"));
+            }
         }
         connection
             .pragma_update(None, "synchronous", "FULL")
@@ -154,27 +162,60 @@ fn profile(connection: &Connection) -> Result<(String, i32, i32, i32, String), S
 }
 
 impl Registry {
-    pub fn open(path: &Path) -> Result<Self, String> {
-        let flags = OpenFlags::SQLITE_OPEN_READ_WRITE
-            | OpenFlags::SQLITE_OPEN_CREATE
-            | OpenFlags::SQLITE_OPEN_FULL_MUTEX;
-        let connection =
-            Connection::open_with_flags(path, flags).map_err(|e| map_error("SQLITE_OPEN", e))?;
+    /// Explicit one-time bootstrap for disposable synthetic qualification only.
+    /// Atomic file creation prevents this operation from adopting an existing
+    /// or attacker-substituted database object.
+    pub fn initialize(path: &Path) -> Result<Self, String> {
+        if has_sqlite_sidecar(path) {
+            return Err("SQLITE_INITIALIZE_SIDECAR_EXISTS".into());
+        }
+        let file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+            .map_err(|e| map_error("SQLITE_INITIALIZE_CREATE_NEW", e))?;
+        drop(file);
+        let connection = Connection::open_with_flags(
+            path,
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_FULL_MUTEX,
+        )
+        .map_err(|e| map_error("SQLITE_INITIALIZE_OPEN", e))?;
         if rusqlite::version() != EXPECTED_SQLITE_VERSION {
             return Err(format!(
                 "SQLITE_VERSION_MISMATCH:expected={EXPECTED_SQLITE_VERSION},actual={}",
                 rusqlite::version()
             ));
         }
-        configure_connection(&connection, true)?;
+        configure_connection(&connection, true, true)?;
         connection
             .execute_batch(
-                "CREATE TABLE IF NOT EXISTS effects(\
+                "BEGIN IMMEDIATE;\
+                 CREATE TABLE effects(\
                     request_id TEXT PRIMARY KEY NOT NULL,\
                     payload TEXT NOT NULL\
-                );",
+                );\
+                 PRAGMA user_version=1;\
+                 COMMIT;",
             )
-            .map_err(|e| map_error("SQLITE_SCHEMA", e))?;
+            .map_err(|e| map_error("SQLITE_INITIALIZE_SCHEMA", e))?;
+        Self::from_connection(connection)
+    }
+
+    /// Normal service startup: open an existing initialized database only.
+    /// This path never uses SQLITE_OPEN_CREATE and never creates the schema.
+    pub fn open_existing(path: &Path) -> Result<Self, String> {
+        if !path.is_file() {
+            return Err("SQLITE_AUTHORITY_DATABASE_MISSING".into());
+        }
+        let flags = OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_FULL_MUTEX;
+        let connection = Connection::open_with_flags(path, flags)
+            .map_err(|e| map_error("SQLITE_OPEN_EXISTING", e))?;
+        Self::validate_existing(&connection)?;
+        configure_connection(&connection, true, false)?;
+        Self::from_connection(connection)
+    }
+
+    fn from_connection(connection: Connection) -> Result<Self, String> {
         let (journal_mode, synchronous, foreign_keys, trusted_schema, sourceid) =
             profile(&connection)?;
         if !journal_mode.eq_ignore_ascii_case("wal")
@@ -200,6 +241,42 @@ impl Registry {
             attach_write: false,
             extension_loading_disabled: true,
         })
+    }
+
+    fn validate_existing(connection: &Connection) -> Result<(), String> {
+        let version: i32 = connection
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .map_err(|e| map_error("SQLITE_SCHEMA_VERSION_READ", e))?;
+        if version != EXPECTED_SCHEMA_VERSION {
+            return Err(format!("SQLITE_SCHEMA_VERSION_MISMATCH:{version}"));
+        }
+        let table_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| map_error("SQLITE_SCHEMA_INVENTORY", e))?;
+        if table_count != 1 {
+            return Err(format!("SQLITE_SCHEMA_TABLE_COUNT:{table_count}"));
+        }
+        let effect_table: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='effects'",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| map_error("SQLITE_EFFECTS_SCHEMA", e))?;
+        if effect_table != 1 {
+            return Err("SQLITE_EFFECTS_TABLE_MISSING".into());
+        }
+        let integrity: String = connection
+            .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+            .map_err(|e| map_error("SQLITE_OPEN_INTEGRITY", e))?;
+        if integrity != "ok" {
+            return Err(format!("SQLITE_OPEN_INTEGRITY_FAILED:{integrity}"));
+        }
+        Ok(())
     }
 
     pub fn count(&self) -> Result<i64, String> {
@@ -257,7 +334,7 @@ pub fn inspect_readonly(path: &Path) -> Result<String, String> {
             rusqlite::version()
         ));
     }
-    configure_connection(&connection, false)?;
+    configure_connection(&connection, false, false)?;
     let integrity = connection
         .query_row("PRAGMA integrity_check", [], |row| row.get::<_, String>(0))
         .map_err(|e| map_error("SQLITE_INTEGRITY", e))?;
@@ -269,6 +346,14 @@ pub fn inspect_readonly(path: &Path) -> Result<String, String> {
         "{{\"schema\":\"SYLPH_G1_SQLITE_READONLY_1\",\"integrity\":\"{integrity}\",\"effectCount\":{effect_count},\"sqliteVersion\":\"{}\",\"sqliteSourceId\":\"{sourceid}\",\"pragmas\":{{\"journalMode\":\"{journal_mode}\",\"synchronous\":{synchronous},\"foreignKeys\":{foreign_keys},\"trustedSchema\":{trusted_schema}}}}}",
         rusqlite::version()
     ))
+}
+
+fn has_sqlite_sidecar(path: &Path) -> bool {
+    ["-wal", "-shm", "-journal"].iter().any(|suffix| {
+        let mut name = path.as_os_str().to_os_string();
+        name.push(suffix);
+        PathBuf::from(name).exists()
+    })
 }
 
 fn valid_request_id(value: &str) -> bool {
@@ -322,7 +407,7 @@ mod tests {
     #[test]
     fn bundled_sqlite_profile_and_request_idempotency_are_checked() {
         let path = test_path();
-        let registry = Registry::open(&path).expect("registry open and profile check");
+        let registry = Registry::initialize(&path).expect("explicit registry initialization");
         assert_eq!(registry.version, "3.54.1");
         assert!(!registry.sourceid.is_empty());
         assert_eq!(registry.journal_mode.to_ascii_lowercase(), "wal");
@@ -345,4 +430,42 @@ mod tests {
         drop(registry);
         cleanup(&path);
     }
+
+    #[test]
+    fn normal_open_rejects_missing_database_without_creating_it() {
+        let path = test_path();
+        assert!(!path.exists());
+        assert!(Registry::open_existing(&path).is_err());
+        assert!(
+            !path.exists(),
+            "normal service open created an empty database"
+        );
+        cleanup(&path);
+    }
+
+    #[test]
+    fn normal_open_rejects_uninitialized_database_without_schema_changes() {
+        let path = test_path();
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        connection
+            .execute_batch("CREATE TABLE unrelated(value TEXT)")
+            .unwrap();
+        drop(connection);
+        let before = std::fs::read(&path).unwrap();
+        assert!(Registry::open_existing(&path).is_err());
+        let after = std::fs::read(&path).unwrap();
+        assert_eq!(before, after, "rejected schema was modified");
+        cleanup(&path);
+    }
+
+    #[test]
+    fn initialization_refuses_existing_or_sidecar_state() {
+        let path = test_path();
+        std::fs::write(&path, b"synthetic existing evidence").unwrap();
+        let before = std::fs::read(&path).unwrap();
+        assert!(Registry::initialize(&path).is_err());
+        assert_eq!(before, std::fs::read(&path).unwrap());
+        cleanup(&path);
+    }
 }
+
