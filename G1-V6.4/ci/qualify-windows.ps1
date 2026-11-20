@@ -237,7 +237,7 @@ function Start-BrokerAndCheck([string]$Mode, [string]$DataDir, [string]$ClientSi
   if (-not (Test-Path -LiteralPath $tokenPath)) { throw "BROKER_TOKEN_REPORT_MISSING:$Mode" }
   $token = Get-Content -Raw -LiteralPath $tokenPath | ConvertFrom-Json
   Save-Record "$Mode-broker-token.json" $token
-  $serviceProcess = Get-CimInstance Win32_Service -Filter "Name='$Name'"
+  $serviceProcess = Get-CimInstance Win32_Service -Filter "Name='$serviceName'"
   if (-not $serviceProcess -or $serviceProcess.State -ne 'Running' -or
       [long]$serviceProcess.ProcessId -ne [long]$started.ready.processId -or
       $null -eq $token.processId -or [long]$token.processId -ne [long]$serviceProcess.ProcessId) {
