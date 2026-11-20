@@ -40,11 +40,7 @@ pub struct DurableImportStore {
 impl DurableImportStore {
     /// Create a new, empty synthetic store. Existing files are never adopted.
     pub fn create(path: &Path, anchor: &ImportAnchor) -> Result<Self, String> {
-        if anchor.generation == 0
-            || anchor.generation > i64::MAX as u64
-            || anchor.state_root.is_empty()
-            || anchor.last_receipt_identity.is_empty()
-        {
+        if !valid_anchor(anchor) {
             return Err("IMPORT_STORE_REQUIRES_SYNTHETIC_ANCHOR".into());
         }
         let file = OpenOptions::new()
@@ -91,6 +87,9 @@ impl DurableImportStore {
         })
     }
 
+    /// Open only when the current head is independently pinned outside this
+    /// SQLite file. `approved_head` must come from a monotonic authority
+    /// witness; choosing an older head intentionally defeats rollback checks.
     pub fn open_existing(
         path: &Path,
         expected_anchor: &ImportAnchor,
@@ -787,6 +786,16 @@ mod tests {
         drop(store);
         let connection =
             Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE).unwrap();
+        connection
+            .execute_batch("PRAGMA foreign_keys=OFF;")
+            .unwrap();
+        let foreign_keys: i64 = connection
+            .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(
+            foreign_keys, 0,
+            "truncate fixture must bypass normal constraints"
+        );
         connection
             .execute("DELETE FROM authority_receipts WHERE generation=5", [])
             .unwrap();
