@@ -2611,24 +2611,45 @@ pub mod service {
         }
         fn valid_request() -> Vec<u8> {
             let id = [0x31u8; 16];
+            let mut bundle = crate::import::ImportBundle {
+                schema: 1,
+                chain_identity: "scratch-chain".into(),
+                generation: 2,
+                parent_generation: 1,
+                parent_state_root: "state-1".into(),
+                state_root: String::new(),
+                receipts: vec![crate::import::ReceiptRecord {
+                    identity: "receipt-2".into(),
+                    parent_identity: "receipt-1".into(),
+                    payload: b"synthetic fixture payload".to_vec(),
+                }],
+                obligations: vec![],
+                evidence_envelope: {
+                    let mut envelope = b"SYLPH_G1_SYNTHETIC_TEST_ONLY_V1\0".to_vec();
+                    envelope.extend_from_slice(&id);
+                    envelope
+                },
+            };
+            bundle.state_root = crate::import::state_root(&bundle).unwrap();
+
             let mut out = b"G1SIMP01".to_vec();
             out.extend_from_slice(&id);
             put_anchor(&mut out, 1, "state-1", "receipt-1");
             put_anchor(&mut out, 1, "state-1", "receipt-1");
-            put_u32(&mut out, 1);
-            put_str(&mut out, "scratch-chain");
-            put_u64(&mut out, 2);
-            put_u64(&mut out, 1);
-            put_str(&mut out, "state-1");
-            put_str(&mut out, "state-2");
-            put_u32(&mut out, 1);
-            put_str(&mut out, "receipt-2");
-            put_str(&mut out, "receipt-1");
-            put_bytes(&mut out, b"synthetic fixture payload");
-            put_u32(&mut out, 0);
-            let mut envelope = b"SYLPH_G1_SYNTHETIC_TEST_ONLY_V1\0".to_vec();
-            envelope.extend_from_slice(&id);
-            put_bytes(&mut out, &envelope);
+            put_u32(&mut out, bundle.schema);
+            put_str(&mut out, &bundle.chain_identity);
+            put_u64(&mut out, bundle.generation);
+            put_u64(&mut out, bundle.parent_generation);
+            put_str(&mut out, &bundle.parent_state_root);
+            put_str(&mut out, &bundle.state_root);
+            put_u32(&mut out, bundle.receipts.len() as u32);
+            for receipt in &bundle.receipts {
+                put_str(&mut out, &receipt.identity);
+                put_str(&mut out, &receipt.parent_identity);
+                put_bytes(&mut out, &receipt.payload);
+            }
+            put_u32(&mut out, bundle.obligations.len() as u32);
+            put_bytes(&mut out, &bundle.evidence_envelope);
             out
         }
         fn related_files(path: &std::path::Path) -> Vec<(std::path::PathBuf, Option<Vec<u8>>)> {
