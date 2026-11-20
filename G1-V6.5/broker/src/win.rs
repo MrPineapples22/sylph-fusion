@@ -43,12 +43,13 @@ const ERROR_PIPE_LISTENING: DWORD = 536;
 const ERROR_PIPE_CONNECTED: DWORD = 535;
 const ERROR_MORE_DATA: DWORD = 234;
 const ERROR_NO_DATA: DWORD = 232;
+const ERROR_PIPE_NOT_CONNECTED: DWORD = 233;
 const ERROR_BROKEN_PIPE: DWORD = 109;
 const IPC_FRAME_TIMEOUT_MS: u64 = 2500;
 const OPEN_EXISTING: DWORD = 3;
 const GENERIC_READ: DWORD = 0x8000_0000;
 const GENERIC_WRITE: DWORD = 0x4000_0000;
-const IPC_CLIENT_ACCESS: DWORD = 0x0012_0103; // pipe data, FILE_WRITE_ATTRIBUTES, SYNCHRONIZE
+const IPC_CLIENT_ACCESS: DWORD = 0x0012_0103; // data, FILE_WRITE_ATTRIBUTES, READ_CONTROL, SYNCHRONIZE
 const FILE_CREATE_PIPE_INSTANCE: DWORD = 0x0000_0004;
 const PIPE_CLIENT_ACL_MASK: DWORD = IPC_CLIENT_ACCESS;
 const FILE_SHARE_READ: DWORD = 1;
@@ -1328,7 +1329,7 @@ pub mod pipe {
             assert!(client_acl_mask_is_valid(IPC_CLIENT_ACCESS));
         }
     }
-    pub fn serve_once(
+    pub fn serve(
         service_sid: &str,
         client_sid: &str,
         registry: &sqlite::Registry,
@@ -1358,54 +1359,64 @@ pub mod pipe {
                 close(handle);
                 return Err(format!("READINESS_PUBLICATION_FAILED:{error}"));
             }
-            let mut connected = false;
             while !service::stopping() {
                 if ConnectNamedPipe(handle, null_mut()) != 0 {
-                    connected = true;
-                    break;
+                    // Connected; handle this client and keep the original
+                    // first-instance handle owned for the service lifetime.
+                } else {
+                    let error = GetLastError();
+                    if error == ERROR_PIPE_CONNECTED {
+                        // A client connected between the wait and Connect call.
+                    } else if error == ERROR_PIPE_LISTENING {
+                        Sleep(80);
+                        continue;
+                    } else if error == ERROR_PIPE_NOT_CONNECTED || error == ERROR_NO_DATA {
+                        // A client disconnected while ConnectNamedPipe was
+                        // being issued. Re-arm this same instance.
+                        Sleep(20);
+                        continue;
+                    } else {
+                        close(handle);
+                        return Err(format!("PIPE_CONNECT_FATAL:{error}:{}", error_text()));
+                    }
                 }
-                let error = GetLastError();
-                if error == ERROR_PIPE_CONNECTED {
-                    connected = true;
-                    break;
+                // Read the bounded complete message before impersonating;
+                // Windows binds the impersonation token to the client that
+                // wrote the last message read from this pipe.
+                let result = match read_message(handle) {
+                    Err(error) if error == "IPC_STOPPED" => Ok(()),
+                    Err(_) => {
+                        let _ = write_message(handle, "ERR|MALFORMED_REQUEST");
+                        Ok(())
+                    }
+                    Ok(request) => match client_identity_matches(handle, client_sid) {
+                        Ok(false) => {
+                            let _ = write_message(handle, "ERR|CLIENT_IDENTITY_DENIED");
+                            Ok(())
+                        }
+                        Err(fatal) => Err(fatal),
+                        Ok(true) => {
+                            let response = dispatch(&request, registry);
+                            let _ = write_message(handle, &response);
+                            Ok(())
+                        }
+                    },
+                };
+                let disconnected = DisconnectNamedPipe(handle);
+                if disconnected == 0 {
+                    let error = GetLastError();
+                    if error != ERROR_PIPE_NOT_CONNECTED && error != ERROR_NO_DATA {
+                        close(handle);
+                        return Err(format!("PIPE_DISCONNECT_FATAL:{error}:{}", error_text()));
+                    }
                 }
-                if error != ERROR_PIPE_LISTENING && error != ERROR_MORE_DATA {
+                if let Err(error) = result {
                     close(handle);
-                    return Ok(());
+                    return Err(error);
                 }
-                Sleep(80);
             }
-            if !connected {
-                close(handle);
-                return Ok(());
-            }
-            // Read the bounded complete message before impersonating; Windows
-            // binds the impersonation token to the client that wrote the last
-            // message read from this pipe.
-            let result = match read_message(handle) {
-                Err(error) if error == "IPC_STOPPED" => Ok(()),
-                Err(_) => {
-                    let _ = write_message(handle, "ERR|MALFORMED_REQUEST");
-                    Ok(())
-                }
-                Ok(request) => match client_identity_matches(handle, client_sid) {
-                    Ok(false) => {
-                        let _ = write_message(handle, "ERR|CLIENT_IDENTITY_DENIED");
-                        Ok(())
-                    }
-                    Err(fatal) => Err(fatal),
-                    Ok(true) => {
-                        let response = dispatch(&request, registry);
-                        // A peer disconnect is local to this request; it must
-                        // not terminate the authority service loop.
-                        let _ = write_message(handle, &response);
-                        Ok(())
-                    }
-                },
-            };
-            let _ = DisconnectNamedPipe(handle);
             close(handle);
-            result
+            Ok(())
         }
     }
     fn dispatch(request: &str, registry: &sqlite::Registry) -> String {
@@ -1605,7 +1616,10 @@ pub mod service {
         STATUS_HANDLE.store(handle, Ordering::SeqCst);
         set_status(SERVICE_START_PENDING, 0);
         let _ = std::fs::remove_file(cfg.data_dir.join("broker-startup-error.txt"));
-        let result = run_service(&cfg);
+        let mut result = run_service(&cfg);
+        if let Err(error) = remove_stale_readiness(&cfg) {
+            result = Err(format!("READINESS_WITHDRAWAL_FAILED:{error}"));
+        }
         match result {
             Ok(()) => set_status(SERVICE_STOPPED, 0),
             Err(error) => {
@@ -1766,32 +1780,17 @@ pub mod service {
         );
         std::fs::write(cfg.data_dir.join("broker-token.json"), report)
             .map_err(|e| format!("TOKEN_REPORT_WRITE:{e}"))?;
-        let mut readiness_published = false;
-        while !stopping() {
-            let mut on_pipe_created = || {
-                if !readiness_published {
-                    publish_readiness(cfg, &nonce)?;
-                    readiness_published = true;
-                    set_status(SERVICE_RUNNING, 0);
-                }
-                Ok(())
-            };
-            match pipe::serve_once(
-                &service_sid,
-                &cfg.client_sid,
-                &registry,
-                &mut on_pipe_created,
-            ) {
-                Ok(()) => {}
-                Err(error)
-                    if error.starts_with("REVERT_TO_SELF_FAILED")
-                        || error.starts_with("READINESS_PUBLICATION_FAILED") =>
-                {
-                    return Err(error)
-                }
-                Err(_) => unsafe { Sleep(250) },
-            }
-        }
+        let mut on_pipe_created = || {
+            publish_readiness(cfg, &nonce)?;
+            set_status(SERVICE_RUNNING, 0);
+            Ok(())
+        };
+        pipe::serve(
+            &service_sid,
+            &cfg.client_sid,
+            &registry,
+            &mut on_pipe_created,
+        )?;
         if registry.check_integrity()? != "ok" {
             return Err("SQLITE_INTEGRITY_FAILED_AT_SHUTDOWN".into());
         }
