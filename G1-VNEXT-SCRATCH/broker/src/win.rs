@@ -44,6 +44,7 @@ struct ProcessIdentity {
 
 const INVALID_HANDLE_VALUE: HANDLE = -1isize as HANDLE;
 const ERROR_INSUFFICIENT_BUFFER: DWORD = 122;
+const ERROR_FILE_NOT_FOUND: DWORD = 2;
 const ERROR_PIPE_LISTENING: DWORD = 536;
 const ERROR_PIPE_CONNECTED: DWORD = 535;
 const ERROR_MORE_DATA: DWORD = 234;
@@ -1628,15 +1629,30 @@ pub mod pipe {
         client_sid: &str,
         database_path: &std::path::Path,
     ) -> Result<(), String> {
+        let mut on_pipe_created = || Ok(());
+        serve_synthetic_maintenance_with_callback(
+            service_sid,
+            client_sid,
+            database_path,
+            &mut on_pipe_created,
+        )
+    }
+
+    #[cfg(feature = "synthetic-maintenance")]
+    pub(super) fn serve_synthetic_maintenance_with_callback(
+        service_sid: &str,
+        client_sid: &str,
+        database_path: &std::path::Path,
+        on_pipe_created: &mut dyn FnMut() -> Result<(), String>,
+    ) -> Result<(), String> {
         if client_sid == service_sid {
             return Err("SYNTHETIC_MAINTENANCE_CLIENT_SID_MUST_BE_DISTINCT".into());
         }
-        let mut on_pipe_created = || Ok(());
         serve_endpoint(
             SYNTHETIC_MAINTENANCE_PIPE_NAME,
             service_sid,
             client_sid,
-            &mut on_pipe_created,
+            on_pipe_created,
             service::synthetic_operation_guard,
             |request| synthetic_maintenance::process_pipe_message(request, database_path),
             "SYNTHETIC_ENDPOINT_START_FAILED",
@@ -1936,21 +1952,31 @@ pub mod pipe {
         }
         unsafe {
             let name = wide(SYNTHETIC_MAINTENANCE_PIPE_NAME);
-            if WaitNamedPipeW(name.as_ptr(), 5000) == 0 {
-                return Err(format!("WAIT_SYNTHETIC_PIPE:{}", error_text()));
-            }
-            let handle = CreateFileW(
-                name.as_ptr(),
-                IPC_CLIENT_ACCESS,
-                0,
-                null_mut(),
-                OPEN_EXISTING,
-                FILE_FLAG_OVERLAPPED,
-                null_mut(),
-            );
-            if handle == INVALID_HANDLE_VALUE {
-                return Err(format!("OPEN_SYNTHETIC_PIPE:{}", error_text()));
-            }
+            let wait_started = GetTickCount64();
+            let handle = loop {
+                if WaitNamedPipeW(name.as_ptr(), 100) != 0 {
+                    let candidate = CreateFileW(
+                        name.as_ptr(),
+                        IPC_CLIENT_ACCESS,
+                        0,
+                        null_mut(),
+                        OPEN_EXISTING,
+                        FILE_FLAG_OVERLAPPED,
+                        null_mut(),
+                    );
+                    if candidate != INVALID_HANDLE_VALUE {
+                        break candidate;
+                    }
+                }
+                let error = GetLastError();
+                if !matches!(error, ERROR_FILE_NOT_FOUND | ERROR_PIPE_BUSY | 121) {
+                    return Err(format!("OPEN_SYNTHETIC_PIPE:{error}:{}", error_text()));
+                }
+                if GetTickCount64().saturating_sub(wait_started) >= 5000 {
+                    return Err(format!("WAIT_SYNTHETIC_PIPE:{error}:{}", error_text()));
+                }
+                Sleep(20);
+            };
             if verify_server_identity {
                 if let Err(error) = verify_server_process(handle) {
                     close(handle);
@@ -2494,6 +2520,32 @@ pub mod service {
             std::env::temp_dir().join(format!("g1-maint-reparse-{}-{nonce}", std::process::id()))
         }
 
+        struct ScratchCleanup(std::path::PathBuf);
+        impl Drop for ScratchCleanup {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+
+        struct ListenerGuard(Option<std::thread::JoinHandle<Result<(), String>>>);
+        impl ListenerGuard {
+            fn stop(mut self) -> Result<(), String> {
+                super::STOP.store(true, std::sync::atomic::Ordering::SeqCst);
+                let joined = self.0.take().expect("listener handle present").join();
+                super::STOP.store(false, std::sync::atomic::Ordering::SeqCst);
+                joined.map_err(|_| "PIPE_LISTENER_THREAD_PANICKED".to_owned())?
+            }
+        }
+        impl Drop for ListenerGuard {
+            fn drop(&mut self) {
+                if let Some(listener) = self.0.take() {
+                    super::STOP.store(true, std::sync::atomic::Ordering::SeqCst);
+                    let _ = listener.join();
+                    super::STOP.store(false, std::sync::atomic::Ordering::SeqCst);
+                }
+            }
+        }
+
         #[test]
         fn maintenance_sid_text_is_strictly_validated() {
             assert!(valid_sid_text("S-1-5-21-123-456-789-1001"));
@@ -2509,6 +2561,7 @@ pub mod service {
         #[test]
         fn rejects_junction_store_directory_without_touching_target() {
             let root = scratch();
+            let _cleanup = ScratchCleanup(root.clone());
             let outside = root.join("outside");
             let data = root.join("data");
             let store_link = data.join("synthetic-maintenance-data");
@@ -2595,6 +2648,7 @@ pub mod service {
         fn named_pipe_endpoint_is_synthetic_and_does_not_touch_normal_state() {
             super::STOP.store(false, std::sync::atomic::Ordering::SeqCst);
             let root = scratch();
+            let _cleanup = ScratchCleanup(root.clone());
             let data = root.join("data");
             std::fs::create_dir_all(&data).unwrap();
             let registry_path = data.join("registry.sqlite");
@@ -2610,13 +2664,40 @@ pub mod service {
             let server_store = synthetic_store.clone();
             let server_sid_for_thread = server_sid.clone();
             let client_sid_for_thread = client_sid.clone();
-            let listener = std::thread::spawn(move || {
-                crate::win::pipe::serve_synthetic_maintenance(
+            let (ready_sender, ready_receiver) = std::sync::mpsc::channel();
+            let listener = ListenerGuard(Some(std::thread::spawn(move || {
+                let mut ready_sender = Some(ready_sender);
+                let mut on_pipe_created = || {
+                    if let Some(sender) = ready_sender.take() {
+                        let _ = sender.send(Ok(()));
+                    }
+                    Ok(())
+                };
+                let result = crate::win::pipe::serve_synthetic_maintenance_with_callback(
                     &server_sid_for_thread,
                     &client_sid_for_thread,
                     &server_store,
-                )
-            });
+                    &mut on_pipe_created,
+                );
+                if let Some(sender) = ready_sender {
+                    let message = result
+                        .as_ref()
+                        .err()
+                        .cloned()
+                        .unwrap_or_else(|| "PIPE_ENDPOINT_EXITED_BEFORE_READY".into());
+                    let _ = sender.send(Err(message));
+                }
+                result
+            })));
+
+            match ready_receiver.recv_timeout(std::time::Duration::from_secs(5)) {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => panic!("synthetic pipe listener startup failed: {error}"),
+                Err(error) => {
+                    let result = listener.stop();
+                    panic!("synthetic pipe listener startup was not reported: {error}; result={result:?}");
+                }
+            }
 
             let accepted =
                 crate::win::pipe::synthetic_maintenance_exchange(&valid_request(), false)
@@ -2632,11 +2713,9 @@ pub mod service {
             assert_eq!(std::fs::read(&ready_path).unwrap(), readiness_before);
             assert_eq!(related_files(&registry_path), registry_before);
 
-            super::STOP.store(true, std::sync::atomic::Ordering::SeqCst);
-            let stopped = listener.join().expect("listener thread must join");
+            let stopped = listener.stop();
             assert!(stopped.is_ok(), "listener shutdown result: {stopped:?}");
-            super::STOP.store(false, std::sync::atomic::Ordering::SeqCst);
-            std::fs::remove_dir_all(root).unwrap();
         }
     }
 }
+
