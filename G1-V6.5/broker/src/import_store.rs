@@ -34,6 +34,7 @@ enum TestCommitFault {
 pub struct DurableImportStore {
     connection: Connection,
     base_anchor: ImportAnchor,
+    approved_head: ImportAnchor,
 }
 
 impl DurableImportStore {
@@ -86,19 +87,20 @@ impl DurableImportStore {
         Ok(Self {
             connection,
             base_anchor: anchor.clone(),
+            approved_head: anchor.clone(),
         })
     }
 
     pub fn open_existing(
         path: &Path,
         expected_anchor: &ImportAnchor,
+        approved_head: &ImportAnchor,
         authenticator: &dyn EvidenceAuthenticator,
     ) -> Result<Self, String> {
-        if expected_anchor.generation == 0
-            || expected_anchor.generation > i64::MAX as u64
-            || expected_anchor.chain_identity.is_empty()
-            || expected_anchor.state_root.is_empty()
-            || expected_anchor.last_receipt_identity.is_empty()
+        if !valid_anchor(expected_anchor)
+            || !valid_anchor(approved_head)
+            || expected_anchor.generation > approved_head.generation
+            || expected_anchor.chain_identity != approved_head.chain_identity
         {
             return Err("IMPORT_STORE_EXPECTED_ANCHOR_INVALID".into());
         }
@@ -122,8 +124,9 @@ impl DurableImportStore {
         DurableImportStore {
             connection: inspection,
             base_anchor: expected_anchor.clone(),
+            approved_head: approved_head.clone(),
         }
-        .verify_inventory(expected_anchor, authenticator)?;
+        .verify_inventory(authenticator)?;
 
         let connection = Connection::open_with_flags(
             path,
@@ -135,8 +138,9 @@ impl DurableImportStore {
         let store = Self {
             connection,
             base_anchor: expected_anchor.clone(),
+            approved_head: approved_head.clone(),
         };
-        store.verify_inventory(expected_anchor, authenticator)?;
+        store.verify_inventory(authenticator)?;
         Ok(store)
     }
 
@@ -176,7 +180,7 @@ impl DurableImportStore {
 
         // A retry must reconcile the full durable history before treating a
         // matching generation header as an already-applied operation.
-        self.verify_inventory(&self.base_anchor, authenticator)?;
+        self.verify_inventory(authenticator)?;
         let active = self.active_generation()?;
         if bundle.generation == active {
             let existing: (String, Vec<u8>, Vec<u8>, String, i64) = self.connection.query_row(
@@ -248,15 +252,18 @@ impl DurableImportStore {
         if fault == TestCommitFault::LoseAcknowledgmentAfterCommit {
             return Err("IMPORT_ACK_UNKNOWN_AFTER_COMMIT".into());
         }
-        self.verify_inventory(&self.base_anchor, authenticator)?;
+        self.approved_head = ImportAnchor {
+            chain_identity: bundle.chain_identity.clone(),
+            generation: bundle.generation,
+            state_root: bundle.state_root.clone(),
+            last_receipt_identity: last_receipt.identity.clone(),
+            unresolved_obligations: bundle.obligations.clone(),
+        };
+        self.verify_inventory(authenticator)?;
         Ok(ApplyOutcome::Activated)
     }
 
-    fn verify_inventory(
-        &self,
-        expected_anchor: &ImportAnchor,
-        authenticator: &dyn EvidenceAuthenticator,
-    ) -> Result<(), String> {
+    fn verify_inventory(&self, authenticator: &dyn EvidenceAuthenticator) -> Result<(), String> {
         let integrity: String = self
             .connection
             .query_row("PRAGMA integrity_check", [], |row| row.get(0))
@@ -297,10 +304,10 @@ impl DurableImportStore {
             || base.10 != 1
             || base.11 != [1]
             || base.12 != 1
-            || base.0 != expected_anchor.generation as i64
-            || base.3 != expected_anchor.chain_identity
-            || base.4 != expected_anchor.state_root
-            || base.5 != expected_anchor.last_receipt_identity
+            || base.0 != self.base_anchor.generation as i64
+            || base.3 != self.base_anchor.chain_identity
+            || base.4 != self.base_anchor.state_root
+            || base.5 != self.base_anchor.last_receipt_identity
         {
             return Err("IMPORT_BASE_GENERATION_INVALID".into());
         }
@@ -312,7 +319,7 @@ impl DurableImportStore {
         if previous_obligations.len() as i64 != base.7 {
             return Err("IMPORT_BASE_OBLIGATION_INVENTORY_INCOMPLETE".into());
         }
-        if previous_obligations != expected_anchor.unresolved_obligations {
+        if previous_obligations != self.base_anchor.unresolved_obligations {
             return Err("IMPORT_BASE_ANCHOR_OBLIGATIONS_MISMATCH".into());
         }
         for row in rows.iter().skip(1) {
@@ -397,6 +404,14 @@ impl DurableImportStore {
             .map_err(|error| format!("IMPORT_ACTIVE_ROW_COUNT:{error}"))?;
         if active_rows != 1 {
             return Err(format!("IMPORT_ACTIVE_ROW_COUNT_INVALID:{active_rows}"));
+        }
+        if previous_generation != self.approved_head.generation as i64
+            || previous_chain != self.approved_head.chain_identity
+            || previous_root != self.approved_head.state_root
+            || previous_receipt != self.approved_head.last_receipt_identity
+            || previous_obligations != self.approved_head.unresolved_obligations
+        {
+            return Err("IMPORT_APPROVED_HEAD_MISMATCH".into());
         }
         let foreign_key_errors: i64 = self
             .connection
@@ -583,6 +598,14 @@ fn quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
 }
 
+fn valid_anchor(anchor: &ImportAnchor) -> bool {
+    anchor.generation > 0
+        && anchor.generation <= i64::MAX as u64
+        && !anchor.chain_identity.is_empty()
+        && !anchor.state_root.is_empty()
+        && !anchor.last_receipt_identity.is_empty()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -664,11 +687,23 @@ mod tests {
         }
     }
 
+    fn approved_head(verified: &VerifiedImport) -> ImportAnchor {
+        let bundle = verified.bundle();
+        ImportAnchor {
+            chain_identity: bundle.chain_identity.clone(),
+            generation: bundle.generation,
+            state_root: bundle.state_root.clone(),
+            last_receipt_identity: bundle.receipts.last().unwrap().identity.clone(),
+            unresolved_obligations: bundle.obligations.clone(),
+        }
+    }
+
     #[test]
     fn disk_store_rolls_back_before_commit_and_survives_reopen() {
         let path = path("rollback");
         let (anchor, bundle) = fixture();
         let verified = accepted(&anchor, bundle);
+        let head = approved_head(&verified);
         let auth = Authenticator {
             expected: verified.canonical_claim().to_vec(),
         };
@@ -677,14 +712,15 @@ mod tests {
             .activate_with_fault(&verified, &auth, TestCommitFault::BeforeCommit)
             .is_err());
         drop(store);
-        let mut reopened = DurableImportStore::open_existing(&path, &anchor, &auth).unwrap();
+        let mut reopened =
+            DurableImportStore::open_existing(&path, &anchor, &anchor, &auth).unwrap();
         assert_eq!(reopened.active_generation().unwrap(), 4);
         assert_eq!(
             reopened.activate(&verified, &auth).unwrap(),
             ApplyOutcome::Activated
         );
         drop(reopened);
-        let recovered = DurableImportStore::open_existing(&path, &anchor, &auth).unwrap();
+        let recovered = DurableImportStore::open_existing(&path, &anchor, &head, &auth).unwrap();
         assert_eq!(recovered.active_generation().unwrap(), 5);
         let _ = std::fs::remove_file(path);
     }
@@ -694,6 +730,7 @@ mod tests {
         let path = path("lost-ack");
         let (anchor, bundle) = fixture();
         let verified = accepted(&anchor, bundle);
+        let head = approved_head(&verified);
         let auth = Authenticator {
             expected: verified.canonical_claim().to_vec(),
         };
@@ -702,7 +739,7 @@ mod tests {
             matches!(store.activate_with_fault(&verified, &auth, TestCommitFault::LoseAcknowledgmentAfterCommit), Err(reason) if reason == "IMPORT_ACK_UNKNOWN_AFTER_COMMIT")
         );
         drop(store);
-        let mut reopened = DurableImportStore::open_existing(&path, &anchor, &auth).unwrap();
+        let mut reopened = DurableImportStore::open_existing(&path, &anchor, &head, &auth).unwrap();
         assert_eq!(
             reopened.activate(&verified, &auth).unwrap(),
             ApplyOutcome::AlreadyActive
@@ -716,6 +753,7 @@ mod tests {
         let path = path("inventory");
         let (anchor, bundle) = fixture();
         let verified = accepted(&anchor, bundle);
+        let head = approved_head(&verified);
         let auth = Authenticator {
             expected: verified.canonical_claim().to_vec(),
         };
@@ -730,8 +768,47 @@ mod tests {
             .unwrap();
         drop(connection);
         assert!(
-            matches!(DurableImportStore::open_existing(&path, &anchor, &auth), Err(reason) if reason == "IMPORT_INVENTORY_INCOMPLETE:5")
+            matches!(DurableImportStore::open_existing(&path, &anchor, &head, &auth), Err(reason) if reason == "IMPORT_INVENTORY_INCOMPLETE:5")
         );
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn complete_older_prefix_is_rejected_when_approved_head_is_newer() {
+        let path = path("truncated-suffix");
+        let (anchor, bundle) = fixture();
+        let verified = accepted(&anchor, bundle);
+        let head = approved_head(&verified);
+        let auth = Authenticator {
+            expected: verified.canonical_claim().to_vec(),
+        };
+        let mut store = DurableImportStore::create(&path, &anchor).unwrap();
+        store.activate(&verified, &auth).unwrap();
+        drop(store);
+        let connection =
+            Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE).unwrap();
+        connection
+            .execute("DELETE FROM authority_receipts WHERE generation=5", [])
+            .unwrap();
+        connection
+            .execute("DELETE FROM authority_obligations WHERE generation=5", [])
+            .unwrap();
+        connection
+            .execute("DELETE FROM authority_generations WHERE generation=5", [])
+            .unwrap();
+        connection
+            .execute(
+                "UPDATE active_authority SET generation=4 WHERE singleton=1",
+                [],
+            )
+            .unwrap();
+        drop(connection);
+        let before = std::fs::read(&path).unwrap();
+        assert!(matches!(
+            DurableImportStore::open_existing(&path, &anchor, &head, &auth),
+            Err(reason) if reason == "IMPORT_APPROVED_HEAD_MISMATCH"
+        ));
+        assert_eq!(std::fs::read(&path).unwrap(), before);
         let _ = std::fs::remove_file(path);
     }
 
@@ -740,6 +817,7 @@ mod tests {
         let path = path("coordinated-mutation");
         let (anchor, bundle) = fixture();
         let verified = accepted(&anchor, bundle.clone());
+        let head = approved_head(&verified);
         let auth = Authenticator {
             expected: verified.canonical_claim().to_vec(),
         };
@@ -767,7 +845,7 @@ mod tests {
             .unwrap();
         drop(connection);
         assert!(matches!(
-            DurableImportStore::open_existing(&path, &anchor, &auth),
+            DurableImportStore::open_existing(&path, &anchor, &head, &auth),
             Err(reason) if reason == "IMPORT_AUTHENTICATION_INVALID:5"
         ));
         let _ = std::fs::remove_file(path);
@@ -778,6 +856,7 @@ mod tests {
         let path = path("missing-attester");
         let (anchor, bundle) = fixture();
         let verified = accepted(&anchor, bundle);
+        let head = approved_head(&verified);
         let auth = Authenticator {
             expected: verified.canonical_claim().to_vec(),
         };
@@ -786,7 +865,7 @@ mod tests {
         drop(store);
         let before = std::fs::read(&path).unwrap();
         assert!(matches!(
-            DurableImportStore::open_existing(&path, &anchor, &UnavailableAuthenticator),
+            DurableImportStore::open_existing(&path, &anchor, &head, &UnavailableAuthenticator),
             Err(reason) if reason.starts_with("IMPORT_AUTHENTICATION_UNAVAILABLE")
         ));
         assert_eq!(std::fs::read(&path).unwrap(), before);
@@ -807,7 +886,7 @@ mod tests {
         let after_injection = std::fs::read(&path).unwrap();
         assert_ne!(before, after_injection);
         assert!(matches!(
-            DurableImportStore::open_existing(&path, &anchor, &UnavailableAuthenticator),
+            DurableImportStore::open_existing(&path, &anchor, &anchor, &UnavailableAuthenticator),
             Err(reason) if reason == "IMPORT_SCHEMA_SEMANTICS"
         ));
         assert_eq!(std::fs::read(&path).unwrap(), after_injection);
@@ -824,7 +903,7 @@ mod tests {
         let mut wrong = anchor.clone();
         wrong.state_root = "rollback-anchor".into();
         assert!(matches!(
-            DurableImportStore::open_existing(&path, &wrong, &UnavailableAuthenticator),
+            DurableImportStore::open_existing(&path, &wrong, &wrong, &UnavailableAuthenticator),
             Err(reason) if reason == "IMPORT_BASE_GENERATION_INVALID"
         ));
         assert_eq!(std::fs::read(&path).unwrap(), before);
@@ -851,6 +930,7 @@ mod tests {
         bundle.obligations = obligations;
         bundle.state_root = crate::import::state_root(&bundle).unwrap();
         let verified = accepted(&anchor, bundle);
+        let head = approved_head(&verified);
         let auth = Authenticator {
             expected: verified.canonical_claim().to_vec(),
         };
@@ -860,7 +940,7 @@ mod tests {
             ApplyOutcome::Activated
         );
         drop(store);
-        let reopened = DurableImportStore::open_existing(&path, &anchor, &auth).unwrap();
+        let reopened = DurableImportStore::open_existing(&path, &anchor, &head, &auth).unwrap();
         assert_eq!(reopened.active_generation().unwrap(), 5);
         let _ = std::fs::remove_file(path);
     }
@@ -871,7 +951,7 @@ mod tests {
         let (mut anchor, _) = fixture();
         anchor.generation = u64::MAX;
         assert!(matches!(
-            DurableImportStore::open_existing(&path, &anchor, &UnavailableAuthenticator),
+            DurableImportStore::open_existing(&path, &anchor, &anchor, &UnavailableAuthenticator),
             Err(reason) if reason == "IMPORT_STORE_EXPECTED_ANCHOR_INVALID"
         ));
         assert!(!path.exists());
@@ -894,11 +974,10 @@ mod tests {
         drop(connection);
         let before = std::fs::read(&path).unwrap();
         assert!(matches!(
-            DurableImportStore::open_existing(&path, &anchor, &UnavailableAuthenticator),
+            DurableImportStore::open_existing(&path, &anchor, &anchor, &UnavailableAuthenticator),
             Err(reason) if reason == "IMPORT_BASE_GENERATION_INVALID"
         ));
         assert_eq!(std::fs::read(&path).unwrap(), before);
         let _ = std::fs::remove_file(path);
     }
 }
-
