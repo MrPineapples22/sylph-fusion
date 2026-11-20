@@ -1569,7 +1569,7 @@ pub mod service {
             .open(path)
             .map_err(|error| format!("READINESS_CREATE_NEW:{error}"))?;
         let record = format!(
-            "{{\"schema\":\"SYLPH_G1_BROKER_READY_2\",\"ready\":true,\"serviceName\":{},\"pipe\":{},\"processId\":{},\"startupNonce\":{},\"firstPipeInstanceCreated\":true}}\n",
+            "{{\"schema\":\"SYLPH_G1_BROKER_READY_3\",\"state\":\"READY\",\"authorityClass\":\"SYNTHETIC_TEST_ONLY\",\"ready\":true,\"serviceName\":{},\"pipe\":{},\"processId\":{},\"startupNonce\":{},\"firstPipeInstanceCreated\":true}}\n",
             json_string(&cfg.service_name),
             json_string(pipe::PIPE_NAME),
             unsafe { GetCurrentProcessId() },
@@ -1749,7 +1749,7 @@ pub mod service {
             return Err("PROTECTED_DATA_DIRECTORY_MISSING".into());
         }
         let db_path = cfg.data_dir.join("registry.sqlite");
-        let registry = sqlite::Registry::open(&db_path)?;
+        let registry = sqlite::Registry::open_existing(&db_path)?;
         let db_identity = identity::describe(db_path.to_string_lossy().as_ref())?;
         let privileges = json_privileges(&process_identity.privileges);
         let db_path_text = db_path.to_string_lossy();
