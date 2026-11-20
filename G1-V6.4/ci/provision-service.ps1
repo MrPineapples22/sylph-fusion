@@ -1,3 +1,32 @@
+function Set-SylphExactServiceAcl {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Path,
+    [Parameter(Mandatory)][string]$ServiceSid,
+    [Parameter(Mandatory)][bool]$IsDirectory
+  )
+  if ($IsDirectory) { $acl = [System.Security.AccessControl.DirectorySecurity]::new() }
+  else { $acl = [System.Security.AccessControl.FileSecurity]::new() }
+  $acl.SetAccessRuleProtection($true, $false)
+  $acl.SetOwner([System.Security.Principal.SecurityIdentifier]::new($ServiceSid))
+  $inheritance = [System.Security.AccessControl.InheritanceFlags]::None
+  if ($IsDirectory) {
+    $inheritance = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor
+      [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
+  }
+  foreach ($sidText in @($ServiceSid, 'S-1-5-18', 'S-1-5-32-544')) {
+    $rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
+      [System.Security.Principal.SecurityIdentifier]::new($sidText),
+      [System.Security.AccessControl.FileSystemRights]::FullControl,
+      $inheritance,
+      [System.Security.AccessControl.PropagationFlags]::None,
+      [System.Security.AccessControl.AccessControlType]::Allow
+    )
+    [void]$acl.AddAccessRule($rule)
+  }
+  Set-Acl -LiteralPath $Path -AclObject $acl
+}
+
 function Grant-SylphServiceTree {
   [CmdletBinding()]
   param(
@@ -6,15 +35,9 @@ function Grant-SylphServiceTree {
     [Parameter(Mandatory)][string]$AccountSid
   )
   New-Item -ItemType Directory -Force -Path $Path | Out-Null
-  # The shared LocalService SID is deliberately not granted access. A
-  # restricted service SID is expected to satisfy the restricted-token check;
-  # if it does not, this setup must fail closed instead of broadening access.
-  $entries = @("*${ServiceSid}:(OI)(CI)F", '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-544:(OI)(CI)F')
-  & icacls.exe $Path /inheritance:r /grant:r @entries | Out-Null
-  if ($LASTEXITCODE -ne 0) { throw "ICACLS_SERVICE_TREE_FAILED:$LASTEXITCODE" }
-  $acl = Get-Acl -LiteralPath $Path
-  $acl.SetOwner([System.Security.Principal.SecurityIdentifier]::new($ServiceSid))
-  Set-Acl -LiteralPath $Path -AclObject $acl
+  # Construct a fresh protected DACL, so no creator logon SID or inherited
+  # principal can survive on the broker-owned directory.
+  Set-SylphExactServiceAcl -Path $Path -ServiceSid $ServiceSid -IsDirectory $true
   $verified = Get-Acl -LiteralPath $Path
   $ownerSid = ([System.Security.Principal.NTAccount]::new($verified.Owner)).Translate([System.Security.Principal.SecurityIdentifier]).Value
   $expectedSids = @($ServiceSid,'S-1-5-18','S-1-5-32-544') | Sort-Object
@@ -39,12 +62,7 @@ function Grant-SylphServiceFile {
   )
   # Do not grant the shared LocalService account SID access to protected
   # objects; only the dedicated service SID, SYSTEM, and Administrators.
-  $entries = @("*${ServiceSid}:F", '*S-1-5-18:F', '*S-1-5-32-544:F')
-  & icacls.exe $Path /inheritance:r /grant:r @entries | Out-Null
-  if ($LASTEXITCODE -ne 0) { throw "ICACLS_SERVICE_FILE_FAILED:$LASTEXITCODE" }
-  $acl = Get-Acl -LiteralPath $Path
-  $acl.SetOwner([System.Security.Principal.SecurityIdentifier]::new($ServiceSid))
-  Set-Acl -LiteralPath $Path -AclObject $acl
+  Set-SylphExactServiceAcl -Path $Path -ServiceSid $ServiceSid -IsDirectory $false
   $verified = Get-Acl -LiteralPath $Path
   $ownerSid = ([System.Security.Principal.NTAccount]::new($verified.Owner)).Translate([System.Security.Principal.SecurityIdentifier]).Value
   $expectedSids = @($ServiceSid,'S-1-5-18','S-1-5-32-544') | Sort-Object
