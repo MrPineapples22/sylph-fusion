@@ -164,7 +164,10 @@ impl ImportKernel {
     }
 }
 
-fn validate_structure(anchor: &ImportAnchor, bundle: &ImportBundle) -> Result<(), String> {
+pub(crate) fn validate_structure(
+    anchor: &ImportAnchor,
+    bundle: &ImportBundle,
+) -> Result<(), String> {
     if bundle.schema != IMPORT_SCHEMA {
         return Err("IMPORT_SCHEMA_UNSUPPORTED".into());
     }
@@ -261,7 +264,7 @@ fn valid_state(value: &str) -> bool {
 
 /// Unambiguous, length-prefixed serialization of every content-bearing field.
 /// The signature envelope is excluded so renewal cannot change history identity.
-fn canonical_claim(bundle: &ImportBundle) -> Result<Vec<u8>, String> {
+pub(crate) fn canonical_claim(bundle: &ImportBundle) -> Result<Vec<u8>, String> {
     if canonical_claim_encoded_size(bundle)? > MAX_BUNDLE_BYTES {
         return Err("IMPORT_CANONICAL_CLAIM_TOO_LARGE".into());
     }
@@ -291,7 +294,7 @@ fn canonical_claim(bundle: &ImportBundle) -> Result<Vec<u8>, String> {
 /// Recompute the authority-state root from the exact ordered receipt and
 /// obligation inventory. The signed envelope authenticates this claim later;
 /// a caller-provided root is never accepted as its own proof.
-fn state_root(bundle: &ImportBundle) -> Result<String, String> {
+pub(crate) fn state_root(bundle: &ImportBundle) -> Result<String, String> {
     if state_root_encoded_size(bundle)? > MAX_BUNDLE_BYTES {
         return Err("IMPORT_STATE_ROOT_CONTENT_TOO_LARGE".into());
     }

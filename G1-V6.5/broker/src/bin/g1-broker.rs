@@ -1,5 +1,7 @@
 #[path = "../import.rs"]
 mod import;
+#[path = "../import_store.rs"]
+mod import_store;
 #[path = "../win.rs"]
 mod win;
 
