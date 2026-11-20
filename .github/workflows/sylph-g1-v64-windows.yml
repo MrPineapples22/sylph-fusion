@@ -70,6 +70,14 @@ jobs:
           -AttackerExe ./G1-V6.4/broker/target/x86_64-pc-windows-msvc/release/g1-attacker.exe
           -VerifierExe ./G1-V6.4/broker/target/x86_64-pc-windows-msvc/release/g1-verifier.exe
 
+      - name: Print sanitized preflight summary
+        if: always()
+        shell: pwsh
+        run: |
+          $summary = 'G1-V6.4/verification/ci-preflight/summary.json'
+          if (-not (Test-Path -LiteralPath $summary)) { throw 'Preflight summary.json is missing' }
+          Get-Content -Raw -LiteralPath $summary
+
       - name: Upload sanitized CI evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
