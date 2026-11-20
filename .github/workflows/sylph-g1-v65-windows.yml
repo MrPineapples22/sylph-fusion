@@ -1,0 +1,101 @@
+name: SYLPH G1 v6.5 Windows security preflight
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/g1-v6-5-ci-p0
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sylph-g1-v65-windows-preflight-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows-preflight:
+    name: Disposable Windows service and hard-link checks
+    runs-on: windows-2022
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout selected revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
+
+      - name: Pin Rust toolchain
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Invoke-CheckedNative {
+            param([string]$Name, [scriptblock]$Action)
+            & $Action
+            $code = $LASTEXITCODE
+            if ($code -ne 0) { throw "$Name failed with exit code $code" }
+          }
+          Invoke-CheckedNative 'rustup toolchain install' { rustup toolchain install 1.89.0 --profile minimal --component rustfmt --target x86_64-pc-windows-msvc }
+          Invoke-CheckedNative 'rustup default' { rustup default 1.89.0 }
+          Invoke-CheckedNative 'rustc version' { rustc --version --verbose }
+          Invoke-CheckedNative 'cargo version' { cargo --version }
+
+      - name: Verify pinned lock and compile
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Invoke-CheckedNative {
+            param([string]$Name, [scriptblock]$Action)
+            & $Action
+            $code = $LASTEXITCODE
+            if ($code -ne 0) { throw "$Name failed with exit code $code" }
+          }
+          $guardDetectedFailure = $false
+          try {
+            Invoke-CheckedNative 'intentional native failure control' { & $env:ComSpec /d /c 'exit 37' }
+          } catch {
+            if ($_.Exception.Message -ne 'intentional native failure control failed with exit code 37') { throw }
+            $guardDetectedFailure = $true
+          }
+          if (-not $guardDetectedFailure) { throw 'NATIVE_EXIT_GUARD_NEGATIVE_CONTROL_FAILED' }
+          Write-Host 'NATIVE_EXIT_GUARD_NEGATIVE_CONTROL=PASS'
+          Invoke-CheckedNative 'cargo fmt check' { cargo fmt --manifest-path G1-V6.5/broker/Cargo.toml -- --check }
+          if (-not (Test-Path -LiteralPath G1-V6.5/broker/Cargo.lock)) { throw 'Pinned Cargo.lock is required' }
+          Invoke-CheckedNative 'cargo tests' { cargo test --locked --manifest-path G1-V6.5/broker/Cargo.toml --target x86_64-pc-windows-msvc -- --test-threads=1 }
+          Invoke-CheckedNative 'cargo release build' { cargo build --locked --release --bins --manifest-path G1-V6.5/broker/Cargo.toml --target x86_64-pc-windows-msvc }
+
+      - name: Run Windows preflight
+        shell: pwsh
+        run: >-
+          ./G1-V6.5/ci/qualify-windows.ps1
+          -BrokerExe ./G1-V6.5/broker/target/x86_64-pc-windows-msvc/release/g1-broker.exe
+          -ClientExe ./G1-V6.5/broker/target/x86_64-pc-windows-msvc/release/g1-client.exe
+          -AttackerExe ./G1-V6.5/broker/target/x86_64-pc-windows-msvc/release/g1-attacker.exe
+          -VerifierExe ./G1-V6.5/broker/target/x86_64-pc-windows-msvc/release/g1-verifier.exe
+
+      - name: Print sanitized preflight summary
+        if: always()
+        shell: pwsh
+        run: |
+          $summaryRoot = 'G1-V6.5/verification/ci-preflight'
+          $summary = Get-ChildItem -LiteralPath $summaryRoot -Filter summary.json -Recurse -File |
+            Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+          if (-not $summary) { throw 'Preflight summary.json is missing' }
+          Get-Content -Raw -LiteralPath $summary.FullName
+
+      - name: Upload sanitized CI evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sylph-g1-v65-windows-preflight-${{ github.run_id }}
+          path: |
+            G1-V6.5/verification/ci-preflight/
+            G1-V6.5/broker/Cargo.lock
+          if-no-files-found: warn
+          retention-days: 30
