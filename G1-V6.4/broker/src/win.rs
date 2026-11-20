@@ -878,21 +878,6 @@ pub mod attack {
         }
         unsafe { close(handle) };
         Err("PIPE_HOLDER_RELEASE_TIMEOUT".into())
-            unsafe { close(handle) };
-            return Err(format!("EVIDENCE_MARKER_WRITE_OR_SYNC:{error}"));
-        }
-        drop(evidence_file);
-
-        let deadline = Instant::now() + Duration::from_secs(600);
-        while Instant::now() < deadline {
-            if std::path::Path::new(release_path).exists() {
-                unsafe { close(handle) };
-                return Ok(evidence);
-            }
-            sleep(Duration::from_millis(50));
-        }
-        unsafe { close(handle) };
-        Ok(evidence)
     }
 
     pub fn try_create_broker_pipe_server() -> Result<String, String> {
