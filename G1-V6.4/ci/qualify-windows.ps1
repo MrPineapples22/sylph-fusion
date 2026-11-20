@@ -117,6 +117,15 @@ function Assert-Win32ReadDenied($Attempt, [string]$Label) {
   }
 }
 
+function Assert-Win32WriteOnlyDenied($Attempt, [string]$Label) {
+  if (-not $Attempt.json) { throw "WRITE_ONLY_ATTACK_RESULT_NOT_JSON:${Label}:$($Attempt.stdout):$($Attempt.stderr)" }
+  if ([string]$Attempt.json.userSid -ne [string]$script:clientSid) { throw "WRITE_ONLY_ATTACK_TOKEN_SID_MISMATCH:$Label" }
+  if ($Attempt.json.win32Error -ne 5 -or $Attempt.json.result -ne 'ACCESS_DENIED' -or
+      $Attempt.json.requestedAccess -ne 1073741824) {
+    throw "UNEXPECTED_WRITE_ONLY_ACCESS_RESULT:${Label}:$($Attempt.stdout):$($Attempt.stderr)"
+  }
+}
+
 function Assert-PipeServerCreationDenied($Attempt, [string]$Label) {
   if (-not $Attempt.json -or $Attempt.exitCode -ne 0) { throw "PIPE_ATTACK_RESULT_INVALID:${Label}:$($Attempt.stdout):$($Attempt.stderr)" }
   if ([string]$Attempt.json.callerSid -ne [string]$script:clientSid) { throw "PIPE_ATTACK_TOKEN_MISMATCH:${Label}" }
@@ -391,6 +400,18 @@ try {
   $vulnIntegrity = Invoke-AsAdmin -FilePath $VerifierExe -Arguments @('sqlite',$original)
   if ($vulnIntegrity.exitCode -ne 0) { throw "VULNERABLE_DB_INTEGRITY_FAILED:$($vulnIntegrity.output)" }
   Save-Record 'vulnerable-db-integrity.json' $vulnIntegrity
+  $writeOnlyControl = Join-Path $vulnOriginalDir 'write-only-control.sqlite'
+  Copy-Item -LiteralPath $original -Destination $writeOnlyControl -Force
+  $writeOnlyControlBefore = (Get-FileHash -Algorithm SHA256 -LiteralPath $writeOnlyControl).Hash
+  $writeOnlyPositive = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('write-only',$writeOnlyControl) -Label 'native-write-only-positive-control'
+  if ($writeOnlyPositive.exitCode -ne 0 -or -not $writeOnlyPositive.json -or
+      $writeOnlyPositive.json.result -ne 'WRITE_SUCCEEDED' -or $writeOnlyPositive.json.win32Error -ne 0 -or
+      $writeOnlyPositive.json.requestedAccess -ne 1073741824 -or $writeOnlyPositive.json.userSid -ne $clientSid) {
+    throw "WRITE_ONLY_POSITIVE_CONTROL_FAILED:$($writeOnlyPositive.stdout):$($writeOnlyPositive.stderr)"
+  }
+  $writeOnlyControlAfter = (Get-FileHash -Algorithm SHA256 -LiteralPath $writeOnlyControl).Hash
+  if ($writeOnlyControlBefore -eq $writeOnlyControlAfter) { throw 'WRITE_ONLY_POSITIVE_CONTROL_DID_NOT_MUTATE_FILE' }
+  Save-Record 'native-write-only-positive-control.json' ([ordered]@{beforeSha256=$writeOnlyControlBefore;afterSha256=$writeOnlyControlAfter;attack=$writeOnlyPositive.json})
   $result.phases.CI_P1 = 'PASS_VULNERABLE_NODE_ALIAS_MUTATION_AND_NATIVE_ATTACK'
 
   # Keep a genuine same-user writable handle to the legacy object across
@@ -521,21 +542,20 @@ try {
     $holderStatus = [ordered]@{ pid=$pipeHolder.Id; exited=$pipeHolder.HasExited; exitCode=if($pipeHolder.HasExited){$pipeHolder.ExitCode}else{$null}; releaseMarkerExists=(Test-Path -LiteralPath $pipeReleasePath); holderOutput=if(Test-Path -LiteralPath (Join-Path $userRoot 'same-user-fake-pipe-server.stdout.txt')){Get-Content -Raw -LiteralPath (Join-Path $userRoot 'same-user-fake-pipe-server.stdout.txt')}else{'MISSING'}; start=$squatStart; state=$squatServiceState; ready=$readyDuringSquat }
     throw "BROKER_REPORTED_READY_WHILE_UNTRUSTED_FIRST_PIPE_INSTANCE_HELD:$(ConvertTo-Json $holderStatus -Compress -Depth 6)"
   }
-  Save-Record 'service-first-pipe-squat-blocked.json' ([ordered]@{start=$squatStart;serviceState=$squatServiceState;readyFileExists=(Test-Path -LiteralPath $brokerReadyPath);blockedBeforeReadiness=$true})
+  if ($pipeHolder.HasExited -or (Test-Path -LiteralPath $brokerReadyPath)) { throw 'FAKE_PIPE_HOLDER_NOT_ACTIVE_AT_BLOCKED_READINESS_CHECK' }
+  Save-Record 'service-first-pipe-squat-blocked.json' ([ordered]@{start=$squatStart;serviceState=$squatServiceState;readyFileExists=(Test-Path -LiteralPath $brokerReadyPath);holderProcessId=$pipeHolder.Id;holderStillOwnsFirstPipeInstance=$true;blockedBeforeReadiness=$true})
   Set-Content -LiteralPath $pipeReleasePath -Value 'release' -NoNewline -Encoding ascii
   if (-not $pipeHolder.WaitForExit(5000)) { throw 'FAKE_PIPE_SERVER_RELEASE_TIMEOUT' }
   if ($pipeHolder.ExitCode -ne 0) { throw 'FAKE_PIPE_SERVER_HOLDER_FAILED' }
   $fakePipeEvidence = ConvertTo-JsonResult (Get-Content -Raw -LiteralPath (Join-Path $userRoot 'same-user-fake-pipe-server.stdout.txt'))
-  if (-not $fakePipeEvidence -or $fakePipeEvidence.result -ne 'CONNECTED_ZERO_REQUEST_BYTES' -or
+  if (-not $fakePipeEvidence -or $fakePipeEvidence.result -ne 'FIRST_INSTANCE_HELD_UNTIL_RELEASE' -or
       [string]$fakePipeEvidence.callerSid -ne [string]$clientSid -or
       [long]$fakePipeEvidence.callerPid -ne [long]$pipeHolder.Id -or
-      [long]$fakePipeEvidence.connectedClientPid -ne [long]$fakePipeClient.processId -or
-      $fakePipeEvidence.requestedOpenMode -ne 524291 -or $fakePipeEvidence.peekSucceeded -ne $true -or
-      $fakePipeEvidence.peekAvailableBytes -ne 0 -or $fakePipeEvidence.readSucceeded -ne $false -or
-      $fakePipeEvidence.readWin32Error -ne 232) {
-    throw "FAKE_PIPE_CLIENT_DID_NOT_PROVE_ZERO_REQUEST_BYTES:$(ConvertTo-Json $fakePipeEvidence -Compress)"
+      $fakePipeEvidence.requestedOpenMode -ne 524291 -or $fakePipeEvidence.firstInstanceHeld -ne $true -or
+      [long]$fakePipeEvidence.holdDurationMs -lt 1) {
+    throw "FAKE_PIPE_FIRST_INSTANCE_HOLD_EVIDENCE_INVALID:$(ConvertTo-Json $fakePipeEvidence -Compress)"
   }
-  Save-Record 'fake-pipe-zero-request-evidence.json' $fakePipeEvidence
+  Save-Record 'fake-pipe-first-instance-hold-evidence.json' ([ordered]@{holder=$fakePipeEvidence;clientRejection=$fakePipeClient.json;clientProcessId=$fakePipeClient.processId;clientRejectedBeforeRequest=$true})
   $pipeHolder = $null
   $recoveryDeadline = [DateTime]::UtcNow.AddSeconds(20)
   $serviceAfterRelease = Get-Service -Name $serviceName -ErrorAction Stop
@@ -612,9 +632,15 @@ try {
   $stoppedOriginal = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('write',$original) -Label 'stopped-protected-original'
   Assert-Win32AccessDenied $stoppedOriginal 'stopped-original'
   Save-Record 'stopped-protected-original.json' $stoppedOriginal
+  $stoppedOriginalWriteOnly = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('write-only',$original) -Label 'stopped-protected-original-write-only'
+  Assert-Win32WriteOnlyDenied $stoppedOriginalWriteOnly 'stopped-original-write-only'
+  Save-Record 'stopped-protected-original-write-only.json' $stoppedOriginalWriteOnly
   $stoppedAlias = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('write',$alias) -Label 'stopped-protected-alias'
   Assert-Win32AccessDenied $stoppedAlias 'stopped-alias'
   Save-Record 'stopped-protected-alias.json' $stoppedAlias
+  $stoppedAliasWriteOnly = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('write-only',$alias) -Label 'stopped-protected-alias-write-only'
+  Assert-Win32WriteOnlyDenied $stoppedAliasWriteOnly 'stopped-alias-write-only'
+  Save-Record 'stopped-protected-alias-write-only.json' $stoppedAliasWriteOnly
   $stoppedOriginalRead = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('read',$original) -Label 'stopped-protected-original-read'
   Assert-Win32ReadDenied $stoppedOriginalRead 'stopped-original-read'
   Save-Record 'stopped-protected-original-read.json' $stoppedOriginalRead
@@ -624,9 +650,15 @@ try {
   $stoppedBrokerDb = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('write',$brokerDb) -Label 'stopped-broker-db-direct-access'
   Assert-Win32AccessDenied $stoppedBrokerDb 'stopped-broker-db'
   Save-Record 'stopped-broker-db-direct-access.json' $stoppedBrokerDb
+  $stoppedBrokerDbWriteOnly = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('write-only',$brokerDb) -Label 'stopped-broker-db-write-only'
+  Assert-Win32WriteOnlyDenied $stoppedBrokerDbWriteOnly 'stopped-broker-db-write-only'
+  Save-Record 'stopped-broker-db-write-only.json' $stoppedBrokerDbWriteOnly
   $stoppedBrokerAlias = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('write',$brokerAlias) -Label 'stopped-broker-db-alias-direct-access'
   Assert-Win32AccessDenied $stoppedBrokerAlias 'stopped-broker-db-alias'
   Save-Record 'stopped-broker-db-alias-direct-access.json' $stoppedBrokerAlias
+  $stoppedBrokerAliasWriteOnly = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('write-only',$brokerAlias) -Label 'stopped-broker-db-alias-write-only'
+  Assert-Win32WriteOnlyDenied $stoppedBrokerAliasWriteOnly 'stopped-broker-db-alias-write-only'
+  Save-Record 'stopped-broker-db-alias-write-only.json' $stoppedBrokerAliasWriteOnly
   $stoppedBrokerRead = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('read',$brokerDb) -Label 'stopped-broker-db-read'
   Assert-Win32ReadDenied $stoppedBrokerRead 'stopped-broker-db-read'
   Save-Record 'stopped-broker-db-read.json' $stoppedBrokerRead
@@ -659,9 +691,15 @@ try {
   $runningOriginal = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('write',$original) -Label 'running-protected-original'
   Assert-Win32AccessDenied $runningOriginal 'running-original'
   Save-Record 'running-protected-original.json' $runningOriginal
+  $runningOriginalWriteOnly = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('write-only',$original) -Label 'running-protected-original-write-only'
+  Assert-Win32WriteOnlyDenied $runningOriginalWriteOnly 'running-original-write-only'
+  Save-Record 'running-protected-original-write-only.json' $runningOriginalWriteOnly
   $runningAlias = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('write',$alias) -Label 'running-protected-alias'
   Assert-Win32AccessDenied $runningAlias 'running-alias'
   Save-Record 'running-protected-alias.json' $runningAlias
+  $runningAliasWriteOnly = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('write-only',$alias) -Label 'running-protected-alias-write-only'
+  Assert-Win32WriteOnlyDenied $runningAliasWriteOnly 'running-alias-write-only'
+  Save-Record 'running-protected-alias-write-only.json' $runningAliasWriteOnly
   $runningOriginalRead = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('read',$original) -Label 'running-protected-original-read'
   Assert-Win32ReadDenied $runningOriginalRead 'running-original-read'
   Save-Record 'running-protected-original-read.json' $runningOriginalRead
@@ -671,9 +709,15 @@ try {
   $runningBrokerDb = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('write',$brokerDb) -Label 'running-broker-db-direct-access'
   Assert-Win32AccessDenied $runningBrokerDb 'running-broker-db'
   Save-Record 'running-broker-db-direct-access.json' $runningBrokerDb
+  $runningBrokerDbWriteOnly = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('write-only',$brokerDb) -Label 'running-broker-db-write-only'
+  Assert-Win32WriteOnlyDenied $runningBrokerDbWriteOnly 'running-broker-db-write-only'
+  Save-Record 'running-broker-db-write-only.json' $runningBrokerDbWriteOnly
   $runningBrokerAlias = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('write',$brokerAlias) -Label 'running-broker-db-alias-direct-access'
   Assert-Win32AccessDenied $runningBrokerAlias 'running-broker-db-alias'
   Save-Record 'running-broker-db-alias-direct-access.json' $runningBrokerAlias
+  $runningBrokerAliasWriteOnly = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('write-only',$brokerAlias) -Label 'running-broker-db-alias-write-only'
+  Assert-Win32WriteOnlyDenied $runningBrokerAliasWriteOnly 'running-broker-db-alias-write-only'
+  Save-Record 'running-broker-db-alias-write-only.json' $runningBrokerAliasWriteOnly
   $runningBrokerRead = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('read',$brokerDb) -Label 'running-broker-db-read'
   Assert-Win32ReadDenied $runningBrokerRead 'running-broker-db-read'
   Save-Record 'running-broker-db-read.json' $runningBrokerRead
