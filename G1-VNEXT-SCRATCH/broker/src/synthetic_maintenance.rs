@@ -805,4 +805,3 @@ mod tests {
         assert!(manifest.contains("required-features = [\"synthetic-maintenance\"]"));
     }
 }
-
