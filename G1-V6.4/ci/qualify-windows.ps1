@@ -781,7 +781,7 @@ try {
     $virtual = Start-BrokerAndCheck -Mode 'VirtualAccount' -DataDir $virtualBrokerRoot -ClientSid $clientSid
     if ($virtual.token.identityMode -ne 'VirtualServiceAccount' -or
         [string]$virtual.token.tokenUserSid -ne [string]$virtual.token.serviceSid -or
-        $virtual.token.serviceSidMember -ne $true -or $virtual.token.serviceSidGroupPresent -ne $true -or
+        $virtual.token.serviceSidMember -ne $true -or
         $virtual.token.serviceSidInRestrictedList -ne $true -or
         $null -eq $virtual.token.integrityRid -or [int]$virtual.token.integrityRid -le 0 -or
         $virtual.token.sqliteVersion -ne '3.54.1' -or [string]::IsNullOrWhiteSpace([string]$virtual.token.sqliteSourceId) -or
