@@ -240,7 +240,8 @@ function Start-BrokerAndCheck([string]$Mode, [string]$DataDir, [string]$ClientSi
   if ($started.state -ne 'Running' -or -not $started.ready -or
       $started.ready.schema -ne 'SYLPH_G1_BROKER_READY_2' -or $started.ready.firstPipeInstanceCreated -ne $true -or
       $null -eq $started.ready.processId -or [string]::IsNullOrWhiteSpace([string]$started.ready.startupNonce)) {
-    throw "BROKER_SERVICE_NOT_READY_OR_NOT_BOUND_TO_FRESH_PIPE:$Mode"
+    $startEvidence = ConvertTo-Json -InputObject $started -Depth 8 -Compress
+    throw "BROKER_SERVICE_NOT_READY_OR_NOT_BOUND_TO_FRESH_PIPE:$Mode:$startEvidence"
   }
   $tokenPath = Join-Path $DataDir 'broker-token.json'
   if (-not (Test-Path -LiteralPath $tokenPath)) { throw "BROKER_TOKEN_REPORT_MISSING:$Mode" }
