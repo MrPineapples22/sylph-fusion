@@ -798,6 +798,29 @@ mod tests {
     }
 
     #[test]
+    fn exclusive_store_creation_rejects_closed_valid_database_at_open_boundary() {
+        let path = path("existing-valid-db");
+        let (anchor, _) = fixture();
+        let existing = Connection::open(&path).unwrap();
+        existing
+            .execute_batch("CREATE TABLE preexisting(value TEXT);")
+            .unwrap();
+        drop(existing);
+
+        let before = database_file_snapshot(&path);
+        assert!(before.iter().skip(1).all(|(_, bytes)| bytes.is_none()));
+        let error = DurableImportStore::create(&path, &anchor)
+            .err()
+            .expect("existing database must not be adopted");
+        assert!(
+            error.starts_with("IMPORT_STORE_CREATE_EXCLUSIVE:"),
+            "existing database was rejected after the exclusive open stage: {error}"
+        );
+        assert_eq!(database_file_snapshot(&path), before);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
     fn complete_older_prefix_is_rejected_when_approved_head_is_newer() {
         let path = path("truncated-suffix");
         let (anchor, bundle) = fixture();
@@ -1068,4 +1091,3 @@ mod tests {
         let _ = std::fs::remove_file(path);
     }
 }
-

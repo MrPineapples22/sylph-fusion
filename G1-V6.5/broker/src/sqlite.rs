@@ -666,5 +666,48 @@ mod tests {
         assert_eq!(before, std::fs::read(&path).unwrap());
         cleanup(&path);
     }
-}
 
+    #[test]
+    fn exclusive_initialization_rejects_closed_valid_database_at_open_boundary() {
+        let path = test_path();
+        let existing = rusqlite::Connection::open(&path).unwrap();
+        existing
+            .execute_batch("CREATE TABLE preexisting(value TEXT);")
+            .unwrap();
+        drop(existing);
+
+        let before = std::fs::read(&path).unwrap();
+        let before_sidecars: Vec<_> = ["-wal", "-shm", "-journal"]
+            .iter()
+            .map(|suffix| {
+                let mut name = path.as_os_str().to_os_string();
+                name.push(suffix);
+                (
+                    std::path::PathBuf::from(name.clone()),
+                    std::path::PathBuf::from(name).exists(),
+                )
+            })
+            .collect();
+        assert!(before_sidecars.iter().all(|(_, exists)| !exists));
+
+        let error = Registry::initialize(&path)
+            .err()
+            .expect("existing database must not be adopted");
+        assert!(
+            error.starts_with("SQLITE_INITIALIZE_CREATE_EXCLUSIVE:"),
+            "existing database was rejected after the exclusive open stage: {error}"
+        );
+        assert_eq!(
+            before,
+            std::fs::read(&path).unwrap(),
+            "existing database changed"
+        );
+        for (sidecar, _) in before_sidecars {
+            assert!(
+                !sidecar.exists(),
+                "exclusive initialization created a sidecar"
+            );
+        }
+        cleanup(&path);
+    }
+}
