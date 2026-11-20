@@ -23,6 +23,7 @@ use import::{
 use import_store::{ApplyOutcome, DurableImportStore};
 use std::fs;
 use std::io::{self, Read, Write};
+use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 const FRAME_MAGIC: &[u8; 8] = b"G1SIMP01";
@@ -33,11 +34,14 @@ const MAX_FIELD_BYTES: usize = 1024 * 1024;
 const MAX_RECORDS: usize = 100_000;
 const MAX_OBLIGATIONS: usize = 100_000;
 const REQUEST_ID_BYTES: usize = 16;
+const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
+const PACKAGE_ROOT_NAME: &str = "G1-VNEXT-scratch";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Request {
     request_id: [u8; REQUEST_ID_BYTES],
-    anchor: ImportAnchor,
+    base_anchor: ImportAnchor,
+    expected_head: ImportAnchor,
     bundle: ImportBundle,
 }
 
@@ -106,7 +110,14 @@ fn decode_request(frame: &[u8]) -> Result<Request, String> {
         return Err("REQUEST_ID_INVALID".into());
     }
 
-    let anchor = ImportAnchor {
+    let base_anchor = ImportAnchor {
+        chain_identity: cursor.string()?,
+        generation: cursor.u64()?,
+        state_root: cursor.string()?,
+        last_receipt_identity: cursor.string()?,
+        unresolved_obligations: cursor.obligations(MAX_OBLIGATIONS)?,
+    };
+    let expected_head = ImportAnchor {
         chain_identity: cursor.string()?,
         generation: cursor.u64()?,
         state_root: cursor.string()?,
@@ -132,7 +143,8 @@ fn decode_request(frame: &[u8]) -> Result<Request, String> {
     }
     Ok(Request {
         request_id,
-        anchor,
+        base_anchor,
+        expected_head,
         bundle,
     })
 }
@@ -253,47 +265,110 @@ fn process_request(
         expected_envelope: synthetic_envelope(&request_id),
         chain_identity: request.bundle.chain_identity.clone(),
     };
-    let verified =
-        match ImportKernel::validate(&request.anchor, request.bundle.clone(), &authenticator) {
-            ImportDecision::Accepted(value) if value.trust_claim().synthetic_only => value,
-            ImportDecision::Accepted(_) | ImportDecision::Rejected(_) => {
-                return (ResultKind::Rejected, Some(request_id));
-            }
-            ImportDecision::Indeterminate(_) => {
-                return (ResultKind::Indeterminate, Some(request_id));
-            }
-        };
-    let approved_head = match head_for(&request.bundle) {
-        Some(value) => value,
-        None => return (ResultKind::Rejected, Some(request_id)),
-    };
-
-    let outcome = if database_path.exists() {
-        match DurableImportStore::open_existing(
+    if storage_path_preflight(database_path).is_err() {
+        return (ResultKind::Indeterminate, Some(request_id));
+    }
+    if database_path.exists() {
+        let mut store = match DurableImportStore::open_existing(
             database_path,
-            &request.anchor,
-            &approved_head,
+            &request.base_anchor,
+            &request.expected_head,
             &authenticator,
         ) {
-            Ok(mut store) => store.activate(&verified, &authenticator),
-            Err(_) => return (ResultKind::Indeterminate, Some(request_id)),
-        }
-    } else {
-        let mut store = match DurableImportStore::create(database_path, &request.anchor) {
             Ok(value) => value,
             Err(_) => return (ResultKind::Indeterminate, Some(request_id)),
         };
-        store.activate(&verified, &authenticator)
-    };
+        // The complete existing history has been replayed against the
+        // separately pinned current head. Recover the exact parent anchor
+        // from that verified store so generation n -> n+1 validates against
+        // its actual parent rather than the incoming bundle's head.
+        let parent = match store.anchor_at(request.bundle.parent_generation, &authenticator) {
+            Ok(value) => value,
+            Err(_) => return (ResultKind::Indeterminate, Some(request_id)),
+        };
+        let verified = match validate_request_bundle(&request.bundle, &parent, &authenticator) {
+            Ok(value) => value,
+            Err(kind) => return (kind, Some(request_id)),
+        };
+        return match store.activate(&verified, &authenticator) {
+            Ok(ApplyOutcome::Activated) => (ResultKind::Activated, Some(request_id)),
+            Ok(ApplyOutcome::AlreadyActive) => (ResultKind::AlreadyActive, Some(request_id)),
+            Err(error) if definitely_rejected(&error) => (ResultKind::Rejected, Some(request_id)),
+            // Commit failures and post-commit verification failures remain
+            // ambiguous. Never convert them into a safe-to-retry rejection.
+            Err(_) => (ResultKind::Indeterminate, Some(request_id)),
+        };
+    }
 
-    match outcome {
+    if request.expected_head != request.base_anchor {
+        return (ResultKind::Rejected, Some(request_id));
+    }
+    let verified =
+        match validate_request_bundle(&request.bundle, &request.base_anchor, &authenticator) {
+            Ok(value) => value,
+            Err(kind) => return (kind, Some(request_id)),
+        };
+    let mut store = match DurableImportStore::create(database_path, &request.base_anchor) {
+        Ok(value) => value,
+        Err(_) => return (ResultKind::Indeterminate, Some(request_id)),
+    };
+    match store.activate(&verified, &authenticator) {
         Ok(ApplyOutcome::Activated) => (ResultKind::Activated, Some(request_id)),
         Ok(ApplyOutcome::AlreadyActive) => (ResultKind::AlreadyActive, Some(request_id)),
         Err(error) if definitely_rejected(&error) => (ResultKind::Rejected, Some(request_id)),
-        // Store errors may occur after SQLite committed (for example during
-        // the post-commit inventory check). Never report unknown durability
-        // as a negative result that could invite an unsafe blind retry.
         Err(_) => (ResultKind::Indeterminate, Some(request_id)),
+    }
+}
+
+fn storage_path_preflight(database_path: &Path) -> Result<(), String> {
+    let parent = database_path
+        .parent()
+        .ok_or_else(|| "SCRATCH_DIRECTORY_UNAVAILABLE".to_owned())?;
+    let parent_metadata =
+        fs::symlink_metadata(parent).map_err(|_| "SCRATCH_DIRECTORY_UNAVAILABLE".to_owned())?;
+    if !parent_metadata.is_dir()
+        || parent_metadata.file_type().is_symlink()
+        || parent_metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+    {
+        return Err("SCRATCH_DIRECTORY_REPARSE_POINT_REJECTED".into());
+    }
+    let mut wal = database_path.as_os_str().to_os_string();
+    wal.push("-wal");
+    let mut shm = database_path.as_os_str().to_os_string();
+    shm.push("-shm");
+    let mut journal = database_path.as_os_str().to_os_string();
+    journal.push("-journal");
+    for path in [
+        database_path.to_path_buf(),
+        PathBuf::from(wal),
+        PathBuf::from(shm),
+        PathBuf::from(journal),
+    ] {
+        match fs::symlink_metadata(&path) {
+            Ok(metadata)
+                if metadata.file_type().is_symlink()
+                    || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+                    || !metadata.is_file() =>
+            {
+                return Err("SCRATCH_STORAGE_REPARSE_POINT_REJECTED".into());
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(_) => return Err("SCRATCH_STORAGE_PREFLIGHT_FAILED".into()),
+        }
+    }
+    Ok(())
+}
+
+fn validate_request_bundle(
+    bundle: &ImportBundle,
+    parent: &ImportAnchor,
+    authenticator: &dyn EvidenceAuthenticator,
+) -> Result<import::VerifiedImport, ResultKind> {
+    match ImportKernel::validate(parent, bundle.clone(), authenticator) {
+        ImportDecision::Accepted(value) if value.trust_claim().synthetic_only => Ok(value),
+        ImportDecision::Accepted(_) | ImportDecision::Rejected(_) => Err(ResultKind::Rejected),
+        ImportDecision::Indeterminate(_) => Err(ResultKind::Indeterminate),
     }
 }
 
@@ -305,17 +380,6 @@ fn definitely_rejected(error: &str) -> bool {
             | "IMPORT_VERIFIED_CAPABILITY_MISMATCH"
             | "IMPORT_ACTIVATION_COMPARE_AND_SWAP_FAILED"
     )
-}
-
-fn head_for(bundle: &ImportBundle) -> Option<ImportAnchor> {
-    let last_receipt = bundle.receipts.last()?;
-    Some(ImportAnchor {
-        chain_identity: bundle.chain_identity.clone(),
-        generation: bundle.generation,
-        state_root: bundle.state_root.clone(),
-        last_receipt_identity: last_receipt.identity.clone(),
-        unresolved_obligations: bundle.obligations.clone(),
-    })
 }
 
 fn output_result(kind: ResultKind, request_id: Option<[u8; REQUEST_ID_BYTES]>) -> String {
@@ -330,12 +394,47 @@ fn output_result(kind: ResultKind, request_id: Option<[u8; REQUEST_ID_BYTES]>) -
 
 fn fixed_database_path() -> Result<PathBuf, String> {
     let executable = std::env::current_exe().map_err(|_| "EXECUTABLE_PATH_UNAVAILABLE")?;
-    let parent = executable
-        .parent()
-        .ok_or_else(|| "EXECUTABLE_DIRECTORY_UNAVAILABLE".to_owned())?;
-    Ok(parent
+    let package_root = find_package_root(&executable)?;
+    Ok(package_root
         .join("synthetic-maintenance-data")
         .join("synthetic-import.sqlite"))
+}
+
+fn find_package_root(start: &Path) -> Result<PathBuf, String> {
+    let mut roots = Vec::new();
+    for ancestor in start.ancestors() {
+        let metadata =
+            fs::symlink_metadata(ancestor).map_err(|_| "EXECUTABLE_PATH_COMPONENT_UNAVAILABLE")?;
+        if metadata.file_type().is_symlink()
+            || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+        {
+            return Err("EXECUTABLE_PATH_REPARSE_POINT_REJECTED".into());
+        }
+        if ancestor.file_name().is_some_and(|name| {
+            name.to_string_lossy()
+                .eq_ignore_ascii_case(PACKAGE_ROOT_NAME)
+        }) {
+            let readme = ancestor.join("README.md");
+            let manifest = ancestor.join("broker").join("Cargo.toml");
+            if regular_non_reparse_file(&readme) && regular_non_reparse_file(&manifest) {
+                roots.push(ancestor.to_path_buf());
+            }
+        }
+    }
+    if roots.len() != 1 {
+        return Err("SCRATCH_PACKAGE_ROOT_MISSING_OR_AMBIGUOUS".into());
+    }
+    let root = roots.pop().expect("one candidate was checked");
+    let canonical = fs::canonicalize(&root).map_err(|_| "SCRATCH_PACKAGE_ROOT_INVALID")?;
+    Ok(canonical)
+}
+
+fn regular_non_reparse_file(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|metadata| {
+        metadata.is_file()
+            && !metadata.file_type().is_symlink()
+            && metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT == 0
+    })
 }
 
 fn run() -> Result<i32, String> {
@@ -357,7 +456,19 @@ fn run() -> Result<i32, String> {
     let parent = database
         .parent()
         .ok_or_else(|| "SCRATCH_DIRECTORY_UNAVAILABLE".to_owned())?;
-    fs::create_dir_all(parent).map_err(|_| "SCRATCH_DIRECTORY_CREATE_FAILED".to_owned())?;
+    match fs::create_dir(parent) {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+        Err(_) => return Err("SCRATCH_DIRECTORY_CREATE_FAILED".into()),
+    }
+    if !parent.is_dir()
+        || fs::symlink_metadata(parent).is_ok_and(|metadata| {
+            metadata.file_type().is_symlink()
+                || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+        })
+    {
+        return Err("SCRATCH_DIRECTORY_REPARSE_POINT_REJECTED".into());
+    }
     let (kind, request_id) = process_request(&frame, &database);
     let mut stdout = io::stdout().lock();
     stdout
@@ -437,19 +548,59 @@ mod tests {
         (anchor, bundle)
     }
 
+    fn next_bundle(
+        parent: &ImportAnchor,
+        request_id: [u8; REQUEST_ID_BYTES],
+        identity: &str,
+    ) -> ImportBundle {
+        let mut bundle = ImportBundle {
+            schema: 1,
+            chain_identity: parent.chain_identity.clone(),
+            generation: parent.generation + 1,
+            parent_generation: parent.generation,
+            parent_state_root: parent.state_root.clone(),
+            state_root: String::new(),
+            receipts: vec![ReceiptRecord {
+                identity: identity.into(),
+                parent_identity: parent.last_receipt_identity.clone(),
+                payload: format!("synthetic {identity}").into_bytes(),
+            }],
+            obligations: parent.unresolved_obligations.clone(),
+            evidence_envelope: synthetic_envelope(&request_id),
+        };
+        bundle.state_root = import::state_root(&bundle).unwrap();
+        bundle
+    }
+
+    fn bundle_head(bundle: &ImportBundle) -> ImportAnchor {
+        ImportAnchor {
+            chain_identity: bundle.chain_identity.clone(),
+            generation: bundle.generation,
+            state_root: bundle.state_root.clone(),
+            last_receipt_identity: bundle.receipts.last().unwrap().identity.clone(),
+            unresolved_obligations: bundle.obligations.clone(),
+        }
+    }
+
     fn encode_request(
         request_id: [u8; REQUEST_ID_BYTES],
-        anchor: &ImportAnchor,
+        base_anchor: &ImportAnchor,
+        expected_head: &ImportAnchor,
         bundle: &ImportBundle,
     ) -> Vec<u8> {
         let mut output = Vec::new();
         output.extend_from_slice(FRAME_MAGIC);
         output.extend_from_slice(&request_id);
-        put_str(&mut output, &anchor.chain_identity);
-        put_u64(&mut output, anchor.generation);
-        put_str(&mut output, &anchor.state_root);
-        put_str(&mut output, &anchor.last_receipt_identity);
-        encode_obligations(&mut output, &anchor.unresolved_obligations);
+        put_str(&mut output, &base_anchor.chain_identity);
+        put_u64(&mut output, base_anchor.generation);
+        put_str(&mut output, &base_anchor.state_root);
+        put_str(&mut output, &base_anchor.last_receipt_identity);
+        encode_obligations(&mut output, &base_anchor.unresolved_obligations);
+        put_str(&mut output, &expected_head.chain_identity);
+        put_u64(&mut output, expected_head.generation);
+        put_str(&mut output, &expected_head.state_root);
+        put_str(&mut output, &expected_head.last_receipt_identity);
+        encode_obligations(&mut output, &expected_head.unresolved_obligations);
         put_u32(&mut output, bundle.schema);
         put_str(&mut output, &bundle.chain_identity);
         put_u64(&mut output, bundle.generation);
@@ -481,7 +632,7 @@ mod tests {
     fn bounded_frame_decoder_accepts_valid_payload_and_rejects_truncation_and_trailing_data() {
         let request_id = [7u8; REQUEST_ID_BYTES];
         let (anchor, bundle) = fixture(request_id);
-        let frame = encode_request(request_id, &anchor, &bundle);
+        let frame = encode_request(request_id, &anchor, &anchor, &bundle);
         assert_eq!(decode_request(&frame).unwrap().request_id, request_id);
         let mut truncated = frame.clone();
         truncated.pop();
@@ -516,7 +667,7 @@ mod tests {
 
         let zero_id = [0u8; REQUEST_ID_BYTES];
         let (anchor, bundle) = fixture([8u8; REQUEST_ID_BYTES]);
-        let frame = encode_request(zero_id, &anchor, &bundle);
+        let frame = encode_request(zero_id, &anchor, &anchor, &bundle);
         let (kind, _) = process_request(&frame, &path);
         assert_eq!(kind, ResultKind::Rejected);
         assert!(!path.exists());
@@ -528,19 +679,21 @@ mod tests {
         let path = scratch_path("replay");
         let request_id = [9u8; REQUEST_ID_BYTES];
         let (anchor, bundle) = fixture(request_id);
-        let frame = encode_request(request_id, &anchor, &bundle);
-        assert_eq!(process_request(&frame, &path).0, ResultKind::Activated);
-        assert_eq!(process_request(&frame, &path).0, ResultKind::AlreadyActive);
+        let initial = encode_request(request_id, &anchor, &anchor, &bundle);
+        assert_eq!(process_request(&initial, &path).0, ResultKind::Activated);
+        let current = bundle_head(&bundle);
+        let retry = encode_request(request_id, &anchor, &current, &bundle);
+        assert_eq!(process_request(&retry, &path).0, ResultKind::AlreadyActive);
 
         let mut conflict = bundle;
         conflict.receipts[0].payload = b"conflicting payload".to_vec();
         conflict.state_root = import::state_root(&conflict).unwrap();
-        let conflict_frame = encode_request(request_id, &anchor, &conflict);
+        let conflict_frame = encode_request(request_id, &anchor, &current, &conflict);
         assert_eq!(
             process_request(&conflict_frame, &path).0,
-            ResultKind::Indeterminate
+            ResultKind::Rejected
         );
-        assert_eq!(process_request(&frame, &path).0, ResultKind::AlreadyActive);
+        assert_eq!(process_request(&retry, &path).0, ResultKind::AlreadyActive);
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 
@@ -549,15 +702,64 @@ mod tests {
         let path = scratch_path("different-id");
         let first_id = [10u8; REQUEST_ID_BYTES];
         let (anchor, bundle) = fixture(first_id);
-        let first = encode_request(first_id, &anchor, &bundle);
+        let first = encode_request(first_id, &anchor, &anchor, &bundle);
         assert_eq!(process_request(&first, &path).0, ResultKind::Activated);
+        let current = bundle_head(&bundle);
 
         let second_id = [11u8; REQUEST_ID_BYTES];
-        let mut second_bundle = bundle;
+        let mut second_bundle = bundle.clone();
         second_bundle.evidence_envelope = synthetic_envelope(&second_id);
-        let second = encode_request(second_id, &anchor, &second_bundle);
+        let second = encode_request(second_id, &anchor, &current, &second_bundle);
         assert_eq!(process_request(&second, &path).0, ResultKind::Rejected);
-        assert_eq!(process_request(&first, &path).0, ResultKind::AlreadyActive);
+        let first_retry = encode_request(first_id, &anchor, &current, &bundle);
+        assert_eq!(
+            process_request(&first_retry, &path).0,
+            ResultKind::AlreadyActive
+        );
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn sequential_generation_uses_pinned_current_head_and_rejects_rollback_or_conflict() {
+        let path = scratch_path("sequential");
+        let first_id = [20u8; REQUEST_ID_BYTES];
+        let (base, generation_two) = fixture(first_id);
+        let first = encode_request(first_id, &base, &base, &generation_two);
+        assert_eq!(process_request(&first, &path).0, ResultKind::Activated);
+        let head_two = bundle_head(&generation_two);
+
+        let second_id = [21u8; REQUEST_ID_BYTES];
+        let generation_three = next_bundle(&head_two, second_id, "receipt-3");
+        let second = encode_request(second_id, &base, &head_two, &generation_three);
+        assert_eq!(process_request(&second, &path).0, ResultKind::Activated);
+        let head_three = bundle_head(&generation_three);
+
+        // Lost-ack replay uses the separately reconstructed current head and
+        // the same request id/envelope, so it is recognized without a second
+        // generation or duplicate receipt effect.
+        let second_retry = encode_request(second_id, &base, &head_three, &generation_three);
+        assert_eq!(
+            process_request(&second_retry, &path).0,
+            ResultKind::AlreadyActive
+        );
+
+        // A stale pre-operation head cannot authorize a new append after the
+        // store has advanced. This is synthetic comparison only, not an
+        // operational rollback-resistant trust proof.
+        let third_id = [22u8; REQUEST_ID_BYTES];
+        let generation_four = next_bundle(&head_three, third_id, "receipt-4");
+        let stale = encode_request(third_id, &base, &head_two, &generation_four);
+        assert_eq!(process_request(&stale, &path).0, ResultKind::Indeterminate);
+
+        // Reusing a consumed request id for another generation conflicts with
+        // the persisted unique synthetic envelope.
+        let reused_id = next_bundle(&head_three, first_id, "receipt-4-reused-id");
+        let reused = encode_request(first_id, &base, &head_three, &reused_id);
+        assert_eq!(process_request(&reused, &path).0, ResultKind::Indeterminate);
+        assert_eq!(
+            process_request(&second_retry, &path).0,
+            ResultKind::AlreadyActive
+        );
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 
@@ -566,7 +768,7 @@ mod tests {
         let path = scratch_path("isolation");
         let request_id = [12u8; REQUEST_ID_BYTES];
         let (anchor, bundle) = fixture(request_id);
-        let frame = encode_request(request_id, &anchor, &bundle);
+        let frame = encode_request(request_id, &anchor, &anchor, &bundle);
         assert_eq!(process_request(&frame, &path).0, ResultKind::Activated);
         assert!(path.exists());
         assert_eq!(path.file_name().unwrap(), "synthetic-import.sqlite");
@@ -587,4 +789,26 @@ mod tests {
         assert!(manifest.contains("synthetic-maintenance = []"));
         assert!(manifest.contains("required-features = [\"synthetic-maintenance\"]"));
     }
+
+    #[test]
+    fn package_root_must_be_unique_and_non_reparse() {
+        let temp = scratch_path("package-root");
+        let root = temp.parent().unwrap();
+        assert_eq!(
+            find_package_root(root).unwrap_err(),
+            "SCRATCH_PACKAGE_ROOT_MISSING_OR_AMBIGUOUS"
+        );
+
+        let nested = root.join(PACKAGE_ROOT_NAME);
+        fs::create_dir(&nested).unwrap();
+        fs::write(nested.join("README.md"), "synthetic marker").unwrap();
+        fs::create_dir(nested.join("broker")).unwrap();
+        fs::write(nested.join("broker").join("Cargo.toml"), "synthetic marker").unwrap();
+        let start = nested.join("broker").join("target").join("test.exe");
+        fs::create_dir_all(start.parent().unwrap()).unwrap();
+        fs::write(&start, b"test").unwrap();
+        assert_eq!(find_package_root(&start).unwrap(), nested);
+        let _ = fs::remove_dir_all(root);
+    }
 }
+
