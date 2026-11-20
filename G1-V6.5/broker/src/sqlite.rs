@@ -9,6 +9,7 @@ const EXPECTED_SCHEMA_VERSION: i32 = 1;
 
 pub struct Registry {
     connection: Connection,
+    pub environment_class: String,
     pub version: String,
     pub sourceid: String,
     pub journal_mode: String,
@@ -194,6 +195,14 @@ impl Registry {
                     request_id TEXT PRIMARY KEY NOT NULL,\
                     payload TEXT NOT NULL\
                 );\
+                 CREATE TABLE registry_meta(\
+                    singleton INTEGER PRIMARY KEY CHECK(singleton=1),\
+                    schema_version INTEGER NOT NULL CHECK(schema_version=1),\
+                    environment_class TEXT NOT NULL CHECK(environment_class='SYNTHETIC_TEST_ONLY'),\
+                    generation INTEGER NOT NULL CHECK(generation>=1)\
+                 );\
+                 INSERT INTO registry_meta(singleton,schema_version,environment_class,generation)\
+                    VALUES(1,1,'SYNTHETIC_TEST_ONLY',1);\
                  PRAGMA user_version=1;\
                  COMMIT;",
             )
@@ -218,6 +227,13 @@ impl Registry {
     fn from_connection(connection: Connection) -> Result<Self, String> {
         let (journal_mode, synchronous, foreign_keys, trusted_schema, sourceid) =
             profile(&connection)?;
+        let environment_class: String = connection
+            .query_row(
+                "SELECT environment_class FROM registry_meta WHERE singleton=1",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| map_error("SQLITE_ENVIRONMENT_CLASS_READ", e))?;
         if !journal_mode.eq_ignore_ascii_case("wal")
             || synchronous != 2
             || foreign_keys != 1
@@ -229,6 +245,7 @@ impl Registry {
         }
         Ok(Self {
             connection,
+            environment_class,
             version: rusqlite::version().to_string(),
             sourceid,
             journal_mode,
@@ -250,25 +267,74 @@ impl Registry {
         if version != EXPECTED_SCHEMA_VERSION {
             return Err(format!("SQLITE_SCHEMA_VERSION_MISMATCH:{version}"));
         }
-        let table_count: i64 = connection
+        let schema_object_count: i64 = connection
             .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+                "SELECT COUNT(*) FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'",
                 [],
                 |row| row.get(0),
             )
             .map_err(|e| map_error("SQLITE_SCHEMA_INVENTORY", e))?;
-        if table_count != 1 {
-            return Err(format!("SQLITE_SCHEMA_TABLE_COUNT:{table_count}"));
+        if schema_object_count != 2 {
+            return Err(format!("SQLITE_SCHEMA_OBJECT_COUNT:{schema_object_count}"));
         }
-        let effect_table: i64 = connection
+        let effects_sql: Option<String> = connection
             .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='effects'",
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='effects'",
                 [],
                 |row| row.get(0),
             )
+            .optional()
             .map_err(|e| map_error("SQLITE_EFFECTS_SCHEMA", e))?;
-        if effect_table != 1 {
+        if effects_sql.is_none() {
             return Err("SQLITE_EFFECTS_TABLE_MISSING".into());
+        }
+        let meta_table_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='registry_meta'",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| map_error("SQLITE_META_SCHEMA", e))?;
+        if meta_table_count != 1 {
+            return Err("SQLITE_REGISTRY_META_TABLE_MISSING".into());
+        }
+        let metadata: (i32, String, i64) = connection
+            .query_row(
+                "SELECT schema_version,environment_class,generation FROM registry_meta WHERE singleton=1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .map_err(|e| map_error("SQLITE_REGISTRY_METADATA_READ", e))?;
+        if metadata.0 != EXPECTED_SCHEMA_VERSION
+            || metadata.1 != "SYNTHETIC_TEST_ONLY"
+            || metadata.2 < 1
+        {
+            return Err(format!("SQLITE_REGISTRY_METADATA_INVALID:{metadata:?}"));
+        }
+        let mut columns = connection
+            .prepare("PRAGMA table_info(effects)")
+            .map_err(|e| map_error("SQLITE_EFFECTS_COLUMNS_PREPARE", e))?;
+        let actual_columns = columns
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i32>(3)?,
+                    row.get::<_, i32>(5)?,
+                ))
+            })
+            .map_err(|e| map_error("SQLITE_EFFECTS_COLUMNS_READ", e))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| map_error("SQLITE_EFFECTS_COLUMNS_ROW", e))?;
+        if actual_columns
+            != vec![
+                ("request_id".into(), "TEXT".into(), 1, 1),
+                ("payload".into(), "TEXT".into(), 1, 0),
+            ]
+        {
+            return Err(format!(
+                "SQLITE_EFFECTS_COLUMNS_MISMATCH:{actual_columns:?}"
+            ));
         }
         let integrity: String = connection
             .query_row("PRAGMA integrity_check", [], |row| row.get(0))
@@ -409,6 +475,7 @@ mod tests {
         let path = test_path();
         let registry = Registry::initialize(&path).expect("explicit registry initialization");
         assert_eq!(registry.version, "3.54.1");
+        assert_eq!(registry.environment_class, "SYNTHETIC_TEST_ONLY");
         assert!(!registry.sourceid.is_empty());
         assert_eq!(registry.journal_mode.to_ascii_lowercase(), "wal");
         assert_eq!(registry.synchronous, 2);
