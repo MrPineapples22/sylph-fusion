@@ -12,6 +12,7 @@
 //! authenticator intentionally proves no identity, finality, or operational
 //! authority. Never use this endpoint or its database for production.
 
+use crate::import;
 use crate::import::{
     Authentication, EvidenceAuthenticator, ImportAnchor, ImportBundle, ImportDecision,
     ImportKernel, Obligation, ReceiptRecord, TrustClaim,
