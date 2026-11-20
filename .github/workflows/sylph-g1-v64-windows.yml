@@ -34,18 +34,35 @@ jobs:
       - name: Pin Rust toolchain
         shell: pwsh
         run: |
-          rustup toolchain install 1.89.0 --profile minimal --component rustfmt --target x86_64-pc-windows-msvc
-          rustup default 1.89.0
-          rustc --version --verbose
-          cargo --version
+          $ErrorActionPreference = 'Stop'
+          function Invoke-CheckedNative {
+            param([string]$Name, [scriptblock]$Action)
+            & $Action
+            $code = $LASTEXITCODE
+            if ($code -ne 0) { throw "$Name failed with exit code $code" }
+          }
+          Invoke-CheckedNative 'rustup toolchain install' { rustup toolchain install 1.89.0 --profile minimal --component rustfmt --target x86_64-pc-windows-msvc }
+          Invoke-CheckedNative 'rustup default' { rustup default 1.89.0 }
+          Invoke-CheckedNative 'rustc version' { rustc --version --verbose }
+          Invoke-CheckedNative 'cargo version' { cargo --version }
 
       - name: Bootstrap dependency lock and compile
         shell: pwsh
         run: |
-          cargo fmt --manifest-path G1-V6.4/broker/Cargo.toml -- --check
-          cargo generate-lockfile --manifest-path G1-V6.4/broker/Cargo.toml
-          cargo test --manifest-path G1-V6.4/broker/Cargo.toml --target x86_64-pc-windows-msvc -- --test-threads=1
-          cargo build --release --bins --manifest-path G1-V6.4/broker/Cargo.toml --target x86_64-pc-windows-msvc
+          $ErrorActionPreference = 'Stop'
+          function Invoke-CheckedNative {
+            param([string]$Name, [scriptblock]$Action)
+            & $Action
+            $code = $LASTEXITCODE
+            if ($code -ne 0) { throw "$Name failed with exit code $code" }
+          }
+          Invoke-CheckedNative 'cargo fmt check' { cargo fmt --manifest-path G1-V6.4/broker/Cargo.toml -- --check }
+          Invoke-CheckedNative 'cargo lock generation' { cargo generate-lockfile --manifest-path G1-V6.4/broker/Cargo.toml }
+          Write-Output '---CARGO-LOCKFILE-BEGIN---'
+          Get-Content -Raw G1-V6.4/broker/Cargo.lock
+          Write-Output '---CARGO-LOCKFILE-END---'
+          Invoke-CheckedNative 'cargo tests' { cargo test --manifest-path G1-V6.4/broker/Cargo.toml --target x86_64-pc-windows-msvc -- --test-threads=1 }
+          Invoke-CheckedNative 'cargo release build' { cargo build --release --bins --manifest-path G1-V6.4/broker/Cargo.toml --target x86_64-pc-windows-msvc }
 
       - name: Run Windows preflight
         shell: pwsh
