@@ -5,6 +5,7 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.as_slice() {
         [op, path] if op == "write" => win::attack::write_one_byte(path),
+        [op, path] if op == "write-only" => win::attack::write_only_one_byte(path),
         [op, path] if op == "read" => win::attack::open_read_only(path),
         [op] if op == "pipe-server" => win::attack::try_create_broker_pipe_server(),
         [op, ready, release] if op == "pipe-server-hold" => {
@@ -13,7 +14,7 @@ fn main() {
         [op] if op == "identity" => win::process_identity_json(),
         [op] if op == "forbidden" => win::pipe::client_command(&["forbidden".into()]),
         _ => Err(
-            "usage: g1-attacker identity | read <synthetic-db> | write <synthetic-db> | pipe-server | pipe-server-hold <ready-file> <release-file> | forbidden".into(),
+            "usage: g1-attacker identity | read <synthetic-db> | write <synthetic-db> | write-only <synthetic-db> | pipe-server | pipe-server-hold <ready-file> <release-file> | forbidden".into(),
         ),
     };
     match result {
@@ -37,3 +38,4 @@ fn main() {
         }
     }
 }
+
