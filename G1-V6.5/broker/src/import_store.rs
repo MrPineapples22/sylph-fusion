@@ -9,7 +9,6 @@ use crate::import::{
     ImportAnchor, Obligation, VerifiedImport,
 };
 use rusqlite::{params, Connection, OpenFlags, TransactionBehavior};
-use std::fs::OpenOptions;
 use std::path::Path;
 
 const SQLITE_VERSION: &str = "3.54.1";
@@ -39,21 +38,21 @@ pub struct DurableImportStore {
 
 impl DurableImportStore {
     /// Create a new, empty synthetic store. Existing files are never adopted.
+    /// The caller must supply a directory whose ownership and ancestor path
+    /// are already protected; SQLite's exclusive create closes the final-name
+    /// create/reopen gap but does not secure attacker-writable parent paths.
     pub fn create(path: &Path, anchor: &ImportAnchor) -> Result<Self, String> {
         if validate_anchor(anchor).is_err() {
             return Err("IMPORT_STORE_REQUIRES_SYNTHETIC_ANCHOR".into());
         }
-        let file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(path)
-            .map_err(|error| format!("IMPORT_STORE_CREATE_NEW:{error}"))?;
-        drop(file);
         let connection = Connection::open_with_flags(
             path,
-            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_FULL_MUTEX,
+            OpenFlags::SQLITE_OPEN_READ_WRITE
+                | OpenFlags::SQLITE_OPEN_CREATE
+                | OpenFlags::SQLITE_OPEN_EXCLUSIVE
+                | OpenFlags::SQLITE_OPEN_FULL_MUTEX,
         )
-        .map_err(|error| format!("IMPORT_STORE_OPEN:{error}"))?;
+        .map_err(|error| format!("IMPORT_STORE_CREATE_EXCLUSIVE:{error}"))?;
         configure_new(&connection)?;
         connection
             .execute_batch(&format!(
@@ -781,7 +780,9 @@ mod tests {
             expected: verified.canonical_claim().to_vec(),
         };
         let mut store = DurableImportStore::create(&path, &anchor).unwrap();
+        let before_duplicate_create = database_file_snapshot(&path);
         assert!(DurableImportStore::create(&path, &anchor).is_err());
+        assert_eq!(database_file_snapshot(&path), before_duplicate_create);
         store.activate(&verified, &auth).unwrap();
         drop(store);
         let connection =
