@@ -1,14 +1,17 @@
 use rusqlite::config::DbConfig;
 use rusqlite::limits::Limit;
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
-use std::fs::OpenOptions;
+use std::fs::{File, OpenOptions};
+use std::os::windows::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
 const EXPECTED_SQLITE_VERSION: &str = "3.54.1";
 const EXPECTED_SCHEMA_VERSION: i32 = 1;
+const STORAGE_GUARD_SHARE_READ_WRITE: u32 = 0x0000_0003;
 
 pub struct Registry {
     connection: Connection,
+    _storage_guard: File,
     pub environment_class: String,
     pub version: String,
     pub sourceid: String,
@@ -174,9 +177,7 @@ impl Registry {
         if has_sqlite_sidecar(path) {
             return Err("SQLITE_INITIALIZE_SIDECAR_EXISTS".into());
         }
-        let creation_guard = OpenOptions::new()
-            .read(true)
-            .write(true)
+        let creation_guard = guarded_open_options()
             .create_new(true)
             .open(path)
             .map_err(|e| map_error("SQLITE_INITIALIZE_CREATE_NEW", e))?;
@@ -185,7 +186,6 @@ impl Registry {
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_FULL_MUTEX,
         )
         .map_err(|e| map_error("SQLITE_INITIALIZE_OPEN_RESERVED", e))?;
-        drop(creation_guard);
         if rusqlite::version() != EXPECTED_SQLITE_VERSION {
             return Err(format!(
                 "SQLITE_VERSION_MISMATCH:expected={EXPECTED_SQLITE_VERSION},actual={}",
@@ -212,7 +212,7 @@ impl Registry {
                  COMMIT;",
             )
             .map_err(|e| map_error("SQLITE_INITIALIZE_SCHEMA", e))?;
-        Self::from_connection(connection)
+        Self::from_connection(connection, creation_guard)
     }
 
     /// Normal service startup: open an existing initialized database only.
@@ -221,15 +221,18 @@ impl Registry {
         if !path.is_file() {
             return Err("SQLITE_AUTHORITY_DATABASE_MISSING".into());
         }
+        let storage_guard = guarded_open_options()
+            .open(path)
+            .map_err(|e| map_error("SQLITE_OPEN_EXISTING_GUARD", e))?;
         let flags = OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_FULL_MUTEX;
         let connection = Connection::open_with_flags(path, flags)
             .map_err(|e| map_error("SQLITE_OPEN_EXISTING", e))?;
         Self::validate_existing(&connection)?;
         configure_connection(&connection, true, false)?;
-        Self::from_connection(connection)
+        Self::from_connection(connection, storage_guard)
     }
 
-    fn from_connection(connection: Connection) -> Result<Self, String> {
+    fn from_connection(connection: Connection, storage_guard: File) -> Result<Self, String> {
         let (journal_mode, synchronous, foreign_keys, trusted_schema, sourceid) =
             profile(&connection)?;
         let environment_class: String = connection
@@ -250,6 +253,7 @@ impl Registry {
         }
         Ok(Self {
             connection,
+            _storage_guard: storage_guard,
             environment_class,
             version: rusqlite::version().to_string(),
             sourceid,
@@ -448,6 +452,18 @@ impl Registry {
             .query_row("PRAGMA integrity_check", [], |row| row.get::<_, String>(0))
             .map_err(|e| map_error("SQLITE_INTEGRITY", e))
     }
+}
+
+fn guarded_open_options() -> OpenOptions {
+    let mut options = OpenOptions::new();
+    options
+        .read(true)
+        .write(true)
+        // Keep the main database pathname from being renamed or deleted
+        // while a SQLite connection is active. Parent-directory and reparse
+        // protection remain external caller requirements.
+        .share_mode(STORAGE_GUARD_SHARE_READ_WRITE);
+    options
 }
 
 pub fn inspect_readonly(path: &Path) -> Result<String, String> {
@@ -716,5 +732,27 @@ mod tests {
             );
         }
         cleanup(&path);
+    }
+
+    #[test]
+    fn active_registry_guard_denies_database_rename_until_close() {
+        let path = test_path();
+        let moved = path.with_file_name(format!(
+            "{}-moved.db",
+            path.file_stem().unwrap().to_string_lossy()
+        ));
+        let registry = Registry::initialize(&path).unwrap();
+        let rename = std::fs::rename(&path, &moved);
+        assert!(
+            rename.is_err(),
+            "active registry file object was replaceable by rename"
+        );
+        assert!(path.exists());
+        assert!(!moved.exists());
+        assert_eq!(registry.check_integrity().unwrap(), "ok");
+        drop(registry);
+        std::fs::rename(&path, &moved).expect("rename should succeed after guard closes");
+        assert!(moved.exists());
+        cleanup(&moved);
     }
 }

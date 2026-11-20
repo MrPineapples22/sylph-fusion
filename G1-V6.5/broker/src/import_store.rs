@@ -9,10 +9,12 @@ use crate::import::{
     ImportAnchor, Obligation, VerifiedImport,
 };
 use rusqlite::{params, Connection, OpenFlags, TransactionBehavior};
-use std::fs::OpenOptions;
+use std::fs::{File, OpenOptions};
+use std::os::windows::fs::OpenOptionsExt;
 use std::path::Path;
 
 const SQLITE_VERSION: &str = "3.54.1";
+const STORAGE_GUARD_SHARE_READ_WRITE: u32 = 0x0000_0003;
 const GENERATIONS_SQL: &str = "CREATE TABLE authority_generations(generation INTEGER PRIMARY KEY,parent_generation INTEGER NOT NULL,parent_state_root TEXT NOT NULL,chain_identity TEXT NOT NULL,state_root TEXT NOT NULL,last_receipt_identity TEXT NOT NULL,receipt_count INTEGER NOT NULL,obligation_count INTEGER NOT NULL,canonical_claim BLOB NOT NULL,signer_identity TEXT NOT NULL,trust_epoch INTEGER NOT NULL,envelope BLOB NOT NULL,synthetic_only INTEGER NOT NULL CHECK(synthetic_only=1))";
 const RECEIPTS_SQL: &str = "CREATE TABLE authority_receipts(generation INTEGER NOT NULL,ordinal INTEGER NOT NULL,identity TEXT NOT NULL,parent_identity TEXT NOT NULL,payload BLOB NOT NULL,PRIMARY KEY(generation,ordinal),UNIQUE(generation,identity),FOREIGN KEY(generation) REFERENCES authority_generations(generation))";
 const OBLIGATIONS_SQL: &str = "CREATE TABLE authority_obligations(generation INTEGER NOT NULL,ordinal INTEGER NOT NULL,identity TEXT NOT NULL,state TEXT NOT NULL,external_identity TEXT NOT NULL,PRIMARY KEY(generation,ordinal),UNIQUE(generation,identity),FOREIGN KEY(generation) REFERENCES authority_generations(generation))";
@@ -33,6 +35,7 @@ enum TestCommitFault {
 
 pub struct DurableImportStore {
     connection: Connection,
+    _storage_guard: File,
     base_anchor: ImportAnchor,
     approved_head: ImportAnchor,
 }
@@ -48,9 +51,7 @@ impl DurableImportStore {
         if validate_anchor(anchor).is_err() {
             return Err("IMPORT_STORE_REQUIRES_SYNTHETIC_ANCHOR".into());
         }
-        let creation_guard = OpenOptions::new()
-            .read(true)
-            .write(true)
+        let creation_guard = guarded_open_options()
             .create_new(true)
             .open(path)
             .map_err(|error| format!("IMPORT_STORE_CREATE_NEW:{error}"))?;
@@ -59,7 +60,6 @@ impl DurableImportStore {
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_FULL_MUTEX,
         )
         .map_err(|error| format!("IMPORT_STORE_OPEN_RESERVED:{error}"))?;
-        drop(creation_guard);
         configure_new(&connection)?;
         connection
             .execute_batch(&format!(
@@ -88,6 +88,7 @@ impl DurableImportStore {
             .map_err(|error| format!("IMPORT_STORE_INITIALIZE_COMMIT:{error}"))?;
         Ok(Self {
             connection,
+            _storage_guard: creation_guard,
             base_anchor: anchor.clone(),
             approved_head: anchor.clone(),
         })
@@ -112,6 +113,9 @@ impl DurableImportStore {
         if !path.is_file() {
             return Err("IMPORT_STORE_MISSING".into());
         }
+        let storage_guard = guarded_open_options()
+            .open(path)
+            .map_err(|error| format!("IMPORT_STORE_OPEN_GUARD:{error}"))?;
         // Validate the whole existing store through a read-only connection
         // before opening it for any writable configuration or recovery.
         let inspection = Connection::open_with_flags(
@@ -142,6 +146,7 @@ impl DurableImportStore {
         validate_schema(&connection)?;
         let store = Self {
             connection,
+            _storage_guard: storage_guard,
             base_anchor: expected_anchor.clone(),
             approved_head: approved_head.clone(),
         };
@@ -429,6 +434,19 @@ impl DurableImportStore {
         }
         Ok(())
     }
+}
+
+fn guarded_open_options() -> OpenOptions {
+    let mut options = OpenOptions::new();
+    options
+        .read(true)
+        .write(true)
+        // Deny delete-sharing while this store is alive so the main file
+        // cannot be renamed away between verification and authoritative I/O.
+        // Protected parent directories are still required to prevent reparse
+        // redirection and sidecar substitution.
+        .share_mode(STORAGE_GUARD_SHARE_READ_WRITE);
+    options
 }
 
 fn configure_new(connection: &Connection) -> Result<(), String> {
@@ -825,6 +843,28 @@ mod tests {
         );
         assert_eq!(database_file_snapshot(&path), before);
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn active_import_store_guard_denies_database_rename_until_close() {
+        let path = path("rename-guard");
+        let moved = path.with_file_name(format!(
+            "{}-moved.sqlite",
+            path.file_stem().unwrap().to_string_lossy()
+        ));
+        let (anchor, _) = fixture();
+        let store = DurableImportStore::create(&path, &anchor).unwrap();
+        assert!(
+            std::fs::rename(&path, &moved).is_err(),
+            "active import store file object was replaceable by rename"
+        );
+        assert!(path.exists());
+        assert!(!moved.exists());
+        assert_eq!(store.active_generation().unwrap(), anchor.generation);
+        drop(store);
+        std::fs::rename(&path, &moved).expect("rename should succeed after guard closes");
+        assert!(moved.exists());
+        let _ = std::fs::remove_file(moved);
     }
 
     #[test]
