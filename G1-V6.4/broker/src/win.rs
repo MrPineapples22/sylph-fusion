@@ -444,7 +444,10 @@ fn classify_service_identity(
 ) -> Option<&'static str> {
     if user_sid == "S-1-5-19" && group_present && restricted_present {
         Some("LocalServiceRestricted")
-    } else if user_sid == service_sid && group_present && restricted_present {
+    } else if user_sid == service_sid && restricted_present {
+        // The virtual service SID is the primary user SID, so it need not also
+        // appear in TokenGroups. Membership and restricted-list presence are
+        // independently checked before this classifier is called.
         Some("VirtualServiceAccount")
     } else {
         None
@@ -463,6 +466,10 @@ mod identity_classification_tests {
         );
         assert_eq!(
             classify_service_identity("S-1-5-80-1", "S-1-5-80-1", true, true),
+            Some("VirtualServiceAccount")
+        );
+        assert_eq!(
+            classify_service_identity("S-1-5-80-1", "S-1-5-80-1", false, true),
             Some("VirtualServiceAccount")
         );
         assert_eq!(
