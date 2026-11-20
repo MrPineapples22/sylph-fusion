@@ -20,9 +20,13 @@ function Grant-SylphServiceTree {
   $expectedSids = @($ServiceSid,'S-1-5-18','S-1-5-32-544') | Sort-Object
   $rules = @($verified.Access)
   $actualSids = @($rules | ForEach-Object { $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value } | Sort-Object)
+  $ruleSummary = @($rules | ForEach-Object {
+    $sid = $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
+    "${sid}:$($_.AccessControlType):$($_.FileSystemRights):Inherited=$($_.IsInherited):Flags=$($_.InheritanceFlags):Prop=$($_.PropagationFlags)"
+  }) -join ';'
   if ($ownerSid -ne $ServiceSid -or $rules.Count -ne 3 -or ($actualSids -join ',') -ne ($expectedSids -join ',') -or
       @($rules | Where-Object { $_.AccessControlType -ne 'Allow' -or $_.FileSystemRights -ne [System.Security.AccessControl.FileSystemRights]::FullControl -or $_.IsInherited }).Count -ne 0) {
-    throw "SERVICE_TREE_ACL_VERIFICATION_FAILED:$Path"
+    throw "SERVICE_TREE_ACL_VERIFICATION_FAILED:${Path}:owner=${ownerSid}:actual=$($actualSids -join ','):expected=$($expectedSids -join ','):rules=$ruleSummary"
   }
 }
 
