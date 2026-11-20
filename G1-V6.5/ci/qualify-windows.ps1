@@ -130,7 +130,9 @@ function Assert-Win32WriteOnlyDenied($Attempt, [string]$Label) {
 function Assert-PipeServerCreationDenied($Attempt, [string]$Label) {
   if (-not $Attempt.json -or $Attempt.exitCode -ne 0) { throw "PIPE_ATTACK_RESULT_INVALID:${Label}:$($Attempt.stdout):$($Attempt.stderr)" }
   if ([string]$Attempt.json.callerSid -ne [string]$script:clientSid) { throw "PIPE_ATTACK_TOKEN_MISMATCH:${Label}" }
-  if ($Attempt.json.result -ne 'CREATE_DENIED' -or $Attempt.json.win32Error -ne 5) {
+  if ($Attempt.json.schema -ne 'SYLPH_G1_PIPE_INSTANCE_ATTACK_1' -or
+      $Attempt.json.result -ne 'CREATE_DENIED' -or $Attempt.json.win32Error -ne 5 -or
+      $Attempt.json.requestedOpenMode -ne 3) {
     throw "UNAUTHORIZED_PIPE_SERVER_CREATION_NOT_DENIED:${Label}:$($Attempt.stdout)"
   }
 }
@@ -501,9 +503,18 @@ try {
   if ($serviceConfigAfter.exitCode -ne 0 -or $serviceConfigAfter.output -notmatch [regex]::Escape($serviceImage)) { throw 'UNAUTHORIZED_SERVICE_CONFIG_CHANGE_MUTATED_CONFIGURATION' }
   Save-Record 'service-config-before-after.json' ([ordered]@{before=$serviceConfigBefore;attack=$serviceConfigAttack;after=$serviceConfigAfter;unchanged=$true})
 
-  $activePipeServer = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('pipe-server') -Label 'running-unauthorized-pipe-server'
+  $pipeControlName = "\\.\pipe\SylphG1V65AclControl-$runId"
+  $pipeControl = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('pipe-instance-control',$pipeControlName) -Label 'pipe-instance-permissive-control'
+  if ($pipeControl.exitCode -ne 0 -or -not $pipeControl.json -or
+      $pipeControl.json.schema -ne 'SYLPH_G1_PIPE_INSTANCE_CONTROL_1' -or
+      $pipeControl.json.result -ne 'SECOND_INSTANCE_CREATED' -or $pipeControl.json.win32Error -ne 0 -or
+      $pipeControl.json.requestedOpenMode -ne 3 -or [string]$pipeControl.json.callerSid -ne [string]$clientSid) {
+    throw "PIPE_INSTANCE_POSITIVE_CONTROL_FAILED:$($pipeControl.stdout):$($pipeControl.stderr)"
+  }
+  Save-Record 'pipe-instance-permissive-control.json' $pipeControl
+  $activePipeServer = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('pipe-instance','\\.\pipe\SylphG1Broker') -Label 'running-unauthorized-pipe-instance'
   Assert-PipeServerCreationDenied $activePipeServer 'running-pipe-server'
-  Save-Record 'running-unauthorized-pipe-server.json' $activePipeServer
+  Save-Record 'running-unauthorized-pipe-instance.json' $activePipeServer
   $result.phases.LocalService = 'PASS_TOKEN_CONFIRMED_SERVICE_WRITE_FORBIDDEN_REQUEST_DENIED'
 
   $brokerDb = Join-Path $brokerRoot 'registry.sqlite'

@@ -50,8 +50,7 @@ const GENERIC_READ: DWORD = 0x8000_0000;
 const GENERIC_WRITE: DWORD = 0x4000_0000;
 const IPC_CLIENT_ACCESS: DWORD = 0x0010_0103; // pipe data, FILE_WRITE_ATTRIBUTES, SYNCHRONIZE
 const FILE_CREATE_PIPE_INSTANCE: DWORD = 0x0000_0004;
-// Preserve the v6.4 broad mask for the test-first negative run.
-const PIPE_CLIENT_ACL_MASK: DWORD = 0x0012_019F;
+const PIPE_CLIENT_ACL_MASK: DWORD = IPC_CLIENT_ACCESS;
 const FILE_SHARE_READ: DWORD = 1;
 const FILE_SHARE_WRITE: DWORD = 2;
 const FILE_SHARE_DELETE: DWORD = 4;
@@ -837,7 +836,7 @@ pub mod attack {
                     | PIPE_READMODE_MESSAGE
                     | PIPE_NOWAIT
                     | PIPE_REJECT_REMOTE_CLIENTS,
-                1,
+                2,
                 4096,
                 4096,
                 0,
@@ -890,14 +889,15 @@ pub mod attack {
         Err("PIPE_HOLDER_RELEASE_TIMEOUT".into())
     }
 
-    pub fn try_create_broker_pipe_server() -> Result<String, String> {
-        let name = wide(crate::win::pipe::PIPE_NAME);
+    pub fn try_create_pipe_instance(pipe_path: &str) -> Result<String, String> {
+        let name = wide(pipe_path);
         let caller_sid = current_process_user_sid()?;
         let caller_pid = unsafe { GetCurrentProcessId() };
+        let open_mode = PIPE_ACCESS_DUPLEX;
         let handle = unsafe {
             CreateNamedPipeW(
                 name.as_ptr(),
-                PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
+                open_mode,
                 PIPE_TYPE_MESSAGE
                     | PIPE_READMODE_MESSAGE
                     | PIPE_NOWAIT
@@ -912,14 +912,64 @@ pub mod attack {
         if handle == INVALID_HANDLE_VALUE {
             let error = unsafe { GetLastError() };
             return Ok(format!(
-                "{{\"schema\":\"SYLPH_G1_PIPE_SERVER_ATTACK_1\",\"result\":\"CREATE_DENIED\",\"win32Error\":{error},\"requestedOpenMode\":{},\"callerSid\":\"{caller_sid}\",\"callerPid\":{caller_pid}}}",
-                PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
+                "{{\"schema\":\"SYLPH_G1_PIPE_INSTANCE_ATTACK_1\",\"result\":\"CREATE_DENIED\",\"win32Error\":{error},\"requestedOpenMode\":{open_mode},\"callerSid\":\"{caller_sid}\",\"callerPid\":{caller_pid}}}"
             ));
         }
         unsafe { close(handle) };
         Ok(format!(
-            "{{\"schema\":\"SYLPH_G1_PIPE_SERVER_ATTACK_1\",\"result\":\"CREATE_SUCCEEDED\",\"win32Error\":0,\"requestedOpenMode\":{},\"callerSid\":\"{caller_sid}\",\"callerPid\":{caller_pid}}}",
-            PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
+            "{{\"schema\":\"SYLPH_G1_PIPE_INSTANCE_ATTACK_1\",\"result\":\"CREATE_SUCCEEDED\",\"win32Error\":0,\"requestedOpenMode\":{open_mode},\"callerSid\":\"{caller_sid}\",\"callerPid\":{caller_pid}}}"
+        ))
+    }
+
+    pub fn pipe_instance_positive_control(pipe_path: &str) -> Result<String, String> {
+        let name = wide(pipe_path);
+        let caller_sid = current_process_user_sid()?;
+        let caller_pid = unsafe { GetCurrentProcessId() };
+        let first_mode = PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE;
+        let instance_mode = PIPE_ACCESS_DUPLEX;
+        let pipe_mode =
+            PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_NOWAIT | PIPE_REJECT_REMOTE_CLIENTS;
+        let first = unsafe {
+            CreateNamedPipeW(
+                name.as_ptr(),
+                first_mode,
+                pipe_mode,
+                2,
+                64,
+                64,
+                0,
+                null_mut(),
+            )
+        };
+        if first == INVALID_HANDLE_VALUE {
+            let error = unsafe { GetLastError() };
+            return Err(format!("PIPE_CONTROL_FIRST_CREATE:{error}"));
+        }
+        let second = unsafe {
+            CreateNamedPipeW(
+                name.as_ptr(),
+                instance_mode,
+                pipe_mode,
+                2,
+                64,
+                64,
+                0,
+                null_mut(),
+            )
+        };
+        if second == INVALID_HANDLE_VALUE {
+            let error = unsafe { GetLastError() };
+            unsafe { close(first) };
+            return Ok(format!(
+                "{{\"schema\":\"SYLPH_G1_PIPE_INSTANCE_CONTROL_1\",\"result\":\"SECOND_INSTANCE_DENIED\",\"win32Error\":{error},\"requestedOpenMode\":{instance_mode},\"callerSid\":\"{caller_sid}\",\"callerPid\":{caller_pid}}}"
+            ));
+        }
+        unsafe {
+            close(second);
+            close(first);
+        }
+        Ok(format!(
+            "{{\"schema\":\"SYLPH_G1_PIPE_INSTANCE_CONTROL_1\",\"result\":\"SECOND_INSTANCE_CREATED\",\"win32Error\":0,\"requestedOpenMode\":{instance_mode},\"callerSid\":\"{caller_sid}\",\"callerPid\":{caller_pid}}}"
         ))
     }
 
@@ -1229,6 +1279,9 @@ pub mod pipe {
         service_sid: &str,
         client_sid: &str,
     ) -> Result<(*mut c_void, SECURITY_ATTRIBUTES), String> {
+        if !client_acl_mask_is_valid(PIPE_CLIENT_ACL_MASK) {
+            return Err("PIPE_CLIENT_ACL_MASK_INVALID".into());
+        }
         unsafe {
             let sddl = wide(&format!(
                 "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;{service_sid})(A;;0x{PIPE_CLIENT_ACL_MASK:08X};;;{client_sid})"
@@ -1291,7 +1344,7 @@ pub mod pipe {
                     | PIPE_READMODE_MESSAGE
                     | PIPE_NOWAIT
                     | PIPE_REJECT_REMOTE_CLIENTS,
-                1,
+                2,
                 4096,
                 4096,
                 0,
