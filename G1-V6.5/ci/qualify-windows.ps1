@@ -376,6 +376,31 @@ try {
   $script:clientSid = $clientSid
   $result.phases.CI_P0_Identity = 'PASS_NODE_AND_ATTACKER_SAME_STANDARD_USER_SID'
 
+  $pipeAclProbeResults = @()
+  $candidatePipeMasks = @('00120103','00120183','0012019B','0012019F')
+  $expectedPipeClientAccess = [Convert]::ToUInt32('00120183',16)
+  foreach ($candidateMask in $candidatePipeMasks) {
+    $probePipeName = "\\.\pipe\SylphG1V65Mask-$runId-$candidateMask"
+    $probeResult = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('pipe-acl-probe',$probePipeName,$candidateMask) -Label "pipe-acl-probe-$candidateMask"
+    if ($probeResult.exitCode -ne 0 -or -not $probeResult.json -or
+        $probeResult.json.schema -ne 'SYLPH_G1_PIPE_ACL_PROBE_1' -or
+        [string]$probeResult.json.callerSid -ne [string]$clientSid -or
+        [long]$probeResult.json.requestedAccess -ne [long]$expectedPipeClientAccess) {
+      throw "PIPE_ACL_MASK_PROBE_INVALID:${candidateMask}:$($probeResult.stdout):$($probeResult.stderr)"
+    }
+    $pipeAclProbeResults += $probeResult.json
+  }
+  Save-Record 'pipe-client-acl-mask-matrix.json' $pipeAclProbeResults
+  $leastPipeMaskResult = @($pipeAclProbeResults | Where-Object { $_.mask -eq [Convert]::ToUInt32('00120183',16) })
+  $vulnerablePipeMaskResult = @($pipeAclProbeResults | Where-Object { $_.mask -eq [Convert]::ToUInt32('0012019F',16) })
+  if ($leastPipeMaskResult.Count -ne 1 -or $leastPipeMaskResult[0].result -ne 'CLIENT_OPEN_SUCCEEDED' -or
+      ($leastPipeMaskResult[0].mask -band 4) -ne 0) {
+    throw 'PIPE_ACL_LEAST_PRIVILEGE_CLIENT_CONTROL_FAILED'
+  }
+  if ($vulnerablePipeMaskResult.Count -ne 1 -or $vulnerablePipeMaskResult[0].result -ne 'CLIENT_OPEN_SUCCEEDED') {
+    throw 'PIPE_ACL_BROAD_MASK_POSITIVE_CONTROL_FAILED'
+  }
+
   $original = Join-Path $vulnOriginalDir 'legacy.sqlite'
   $alias = Join-Path $vulnAliasDir 'in-scope-alias.sqlite'
   $setup = Invoke-AsTestUser -FilePath $node -Arguments @($createHardlinkScript,$vulnOriginalDir,$vulnAliasDir) -Label 'hardlink-setup'
@@ -468,6 +493,19 @@ try {
   Save-AclSnapshot 'broker-directory' @($env:ProgramData,(Split-Path -Parent $dataRoot),$dataRoot,$brokerRoot)
   $clientStatus = Test-ClientOperation -Label 'localservice-client-status' -Verb 'status'
   $clientWrite = Test-ClientOperation -Label 'localservice-client-write' -Verb 'write' -Tail @("ci-$runId",'preflight-proof')
+  $pipeDisconnect = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('pipe-disconnect') -Label 'malicious-pipe-disconnect'
+  if ($pipeDisconnect.exitCode -ne 0 -or -not $pipeDisconnect.json -or
+      $pipeDisconnect.json.schema -ne 'SYLPH_G1_PIPE_DISCONNECT_1' -or
+      $pipeDisconnect.json.result -ne 'HANDLE_OPENED_AND_CLOSED_WITHOUT_FRAME' -or
+      [string]$pipeDisconnect.json.callerSid -ne $clientSid) {
+    throw "PIPE_DISCONNECT_ATTACK_NOT_ESTABLISHED:$($pipeDisconnect.stdout):$($pipeDisconnect.stderr)"
+  }
+  Save-Record 'malicious-pipe-disconnect.json' $pipeDisconnect
+  $afterDisconnect = Test-ClientOperation -Label 'client-after-malicious-disconnect' -Verb 'status'
+  Save-Record 'client-after-malicious-disconnect-result.json' $afterDisconnect
+  for ($requestIndex = 0; $requestIndex -lt 10; $requestIndex++) {
+    Test-ClientOperation -Label ("persistent-pipe-request-{0:d2}" -f $requestIndex) -Verb 'status' | Out-Null
+  }
   $walPath = "$($local.dbPath)-wal"
   $shmPath = "$($local.dbPath)-shm"
   foreach ($sidecarPath in @($walPath,$shmPath)) {
@@ -937,4 +975,3 @@ finally {
   try { Save-Record 'summary.json' $result } catch { Write-Error "SUMMARY_WRITE_FAILED:$($_.Exception.Message)" }
   if ($result.cleanupFailures.Count -gt 0) { throw "CI_CLEANUP_FAILED:$($result.cleanupFailures -join ';')" }
 }
-

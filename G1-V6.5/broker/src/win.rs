@@ -49,7 +49,10 @@ const IPC_FRAME_TIMEOUT_MS: u64 = 2500;
 const OPEN_EXISTING: DWORD = 3;
 const GENERIC_READ: DWORD = 0x8000_0000;
 const GENERIC_WRITE: DWORD = 0x4000_0000;
-const IPC_CLIENT_ACCESS: DWORD = 0x0012_0103; // data, FILE_WRITE_ATTRIBUTES, READ_CONTROL, SYNCHRONIZE
+// The client needs the two data rights plus READ_ATTRIBUTES for the pipe
+// handle operations used by the Windows client. FILE_CREATE_PIPE_INSTANCE
+// (0x4) is deliberately excluded from both this request mask and the DACL.
+const IPC_CLIENT_ACCESS: DWORD = 0x0012_0183;
 const FILE_CREATE_PIPE_INSTANCE: DWORD = 0x0000_0004;
 const PIPE_CLIENT_ACL_MASK: DWORD = IPC_CLIENT_ACCESS;
 const FILE_SHARE_READ: DWORD = 1;
@@ -1054,6 +1057,97 @@ pub mod pipe {
     pub const PIPE_NAME: &str = r"\\.\pipe\SylphG1Broker";
     fn pipe_name() -> Vec<u16> {
         wide(PIPE_NAME)
+    }
+    pub fn disconnect_without_frame() -> Result<String, String> {
+        unsafe {
+            let sid = current_process_user_sid()?;
+            let pid = GetCurrentProcessId();
+            let name = pipe_name();
+            if WaitNamedPipeW(name.as_ptr(), 5000) == 0 {
+                return Err(format!("WAIT_PIPE:{}", error_text()));
+            }
+            let handle = CreateFileW(
+                name.as_ptr(),
+                IPC_CLIENT_ACCESS,
+                0,
+                null_mut(),
+                OPEN_EXISTING,
+                0,
+                null_mut(),
+            );
+            if handle == INVALID_HANDLE_VALUE {
+                return Err(format!("OPEN_PIPE:{}", error_text()));
+            }
+            close(handle);
+            Ok(format!("{{\"schema\":\"SYLPH_G1_PIPE_DISCONNECT_1\",\"result\":\"HANDLE_OPENED_AND_CLOSED_WITHOUT_FRAME\",\"callerSid\":{},\"callerPid\":{pid}}}", json_string(&sid)))
+        }
+    }
+    pub fn probe_client_acl(pipe_path: &str, mask_text: &str) -> Result<String, String> {
+        let mask = u32::from_str_radix(mask_text.trim_start_matches("0x"), 16)
+            .map_err(|_| "PIPE_ACL_PROBE_MASK_INVALID")?;
+        let sid = current_process_user_sid()?;
+        let pid = unsafe { GetCurrentProcessId() };
+        unsafe {
+            let sddl = wide(&format!("D:P(A;;0x{mask:08X};;;{sid})"));
+            let mut descriptor = null_mut();
+            check(
+                ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                    sddl.as_ptr(),
+                    1,
+                    &mut descriptor,
+                    null_mut(),
+                ),
+                "PIPE_ACL_PROBE_SDDL",
+            )?;
+            let mut security = SECURITY_ATTRIBUTES {
+                nLength: size_of::<SECURITY_ATTRIBUTES>() as DWORD,
+                lpSecurityDescriptor: descriptor,
+                bInheritHandle: 0,
+            };
+            let name = wide(pipe_path);
+            let server = CreateNamedPipeW(
+                name.as_ptr(),
+                PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
+                PIPE_TYPE_MESSAGE
+                    | PIPE_READMODE_MESSAGE
+                    | PIPE_NOWAIT
+                    | PIPE_REJECT_REMOTE_CLIENTS,
+                2,
+                4096,
+                4096,
+                0,
+                &mut security,
+            );
+            LocalFree(descriptor);
+            if server == INVALID_HANDLE_VALUE {
+                let error = GetLastError();
+                return Ok(format!("{{\"schema\":\"SYLPH_G1_PIPE_ACL_PROBE_1\",\"result\":\"SERVER_CREATE_FAILED\",\"mask\":{mask},\"win32Error\":{error},\"callerSid\":{},\"callerPid\":{pid}}}", json_string(&sid)));
+            }
+            let connected = ConnectNamedPipe(server, null_mut());
+            if connected == 0 && GetLastError() != ERROR_PIPE_LISTENING {
+                let error = GetLastError();
+                close(server);
+                return Ok(format!("{{\"schema\":\"SYLPH_G1_PIPE_ACL_PROBE_1\",\"result\":\"SERVER_LISTEN_FAILED\",\"mask\":{mask},\"win32Error\":{error},\"callerSid\":{},\"callerPid\":{pid}}}", json_string(&sid)));
+            }
+            let client = CreateFileW(
+                name.as_ptr(),
+                IPC_CLIENT_ACCESS,
+                0,
+                null_mut(),
+                OPEN_EXISTING,
+                0,
+                null_mut(),
+            );
+            if client != INVALID_HANDLE_VALUE {
+                close(client);
+                let _ = DisconnectNamedPipe(server);
+                close(server);
+                return Ok(format!("{{\"schema\":\"SYLPH_G1_PIPE_ACL_PROBE_1\",\"result\":\"CLIENT_OPEN_SUCCEEDED\",\"mask\":{mask},\"win32Error\":0,\"requestedAccess\":{IPC_CLIENT_ACCESS},\"callerSid\":{},\"callerPid\":{pid}}}", json_string(&sid)));
+            }
+            let error = GetLastError();
+            close(server);
+            Ok(format!("{{\"schema\":\"SYLPH_G1_PIPE_ACL_PROBE_1\",\"result\":\"CLIENT_OPEN_DENIED\",\"mask\":{mask},\"win32Error\":{error},\"requestedAccess\":{IPC_CLIENT_ACCESS},\"callerSid\":{},\"callerPid\":{pid}}}", json_string(&sid)))
+        }
     }
     fn parse_frame(bytes: &[u8]) -> Result<String, String> {
         if bytes.len() > 2048 {

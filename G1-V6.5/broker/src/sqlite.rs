@@ -298,6 +298,52 @@ impl Registry {
         if meta_table_count != 1 {
             return Err("SQLITE_REGISTRY_META_TABLE_MISSING".into());
         }
+        let meta_sql: String = connection
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='registry_meta'",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| map_error("SQLITE_META_SCHEMA_SQL_READ", e))?;
+        let expected_meta_sql = "CREATE TABLE registry_meta(singleton INTEGER PRIMARY KEY CHECK(singleton=1),schema_version INTEGER NOT NULL CHECK(schema_version=1),environment_class TEXT NOT NULL CHECK(environment_class='SYNTHETIC_TEST_ONLY'),generation INTEGER NOT NULL CHECK(generation>=1))";
+        if normalize_schema_sql(&meta_sql) != normalize_schema_sql(expected_meta_sql) {
+            return Err("SQLITE_REGISTRY_META_CONSTRAINTS_MISMATCH".into());
+        }
+        let mut meta_columns = connection
+            .prepare("PRAGMA table_info(registry_meta)")
+            .map_err(|e| map_error("SQLITE_META_COLUMNS_PREPARE", e))?;
+        let actual_meta_columns = meta_columns
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i32>(3)?,
+                    row.get::<_, i32>(5)?,
+                ))
+            })
+            .map_err(|e| map_error("SQLITE_META_COLUMNS_READ", e))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| map_error("SQLITE_META_COLUMNS_ROW", e))?;
+        if actual_meta_columns
+            != vec![
+                ("singleton".into(), "INTEGER".into(), 0, 1),
+                ("schema_version".into(), "INTEGER".into(), 1, 0),
+                ("environment_class".into(), "TEXT".into(), 1, 0),
+                ("generation".into(), "INTEGER".into(), 1, 0),
+            ]
+        {
+            return Err(format!(
+                "SQLITE_REGISTRY_META_COLUMNS_MISMATCH:{actual_meta_columns:?}"
+            ));
+        }
+        let metadata_rows: i64 = connection
+            .query_row("SELECT COUNT(*) FROM registry_meta", [], |row| row.get(0))
+            .map_err(|e| map_error("SQLITE_REGISTRY_METADATA_COUNT", e))?;
+        if metadata_rows != 1 {
+            return Err(format!(
+                "SQLITE_REGISTRY_METADATA_ROW_COUNT:{metadata_rows}"
+            ));
+        }
         let metadata: (i32, String, i64) = connection
             .query_row(
                 "SELECT schema_version,environment_class,generation FROM registry_meta WHERE singleton=1",
@@ -388,6 +434,13 @@ impl Registry {
             .query_row("PRAGMA integrity_check", [], |row| row.get::<_, String>(0))
             .map_err(|e| map_error("SQLITE_INTEGRITY", e))
     }
+}
+
+fn normalize_schema_sql(sql: &str) -> String {
+    sql.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_lowercase()
 }
 
 pub fn inspect_readonly(path: &Path) -> Result<String, String> {
@@ -522,6 +575,30 @@ mod tests {
         assert!(Registry::open_existing(&path).is_err());
         let after = std::fs::read(&path).unwrap();
         assert_eq!(before, after, "rejected schema was modified");
+        cleanup(&path);
+    }
+
+    #[test]
+    fn normal_open_rejects_metadata_schema_without_required_constraints_unchanged() {
+        let path = test_path();
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        connection.execute_batch(
+            "CREATE TABLE effects(request_id TEXT PRIMARY KEY NOT NULL,payload TEXT NOT NULL);\
+             CREATE TABLE registry_meta(singleton INTEGER PRIMARY KEY,schema_version INTEGER NOT NULL,\
+                environment_class TEXT NOT NULL,generation INTEGER NOT NULL);\
+             INSERT INTO registry_meta VALUES(1,1,'SYNTHETIC_TEST_ONLY',1);\
+             PRAGMA user_version=1;",
+        ).unwrap();
+        drop(connection);
+        let before = std::fs::read(&path).unwrap();
+        assert!(
+            matches!(Registry::open_existing(&path), Err(reason) if reason == "SQLITE_REGISTRY_META_CONSTRAINTS_MISMATCH")
+        );
+        assert_eq!(
+            before,
+            std::fs::read(&path).unwrap(),
+            "rejected metadata schema was modified"
+        );
         cleanup(&path);
     }
 
