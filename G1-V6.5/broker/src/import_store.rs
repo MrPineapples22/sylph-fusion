@@ -5,8 +5,8 @@
 //! It is not an operational trust or recovery authority.
 
 use crate::import::{
-    canonical_claim, validate_structure, Authentication, EvidenceAuthenticator, ImportAnchor,
-    Obligation, VerifiedImport,
+    canonical_claim, validate_anchor, validate_structure, Authentication, EvidenceAuthenticator,
+    ImportAnchor, Obligation, VerifiedImport,
 };
 use rusqlite::{params, Connection, OpenFlags, TransactionBehavior};
 use std::fs::OpenOptions;
@@ -40,7 +40,7 @@ pub struct DurableImportStore {
 impl DurableImportStore {
     /// Create a new, empty synthetic store. Existing files are never adopted.
     pub fn create(path: &Path, anchor: &ImportAnchor) -> Result<Self, String> {
-        if !valid_anchor(anchor) {
+        if validate_anchor(anchor).is_err() {
             return Err("IMPORT_STORE_REQUIRES_SYNTHETIC_ANCHOR".into());
         }
         let file = OpenOptions::new()
@@ -54,7 +54,7 @@ impl DurableImportStore {
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_FULL_MUTEX,
         )
         .map_err(|error| format!("IMPORT_STORE_OPEN:{error}"))?;
-        configure(&connection)?;
+        configure_new(&connection)?;
         connection
             .execute_batch(&format!(
                 "BEGIN IMMEDIATE;{GENERATIONS_SQL};{RECEIPTS_SQL};{OBLIGATIONS_SQL};{ACTIVE_SQL};\
@@ -96,8 +96,8 @@ impl DurableImportStore {
         approved_head: &ImportAnchor,
         authenticator: &dyn EvidenceAuthenticator,
     ) -> Result<Self, String> {
-        if !valid_anchor(expected_anchor)
-            || !valid_anchor(approved_head)
+        if validate_anchor(expected_anchor).is_err()
+            || validate_anchor(approved_head).is_err()
             || expected_anchor.generation > approved_head.generation
             || expected_anchor.chain_identity != approved_head.chain_identity
         {
@@ -132,7 +132,7 @@ impl DurableImportStore {
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_FULL_MUTEX,
         )
         .map_err(|error| format!("IMPORT_STORE_OPEN_EXISTING:{error}"))?;
-        configure(&connection)?;
+        configure_existing(&connection)?;
         validate_schema(&connection)?;
         let store = Self {
             connection,
@@ -248,9 +248,6 @@ impl DurableImportStore {
         }
         tx.commit()
             .map_err(|error| format!("IMPORT_COMMIT_OUTCOME_UNKNOWN:{error}"))?;
-        if fault == TestCommitFault::LoseAcknowledgmentAfterCommit {
-            return Err("IMPORT_ACK_UNKNOWN_AFTER_COMMIT".into());
-        }
         self.approved_head = ImportAnchor {
             chain_identity: bundle.chain_identity.clone(),
             generation: bundle.generation,
@@ -258,6 +255,9 @@ impl DurableImportStore {
             last_receipt_identity: last_receipt.identity.clone(),
             unresolved_obligations: bundle.obligations.clone(),
         };
+        if fault == TestCommitFault::LoseAcknowledgmentAfterCommit {
+            return Err("IMPORT_ACK_UNKNOWN_AFTER_COMMIT".into());
+        }
         self.verify_inventory(authenticator)?;
         Ok(ApplyOutcome::Activated)
     }
@@ -425,7 +425,7 @@ impl DurableImportStore {
     }
 }
 
-fn configure(connection: &Connection) -> Result<(), String> {
+fn configure_new(connection: &Connection) -> Result<(), String> {
     if rusqlite::version() != SQLITE_VERSION {
         return Err(format!("IMPORT_SQLITE_VERSION:{}", rusqlite::version()));
     }
@@ -435,6 +435,23 @@ fn configure(connection: &Connection) -> Result<(), String> {
     if !mode.eq_ignore_ascii_case("wal") {
         return Err("IMPORT_JOURNAL_MODE".into());
     }
+    configure_connection_pragmas(connection)
+}
+
+fn configure_existing(connection: &Connection) -> Result<(), String> {
+    if rusqlite::version() != SQLITE_VERSION {
+        return Err(format!("IMPORT_SQLITE_VERSION:{}", rusqlite::version()));
+    }
+    let mode: String = connection
+        .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+        .map_err(|error| format!("IMPORT_JOURNAL_MODE_READ:{error}"))?;
+    if !mode.eq_ignore_ascii_case("wal") {
+        return Err("IMPORT_JOURNAL_MODE_NOT_WAL".into());
+    }
+    configure_connection_pragmas(connection)
+}
+
+fn configure_connection_pragmas(connection: &Connection) -> Result<(), String> {
     connection
         .pragma_update(None, "synchronous", "FULL")
         .map_err(|e| e.to_string())?;
@@ -597,14 +614,6 @@ fn quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
 }
 
-fn valid_anchor(anchor: &ImportAnchor) -> bool {
-    anchor.generation > 0
-        && anchor.generation <= i64::MAX as u64
-        && !anchor.chain_identity.is_empty()
-        && !anchor.state_root.is_empty()
-        && !anchor.last_receipt_identity.is_empty()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -677,6 +686,17 @@ mod tests {
         ))
     }
 
+    fn database_file_snapshot(path: &Path) -> Vec<(std::path::PathBuf, Option<Vec<u8>>)> {
+        ["", "-wal", "-shm", "-journal"]
+            .into_iter()
+            .map(|suffix| {
+                let candidate = std::path::PathBuf::from(format!("{}{suffix}", path.display()));
+                let bytes = std::fs::read(&candidate).ok();
+                (candidate, bytes)
+            })
+            .collect()
+    }
+
     fn accepted(anchor: &ImportAnchor, bundle: ImportBundle) -> VerifiedImport {
         let expected = canonical_claim(&bundle).unwrap();
         let auth = Authenticator { expected };
@@ -736,6 +756,10 @@ mod tests {
         let mut store = DurableImportStore::create(&path, &anchor).unwrap();
         assert!(
             matches!(store.activate_with_fault(&verified, &auth, TestCommitFault::LoseAcknowledgmentAfterCommit), Err(reason) if reason == "IMPORT_ACK_UNKNOWN_AFTER_COMMIT")
+        );
+        assert_eq!(
+            store.activate(&verified, &auth).unwrap(),
+            ApplyOutcome::AlreadyActive
         );
         drop(store);
         let mut reopened = DurableImportStore::open_existing(&path, &anchor, &head, &auth).unwrap();
@@ -967,6 +991,37 @@ mod tests {
     }
 
     #[test]
+    fn malformed_base_obligations_are_rejected_before_database_creation() {
+        let path = path("malformed-base-obligation");
+        let (mut anchor, _) = fixture();
+        anchor.unresolved_obligations = vec![
+            Obligation {
+                identity: "duplicate".into(),
+                state: "UNKNOWN".into(),
+                external_identity: "effect-a".into(),
+            },
+            Obligation {
+                identity: "duplicate".into(),
+                state: "INVALID".into(),
+                external_identity: "effect-b".into(),
+            },
+        ];
+        assert!(matches!(
+            DurableImportStore::create(&path, &anchor),
+            Err(reason) if reason == "IMPORT_STORE_REQUIRES_SYNTHETIC_ANCHOR"
+        ));
+        assert!(!path.exists());
+        anchor.unresolved_obligations = vec![Obligation {
+            identity: "too-large".into(),
+            state: "UNKNOWN".into(),
+            external_identity: "x".repeat(1_048_577),
+        }];
+        assert!(DurableImportStore::create(&path, &anchor).is_err());
+        assert!(!path.exists());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
     fn mutated_base_sentinel_is_rejected_without_repairing_the_database() {
         let path = path("base-sentinel");
         let (anchor, _) = fixture();
@@ -987,6 +1042,28 @@ mod tests {
             Err(reason) if reason == "IMPORT_BASE_GENERATION_INVALID"
         ));
         assert_eq!(std::fs::read(&path).unwrap(), before);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn existing_database_with_wrong_journal_mode_is_rejected_without_file_changes() {
+        let path = path("wrong-journal-mode");
+        let (anchor, _) = fixture();
+        let store = DurableImportStore::create(&path, &anchor).unwrap();
+        drop(store);
+        let connection =
+            Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE).unwrap();
+        let mode: String = connection
+            .query_row("PRAGMA journal_mode=DELETE", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(mode.to_ascii_lowercase(), "delete");
+        drop(connection);
+        let before = database_file_snapshot(&path);
+        assert!(matches!(
+            DurableImportStore::open_existing(&path, &anchor, &anchor, &UnavailableAuthenticator),
+            Err(reason) if reason == "IMPORT_JOURNAL_MODE_NOT_WAL"
+        ));
+        assert_eq!(database_file_snapshot(&path), before);
         let _ = std::fs::remove_file(path);
     }
 }

@@ -171,10 +171,8 @@ pub(crate) fn validate_structure(
     if bundle.schema != IMPORT_SCHEMA {
         return Err("IMPORT_SCHEMA_UNSUPPORTED".into());
     }
-    if anchor.chain_identity.is_empty()
-        || anchor.generation == 0
-        || anchor.generation > i64::MAX as u64
-        || bundle.chain_identity != anchor.chain_identity
+    validate_anchor(anchor).map_err(|_| "IMPORT_ANCHOR_OR_LIMIT_MISMATCH")?;
+    if bundle.chain_identity != anchor.chain_identity
         || bundle.generation
             != anchor
                 .generation
@@ -197,9 +195,6 @@ pub(crate) fn validate_structure(
         return Err("IMPORT_STATE_ROOT_MISMATCH".into());
     }
 
-    if !valid_identity(&anchor.last_receipt_identity) {
-        return Err("IMPORT_ANCHOR_RECEIPT_ID_INVALID".into());
-    }
     let mut seen = HashSet::with_capacity(bundle.receipts.len());
     for (index, receipt) in bundle.receipts.iter().enumerate() {
         if !valid_identity(&receipt.identity)
@@ -249,6 +244,30 @@ pub(crate) fn validate_structure(
                 ));
             }
             Some(_) => {}
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_anchor(anchor: &ImportAnchor) -> Result<(), String> {
+    if anchor.generation == 0
+        || anchor.generation > i64::MAX as u64
+        || !valid_identity(&anchor.chain_identity)
+        || !valid_identity(&anchor.last_receipt_identity)
+        || anchor.state_root.is_empty()
+        || anchor.state_root.len() > MAX_FIELD_BYTES
+        || anchor.unresolved_obligations.len() > MAX_OBLIGATIONS
+    {
+        return Err("IMPORT_ANCHOR_INVALID_OR_OVERSIZED".into());
+    }
+    let mut identities = HashSet::with_capacity(anchor.unresolved_obligations.len());
+    for obligation in &anchor.unresolved_obligations {
+        if !valid_identity(&obligation.identity)
+            || !valid_state(&obligation.state)
+            || obligation.external_identity.len() > MAX_FIELD_BYTES
+            || !identities.insert(obligation.identity.as_str())
+        {
+            return Err("IMPORT_ANCHOR_OBLIGATION_INVALID_OR_DUPLICATED".into());
         }
     }
     Ok(())
