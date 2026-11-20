@@ -49,6 +49,9 @@ const OPEN_EXISTING: DWORD = 3;
 const GENERIC_READ: DWORD = 0x8000_0000;
 const GENERIC_WRITE: DWORD = 0x4000_0000;
 const IPC_CLIENT_ACCESS: DWORD = 0x0010_0103; // pipe data, FILE_WRITE_ATTRIBUTES, SYNCHRONIZE
+const FILE_CREATE_PIPE_INSTANCE: DWORD = 0x0000_0004;
+// Preserve the v6.4 broad mask for the test-first negative run.
+const PIPE_CLIENT_ACL_MASK: DWORD = 0x0012_019F;
 const FILE_SHARE_READ: DWORD = 1;
 const FILE_SHARE_WRITE: DWORD = 2;
 const FILE_SHARE_DELETE: DWORD = 4;
@@ -1228,7 +1231,7 @@ pub mod pipe {
     ) -> Result<(*mut c_void, SECURITY_ATTRIBUTES), String> {
         unsafe {
             let sddl = wide(&format!(
-                "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;{service_sid})(A;;0x0012019F;;;{client_sid})"
+                "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;{service_sid})(A;;0x{PIPE_CLIENT_ACL_MASK:08X};;;{client_sid})"
             ));
             let mut descriptor = null_mut();
             check(
@@ -1248,6 +1251,25 @@ pub mod pipe {
                     bInheritHandle: 0,
                 },
             ))
+        }
+    }
+    fn client_acl_mask_is_valid(mask: DWORD) -> bool {
+        mask == IPC_CLIENT_ACCESS && mask & FILE_CREATE_PIPE_INSTANCE == 0
+    }
+    #[cfg(test)]
+    mod acl_policy_tests {
+        use super::{client_acl_mask_is_valid, FILE_CREATE_PIPE_INSTANCE, IPC_CLIENT_ACCESS, PIPE_CLIENT_ACL_MASK};
+
+        #[test]
+        fn configured_client_ace_excludes_pipe_instance_creation() {
+            assert!(client_acl_mask_is_valid(PIPE_CLIENT_ACL_MASK));
+            assert_eq!(PIPE_CLIENT_ACL_MASK & FILE_CREATE_PIPE_INSTANCE, 0);
+        }
+
+        #[test]
+        fn verifier_detects_the_v64_broad_ace_mutation() {
+            assert!(!client_acl_mask_is_valid(0x0012_019F));
+            assert!(client_acl_mask_is_valid(IPC_CLIENT_ACCESS));
         }
     }
     pub fn serve_once(
