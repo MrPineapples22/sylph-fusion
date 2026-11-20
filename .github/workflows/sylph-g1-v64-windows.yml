@@ -46,7 +46,7 @@ jobs:
           Invoke-CheckedNative 'rustc version' { rustc --version --verbose }
           Invoke-CheckedNative 'cargo version' { cargo --version }
 
-      - name: Bootstrap dependency lock and compile
+      - name: Verify pinned lock and compile
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -57,12 +57,9 @@ jobs:
             if ($code -ne 0) { throw "$Name failed with exit code $code" }
           }
           Invoke-CheckedNative 'cargo fmt check' { cargo fmt --manifest-path G1-V6.4/broker/Cargo.toml -- --check }
-          Invoke-CheckedNative 'cargo lock generation' { cargo generate-lockfile --manifest-path G1-V6.4/broker/Cargo.toml }
-          Write-Output '---CARGO-LOCKFILE-BEGIN---'
-          Get-Content -Raw G1-V6.4/broker/Cargo.lock
-          Write-Output '---CARGO-LOCKFILE-END---'
-          Invoke-CheckedNative 'cargo tests' { cargo test --manifest-path G1-V6.4/broker/Cargo.toml --target x86_64-pc-windows-msvc -- --test-threads=1 }
-          Invoke-CheckedNative 'cargo release build' { cargo build --release --bins --manifest-path G1-V6.4/broker/Cargo.toml --target x86_64-pc-windows-msvc }
+          if (-not (Test-Path -LiteralPath G1-V6.4/broker/Cargo.lock)) { throw 'Pinned Cargo.lock is required' }
+          Invoke-CheckedNative 'cargo tests' { cargo test --locked --manifest-path G1-V6.4/broker/Cargo.toml --target x86_64-pc-windows-msvc -- --test-threads=1 }
+          Invoke-CheckedNative 'cargo release build' { cargo build --locked --release --bins --manifest-path G1-V6.4/broker/Cargo.toml --target x86_64-pc-windows-msvc }
 
       - name: Run Windows preflight
         shell: pwsh
