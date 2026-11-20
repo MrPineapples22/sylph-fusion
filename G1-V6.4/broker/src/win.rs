@@ -60,6 +60,7 @@ const PIPE_READMODE_MESSAGE: DWORD = 2;
 const PIPE_NOWAIT: DWORD = 1;
 const PIPE_REJECT_REMOTE_CLIENTS: DWORD = 8;
 const TOKEN_QUERY: DWORD = 0x0008;
+const WRITE_DAC: DWORD = 0x0004_0000;
 const TOKEN_USER: DWORD = 1;
 const TOKEN_INTEGRITY_LEVEL: DWORD = 25;
 const TOKEN_PRIVILEGES_CLASS: DWORD = 3;
@@ -1220,6 +1221,57 @@ pub mod pipe {
             Ok(())
         }
     }
+    pub(super) fn restrict_broker_token_dacl(
+        service_sid: &str,
+        client_sid: &str,
+    ) -> Result<(), String> {
+        unsafe {
+            let mut token = null_mut();
+            check(
+                OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | WRITE_DAC, &mut token),
+                "OpenBrokerTokenForDacl",
+            )?;
+            let sddl = wide(&format!(
+                "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;{service_sid})(A;;0x0008;;;{client_sid})"
+            ));
+            let mut descriptor = null_mut();
+            let converted = ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                sddl.as_ptr(),
+                1,
+                &mut descriptor,
+                null_mut(),
+            );
+            if converted == 0 {
+                close(token);
+                return Err(format!("CONVERT_TOKEN_DACL:{}", error_text()));
+            }
+            let mut present = 0;
+            let mut dacl = null_mut();
+            let mut defaulted = 0;
+            let extracted =
+                GetSecurityDescriptorDacl(descriptor, &mut present, &mut dacl, &mut defaulted);
+            if extracted == 0 || present == 0 || dacl.is_null() {
+                LocalFree(descriptor);
+                close(token);
+                return Err(format!("TOKEN_DACL_EXTRACT_FAILED:{}", error_text()));
+            }
+            let result = SetSecurityInfo(
+                token,
+                SE_KERNEL_OBJECT,
+                DACL_SECURITY_INFORMATION,
+                null_mut(),
+                null_mut(),
+                dacl,
+                null_mut(),
+            );
+            LocalFree(descriptor);
+            close(token);
+            if result != 0 {
+                return Err(format!("TOKEN_DACL_SET_FAILED:{result}"));
+            }
+            Ok(())
+        }
+    }
     fn pipe_security(
         service_sid: &str,
         client_sid: &str,
@@ -1643,6 +1695,7 @@ pub mod service {
             classify_service_identity(&user_sid, &service_sid, group_present, restricted_present)
                 .ok_or_else(|| format!("UNSUPPORTED_SERVICE_IDENTITY:{user_sid}"))?;
         pipe::restrict_broker_process_dacl(&service_sid, &cfg.client_sid)?;
+        pipe::restrict_broker_token_dacl(&service_sid, &cfg.client_sid)?;
         let group_attributes_json =
             group_attributes.map_or("null".to_string(), |value| value.to_string());
         let restricted_attributes_json =
