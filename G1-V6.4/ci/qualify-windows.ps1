@@ -511,6 +511,11 @@ try {
   $squatStart = Invoke-AsAdmin -FilePath (Get-Command sc.exe).Source -Arguments @('start',$serviceName)
   Start-Sleep -Seconds 2
   $squatServiceState = (Get-Service -Name $serviceName -ErrorAction Stop).Status.ToString()
+  if ($pipeHolder.HasExited) {
+    $holderOutput = if (Test-Path -LiteralPath (Join-Path $userRoot 'same-user-fake-pipe-server.stdout.txt')) { Get-Content -Raw -LiteralPath (Join-Path $userRoot 'same-user-fake-pipe-server.stdout.txt') } else { 'MISSING' }
+    $holderStatus = [ordered]@{ pid=$pipeHolder.Id; exitCode=$pipeHolder.ExitCode; releaseMarkerExists=(Test-Path -LiteralPath $pipeReleasePath); holderOutput=$holderOutput; start=$squatStart; state=$squatServiceState }
+    throw "FAKE_PIPE_HOLDER_EXITED_BEFORE_BROKER_START_CHECK:$(ConvertTo-Json $holderStatus -Compress -Depth 6)"
+  }
   if ($squatServiceState -eq 'Running' -or (Test-Path -LiteralPath $brokerReadyPath)) {
     $readyDuringSquat = if (Test-Path -LiteralPath $brokerReadyPath) { Get-Content -Raw -LiteralPath $brokerReadyPath } else { 'MISSING' }
     $holderStatus = [ordered]@{ pid=$pipeHolder.Id; exited=$pipeHolder.HasExited; exitCode=if($pipeHolder.HasExited){$pipeHolder.ExitCode}else{$null}; releaseMarkerExists=(Test-Path -LiteralPath $pipeReleasePath); holderOutput=if(Test-Path -LiteralPath (Join-Path $userRoot 'same-user-fake-pipe-server.stdout.txt')){Get-Content -Raw -LiteralPath (Join-Path $userRoot 'same-user-fake-pipe-server.stdout.txt')}else{'MISSING'}; start=$squatStart; state=$squatServiceState; ready=$readyDuringSquat }
