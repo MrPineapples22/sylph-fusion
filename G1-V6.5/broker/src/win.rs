@@ -45,6 +45,7 @@ const ERROR_MORE_DATA: DWORD = 234;
 const ERROR_NO_DATA: DWORD = 232;
 const ERROR_PIPE_NOT_CONNECTED: DWORD = 233;
 const ERROR_BROKEN_PIPE: DWORD = 109;
+const ERROR_PIPE_BUSY: DWORD = 231;
 const IPC_FRAME_TIMEOUT_MS: u64 = 2500;
 const OPEN_EXISTING: DWORD = 3;
 const GENERIC_READ: DWORD = 0x8000_0000;
@@ -1182,10 +1183,33 @@ pub mod pipe {
                 }
                 let error = GetLastError();
                 if error != ERROR_NO_DATA {
+                    if is_client_disconnect_error(error) {
+                        return Err("IPC_CLIENT_DISCONNECTED".into());
+                    }
                     if error == ERROR_MORE_DATA {
                         return Err("IPC_MESSAGE_TOO_LARGE".into());
                     }
                     return Err(format!("IPC_READ:{error}"));
+                }
+                // In PIPE_NOWAIT mode, ERROR_NO_DATA means either that no
+                // message has arrived yet or that the peer has already
+                // disconnected. Probe the actual peer state so an idle-close
+                // does not consume the complete frame deadline.
+                let mut available = 0;
+                if PeekNamedPipe(
+                    handle,
+                    null_mut(),
+                    0,
+                    null_mut(),
+                    &mut available,
+                    null_mut(),
+                ) == 0
+                {
+                    let peek_error = GetLastError();
+                    if is_client_disconnect_error(peek_error) {
+                        return Err("IPC_CLIENT_DISCONNECTED".into());
+                    }
+                    return Err(format!("IPC_PEEK:{peek_error}"));
                 }
                 if service::stopping() {
                     return Err("IPC_STOPPED".into());
@@ -1196,6 +1220,12 @@ pub mod pipe {
                 Sleep(10);
             }
         }
+    }
+    fn is_client_disconnect_error(error: DWORD) -> bool {
+        matches!(
+            error,
+            ERROR_BROKEN_PIPE | ERROR_PIPE_NOT_CONNECTED | ERROR_NO_DATA
+        )
     }
     fn write_message(handle: HANDLE, text: &str) -> Result<(), String> {
         let bytes = format!("{text}\n");
@@ -1479,6 +1509,7 @@ pub mod pipe {
                 // wrote the last message read from this pipe.
                 let result = match read_message(handle) {
                     Err(error) if error == "IPC_STOPPED" => Ok(()),
+                    Err(error) if error == "IPC_CLIENT_DISCONNECTED" => Ok(()),
                     Err(_) => {
                         let _ = write_message(handle, "ERR|MALFORMED_REQUEST");
                         Ok(())
@@ -1542,7 +1573,10 @@ pub mod pipe {
 
     #[cfg(test)]
     mod framing_tests {
-        use super::parse_frame;
+        use super::{
+            is_client_disconnect_error, parse_frame, ERROR_BROKEN_PIPE, ERROR_NO_DATA,
+            ERROR_PIPE_NOT_CONNECTED,
+        };
 
         #[test]
         fn accepts_one_bounded_utf8_message() {
@@ -1556,6 +1590,15 @@ pub mod pipe {
             assert!(parse_frame(b"STATUS\n\n").is_err());
             assert!(parse_frame(b"\xff\n").is_err());
             assert!(parse_frame(&vec![b'A'; 2049]).is_err());
+        }
+
+        #[test]
+        fn identifies_peer_disconnect_results_without_treating_busy_as_disconnect() {
+            assert!(is_client_disconnect_error(ERROR_BROKEN_PIPE));
+            assert!(is_client_disconnect_error(ERROR_NO_DATA));
+            assert!(is_client_disconnect_error(ERROR_PIPE_NOT_CONNECTED));
+            assert!(!is_client_disconnect_error(super::ERROR_PIPE_BUSY));
+            assert!(!is_client_disconnect_error(5));
         }
     }
 

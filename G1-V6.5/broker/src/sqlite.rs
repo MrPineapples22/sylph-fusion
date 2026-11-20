@@ -285,8 +285,14 @@ impl Registry {
             )
             .optional()
             .map_err(|e| map_error("SQLITE_EFFECTS_SCHEMA", e))?;
-        if effects_sql.is_none() {
-            return Err("SQLITE_EFFECTS_TABLE_MISSING".into());
+        let expected_effects_sql =
+            "CREATE TABLE effects(request_id TEXT PRIMARY KEY NOT NULL,payload TEXT NOT NULL)";
+        match effects_sql {
+            None => return Err("SQLITE_EFFECTS_TABLE_MISSING".into()),
+            Some(actual) if actual != expected_effects_sql => {
+                return Err("SQLITE_EFFECTS_SCHEMA_SEMANTICS_MISMATCH".into())
+            }
+            Some(_) => {}
         }
         let meta_table_count: i64 = connection
             .query_row(
@@ -306,7 +312,10 @@ impl Registry {
             )
             .map_err(|e| map_error("SQLITE_META_SCHEMA_SQL_READ", e))?;
         let expected_meta_sql = "CREATE TABLE registry_meta(singleton INTEGER PRIMARY KEY CHECK(singleton=1),schema_version INTEGER NOT NULL CHECK(schema_version=1),environment_class TEXT NOT NULL CHECK(environment_class='SYNTHETIC_TEST_ONLY'),generation INTEGER NOT NULL CHECK(generation>=1))";
-        if normalize_schema_sql(&meta_sql) != normalize_schema_sql(expected_meta_sql) {
+        // Exact source spelling is intentional: normalizing the entire SQL
+        // would also normalize string literals and could accept a changed
+        // CHECK value. This schema is created by our own fixed bootstrap SQL.
+        if meta_sql != expected_meta_sql {
             return Err("SQLITE_REGISTRY_META_CONSTRAINTS_MISMATCH".into());
         }
         let mut meta_columns = connection
@@ -434,13 +443,6 @@ impl Registry {
             .query_row("PRAGMA integrity_check", [], |row| row.get::<_, String>(0))
             .map_err(|e| map_error("SQLITE_INTEGRITY", e))
     }
-}
-
-fn normalize_schema_sql(sql: &str) -> String {
-    sql.split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_ascii_lowercase()
 }
 
 pub fn inspect_readonly(path: &Path) -> Result<String, String> {
@@ -598,6 +600,61 @@ mod tests {
             before,
             std::fs::read(&path).unwrap(),
             "rejected metadata schema was modified"
+        );
+        cleanup(&path);
+    }
+
+    #[test]
+    fn normal_open_rejects_changed_check_literal_even_when_row_is_valid_under_expected_value() {
+        let path = test_path();
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        connection
+            .execute_batch(
+                "PRAGMA ignore_check_constraints=ON;\
+             CREATE TABLE effects(request_id TEXT PRIMARY KEY NOT NULL,payload TEXT NOT NULL);\
+             CREATE TABLE registry_meta(singleton INTEGER PRIMARY KEY CHECK(singleton=1),\
+                schema_version INTEGER NOT NULL CHECK(schema_version=1),\
+                environment_class TEXT NOT NULL CHECK(environment_class='synthetic_test_only'),\
+                generation INTEGER NOT NULL CHECK(generation>=1));\
+             INSERT INTO registry_meta VALUES(1,1,'SYNTHETIC_TEST_ONLY',1);\
+             PRAGMA user_version=1;",
+            )
+            .unwrap();
+        drop(connection);
+        let before = std::fs::read(&path).unwrap();
+        assert!(
+            matches!(Registry::open_existing(&path), Err(reason) if reason == "SQLITE_REGISTRY_META_CONSTRAINTS_MISMATCH")
+        );
+        assert_eq!(
+            before,
+            std::fs::read(&path).unwrap(),
+            "rejected metadata schema was modified"
+        );
+        cleanup(&path);
+    }
+
+    #[test]
+    fn normal_open_rejects_deduplication_collation_change_unchanged() {
+        let path = test_path();
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        connection.execute_batch(
+            "CREATE TABLE effects(request_id TEXT COLLATE NOCASE PRIMARY KEY NOT NULL,payload TEXT NOT NULL);\
+             CREATE TABLE registry_meta(singleton INTEGER PRIMARY KEY CHECK(singleton=1),\
+                schema_version INTEGER NOT NULL CHECK(schema_version=1),\
+                environment_class TEXT NOT NULL CHECK(environment_class='SYNTHETIC_TEST_ONLY'),\
+                generation INTEGER NOT NULL CHECK(generation>=1));\
+             INSERT INTO registry_meta VALUES(1,1,'SYNTHETIC_TEST_ONLY',1);\
+             PRAGMA user_version=1;",
+        ).unwrap();
+        drop(connection);
+        let before = std::fs::read(&path).unwrap();
+        assert!(
+            matches!(Registry::open_existing(&path), Err(reason) if reason == "SQLITE_EFFECTS_SCHEMA_SEMANTICS_MISMATCH")
+        );
+        assert_eq!(
+            before,
+            std::fs::read(&path).unwrap(),
+            "rejected effects schema was modified"
         );
         cleanup(&path);
     }
