@@ -241,7 +241,11 @@ function Start-BrokerAndCheck([string]$Mode, [string]$DataDir, [string]$ClientSi
   if (-not $serviceProcess -or $serviceProcess.State -ne 'Running' -or
       [long]$serviceProcess.ProcessId -ne [long]$started.ready.processId -or
       $null -eq $token.processId -or [long]$token.processId -ne [long]$serviceProcess.ProcessId) {
-    throw "BROKER_PID_BINDING_MISMATCH:$Mode"
+    $servicePid = if ($serviceProcess) { [long]$serviceProcess.ProcessId } else { 'MISSING' }
+    $readyPid = if ($started.ready) { [string]$started.ready.processId } else { 'MISSING' }
+    $tokenPid = if ($token) { [string]$token.processId } else { 'MISSING' }
+    $serviceState = if ($serviceProcess) { [string]$serviceProcess.State } else { 'MISSING' }
+    throw "BROKER_PID_BINDING_MISMATCH:${Mode}:state=${serviceState}:servicePid=${servicePid}:readyPid=${readyPid}:tokenPid=${tokenPid}"
   }
   Save-Record "$Mode-service-process-binding.json" ([ordered]@{serviceProcessId=[long]$serviceProcess.ProcessId;readyProcessId=[long]$started.ready.processId;tokenProcessId=[long]$token.processId;startupNonce=$started.ready.startupNonce;bound=$true})
   $imageIdentity = Invoke-AsAdmin -FilePath $VerifierExe -Arguments @('identity',$install.protectedBinary)
