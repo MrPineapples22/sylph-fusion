@@ -56,6 +56,15 @@ jobs:
             $code = $LASTEXITCODE
             if ($code -ne 0) { throw "$Name failed with exit code $code" }
           }
+          $guardDetectedFailure = $false
+          try {
+            Invoke-CheckedNative 'intentional native failure control' { & $env:ComSpec /d /c 'exit 37' }
+          } catch {
+            if ($_.Exception.Message -ne 'intentional native failure control failed with exit code 37') { throw }
+            $guardDetectedFailure = $true
+          }
+          if (-not $guardDetectedFailure) { throw 'NATIVE_EXIT_GUARD_NEGATIVE_CONTROL_FAILED' }
+          Write-Host 'NATIVE_EXIT_GUARD_NEGATIVE_CONTROL=PASS'
           Invoke-CheckedNative 'cargo fmt check' { cargo fmt --manifest-path G1-V6.4/broker/Cargo.toml -- --check }
           if (-not (Test-Path -LiteralPath G1-V6.4/broker/Cargo.lock)) { throw 'Pinned Cargo.lock is required' }
           Invoke-CheckedNative 'cargo tests' { cargo test --locked --manifest-path G1-V6.4/broker/Cargo.toml --target x86_64-pc-windows-msvc -- --test-threads=1 }
