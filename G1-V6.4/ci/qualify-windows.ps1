@@ -456,6 +456,9 @@ try {
     $sidecarWrite = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('write',$sidecarPath) -Label ("sidecar-write-denied-" + [IO.Path]::GetFileName($sidecarPath))
     Assert-Win32AccessDenied $sidecarWrite ("sidecar-write-" + [IO.Path]::GetFileName($sidecarPath))
     Save-Record ("sidecar-write-denied-" + [IO.Path]::GetFileName($sidecarPath) + '.json') $sidecarWrite
+    $sidecarWriteOnly = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('write-only',$sidecarPath) -Label ("sidecar-write-only-denied-" + [IO.Path]::GetFileName($sidecarPath))
+    Assert-Win32WriteOnlyDenied $sidecarWriteOnly ("sidecar-write-only-" + [IO.Path]::GetFileName($sidecarPath))
+    Save-Record ("sidecar-write-only-denied-" + [IO.Path]::GetFileName($sidecarPath) + '.json') $sidecarWriteOnly
     $sidecarRead = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('read',$sidecarPath) -Label ("sidecar-read-denied-" + [IO.Path]::GetFileName($sidecarPath))
     Assert-Win32ReadDenied $sidecarRead ("sidecar-read-" + [IO.Path]::GetFileName($sidecarPath))
     Save-Record ("sidecar-read-denied-" + [IO.Path]::GetFileName($sidecarPath) + '.json') $sidecarRead
@@ -482,6 +485,9 @@ try {
   $imageWrite = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('write',$serviceImage) -Label 'service-image-write-denied-running'
   Assert-Win32AccessDenied $imageWrite 'service-image-write-running'
   Save-Record 'service-image-write-denied-running.json' $imageWrite
+  $imageWriteOnly = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('write-only',$serviceImage) -Label 'service-image-write-only-denied-running'
+  Assert-Win32WriteOnlyDenied $imageWriteOnly 'service-image-write-only-running'
+  Save-Record 'service-image-write-only-denied-running.json' $imageWriteOnly
   $serviceConfigBefore = Invoke-AsAdmin -FilePath (Get-Command sc.exe).Source -Arguments @('qc',$serviceName)
   if ($serviceConfigBefore.exitCode -ne 0 -or $serviceConfigBefore.output -notmatch [regex]::Escape($serviceImage)) { throw 'SERVICE_CONFIG_IMAGE_BINDING_MISSING' }
   $serviceConfigAttack = Invoke-AsTestUser -FilePath (Get-Command sc.exe).Source -Arguments @('config',$serviceName,"binPath= `"$serviceImage`" --forged") -Label 'service-config-modification-denied'
@@ -671,6 +677,9 @@ try {
   $stoppedImageWrite = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('write',$serviceImage) -Label 'service-image-write-denied-stopped'
   Assert-Win32AccessDenied $stoppedImageWrite 'service-image-write-stopped'
   Save-Record 'service-image-write-denied-stopped.json' $stoppedImageWrite
+  $stoppedImageWriteOnly = Invoke-AsTestUser -FilePath $AttackerExe -Arguments @('write-only',$serviceImage) -Label 'service-image-write-only-denied-stopped'
+  Assert-Win32WriteOnlyDenied $stoppedImageWriteOnly 'service-image-write-only-stopped'
+  Save-Record 'service-image-write-only-denied-stopped.json' $stoppedImageWriteOnly
   $result.phases.StoppedPipeNamespace = 'BLOCKED_NO_NAMED_PIPE_OBJECT_EXISTS_FOR_DACL_CHECK_WHILE_BROKER_STOPPED'
   $result.blockedRequirements = @($result.blockedRequirements) + @('Stopped-service named-pipe name squatting is not prevented by a DACL on a nonexistent pipe; broker must fail closed and client must authenticate server identity')
   $result.phases.CI_P2_Stopped = 'PASS_ERROR_ACCESS_DENIED_ON_LEGACY_AND_BROKER_OBJECT_NAMES'
@@ -726,6 +735,9 @@ try {
   Save-Record 'running-broker-db-alias-read.json' $runningBrokerAliasRead
   $result.phases.CI_P2_Running = 'PASS_AUTHORIZED_BROKER_WRITE_AND_ERROR_ACCESS_DENIED_ON_LEGACY_AND_BROKER_OBJECT_NAMES'
 
+  $experimentCStop = Stop-SylphProbeService -Name $serviceName
+  if ($experimentCStop.state -ne 'Stopped') { throw "EXPERIMENT_C_REQUIRES_CLOSED_BROKER_DATABASE:$($experimentCStop.state)" }
+  Save-Record 'experiment-c-broker-closed-before-byte-comparison.json' $experimentCStop
   $brokerDbBeforeLegacyHandleMutation = (Get-FileHash -Algorithm SHA256 -LiteralPath $brokerDb).Hash
   $brokerStateBeforeLegacyHandleMutation = Invoke-AsAdmin -FilePath $VerifierExe -Arguments @('sqlite',$brokerDb)
   if ($brokerStateBeforeLegacyHandleMutation.exitCode -ne 0 -or -not $brokerStateBeforeLegacyHandleMutation.json -or
