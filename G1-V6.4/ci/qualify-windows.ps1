@@ -43,6 +43,7 @@ $result = [ordered]@{
   status = 'RUNNING'
   phases = [ordered]@{}
   failures = @()
+  blockedRequirements = @()
 }
 
 function Save-Record([string]$Name, $Value) {
