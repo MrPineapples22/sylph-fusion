@@ -6,7 +6,7 @@ use std::mem::size_of;
 use std::os::windows::ffi::OsStrExt;
 use std::path::PathBuf;
 use std::ptr::{null, null_mut};
-use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
 use std::sync::OnceLock;
 
 type BOOL = i32;
@@ -1472,6 +1472,7 @@ pub mod service {
     use std::io::Write;
     static STOP: AtomicBool = AtomicBool::new(false);
     static STATUS_HANDLE: AtomicIsize = AtomicIsize::new(SERVICE_STATUS_HANDLE_INVALID);
+    static CURRENT_SERVICE_STATE: AtomicU32 = AtomicU32::new(SERVICE_STOPPED);
     static CONFIG: OnceLock<Config> = OnceLock::new();
     #[derive(Clone)]
     struct Config {
@@ -1480,6 +1481,7 @@ pub mod service {
         client_sid: String,
     }
     fn set_status(state: DWORD, exit_code: DWORD) {
+        CURRENT_SERVICE_STATE.store(state, Ordering::SeqCst);
         let handle = STATUS_HANDLE.load(Ordering::SeqCst);
         if handle == SERVICE_STATUS_HANDLE_INVALID {
             return;
@@ -1553,19 +1555,8 @@ pub mod service {
                 0
             }
             SERVICE_CONTROL_INTERROGATE => {
-                let h = STATUS_HANDLE.load(Ordering::SeqCst);
-                if h != SERVICE_STATUS_HANDLE_INVALID {
-                    let status = SERVICE_STATUS {
-                        dwServiceType: SERVICE_WIN32_OWN_PROCESS,
-                        dwCurrentState: SERVICE_RUNNING,
-                        dwControlsAccepted: SERVICE_ACCEPT_STOP,
-                        dwWin32ExitCode: 0,
-                        dwServiceSpecificExitCode: 0,
-                        dwCheckPoint: 0,
-                        dwWaitHint: 0,
-                    };
-                    SetServiceStatus(h, &status);
-                }
+                let state = CURRENT_SERVICE_STATE.load(Ordering::SeqCst);
+                set_status(state, 0);
                 0
             }
             _ => 1,
