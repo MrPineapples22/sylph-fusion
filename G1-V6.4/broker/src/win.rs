@@ -864,101 +864,26 @@ pub mod attack {
         }
         drop(ready);
 
-        // Accept the expected client connection, but never process or dispatch
-        // any request. The legitimate client must reject this server identity
-        // before writing its first request frame.
-        let connect_deadline = Instant::now() + Duration::from_secs(15);
-        let mut connected = false;
-        while Instant::now() < connect_deadline {
-            let connect_ok = unsafe { ConnectNamedPipe(handle, null_mut()) };
-            if connect_ok != 0 {
-                connected = true;
-                break;
-            }
-            let error = unsafe { GetLastError() };
-            if error == ERROR_PIPE_CONNECTED {
-                connected = true;
-                break;
-            }
-            if error != ERROR_PIPE_LISTENING {
+        // Keep the first-instance handle open without accepting or reading a
+        // client request. The client-side identity check is tested separately;
+        // this disposable process only reserves the namespace until release.
+        let hold_started = Instant::now();
+        let deadline = Instant::now() + Duration::from_secs(600);
+        while Instant::now() < deadline {
+            if std::path::Path::new(release_path).exists() {
                 unsafe { close(handle) };
-                return Ok(format!("{{\"schema\":\"SYLPH_G1_PIPE_HOLD_1\",\"result\":\"CONNECT_FAILED\",\"win32Error\":{error},\"requestedOpenMode\":{open_mode},\"callerSid\":\"{caller_sid}\",\"callerPid\":{caller_pid}}}"));
+                return Ok(format!("{{\"schema\":\"SYLPH_G1_PIPE_HOLD_1\",\"result\":\"FIRST_INSTANCE_HELD_UNTIL_RELEASE\",\"requestedOpenMode\":{open_mode},\"callerSid\":\"{caller_sid}\",\"callerPid\":{caller_pid},\"firstInstanceHeld\":true,\"holdDurationMs\":{}}}", hold_started.elapsed().as_millis()));
             }
-            sleep(Duration::from_millis(20));
+            sleep(Duration::from_millis(50));
         }
-        if !connected {
-            unsafe { close(handle) };
-            return Ok(format!("{{\"schema\":\"SYLPH_G1_PIPE_HOLD_1\",\"result\":\"CONNECT_TIMEOUT\",\"win32Error\":0,\"requestedOpenMode\":{open_mode},\"callerSid\":\"{caller_sid}\",\"callerPid\":{caller_pid}}}"));
-        }
-
-        let mut client_pid = 0;
-        let client_pid_ok = unsafe { GetNamedPipeClientProcessId(handle, &mut client_pid) } != 0;
-        let client_pid_error = if client_pid_ok {
-            0
-        } else {
-            unsafe { GetLastError() }
-        };
-        let mut available = 0;
-        let peek_ok = unsafe {
-            PeekNamedPipe(
-                handle,
-                null_mut(),
-                0,
-                null_mut(),
-                &mut available,
-                null_mut(),
-            )
-        } != 0;
-        let peek_error = if peek_ok {
-            0
-        } else {
-            unsafe { GetLastError() }
-        };
-        let mut one_byte = [0u8; 1];
-        let mut bytes_read = 0;
-        let read_ok = unsafe {
-            ReadFile(
-                handle,
-                one_byte.as_mut_ptr().cast(),
-                one_byte.len() as DWORD,
-                &mut bytes_read,
-                null_mut(),
-            )
-        } != 0;
-        let read_error = if read_ok {
-            0
-        } else {
-            unsafe { GetLastError() }
-        };
-        let zero_request_evidence =
-            client_pid_ok && peek_ok && available == 0 && !read_ok && read_error == ERROR_NO_DATA;
-        let result_name = if zero_request_evidence {
-            "CONNECTED_ZERO_REQUEST_BYTES"
-        } else if !peek_ok && peek_error == ERROR_BROKEN_PIPE {
-            "CONNECTED_CLIENT_DISCONNECTED_BEFORE_PEEK"
-        } else if available > 0 || bytes_read > 0 {
-            "UNEXPECTED_REQUEST_BYTES"
-        } else {
-            "CONNECTION_EVIDENCE_INCOMPLETE"
-        };
-        let evidence = format!("{{\"schema\":\"SYLPH_G1_PIPE_HOLD_1\",\"result\":\"{result_name}\",\"requestedOpenMode\":{open_mode},\"callerSid\":\"{caller_sid}\",\"callerPid\":{caller_pid},\"connectedClientPid\":{},\"clientPidWin32Error\":{client_pid_error},\"peekSucceeded\":{peek_ok},\"peekAvailableBytes\":{available},\"peekWin32Error\":{peek_error},\"readSucceeded\":{read_ok},\"readBytes\":{bytes_read},\"readWin32Error\":{read_error}}}", if client_pid_ok { client_pid.to_string() } else { "null".to_string() });
-        let mut evidence_file = match OpenOptions::new().append(true).open(ready_path) {
-            Ok(file) => file,
-            Err(error) => {
-                unsafe { close(handle) };
-                return Err(format!("EVIDENCE_MARKER_OPEN:{error}"));
-            }
-        };
-        if let Err(error) =
-            writeln!(evidence_file, "{evidence}").and_then(|_| evidence_file.sync_all())
-        {
-            drop(evidence_file);
+        unsafe { close(handle) };
+        Err("PIPE_HOLDER_RELEASE_TIMEOUT".into())
             unsafe { close(handle) };
             return Err(format!("EVIDENCE_MARKER_WRITE_OR_SYNC:{error}"));
         }
         drop(evidence_file);
 
-        let deadline = Instant::now() + Duration::from_secs(120);
+        let deadline = Instant::now() + Duration::from_secs(600);
         while Instant::now() < deadline {
             if std::path::Path::new(release_path).exists() {
                 unsafe { close(handle) };
@@ -1039,6 +964,39 @@ pub mod attack {
             .map_err(|e| format!("WRITE_ERROR:{e}"))?;
         file.sync_all().map_err(|e| format!("SYNC_ERROR:{e}"))?;
         Ok(format!("{{\"schema\":\"SYLPH_G1_ATTACK_RESULT_1\",\"result\":\"WRITE_SUCCEEDED\",\"win32Error\":0,\"requestedAccess\":3221225472,\"userSid\":\"{user_sid}\",\"originalByte\":{},\"writtenByte\":{}}}",byte[0],changed))
+    }
+
+    pub fn write_only_one_byte(path: &str) -> Result<String, String> {
+        use std::io::Write;
+        use std::os::windows::io::FromRawHandle;
+        let name = wide(path);
+        let user_sid = current_process_user_sid()?;
+        let handle = unsafe {
+            CreateFileW(
+                name.as_ptr(),
+                GENERIC_WRITE,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                null_mut(),
+                OPEN_EXISTING,
+                0,
+                null_mut(),
+            )
+        };
+        if handle == INVALID_HANDLE_VALUE {
+            let code = unsafe { GetLastError() };
+            let result = match code {
+                5 => "ACCESS_DENIED",
+                32 => "SHARING_VIOLATION",
+                _ => "OPEN_FAILED",
+            };
+            return Ok(format!("{{\"schema\":\"SYLPH_G1_ATTACK_RESULT_1\",\"result\":\"{result}\",\"win32Error\":{code},\"requestedAccess\":1073741824,\"userSid\":\"{user_sid}\"}}"));
+        }
+        let mut file = unsafe { std::fs::File::from_raw_handle(handle) };
+        let marker = [0xA5u8];
+        file.write_all(&marker)
+            .map_err(|e| format!("WRITE_ERROR:{e}"))?;
+        file.sync_all().map_err(|e| format!("SYNC_ERROR:{e}"))?;
+        Ok(format!("{{\"schema\":\"SYLPH_G1_ATTACK_RESULT_1\",\"result\":\"WRITE_SUCCEEDED\",\"win32Error\":0,\"requestedAccess\":1073741824,\"userSid\":\"{user_sid}\",\"writtenByte\":{}}}", marker[0]))
     }
 }
 
@@ -1759,3 +1717,4 @@ pub mod service {
         Ok(())
     }
 }
+
