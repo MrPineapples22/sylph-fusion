@@ -1258,7 +1258,10 @@ pub mod pipe {
     }
     #[cfg(test)]
     mod acl_policy_tests {
-        use super::{client_acl_mask_is_valid, FILE_CREATE_PIPE_INSTANCE, IPC_CLIENT_ACCESS, PIPE_CLIENT_ACL_MASK};
+        use super::{
+            client_acl_mask_is_valid, FILE_CREATE_PIPE_INSTANCE, IPC_CLIENT_ACCESS,
+            PIPE_CLIENT_ACL_MASK,
+        };
 
         #[test]
         fn configured_client_ace_excludes_pipe_instance_creation() {
