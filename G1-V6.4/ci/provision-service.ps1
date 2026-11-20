@@ -219,9 +219,11 @@ function Start-SylphProbeService {
     if ($service -and $service.Status -eq 'Running') { break }
   } while ([DateTime]::UtcNow -lt $deadline)
   $service = Get-Service -Name $Name -ErrorAction SilentlyContinue
+  $queryOutput = & sc.exe queryex $Name 2>&1
+  $queryCode = $LASTEXITCODE
   $ready = $null
   if (Test-Path -LiteralPath $readyPath) { $ready = Get-Content -Raw -LiteralPath $readyPath | ConvertFrom-Json }
-  [pscustomobject]@{ serviceName=$Name; startExitCode=$startCode; startOutput=($output -join ' '); state=if($service){$service.Status.ToString()}else{'MISSING'}; ready=$ready; readyFile=$readyPath }
+  [pscustomobject]@{ serviceName=$Name; startExitCode=$startCode; startOutput=($output -join ' '); state=if($service){$service.Status.ToString()}else{'MISSING'}; serviceQueryExitCode=$queryCode; serviceQueryOutput=($queryOutput -join ' '); ready=$ready; readyFile=$readyPath }
 }
 
 function Stop-SylphProbeService {
