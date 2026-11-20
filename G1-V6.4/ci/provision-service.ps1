@@ -147,7 +147,7 @@ function Install-SylphProbeService {
   $protectedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $protectedBinary).Hash
   if ($sourceHash -ne $protectedHash) { throw 'PROTECTED_EXECUTABLE_COPY_HASH_MISMATCH' }
   $image = '"{0}" --service-name {1} --data-dir "{2}" --client-sid {3}' -f $protectedBinary,$Name,$DataDir,$ClientSid
-  $createOutput = & sc.exe create $Name "binPath= $image" 'start= demand' "obj= $account" 'password= '
+  $createOutput = & sc.exe create $Name 'binPath=' $image 'start=' 'demand' 'obj=' $account
   $createCode = $LASTEXITCODE
   if ($createCode -ne 0) { throw "SC_CREATE_FAILED:${createCode}:$($createOutput -join ' ')" }
   # Record creation immediately so the caller's finally block can remove the
