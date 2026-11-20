@@ -1645,7 +1645,7 @@ pub mod service {
                 {
                     return Err(error)
                 }
-                Err(_) => Sleep(250),
+                Err(_) => unsafe { Sleep(250) },
             }
         }
         if registry.check_integrity()? != "ok" {
