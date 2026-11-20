@@ -1,0 +1,27 @@
+{
+  "captureDate": "2026-11-19",
+  "authoringHost": {
+    "os": "Windows 10.0.19045 x64",
+    "identity": "DESKTOP-TOULNBM\\codexsandboxoffline",
+    "sid": "S-1-5-21-1493479061-3366213732-219378630-1009",
+    "integrity": "Medium",
+    "administrator": false,
+    "privileges": ["SeChangeNotifyPrivilege"],
+    "scCreateService": "BLOCKED: Win32 error 5 (observed in independent read-only SCM probe)",
+    "serviceInstalled": false
+  },
+  "github": {
+    "repository": "MrPineapples22/sylph-fusion",
+    "visibility": "public",
+    "defaultBranch": "main",
+    "baseCommit": "f5c31177f2b8d79cdf5e3662e4049ac44b9562b2",
+    "baseCommitSignature": "unsigned",
+    "permissions": ["admin", "maintain", "pull", "push", "triage"],
+    "scratchBranch": "codex/g1-v6-4-ci-p0",
+    "runnerLabelPlanned": "windows-2022",
+    "workflowDirectoryOnBase": "absent (GitHub contents API returned 404)",
+    "workflowDispatchConstraint": "Workflow must exist on default branch for UI dispatch; initial push trigger will be branch-restricted."
+  },
+  "productionSystemsAccessed": false,
+  "credentialsIncluded": false
+}
