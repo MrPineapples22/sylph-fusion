@@ -46,6 +46,10 @@ const ERROR_NO_DATA: DWORD = 232;
 const ERROR_PIPE_NOT_CONNECTED: DWORD = 233;
 const ERROR_BROKEN_PIPE: DWORD = 109;
 const ERROR_PIPE_BUSY: DWORD = 231;
+const ERROR_IO_PENDING: DWORD = 997;
+const WAIT_OBJECT_0: DWORD = 0;
+const WAIT_TIMEOUT: DWORD = 258;
+const INFINITE: DWORD = 0xFFFF_FFFF;
 const IPC_FRAME_TIMEOUT_MS: u64 = 2500;
 const OPEN_EXISTING: DWORD = 3;
 const GENERIC_READ: DWORD = 0x8000_0000;
@@ -64,7 +68,9 @@ const FILE_FLAG_FIRST_PIPE_INSTANCE: DWORD = 0x0008_0000;
 const FILE_FLAG_BACKUP_SEMANTICS: DWORD = 0x0200_0000;
 const PIPE_TYPE_MESSAGE: DWORD = 4;
 const PIPE_READMODE_MESSAGE: DWORD = 2;
+const PIPE_WAIT: DWORD = 0;
 const PIPE_NOWAIT: DWORD = 1;
+const FILE_FLAG_OVERLAPPED: DWORD = 0x4000_0000;
 const PIPE_REJECT_REMOTE_CLIENTS: DWORD = 8;
 const TOKEN_QUERY: DWORD = 0x0008;
 const WRITE_DAC: DWORD = 0x0004_0000;
@@ -92,6 +98,14 @@ struct SECURITY_ATTRIBUTES {
     nLength: DWORD,
     lpSecurityDescriptor: *mut c_void,
     bInheritHandle: BOOL,
+}
+#[repr(C)]
+struct OVERLAPPED {
+    Internal: usize,
+    InternalHigh: usize,
+    Offset: DWORD,
+    OffsetHigh: DWORD,
+    hEvent: HANDLE,
 }
 #[repr(C)]
 struct SID_AND_ATTRIBUTES {
@@ -199,6 +213,20 @@ unsafe extern "system" {
     ) -> BOOL;
     fn CloseHandle(handle: HANDLE) -> BOOL;
     fn GetLastError() -> DWORD;
+    fn CreateEventW(
+        security: *mut SECURITY_ATTRIBUTES,
+        manual_reset: BOOL,
+        initial_state: BOOL,
+        name: *const u16,
+    ) -> HANDLE;
+    fn WaitForSingleObject(handle: HANDLE, milliseconds: DWORD) -> DWORD;
+    fn GetOverlappedResult(
+        file: HANDLE,
+        overlapped: *mut OVERLAPPED,
+        transferred: *mut DWORD,
+        wait: BOOL,
+    ) -> BOOL;
+    fn CancelIoEx(file: HANDLE, overlapped: *mut OVERLAPPED) -> BOOL;
     fn GetTickCount64() -> u64;
     fn Sleep(ms: DWORD);
     fn GetCurrentThread() -> HANDLE;
@@ -1165,61 +1193,112 @@ pub mod pipe {
         Ok(frame.to_string())
     }
 
-    fn read_message(handle: HANDLE) -> Result<String, String> {
-        let mut buffer = vec![0u8; 4096];
+    fn new_overlapped() -> Result<OVERLAPPED, String> {
+        let event = unsafe { CreateEventW(null_mut(), 0, 0, null()) };
+        if event.is_null() {
+            return Err(format!("IPC_EVENT_CREATE:{}", error_text()));
+        }
+        Ok(OVERLAPPED {
+            Internal: 0,
+            InternalHigh: 0,
+            Offset: 0,
+            OffsetHigh: 0,
+            hEvent: event,
+        })
+    }
+    fn wait_overlapped(
+        pipe: HANDLE,
+        overlapped: &mut OVERLAPPED,
+        timeout_ms: Option<u64>,
+        operation: &str,
+    ) -> Result<DWORD, String> {
         let started = unsafe { GetTickCount64() };
         loop {
-            let mut read = 0;
-            unsafe {
-                if ReadFile(
-                    handle,
-                    buffer.as_mut_ptr().cast(),
-                    buffer.len() as DWORD,
-                    &mut read,
-                    null_mut(),
-                ) != 0
-                {
-                    return parse_frame(&buffer[..read as usize]);
-                }
-                let error = GetLastError();
-                if error != ERROR_NO_DATA {
+            let wait = unsafe { WaitForSingleObject(overlapped.hEvent, 50) };
+            if wait == WAIT_OBJECT_0 {
+                let mut transferred = 0;
+                if unsafe { GetOverlappedResult(pipe, overlapped, &mut transferred, 0) } == 0 {
+                    let error = unsafe { GetLastError() };
                     if is_client_disconnect_error(error) {
                         return Err("IPC_CLIENT_DISCONNECTED".into());
                     }
                     if error == ERROR_MORE_DATA {
                         return Err("IPC_MESSAGE_TOO_LARGE".into());
                     }
-                    return Err(format!("IPC_READ:{error}"));
+                    return Err(format!("{operation}:{error}:{}", error_text()));
                 }
-                // In PIPE_NOWAIT mode, ERROR_NO_DATA means either that no
-                // message has arrived yet or that the peer has already
-                // disconnected. Probe the actual peer state so an idle-close
-                // does not consume the complete frame deadline.
-                let mut available = 0;
-                if PeekNamedPipe(
-                    handle,
-                    null_mut(),
-                    0,
-                    null_mut(),
-                    &mut available,
-                    null_mut(),
-                ) == 0
-                {
-                    let peek_error = GetLastError();
-                    if is_client_disconnect_error(peek_error) {
-                        return Err("IPC_CLIENT_DISCONNECTED".into());
-                    }
-                    return Err(format!("IPC_PEEK:{peek_error}"));
+                return Ok(transferred);
+            }
+            if wait != WAIT_TIMEOUT {
+                return Err(format!("{operation}_WAIT_FAILED:{wait}:{}", error_text()));
+            }
+            let timed_out = timeout_ms
+                .is_some_and(|limit| unsafe { GetTickCount64() }.saturating_sub(started) >= limit);
+            if !service::stopping() && !timed_out {
+                continue;
+            }
+
+            // Do not release OVERLAPPED storage while the kernel may still own
+            // the request. Cancel it and drain completion before returning.
+            unsafe {
+                let _ = CancelIoEx(pipe, overlapped);
+                if WaitForSingleObject(overlapped.hEvent, INFINITE) != WAIT_OBJECT_0 {
+                    return Err(format!("{operation}_CANCEL_DRAIN_FAILED:{}", error_text()));
                 }
+                let mut transferred = 0;
+                if GetOverlappedResult(pipe, overlapped, &mut transferred, 0) != 0 {
+                    return Ok(transferred);
+                }
+                let error = GetLastError();
                 if service::stopping() {
                     return Err("IPC_STOPPED".into());
                 }
-                if GetTickCount64().saturating_sub(started) >= IPC_FRAME_TIMEOUT_MS {
+                if timed_out && error == 995 {
                     return Err("IPC_FRAME_TIMEOUT".into());
                 }
-                Sleep(10);
+                if is_client_disconnect_error(error) {
+                    return Err("IPC_CLIENT_DISCONNECTED".into());
+                }
+                return Err(format!("{operation}_CANCELLED:{error}:{}", error_text()));
             }
         }
+    }
+
+    fn read_message(handle: HANDLE) -> Result<String, String> {
+        let mut buffer = vec![0u8; 4096];
+        let mut overlapped = new_overlapped()?;
+        let mut read = 0;
+        let result = unsafe {
+            if ReadFile(
+                handle,
+                buffer.as_mut_ptr().cast(),
+                buffer.len() as DWORD,
+                &mut read,
+                (&mut overlapped as *mut OVERLAPPED).cast(),
+            ) != 0
+            {
+                Ok(read)
+            } else {
+                let error = GetLastError();
+                if error == ERROR_IO_PENDING {
+                    wait_overlapped(
+                        handle,
+                        &mut overlapped,
+                        Some(IPC_FRAME_TIMEOUT_MS),
+                        "IPC_READ",
+                    )
+                } else if is_client_disconnect_error(error) {
+                    Err("IPC_CLIENT_DISCONNECTED".into())
+                } else if error == ERROR_MORE_DATA {
+                    Err("IPC_MESSAGE_TOO_LARGE".into())
+                } else {
+                    Err(format!("IPC_READ:{error}:{}", error_text()))
+                }
+            }
+        };
+        unsafe { close(overlapped.hEvent) };
+        let read = result?;
+        parse_frame(&buffer[..read as usize])
     }
     fn is_client_disconnect_error(error: DWORD) -> bool {
         matches!(
@@ -1230,18 +1309,30 @@ pub mod pipe {
     fn write_message(handle: HANDLE, text: &str) -> Result<(), String> {
         let bytes = format!("{text}\n");
         let mut written = 0;
-        unsafe {
-            check(
-                WriteFile(
-                    handle,
-                    bytes.as_ptr().cast(),
-                    bytes.len() as DWORD,
-                    &mut written,
-                    null_mut(),
-                ),
-                "IPC_WRITE",
-            )?;
-        }
+        let mut overlapped = new_overlapped()?;
+        let result = unsafe {
+            if WriteFile(
+                handle,
+                bytes.as_ptr().cast(),
+                bytes.len() as DWORD,
+                &mut written,
+                (&mut overlapped as *mut OVERLAPPED).cast(),
+            ) != 0
+            {
+                Ok(written)
+            } else {
+                let error = GetLastError();
+                if error == ERROR_IO_PENDING {
+                    wait_overlapped(handle, &mut overlapped, Some(1000), "IPC_WRITE")
+                } else if is_client_disconnect_error(error) {
+                    Err("IPC_CLIENT_DISCONNECTED".into())
+                } else {
+                    Err(format!("IPC_WRITE:{error}:{}", error_text()))
+                }
+            }
+        };
+        unsafe { close(overlapped.hEvent) };
+        written = result?;
         if written as usize != bytes.len() {
             return Err("IPC_PARTIAL_WRITE".into());
         }
@@ -1464,11 +1555,8 @@ pub mod pipe {
             let name = pipe_name();
             let handle = CreateNamedPipeW(
                 name.as_ptr(),
-                PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
-                PIPE_TYPE_MESSAGE
-                    | PIPE_READMODE_MESSAGE
-                    | PIPE_NOWAIT
-                    | PIPE_REJECT_REMOTE_CLIENTS,
+                PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE | FILE_FLAG_OVERLAPPED,
+                PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
                 2,
                 4096,
                 4096,
@@ -1484,26 +1572,58 @@ pub mod pipe {
                 return Err(format!("READINESS_PUBLICATION_FAILED:{error}"));
             }
             while !service::stopping() {
-                if ConnectNamedPipe(handle, null_mut()) != 0 {
-                    // Connected; handle this client and keep the original
-                    // first-instance handle owned for the service lifetime.
-                } else {
+                let mut connect = match new_overlapped() {
+                    Ok(value) => value,
+                    Err(error) => {
+                        close(handle);
+                        return Err(error);
+                    }
+                };
+                let connected = ConnectNamedPipe(handle, (&mut connect as *mut OVERLAPPED).cast());
+                if connected == 0 {
                     let error = GetLastError();
                     if error == ERROR_PIPE_CONNECTED {
-                        // A client connected between the wait and Connect call.
-                    } else if error == ERROR_PIPE_LISTENING {
-                        Sleep(80);
-                        continue;
-                    } else if error == ERROR_PIPE_NOT_CONNECTED || error == ERROR_NO_DATA {
-                        // A client disconnected while ConnectNamedPipe was
-                        // being issued. Re-arm this same instance.
-                        Sleep(20);
+                        // The client connected between the previous
+                        // disconnect and this call.
+                    } else if error == ERROR_IO_PENDING {
+                        match wait_overlapped(handle, &mut connect, None, "PIPE_CONNECT") {
+                            Ok(_) => {}
+                            Err(error) if error == "IPC_STOPPED" => {
+                                close(connect.hEvent);
+                                break;
+                            }
+                            Err(error) => {
+                                close(connect.hEvent);
+                                close(handle);
+                                return Err(format!("PIPE_CONNECT_FAILED:{error}"));
+                            }
+                        }
+                    } else if is_client_disconnect_error(error) {
+                        // A fast client may open and close between connect
+                        // attempts. This same server instance remains owned;
+                        // disconnect it and retry instead of dropping the
+                        // namespace or publishing stale readiness.
+                        if DisconnectNamedPipe(handle) == 0 {
+                            let disconnect_error = GetLastError();
+                            if !matches!(disconnect_error, ERROR_PIPE_NOT_CONNECTED | ERROR_NO_DATA)
+                            {
+                                close(connect.hEvent);
+                                close(handle);
+                                return Err(format!(
+                                    "PIPE_DISCONNECT_AFTER_RACE:{disconnect_error}:{}",
+                                    error_text()
+                                ));
+                            }
+                        }
+                        close(connect.hEvent);
                         continue;
                     } else {
+                        close(connect.hEvent);
                         close(handle);
                         return Err(format!("PIPE_CONNECT_FATAL:{error}:{}", error_text()));
                     }
                 }
+                close(connect.hEvent);
                 // Read the bounded complete message before impersonating;
                 // Windows binds the impersonation token to the client that
                 // wrote the last message read from this pipe.

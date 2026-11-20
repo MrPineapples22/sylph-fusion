@@ -5,13 +5,38 @@
 //! authenticator that verifies the exact canonical bytes below. The synthetic
 //! test authenticator exists only under `cfg(test)`.
 
+#![allow(non_camel_case_types)]
+
 use std::collections::HashSet;
+use std::ffi::c_void;
 
 const IMPORT_SCHEMA: u32 = 1;
 const MAX_RECORDS: usize = 100_000;
 const MAX_OBLIGATIONS: usize = 100_000;
 const MAX_FIELD_BYTES: usize = 1_048_576;
 const MAX_BUNDLE_BYTES: usize = 64 * 1024 * 1024;
+
+type BCRYPT_ALG_HANDLE = *mut c_void;
+
+#[link(name = "bcrypt")]
+unsafe extern "system" {
+    fn BCryptOpenAlgorithmProvider(
+        algorithm: *mut BCRYPT_ALG_HANDLE,
+        algorithm_id: *const u16,
+        implementation: *const u16,
+        flags: u32,
+    ) -> i32;
+    fn BCryptHash(
+        algorithm: BCRYPT_ALG_HANDLE,
+        secret: *mut u8,
+        secret_length: u32,
+        input: *mut u8,
+        input_length: u32,
+        output: *mut u8,
+        output_length: u32,
+    ) -> i32;
+    fn BCryptCloseAlgorithmProvider(algorithm: BCRYPT_ALG_HANDLE, flags: u32) -> i32;
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReceiptRecord {
@@ -161,6 +186,10 @@ fn validate_structure(anchor: &ImportAnchor, bundle: &ImportBundle) -> Result<()
     {
         return Err("IMPORT_ANCHOR_OR_LIMIT_MISMATCH".into());
     }
+    let computed_root = state_root(bundle)?;
+    if bundle.state_root != computed_root {
+        return Err("IMPORT_STATE_ROOT_MISMATCH".into());
+    }
 
     if !valid_identity(&anchor.last_receipt_identity) {
         return Err("IMPORT_ANCHOR_RECEIPT_ID_INVALID".into());
@@ -259,6 +288,78 @@ fn canonical_claim(bundle: &ImportBundle) -> Result<Vec<u8>, String> {
     Ok(output)
 }
 
+/// Recompute the authority-state root from the exact ordered receipt and
+/// obligation inventory. The signed envelope authenticates this claim later;
+/// a caller-provided root is never accepted as its own proof.
+fn state_root(bundle: &ImportBundle) -> Result<String, String> {
+    let mut state = Vec::new();
+    state.extend_from_slice(b"SYLPH-AUTHORITY-STATE-ROOT-V1\0");
+    put_str(&mut state, &bundle.chain_identity)?;
+    put_u64(&mut state, bundle.generation);
+    put_u64(&mut state, bundle.parent_generation);
+    put_str(&mut state, &bundle.parent_state_root)?;
+    put_u64(&mut state, bundle.receipts.len() as u64);
+    for receipt in &bundle.receipts {
+        put_str(&mut state, &receipt.identity)?;
+        put_str(&mut state, &receipt.parent_identity)?;
+        put_bytes(&mut state, &receipt.payload)?;
+    }
+    put_u64(&mut state, bundle.obligations.len() as u64);
+    for obligation in &bundle.obligations {
+        put_str(&mut state, &obligation.identity)?;
+        put_str(&mut state, &obligation.state)?;
+        put_str(&mut state, &obligation.external_identity)?;
+    }
+    if state.len() > MAX_BUNDLE_BYTES {
+        return Err("IMPORT_STATE_ROOT_CONTENT_TOO_LARGE".into());
+    }
+    let digest = sha256(&state)?;
+    Ok(digest.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+fn sha256(input: &[u8]) -> Result<[u8; 32], String> {
+    if input.len() > u32::MAX as usize {
+        return Err("IMPORT_HASH_INPUT_TOO_LARGE".into());
+    }
+    const SHA256: [u16; 7] = [
+        b'S' as u16,
+        b'H' as u16,
+        b'A' as u16,
+        b'2' as u16,
+        b'5' as u16,
+        b'6' as u16,
+        0,
+    ];
+    unsafe {
+        let mut algorithm = std::ptr::null_mut();
+        let open_status =
+            BCryptOpenAlgorithmProvider(&mut algorithm, SHA256.as_ptr(), std::ptr::null(), 0);
+        if open_status < 0 || algorithm.is_null() {
+            return Err(format!("IMPORT_SHA256_PROVIDER_FAILED:{open_status:#010x}"));
+        }
+        let mut digest = [0u8; 32];
+        let hash_status = BCryptHash(
+            algorithm,
+            std::ptr::null_mut(),
+            0,
+            input.as_ptr() as *mut u8,
+            input.len() as u32,
+            digest.as_mut_ptr(),
+            digest.len() as u32,
+        );
+        let close_status = BCryptCloseAlgorithmProvider(algorithm, 0);
+        if hash_status < 0 {
+            return Err(format!("IMPORT_SHA256_FAILED:{hash_status:#010x}"));
+        }
+        if close_status < 0 {
+            return Err(format!(
+                "IMPORT_SHA256_PROVIDER_CLOSE_FAILED:{close_status:#010x}"
+            ));
+        }
+        Ok(digest)
+    }
+}
+
 fn put_u32(output: &mut Vec<u8>, value: u32) {
     output.extend_from_slice(&value.to_be_bytes());
 }
@@ -320,13 +421,13 @@ mod tests {
     }
 
     fn bundle() -> ImportBundle {
-        ImportBundle {
+        let mut bundle = ImportBundle {
             schema: IMPORT_SCHEMA,
             chain_identity: "solana-mainnet".into(),
             generation: 5,
             parent_generation: 4,
             parent_state_root: "anchor-root".into(),
-            state_root: "next-root".into(),
+            state_root: String::new(),
             receipts: vec![
                 ReceiptRecord {
                     identity: "receipt-5a".into(),
@@ -345,7 +446,9 @@ mod tests {
                 external_identity: "synthetic-effect-1".into(),
             }],
             evidence_envelope: b"synthetic-only-envelope".to_vec(),
-        }
+        };
+        bundle.state_root = state_root(&bundle).unwrap();
+        bundle
     }
 
     #[test]
@@ -391,6 +494,7 @@ mod tests {
         };
         let mut mutated = original;
         mutated.receipts[1].payload = b"changed but caller-rehashed".to_vec();
+        mutated.state_root = state_root(&mutated).unwrap();
         assert!(
             matches!(ImportKernel::validate(&anchor(), mutated, &auth), ImportDecision::Rejected(reason) if reason == "SIGNED_CONTENT_MISMATCH")
         );
@@ -464,6 +568,35 @@ mod tests {
         branched.receipts[1].parent_identity = "receipt-4".into();
         assert!(
             matches!(ImportKernel::validate(&anchor(), branched, &auth), ImportDecision::Rejected(reason) if reason == "IMPORT_RECEIPT_PARENT_MISSING_OR_OUT_OF_ORDER:1")
+        );
+    }
+
+    #[test]
+    fn state_root_is_recomputed_and_binds_receipts_and_obligations() {
+        let candidate = bundle();
+        assert_eq!(state_root(&candidate).unwrap(), candidate.state_root);
+        let mut changed = candidate.clone();
+        changed.receipts[0].payload.push(b'!');
+        let auth = SyntheticAuthenticator {
+            expected: canonical_claim(&candidate).unwrap(),
+            unavailable: false,
+            operational_claim: false,
+        };
+        assert!(matches!(
+            ImportKernel::validate(&anchor(), changed, &auth),
+            ImportDecision::Rejected(reason) if reason == "IMPORT_STATE_ROOT_MISMATCH"
+        ));
+    }
+
+    #[test]
+    fn sha256_matches_the_standard_known_answer() {
+        assert_eq!(
+            sha256(b"abc")
+                .unwrap()
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
     }
 }
