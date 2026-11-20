@@ -1,7 +1,6 @@
 use rusqlite::config::DbConfig;
 use rusqlite::limits::Limit;
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
-use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 
 const EXPECTED_SQLITE_VERSION: &str = "3.54.1";
@@ -164,23 +163,22 @@ fn profile(connection: &Connection) -> Result<(String, i32, i32, i32, String), S
 
 impl Registry {
     /// Explicit one-time bootstrap for disposable synthetic qualification only.
-    /// Atomic file creation prevents this operation from adopting an existing
-    /// or attacker-substituted database object.
+    /// SQLite CREATE|EXCLUSIVE atomically creates the final pathname instead
+    /// of closing a placeholder handle and reopening it. The caller must
+    /// provide an owned directory with protected ancestors; this method does
+    /// not defend against junction/reparse replacement of those directories.
     pub fn initialize(path: &Path) -> Result<Self, String> {
         if has_sqlite_sidecar(path) {
             return Err("SQLITE_INITIALIZE_SIDECAR_EXISTS".into());
         }
-        let file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(path)
-            .map_err(|e| map_error("SQLITE_INITIALIZE_CREATE_NEW", e))?;
-        drop(file);
         let connection = Connection::open_with_flags(
             path,
-            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_FULL_MUTEX,
+            OpenFlags::SQLITE_OPEN_READ_WRITE
+                | OpenFlags::SQLITE_OPEN_CREATE
+                | OpenFlags::from_bits_retain(rusqlite::ffi::SQLITE_OPEN_EXCLUSIVE as u32)
+                | OpenFlags::SQLITE_OPEN_FULL_MUTEX,
         )
-        .map_err(|e| map_error("SQLITE_INITIALIZE_OPEN", e))?;
+        .map_err(|e| map_error("SQLITE_INITIALIZE_CREATE_EXCLUSIVE", e))?;
         if rusqlite::version() != EXPECTED_SQLITE_VERSION {
             return Err(format!(
                 "SQLITE_VERSION_MISMATCH:expected={EXPECTED_SQLITE_VERSION},actual={}",

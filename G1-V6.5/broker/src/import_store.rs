@@ -49,7 +49,7 @@ impl DurableImportStore {
             path,
             OpenFlags::SQLITE_OPEN_READ_WRITE
                 | OpenFlags::SQLITE_OPEN_CREATE
-                | OpenFlags::SQLITE_OPEN_EXCLUSIVE
+                | OpenFlags::from_bits_retain(rusqlite::ffi::SQLITE_OPEN_EXCLUSIVE as u32)
                 | OpenFlags::SQLITE_OPEN_FULL_MUTEX,
         )
         .map_err(|error| format!("IMPORT_STORE_CREATE_EXCLUSIVE:{error}"))?;
