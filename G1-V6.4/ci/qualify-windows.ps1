@@ -421,7 +421,8 @@ try {
       $local.token.pragmas.journalMode -ne 'wal' -or $local.token.pragmas.synchronous -ne 2 -or
       $local.token.pragmas.foreignKeys -ne 1 -or $local.token.pragmas.trustedSchema -ne 0 -or
       [string]$local.token.databasePath -ne [string]$local.dbPath) {
-    throw 'LOCAL_SERVICE_TOKEN_OR_FILE_IDENTITY_MISSING'
+    $tokenSummary = ConvertTo-Json -InputObject $local.token -Depth 8 -Compress
+    throw "LOCAL_SERVICE_TOKEN_OR_FILE_IDENTITY_MISSING:$tokenSummary"
   }
   Assert-PrivilegeReport $local.token 'LocalServiceRestricted'
   Save-AclSnapshot 'broker-directory' @($env:ProgramData,(Split-Path -Parent $dataRoot),$dataRoot,$brokerRoot)
