@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 
+[features]
+default = []
+synthetic-maintenance = []
+
 [dependencies]
 rusqlite = { version = "=0.42.0", default-features = false, features = ["bundled", "limits", "load_extension"] }
 
@@ -22,3 +26,8 @@ path = "src/bin/g1-attacker.rs"
 [[bin]]
 name = "g1-verifier"
 path = "src/bin/g1-verifier.rs"
+
+[[bin]]
+name = "g1-synthetic-maintenance"
+path = "src/bin/g1-synthetic-maintenance.rs"
+required-features = ["synthetic-maintenance"]
