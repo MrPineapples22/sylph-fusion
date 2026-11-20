@@ -512,7 +512,9 @@ try {
   Start-Sleep -Seconds 2
   $squatServiceState = (Get-Service -Name $serviceName -ErrorAction Stop).Status.ToString()
   if ($squatServiceState -eq 'Running' -or (Test-Path -LiteralPath $brokerReadyPath)) {
-    throw 'BROKER_REPORTED_READY_WHILE_UNTRUSTED_FIRST_PIPE_INSTANCE_HELD'
+    $readyDuringSquat = if (Test-Path -LiteralPath $brokerReadyPath) { Get-Content -Raw -LiteralPath $brokerReadyPath } else { 'MISSING' }
+    $holderStatus = [ordered]@{ pid=$pipeHolder.Id; exited=$pipeHolder.HasExited; exitCode=if($pipeHolder.HasExited){$pipeHolder.ExitCode}else{$null}; start=$squatStart; state=$squatServiceState; ready=$readyDuringSquat }
+    throw "BROKER_REPORTED_READY_WHILE_UNTRUSTED_FIRST_PIPE_INSTANCE_HELD:$(ConvertTo-Json $holderStatus -Compress -Depth 6)"
   }
   Save-Record 'service-first-pipe-squat-blocked.json' ([ordered]@{start=$squatStart;serviceState=$squatServiceState;readyFileExists=(Test-Path -LiteralPath $brokerReadyPath);blockedBeforeReadiness=$true})
   Set-Content -LiteralPath $pipeReleasePath -Value 'release' -NoNewline -Encoding ascii
