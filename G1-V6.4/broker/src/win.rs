@@ -65,6 +65,8 @@ const TOKEN_INTEGRITY_LEVEL: DWORD = 25;
 const TOKEN_PRIVILEGES_CLASS: DWORD = 3;
 const TOKEN_RESTRICTED_SIDS: DWORD = 11;
 const PROCESS_QUERY_LIMITED_INFORMATION: DWORD = 0x1000;
+const SE_KERNEL_OBJECT: DWORD = 6;
+const DACL_SECURITY_INFORMATION: DWORD = 0x0000_0004;
 const SERVICE_WIN32_OWN_PROCESS: DWORD = 0x10;
 const SERVICE_START_PENDING: DWORD = 2;
 const SERVICE_RUNNING: DWORD = 4;
@@ -227,6 +229,21 @@ unsafe extern "system" {
     ) -> BOOL;
     fn CheckTokenMembership(token: HANDLE, sid: *mut c_void, member: *mut BOOL) -> BOOL;
     fn OpenProcessToken(process: HANDLE, access: DWORD, token: *mut HANDLE) -> BOOL;
+    fn GetSecurityDescriptorDacl(
+        descriptor: *mut c_void,
+        present: *mut BOOL,
+        dacl: *mut *mut c_void,
+        defaulted: *mut BOOL,
+    ) -> BOOL;
+    fn SetSecurityInfo(
+        handle: HANDLE,
+        object_type: DWORD,
+        security_info: DWORD,
+        owner: *mut c_void,
+        group: *mut c_void,
+        dacl: *mut c_void,
+        sacl: *mut c_void,
+    ) -> DWORD;
     fn OpenThreadToken(
         thread: HANDLE,
         access: DWORD,
@@ -1160,6 +1177,46 @@ pub mod pipe {
             result
         }
     }
+    fn restrict_broker_process_dacl(service_sid: &str, client_sid: &str) -> Result<(), String> {
+        unsafe {
+            let sddl = wide(&format!(
+                "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;{service_sid})(A;;0x1000;;;{client_sid})"
+            ));
+            let mut descriptor = null_mut();
+            check(
+                ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                    sddl.as_ptr(),
+                    1,
+                    &mut descriptor,
+                    null_mut(),
+                ),
+                "ConvertProcessSecurityDescriptor",
+            )?;
+            let mut present = 0;
+            let mut dacl = null_mut();
+            let mut defaulted = 0;
+            let extracted =
+                GetSecurityDescriptorDacl(descriptor, &mut present, &mut dacl, &mut defaulted);
+            if extracted == 0 || present == 0 || dacl.is_null() {
+                LocalFree(descriptor);
+                return Err(format!("PROCESS_DACL_EXTRACT_FAILED:{}", error_text()));
+            }
+            let result = SetSecurityInfo(
+                GetCurrentProcess(),
+                SE_KERNEL_OBJECT,
+                DACL_SECURITY_INFORMATION,
+                null_mut(),
+                null_mut(),
+                dacl,
+                null_mut(),
+            );
+            LocalFree(descriptor);
+            if result != 0 {
+                return Err(format!("PROCESS_DACL_SET_FAILED:{result}"));
+            }
+            Ok(())
+        }
+    }
     fn pipe_security(
         service_sid: &str,
         client_sid: &str,
@@ -1582,6 +1639,7 @@ pub mod service {
         let identity_mode =
             classify_service_identity(&user_sid, &service_sid, group_present, restricted_present)
                 .ok_or_else(|| format!("UNSUPPORTED_SERVICE_IDENTITY:{user_sid}"))?;
+        restrict_broker_process_dacl(&service_sid, &cfg.client_sid)?;
         let group_attributes_json =
             group_attributes.map_or("null".to_string(), |value| value.to_string());
         let restricted_attributes_json =
