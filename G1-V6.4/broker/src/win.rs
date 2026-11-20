@@ -1177,7 +1177,10 @@ pub mod pipe {
             result
         }
     }
-    fn restrict_broker_process_dacl(service_sid: &str, client_sid: &str) -> Result<(), String> {
+    pub(super) fn restrict_broker_process_dacl(
+        service_sid: &str,
+        client_sid: &str,
+    ) -> Result<(), String> {
         unsafe {
             let sddl = wide(&format!(
                 "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;{service_sid})(A;;0x1000;;;{client_sid})"
@@ -1639,7 +1642,7 @@ pub mod service {
         let identity_mode =
             classify_service_identity(&user_sid, &service_sid, group_present, restricted_present)
                 .ok_or_else(|| format!("UNSUPPORTED_SERVICE_IDENTITY:{user_sid}"))?;
-        restrict_broker_process_dacl(&service_sid, &cfg.client_sid)?;
+        pipe::restrict_broker_process_dacl(&service_sid, &cfg.client_sid)?;
         let group_attributes_json =
             group_attributes.map_or("null".to_string(), |value| value.to_string());
         let restricted_attributes_json =
