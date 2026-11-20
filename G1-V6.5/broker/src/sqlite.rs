@@ -1,6 +1,7 @@
 use rusqlite::config::DbConfig;
 use rusqlite::limits::Limit;
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
+use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 
 const EXPECTED_SQLITE_VERSION: &str = "3.54.1";
@@ -163,22 +164,28 @@ fn profile(connection: &Connection) -> Result<(String, i32, i32, i32, String), S
 
 impl Registry {
     /// Explicit one-time bootstrap for disposable synthetic qualification only.
-    /// SQLite CREATE|EXCLUSIVE atomically creates the final pathname instead
-    /// of closing a placeholder handle and reopening it. The caller must
-    /// provide an owned directory with protected ancestors; this method does
-    /// not defend against junction/reparse replacement of those directories.
+    /// CREATE_NEW atomically reserves a previously nonexistent final pathname.
+    /// SQLite's SQLITE_OPEN_EXCLUSIVE flag is not used: sqlite3_open_v2
+    /// documents that flag as a no-op. The guard handle stays open while
+    /// SQLite opens the newly reserved file. The caller must provide an owned
+    /// directory with protected ancestors; this method does not defend against
+    /// junction/reparse replacement of those directories.
     pub fn initialize(path: &Path) -> Result<Self, String> {
         if has_sqlite_sidecar(path) {
             return Err("SQLITE_INITIALIZE_SIDECAR_EXISTS".into());
         }
+        let creation_guard = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(path)
+            .map_err(|e| map_error("SQLITE_INITIALIZE_CREATE_NEW", e))?;
         let connection = Connection::open_with_flags(
             path,
-            OpenFlags::SQLITE_OPEN_READ_WRITE
-                | OpenFlags::SQLITE_OPEN_CREATE
-                | OpenFlags::from_bits_retain(rusqlite::ffi::SQLITE_OPEN_EXCLUSIVE as i32)
-                | OpenFlags::SQLITE_OPEN_FULL_MUTEX,
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_FULL_MUTEX,
         )
-        .map_err(|e| map_error("SQLITE_INITIALIZE_CREATE_EXCLUSIVE", e))?;
+        .map_err(|e| map_error("SQLITE_INITIALIZE_OPEN_RESERVED", e))?;
+        drop(creation_guard);
         if rusqlite::version() != EXPECTED_SQLITE_VERSION {
             return Err(format!(
                 "SQLITE_VERSION_MISMATCH:expected={EXPECTED_SQLITE_VERSION},actual={}",
@@ -694,8 +701,8 @@ mod tests {
             .err()
             .expect("existing database must not be adopted");
         assert!(
-            error.starts_with("SQLITE_INITIALIZE_CREATE_EXCLUSIVE:"),
-            "existing database was rejected after the exclusive open stage: {error}"
+            error.starts_with("SQLITE_INITIALIZE_CREATE_NEW:"),
+            "existing database was not rejected by OS-level CREATE_NEW: {error}"
         );
         assert_eq!(
             before,

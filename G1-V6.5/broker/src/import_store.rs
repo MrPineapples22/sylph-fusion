@@ -9,6 +9,7 @@ use crate::import::{
     ImportAnchor, Obligation, VerifiedImport,
 };
 use rusqlite::{params, Connection, OpenFlags, TransactionBehavior};
+use std::fs::OpenOptions;
 use std::path::Path;
 
 const SQLITE_VERSION: &str = "3.54.1";
@@ -39,20 +40,26 @@ pub struct DurableImportStore {
 impl DurableImportStore {
     /// Create a new, empty synthetic store. Existing files are never adopted.
     /// The caller must supply a directory whose ownership and ancestor path
-    /// are already protected; SQLite's exclusive create closes the final-name
-    /// create/reopen gap but does not secure attacker-writable parent paths.
+    /// are already protected. CREATE_NEW reserves the final name at the OS
+    /// boundary because SQLITE_OPEN_EXCLUSIVE is a no-op for sqlite3_open_v2.
+    /// The reservation handle remains open while SQLite opens the reserved
+    /// file; this does not secure attacker-writable parent paths.
     pub fn create(path: &Path, anchor: &ImportAnchor) -> Result<Self, String> {
         if validate_anchor(anchor).is_err() {
             return Err("IMPORT_STORE_REQUIRES_SYNTHETIC_ANCHOR".into());
         }
+        let creation_guard = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(path)
+            .map_err(|error| format!("IMPORT_STORE_CREATE_NEW:{error}"))?;
         let connection = Connection::open_with_flags(
             path,
-            OpenFlags::SQLITE_OPEN_READ_WRITE
-                | OpenFlags::SQLITE_OPEN_CREATE
-                | OpenFlags::from_bits_retain(rusqlite::ffi::SQLITE_OPEN_EXCLUSIVE as i32)
-                | OpenFlags::SQLITE_OPEN_FULL_MUTEX,
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_FULL_MUTEX,
         )
-        .map_err(|error| format!("IMPORT_STORE_CREATE_EXCLUSIVE:{error}"))?;
+        .map_err(|error| format!("IMPORT_STORE_OPEN_RESERVED:{error}"))?;
+        drop(creation_guard);
         configure_new(&connection)?;
         connection
             .execute_batch(&format!(
@@ -813,8 +820,8 @@ mod tests {
             .err()
             .expect("existing database must not be adopted");
         assert!(
-            error.starts_with("IMPORT_STORE_CREATE_EXCLUSIVE:"),
-            "existing database was rejected after the exclusive open stage: {error}"
+            error.starts_with("IMPORT_STORE_CREATE_NEW:"),
+            "existing database was not rejected by OS-level CREATE_NEW: {error}"
         );
         assert_eq!(database_file_snapshot(&path), before);
         let _ = std::fs::remove_file(path);
