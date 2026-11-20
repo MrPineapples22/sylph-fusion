@@ -286,7 +286,7 @@ try {
   $passwordPlain = 'aA1!' + [Convert]::ToBase64String($random).Replace('=','Q')
   $password = ConvertTo-SecureString $passwordPlain -AsPlainText -Force
   $user = New-LocalUser -Name $testUserName -Password $password -FullName 'SYLPH Disposable G1 Test' `
-    -Description 'Disposable GitHub Actions security fixture account' -AccountNeverExpires -PasswordNeverExpires
+    -Description 'Disposable CI security fixture account' -AccountNeverExpires -PasswordNeverExpires
   $createdUser = $true
   $clientSid = $user.SID.Value
   $credential = [pscredential]::new("$env:COMPUTERNAME\$testUserName",$password)
