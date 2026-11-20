@@ -250,8 +250,8 @@ function Start-BrokerAndCheck([string]$Mode, [string]$DataDir, [string]$ClientSi
   $started = Start-SylphProbeService -Name $serviceName -DataDir $DataDir
   Save-Record "$Mode-service-start.json" $started
   if ($started.state -ne 'Running' -or -not $started.ready -or
-      $started.ready.schema -ne 'SYLPH_G1_BROKER_READY_3' -or $started.ready.state -ne 'READY' -or
-      $started.ready.authorityClass -ne 'SYNTHETIC_TEST_ONLY' -or $started.ready.firstPipeInstanceCreated -ne $true -or
+      $started.ready.schema -ne 'SYLPH_G1_BROKER_READY_4' -or $started.ready.serviceState -ne 'READY' -or
+      $started.ready.authorityState -ne 'RECOVERY_REQUIRED' -or $started.ready.authorityClass -ne 'SYNTHETIC_TEST_ONLY' -or $started.ready.firstPipeInstanceCreated -ne $true -or
       $null -eq $started.ready.processId -or [string]::IsNullOrWhiteSpace([string]$started.ready.startupNonce)) {
     $startEvidence = ConvertTo-Json -InputObject $started -Depth 8 -Compress
     throw "BROKER_SERVICE_NOT_READY_OR_NOT_BOUND_TO_FRESH_PIPE:${Mode}:$startEvidence"
@@ -714,10 +714,49 @@ try {
   $result.blockedRequirements = @($result.blockedRequirements) + @('Stopped-service named-pipe name squatting is not prevented by a DACL on a nonexistent pipe; broker must fail closed and client must authenticate server identity')
   $result.phases.CI_P2_Stopped = 'PASS_ERROR_ACCESS_DENIED_ON_LEGACY_AND_BROKER_OBJECT_NAMES'
 
+  # A normal restart with a missing authority file must fail closed and must
+  # not create a healthy empty database. Move the original closed object aside
+  # and restore that exact object after the negative startup attempt.
+  $dbFiles = @($brokerDb,"$brokerDb-wal","$brokerDb-shm","$brokerDb-journal")
+  $heldDbFiles = @()
+  $dbIdentityBeforeMissingStart = Invoke-AsAdmin -FilePath $VerifierExe -Arguments @('identity',$brokerDb)
+  if ($dbIdentityBeforeMissingStart.exitCode -ne 0 -or -not $dbIdentityBeforeMissingStart.json) { throw 'MISSING_DB_CONTROL_IDENTITY_FAILED' }
+  foreach ($dbFile in $dbFiles) {
+    if (Test-Path -LiteralPath $dbFile -PathType Leaf) {
+      $heldPath = "$dbFile.v65-held"
+      if (Test-Path -LiteralPath $heldPath) { throw "MISSING_DB_HELD_PATH_ALREADY_EXISTS:$heldPath" }
+      Move-Item -LiteralPath $dbFile -Destination $heldPath -ErrorAction Stop
+      $heldDbFiles += [pscustomobject]@{source=$dbFile;held=$heldPath}
+    }
+  }
+  try {
+    $missingDbStart = Start-SylphProbeService -Name $serviceName -DataDir $brokerRoot
+    if ($missingDbStart.state -ne 'Stopped' -or $missingDbStart.ready -or
+        (Test-Path -LiteralPath $brokerDb) -or
+        [string]$missingDbStart.serviceFailure -notmatch 'SQLITE_AUTHORITY_DATABASE_MISSING') {
+      throw "MISSING_AUTHORITY_DATABASE_DID_NOT_FAIL_CLOSED:$(ConvertTo-Json -InputObject $missingDbStart -Depth 8 -Compress)"
+    }
+    Save-Record 'missing-authority-database-start-denied.json' $missingDbStart
+  } finally {
+    foreach ($held in $heldDbFiles) {
+      if (Test-Path -LiteralPath $held.held -PathType Leaf) {
+        Move-Item -LiteralPath $held.held -Destination $held.source -ErrorAction Stop
+      }
+    }
+  }
+  $dbIdentityAfterRestore = Invoke-AsAdmin -FilePath $VerifierExe -Arguments @('identity',$brokerDb)
+  if ($dbIdentityAfterRestore.exitCode -ne 0 -or
+      [long]$dbIdentityBeforeMissingStart.json.fileIndexLow -ne [long]$dbIdentityAfterRestore.json.fileIndexLow -or
+      [long]$dbIdentityBeforeMissingStart.json.fileIndexHigh -ne [long]$dbIdentityAfterRestore.json.fileIndexHigh -or
+      [long]$dbIdentityBeforeMissingStart.json.volumeSerial -ne [long]$dbIdentityAfterRestore.json.volumeSerial) {
+    throw 'MISSING_DB_TEST_DID_NOT_RESTORE_ORIGINAL_FILE_OBJECT'
+  }
+  Save-Record 'missing-authority-database-original-object-restored.json' ([ordered]@{before=$dbIdentityBeforeMissingStart.json;after=$dbIdentityAfterRestore.json;sameFileObject=$true})
+
   $localRestart = Start-SylphProbeService -Name $serviceName -DataDir $brokerRoot
   if ($localRestart.state -ne 'Running' -or -not $localRestart.ready -or
-      $localRestart.ready.schema -ne 'SYLPH_G1_BROKER_READY_3' -or $localRestart.ready.state -ne 'READY' -or
-      $localRestart.ready.authorityClass -ne 'SYNTHETIC_TEST_ONLY' -or
+      $localRestart.ready.schema -ne 'SYLPH_G1_BROKER_READY_4' -or $localRestart.ready.serviceState -ne 'READY' -or
+      $localRestart.ready.authorityState -ne 'RECOVERY_REQUIRED' -or $localRestart.ready.authorityClass -ne 'SYNTHETIC_TEST_ONLY' -or
       $localRestart.ready.firstPipeInstanceCreated -ne $true -or
       [string]$localRestart.ready.startupNonce -eq [string]$local.start.ready.startupNonce) {
     throw 'LOCAL_SERVICE_RESTART_READINESS_NOT_FRESH'
