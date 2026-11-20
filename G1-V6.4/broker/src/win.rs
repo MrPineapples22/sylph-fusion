@@ -1563,7 +1563,7 @@ pub mod service {
                 "OpenProcessToken(service-check)",
             )?;
         }
-        let token_sid_check = (|| {
+        let token_sid_check: Result<(Option<u32>, Option<u32>), String> = (|| {
             Ok((
                 token_has_sid_in_list(token, 2, service_sid_ptr)?,
                 token_has_sid_in_list(token, TOKEN_RESTRICTED_SIDS, service_sid_ptr)?,
