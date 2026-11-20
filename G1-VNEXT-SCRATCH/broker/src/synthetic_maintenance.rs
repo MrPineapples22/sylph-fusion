@@ -42,13 +42,21 @@ struct Request {
 }
 
 struct SyntheticAuthenticator {
-    expected_envelope: Vec<u8>,
     chain_identity: String,
 }
 
 impl EvidenceAuthenticator for SyntheticAuthenticator {
     fn authenticate(&self, _canonical_claim: &[u8], envelope: &[u8]) -> Authentication {
-        if envelope != self.expected_envelope {
+        // The synthetic adapter accepts marker-shaped historical envelopes so
+        // the store can replay older generations when a new request arrives.
+        // The incoming request is separately bound to its exact request ID by
+        // decode_request. This is fixture syntax validation, not trust.
+        if envelope.len() != SYNTHETIC_ENVELOPE_PREFIX.len() + REQUEST_ID_BYTES
+            || !envelope.starts_with(SYNTHETIC_ENVELOPE_PREFIX)
+            || envelope[SYNTHETIC_ENVELOPE_PREFIX.len()..]
+                .iter()
+                .all(|byte| *byte == 0)
+        {
             return Authentication::Invalid("SYNTHETIC_ENVELOPE_MISMATCH".into());
         }
         Authentication::Verified(TrustClaim {
@@ -258,10 +266,11 @@ fn process_request(
     };
     let request_id = request.request_id;
     let authenticator = SyntheticAuthenticator {
-        expected_envelope: synthetic_envelope(&request_id),
         chain_identity: request.bundle.chain_identity.clone(),
     };
-    if storage_path_preflight(database_path).is_err() {
+    if let Err(error) = storage_path_preflight(database_path) {
+        #[cfg(test)]
+        eprintln!("synthetic import storage preflight: {error}");
         return (ResultKind::Indeterminate, Some(request_id));
     }
     if database_path.exists() {
@@ -272,7 +281,11 @@ fn process_request(
             &authenticator,
         ) {
             Ok(value) => value,
-            Err(_) => return (ResultKind::Indeterminate, Some(request_id)),
+            Err(error) => {
+                #[cfg(test)]
+                eprintln!("synthetic import open_existing: {error}");
+                return (ResultKind::Indeterminate, Some(request_id));
+            }
         };
         // The complete existing history has been replayed against the
         // separately pinned current head. Recover the exact parent anchor
@@ -280,7 +293,11 @@ fn process_request(
         // its actual parent rather than the incoming bundle's head.
         let parent = match store.anchor_at(request.bundle.parent_generation, &authenticator) {
             Ok(value) => value,
-            Err(_) => return (ResultKind::Indeterminate, Some(request_id)),
+            Err(error) => {
+                #[cfg(test)]
+                eprintln!("synthetic import anchor_at: {error}");
+                return (ResultKind::Indeterminate, Some(request_id));
+            }
         };
         let verified = match validate_request_bundle(&request.bundle, &parent, &authenticator) {
             Ok(value) => value,
@@ -292,7 +309,11 @@ fn process_request(
             Err(error) if definitely_rejected(&error) => (ResultKind::Rejected, Some(request_id)),
             // Commit failures and post-commit verification failures remain
             // ambiguous. Never convert them into a safe-to-retry rejection.
-            Err(_) => (ResultKind::Indeterminate, Some(request_id)),
+            Err(error) => {
+                #[cfg(test)]
+                eprintln!("synthetic import activate existing: {error}");
+                (ResultKind::Indeterminate, Some(request_id))
+            }
         };
     }
 
@@ -306,13 +327,21 @@ fn process_request(
         };
     let mut store = match DurableImportStore::create(database_path, &request.base_anchor) {
         Ok(value) => value,
-        Err(_) => return (ResultKind::Indeterminate, Some(request_id)),
+        Err(error) => {
+            #[cfg(test)]
+            eprintln!("synthetic import create: {error}");
+            return (ResultKind::Indeterminate, Some(request_id));
+        }
     };
     match store.activate(&verified, &authenticator) {
         Ok(ApplyOutcome::Activated) => (ResultKind::Activated, Some(request_id)),
         Ok(ApplyOutcome::AlreadyActive) => (ResultKind::AlreadyActive, Some(request_id)),
         Err(error) if definitely_rejected(&error) => (ResultKind::Rejected, Some(request_id)),
-        Err(_) => (ResultKind::Indeterminate, Some(request_id)),
+        Err(error) => {
+            #[cfg(test)]
+            eprintln!("synthetic import activate new: {error}");
+            (ResultKind::Indeterminate, Some(request_id))
+        }
     }
 }
 
@@ -450,6 +479,25 @@ mod tests {
             put_str(output, &value.state);
             put_str(output, &value.external_identity);
         }
+    }
+
+    #[test]
+    fn synthetic_authenticator_replays_prior_generation_markers_only() {
+        let auth = SyntheticAuthenticator {
+            chain_identity: "synthetic-chain".into(),
+        };
+        let prior = synthetic_envelope(&[0x41; REQUEST_ID_BYTES]);
+        assert!(matches!(
+            auth.authenticate(b"synthetic claim", &prior),
+            Authentication::Verified(TrustClaim {
+                synthetic_only: true,
+                ..
+            })
+        ));
+        assert!(matches!(
+            auth.authenticate(b"synthetic claim", b"NOT_A_SYNTHETIC_ENVELOPE"),
+            Authentication::Invalid(_)
+        ));
     }
 
     fn fixture(request_id: [u8; REQUEST_ID_BYTES]) -> (ImportAnchor, ImportBundle) {
@@ -757,3 +805,4 @@ mod tests {
         assert!(manifest.contains("required-features = [\"synthetic-maintenance\"]"));
     }
 }
+
