@@ -1512,6 +1512,29 @@ pub mod service {
     static STOP: AtomicBool = AtomicBool::new(false);
     static STATUS_HANDLE: AtomicIsize = AtomicIsize::new(SERVICE_STATUS_HANDLE_INVALID);
     static CURRENT_SERVICE_STATE: AtomicU32 = AtomicU32::new(SERVICE_STOPPED);
+    static CURRENT_AUTHORITY_STATE: AtomicU32 = AtomicU32::new(0);
+    const AUTHORITY_STARTING: u32 = 0;
+    const AUTHORITY_VERIFYING: u32 = 1;
+    const AUTHORITY_READY: u32 = 2;
+    const AUTHORITY_RECOVERY_REQUIRED: u32 = 3;
+    const AUTHORITY_QUARANTINED: u32 = 4;
+    const AUTHORITY_STOPPING: u32 = 5;
+
+    fn authority_state_name(state: u32) -> &'static str {
+        match state {
+            AUTHORITY_STARTING => "STARTING",
+            AUTHORITY_VERIFYING => "VERIFYING",
+            AUTHORITY_READY => "READY",
+            AUTHORITY_RECOVERY_REQUIRED => "RECOVERY_REQUIRED",
+            AUTHORITY_QUARANTINED => "QUARANTINED",
+            AUTHORITY_STOPPING => "STOPPING",
+            _ => "QUARANTINED",
+        }
+    }
+
+    fn set_authority_state(state: u32) {
+        CURRENT_AUTHORITY_STATE.store(state, Ordering::SeqCst);
+    }
     static CONFIG: OnceLock<Config> = OnceLock::new();
     #[derive(Clone)]
     struct Config {
@@ -1569,7 +1592,8 @@ pub mod service {
             .open(path)
             .map_err(|error| format!("READINESS_CREATE_NEW:{error}"))?;
         let record = format!(
-            "{{\"schema\":\"SYLPH_G1_BROKER_READY_3\",\"state\":\"READY\",\"authorityClass\":\"SYNTHETIC_TEST_ONLY\",\"ready\":true,\"serviceName\":{},\"pipe\":{},\"processId\":{},\"startupNonce\":{},\"firstPipeInstanceCreated\":true}}\n",
+            "{{\"schema\":\"SYLPH_G1_BROKER_READY_4\",\"serviceState\":\"READY\",\"authorityState\":{},\"authorityClass\":\"SYNTHETIC_TEST_ONLY\",\"ready\":true,\"serviceName\":{},\"pipe\":{},\"processId\":{},\"startupNonce\":{},\"firstPipeInstanceCreated\":true}}\n",
+            json_string(authority_state_name(CURRENT_AUTHORITY_STATE.load(Ordering::SeqCst))),
             json_string(&cfg.service_name),
             json_string(pipe::PIPE_NAME),
             unsafe { GetCurrentProcessId() },
@@ -1590,6 +1614,7 @@ pub mod service {
         match control {
             SERVICE_CONTROL_STOP => {
                 STOP.store(true, Ordering::SeqCst);
+                set_authority_state(AUTHORITY_STOPPING);
                 set_status(SERVICE_STOP_PENDING, 0);
                 0
             }
@@ -1615,8 +1640,14 @@ pub mod service {
         }
         STATUS_HANDLE.store(handle, Ordering::SeqCst);
         set_status(SERVICE_START_PENDING, 0);
+        set_authority_state(AUTHORITY_STARTING);
         let _ = std::fs::remove_file(cfg.data_dir.join("broker-startup-error.txt"));
         let mut result = run_service(&cfg);
+        if stopping() {
+            set_authority_state(AUTHORITY_STOPPING);
+        } else if result.is_err() {
+            set_authority_state(AUTHORITY_QUARANTINED);
+        }
         if let Err(error) = remove_stale_readiness(&cfg) {
             result = Err(format!("READINESS_WITHDRAWAL_FAILED:{error}"));
         }
@@ -1702,6 +1733,7 @@ pub mod service {
     }
     fn run_service(cfg: &Config) -> Result<(), String> {
         STOP.store(false, Ordering::SeqCst);
+        set_authority_state(AUTHORITY_VERIFYING);
         remove_stale_readiness(cfg)?;
         let nonce = start_nonce();
         let service_account = format!("NT SERVICE\\{}", cfg.service_name);
@@ -1750,6 +1782,10 @@ pub mod service {
         }
         let db_path = cfg.data_dir.join("registry.sqlite");
         let registry = sqlite::Registry::open_existing(&db_path)?;
+        // This candidate has no authenticated external history or trusted
+        // recovery approval. It can serve diagnostics and synthetic tests,
+        // but it must never claim operational authority readiness.
+        set_authority_state(AUTHORITY_RECOVERY_REQUIRED);
         let db_identity = identity::describe(db_path.to_string_lossy().as_ref())?;
         let privileges = json_privileges(&process_identity.privileges);
         let db_path_text = db_path.to_string_lossy();
