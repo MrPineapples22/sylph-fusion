@@ -172,12 +172,15 @@ pub(crate) fn validate_structure(
         return Err("IMPORT_SCHEMA_UNSUPPORTED".into());
     }
     if anchor.chain_identity.is_empty()
+        || anchor.generation == 0
+        || anchor.generation > i64::MAX as u64
         || bundle.chain_identity != anchor.chain_identity
         || bundle.generation
             != anchor
                 .generation
                 .checked_add(1)
                 .ok_or("GENERATION_OVERFLOW")?
+        || bundle.generation > i64::MAX as u64
         || bundle.parent_generation != anchor.generation
         || bundle.parent_state_root != anchor.state_root
         || bundle.state_root.is_empty()
@@ -634,6 +637,21 @@ mod tests {
         assert!(
             matches!(ImportKernel::validate(&anchor(), branched, &auth), ImportDecision::Rejected(reason) if reason == "IMPORT_RECEIPT_PARENT_MISSING_OR_OUT_OF_ORDER:1")
         );
+    }
+
+    #[test]
+    fn sqlite_generation_integer_range_is_checked_before_conversion() {
+        let mut bad_anchor = anchor();
+        bad_anchor.generation = i64::MAX as u64;
+        let mut candidate = bundle();
+        candidate.generation = bad_anchor.generation.checked_add(1).unwrap();
+        candidate.parent_generation = bad_anchor.generation;
+        candidate.parent_state_root = bad_anchor.state_root.clone();
+        candidate.state_root = state_root(&candidate).unwrap();
+        assert!(matches!(
+            validate_structure(&bad_anchor, &candidate),
+            Err(reason) if reason == "IMPORT_ANCHOR_OR_LIMIT_MISMATCH"
+        ));
     }
 
     #[test]

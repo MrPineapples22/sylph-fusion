@@ -15,7 +15,7 @@ use std::path::Path;
 const SQLITE_VERSION: &str = "3.54.1";
 const GENERATIONS_SQL: &str = "CREATE TABLE authority_generations(generation INTEGER PRIMARY KEY,parent_generation INTEGER NOT NULL,parent_state_root TEXT NOT NULL,chain_identity TEXT NOT NULL,state_root TEXT NOT NULL,last_receipt_identity TEXT NOT NULL,receipt_count INTEGER NOT NULL,obligation_count INTEGER NOT NULL,canonical_claim BLOB NOT NULL,signer_identity TEXT NOT NULL,trust_epoch INTEGER NOT NULL,envelope BLOB NOT NULL,synthetic_only INTEGER NOT NULL CHECK(synthetic_only=1))";
 const RECEIPTS_SQL: &str = "CREATE TABLE authority_receipts(generation INTEGER NOT NULL,ordinal INTEGER NOT NULL,identity TEXT NOT NULL,parent_identity TEXT NOT NULL,payload BLOB NOT NULL,PRIMARY KEY(generation,ordinal),UNIQUE(generation,identity),FOREIGN KEY(generation) REFERENCES authority_generations(generation))";
-const OBLIGATIONS_SQL: &str = "CREATE TABLE authority_obligations(generation INTEGER NOT NULL,identity TEXT NOT NULL,state TEXT NOT NULL,external_identity TEXT NOT NULL,PRIMARY KEY(generation,identity),FOREIGN KEY(generation) REFERENCES authority_generations(generation))";
+const OBLIGATIONS_SQL: &str = "CREATE TABLE authority_obligations(generation INTEGER NOT NULL,ordinal INTEGER NOT NULL,identity TEXT NOT NULL,state TEXT NOT NULL,external_identity TEXT NOT NULL,PRIMARY KEY(generation,ordinal),UNIQUE(generation,identity),FOREIGN KEY(generation) REFERENCES authority_generations(generation))";
 const ACTIVE_SQL: &str = "CREATE TABLE active_authority(singleton INTEGER PRIMARY KEY CHECK(singleton=1),generation INTEGER NOT NULL,FOREIGN KEY(generation) REFERENCES authority_generations(generation))";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -72,11 +72,11 @@ impl DurableImportStore {
                 anchor.generation,
             ))
             .map_err(|error| format!("IMPORT_STORE_SCHEMA:{error}"))?;
-        for obligation in &anchor.unresolved_obligations {
+        for (ordinal, obligation) in anchor.unresolved_obligations.iter().enumerate() {
             connection
                 .execute(
-                    "INSERT INTO authority_obligations(generation,identity,state,external_identity) VALUES(?1,?2,?3,?4)",
-                    params![anchor.generation as i64, obligation.identity, obligation.state, obligation.external_identity],
+                    "INSERT INTO authority_obligations(generation,ordinal,identity,state,external_identity) VALUES(?1,?2,?3,?4,?5)",
+                    params![anchor.generation as i64, ordinal as i64, obligation.identity, obligation.state, obligation.external_identity],
                 )
                 .map_err(|error| format!("IMPORT_STORE_ANCHOR_OBLIGATION:{error}"))?;
         }
@@ -94,6 +94,14 @@ impl DurableImportStore {
         expected_anchor: &ImportAnchor,
         authenticator: &dyn EvidenceAuthenticator,
     ) -> Result<Self, String> {
+        if expected_anchor.generation == 0
+            || expected_anchor.generation > i64::MAX as u64
+            || expected_anchor.chain_identity.is_empty()
+            || expected_anchor.state_root.is_empty()
+            || expected_anchor.last_receipt_identity.is_empty()
+        {
+            return Err("IMPORT_STORE_EXPECTED_ANCHOR_INVALID".into());
+        }
         if !path.is_file() {
             return Err("IMPORT_STORE_MISSING".into());
         }
@@ -166,6 +174,9 @@ impl DurableImportStore {
         }
         authenticate_verified(verified, authenticator)?;
 
+        // A retry must reconcile the full durable history before treating a
+        // matching generation header as an already-applied operation.
+        self.verify_inventory(&self.base_anchor, authenticator)?;
         let active = self.active_generation()?;
         if bundle.generation == active {
             let existing: (String, Vec<u8>, Vec<u8>, String, i64) = self.connection.query_row(
@@ -208,10 +219,10 @@ impl DurableImportStore {
                 params![bundle.generation as i64, ordinal as i64, receipt.identity, receipt.parent_identity, receipt.payload],
             ).map_err(|error| format!("IMPORT_RECEIPT_INSERT:{ordinal}:{error}"))?;
         }
-        for obligation in &bundle.obligations {
+        for (ordinal, obligation) in bundle.obligations.iter().enumerate() {
             tx.execute(
-                "INSERT INTO authority_obligations(generation,identity,state,external_identity) VALUES(?1,?2,?3,?4)",
-                params![bundle.generation as i64, obligation.identity, obligation.state, obligation.external_identity],
+                "INSERT INTO authority_obligations(generation,ordinal,identity,state,external_identity) VALUES(?1,?2,?3,?4,?5)",
+                params![bundle.generation as i64, ordinal as i64, obligation.identity, obligation.state, obligation.external_identity],
             ).map_err(|error| format!("IMPORT_OBLIGATION_INSERT:{error}"))?;
         }
         // Recheck the signed claim after all staging writes and immediately
@@ -279,9 +290,12 @@ impl DurableImportStore {
             return Err("IMPORT_GENERATION_HISTORY_MISSING".into());
         };
         if base.1 != 0
+            || !base.2.is_empty()
             || base.6 != 0
             || base.8.len() != 0
             || base.9 != "synthetic-anchor"
+            || base.10 != 1
+            || base.11 != [1]
             || base.12 != 1
             || base.0 != expected_anchor.generation as i64
             || base.3 != expected_anchor.chain_identity
@@ -539,18 +553,29 @@ fn load_receipts(
 }
 
 fn load_obligations(connection: &Connection, generation: i64) -> Result<Vec<Obligation>, String> {
-    let mut statement=connection.prepare("SELECT identity,state,external_identity FROM authority_obligations WHERE generation=?1 ORDER BY identity").map_err(|e|e.to_string())?;
+    let mut statement=connection.prepare("SELECT ordinal,identity,state,external_identity FROM authority_obligations WHERE generation=?1 ORDER BY ordinal").map_err(|e|e.to_string())?;
     let rows = statement
         .query_map([generation], |row| {
-            Ok(Obligation {
-                identity: row.get(0)?,
-                state: row.get(1)?,
-                external_identity: row.get(2)?,
-            })
+            Ok((
+                row.get::<_, i64>(0)?,
+                Obligation {
+                    identity: row.get(1)?,
+                    state: row.get(2)?,
+                    external_identity: row.get(3)?,
+                },
+            ))
         })
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
+    for (expected, (ordinal, _)) in rows.iter().enumerate() {
+        if *ordinal != expected as i64 {
+            return Err(format!(
+                "IMPORT_OBLIGATION_ORDINAL_GAP:{generation}:{expected}"
+            ));
+        }
+    }
+    let rows = rows.into_iter().map(|(_, obligation)| obligation).collect();
     Ok(rows)
 }
 
@@ -800,6 +825,76 @@ mod tests {
         wrong.state_root = "rollback-anchor".into();
         assert!(matches!(
             DurableImportStore::open_existing(&path, &wrong, &UnavailableAuthenticator),
+            Err(reason) if reason == "IMPORT_BASE_GENERATION_INVALID"
+        ));
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn base_and_import_obligation_order_survives_commit_and_reopen() {
+        let path = path("obligation-order");
+        let (mut anchor, mut bundle) = fixture();
+        let obligations = vec![
+            Obligation {
+                identity: "z-obligation".into(),
+                state: "UNKNOWN".into(),
+                external_identity: "effect-z".into(),
+            },
+            Obligation {
+                identity: "a-obligation".into(),
+                state: "PREPARED".into(),
+                external_identity: "effect-a".into(),
+            },
+        ];
+        anchor.unresolved_obligations = obligations.clone();
+        bundle.obligations = obligations;
+        bundle.state_root = crate::import::state_root(&bundle).unwrap();
+        let verified = accepted(&anchor, bundle);
+        let auth = Authenticator {
+            expected: verified.canonical_claim().to_vec(),
+        };
+        let mut store = DurableImportStore::create(&path, &anchor).unwrap();
+        assert_eq!(
+            store.activate(&verified, &auth).unwrap(),
+            ApplyOutcome::Activated
+        );
+        drop(store);
+        let reopened = DurableImportStore::open_existing(&path, &anchor, &auth).unwrap();
+        assert_eq!(reopened.active_generation().unwrap(), 5);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn invalid_expected_anchor_integer_range_is_rejected_before_open() {
+        let path = path("anchor-overflow");
+        let (mut anchor, _) = fixture();
+        anchor.generation = u64::MAX;
+        assert!(matches!(
+            DurableImportStore::open_existing(&path, &anchor, &UnavailableAuthenticator),
+            Err(reason) if reason == "IMPORT_STORE_EXPECTED_ANCHOR_INVALID"
+        ));
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn mutated_base_sentinel_is_rejected_without_repairing_the_database() {
+        let path = path("base-sentinel");
+        let (anchor, _) = fixture();
+        let store = DurableImportStore::create(&path, &anchor).unwrap();
+        drop(store);
+        let connection =
+            Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE).unwrap();
+        connection
+            .execute(
+                "UPDATE authority_generations SET trust_epoch=2 WHERE generation=4",
+                [],
+            )
+            .unwrap();
+        drop(connection);
+        let before = std::fs::read(&path).unwrap();
+        assert!(matches!(
+            DurableImportStore::open_existing(&path, &anchor, &UnavailableAuthenticator),
             Err(reason) if reason == "IMPORT_BASE_GENERATION_INVALID"
         ));
         assert_eq!(std::fs::read(&path).unwrap(), before);
