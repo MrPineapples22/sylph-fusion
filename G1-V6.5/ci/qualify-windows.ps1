@@ -238,10 +238,20 @@ function Start-BrokerAndCheck([string]$Mode, [string]$DataDir, [string]$ClientSi
     -DataDir $DataDir -ClientSid $ClientSid
   $script:installedService = $true
   Save-Record "$Mode-service-config.json" $install
+  $bootstrapPath = Join-Path $DataDir 'registry.sqlite'
+  $bootstrap = Invoke-AsAdmin -FilePath $install.protectedBinary -Arguments @('--initialize-synthetic-authority',$bootstrapPath)
+  if ($bootstrap.exitCode -ne 0 -or -not $bootstrap.json -or
+      $bootstrap.json.schema -ne 'SYLPH_G1_SYNTHETIC_BOOTSTRAP_1' -or
+      $bootstrap.json.status -ne 'SYNTHETIC_TEST_ONLY' -or
+      $bootstrap.json.sqliteVersion -ne '3.54.1') {
+    throw "EXPLICIT_SYNTHETIC_BOOTSTRAP_FAILED:${Mode}:$($bootstrap.stdout):$($bootstrap.stderr)"
+  }
+  Save-Record "$Mode-synthetic-bootstrap.json" $bootstrap
   $started = Start-SylphProbeService -Name $serviceName -DataDir $DataDir
   Save-Record "$Mode-service-start.json" $started
   if ($started.state -ne 'Running' -or -not $started.ready -or
-      $started.ready.schema -ne 'SYLPH_G1_BROKER_READY_2' -or $started.ready.firstPipeInstanceCreated -ne $true -or
+      $started.ready.schema -ne 'SYLPH_G1_BROKER_READY_3' -or $started.ready.state -ne 'READY' -or
+      $started.ready.authorityClass -ne 'SYNTHETIC_TEST_ONLY' -or $started.ready.firstPipeInstanceCreated -ne $true -or
       $null -eq $started.ready.processId -or [string]::IsNullOrWhiteSpace([string]$started.ready.startupNonce)) {
     $startEvidence = ConvertTo-Json -InputObject $started -Depth 8 -Compress
     throw "BROKER_SERVICE_NOT_READY_OR_NOT_BOUND_TO_FRESH_PIPE:${Mode}:$startEvidence"
@@ -274,6 +284,12 @@ function Test-ClientOperation([string]$Label, [string]$Verb, [string[]]$Tail = @
   Save-Record "$Label.json" $run
   if ($run.exitCode -ne 0) { throw "AUTHORIZED_CLIENT_OPERATION_FAILED:${Label}:$($run.stdout):$($run.stderr)" }
   return $run
+}
+
+function Assert-ReadinessWithdrawn([string]$DataDir,[string]$Label) {
+  $readyPath = Join-Path $DataDir 'broker-ready.json'
+  if (Test-Path -LiteralPath $readyPath) { throw "STALE_READINESS_AFTER_STOP:${Label}:$readyPath" }
+  Save-Record "$Label-readiness-withdrawn.json" ([ordered]@{serviceStopped=$true;readinessFileAbsent=$true;state='STOPPING'})
 }
 
 try {
@@ -525,6 +541,7 @@ try {
   $stop = Stop-SylphProbeService -Name $serviceName
   Save-Record 'broker-stopped-before-protected-check.json' $stop
   if ($stop.state -ne 'Stopped') { throw "BROKER_NOT_STOPPED_FOR_ACL_TEST:$($stop.state)" }
+  Assert-ReadinessWithdrawn $brokerRoot 'localservice-first-stop'
 
   # At this point no legitimate pipe exists. A same-user process can squat
   # the name, so the client must authenticate the server process before
@@ -699,7 +716,8 @@ try {
 
   $localRestart = Start-SylphProbeService -Name $serviceName -DataDir $brokerRoot
   if ($localRestart.state -ne 'Running' -or -not $localRestart.ready -or
-      $localRestart.ready.schema -ne 'SYLPH_G1_BROKER_READY_2' -or
+      $localRestart.ready.schema -ne 'SYLPH_G1_BROKER_READY_3' -or $localRestart.ready.state -ne 'READY' -or
+      $localRestart.ready.authorityClass -ne 'SYNTHETIC_TEST_ONLY' -or
       $localRestart.ready.firstPipeInstanceCreated -ne $true -or
       [string]$localRestart.ready.startupNonce -eq [string]$local.start.ready.startupNonce) {
     throw 'LOCAL_SERVICE_RESTART_READINESS_NOT_FRESH'
@@ -880,3 +898,4 @@ finally {
   try { Save-Record 'summary.json' $result } catch { Write-Error "SUMMARY_WRITE_FAILED:$($_.Exception.Message)" }
   if ($result.cleanupFailures.Count -gt 0) { throw "CI_CLEANUP_FAILED:$($result.cleanupFailures -join ';')" }
 }
+
