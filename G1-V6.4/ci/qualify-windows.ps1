@@ -417,7 +417,6 @@ try {
       $local.token.serviceSidPresent -ne $true -or -not $local.token.databaseIdentity -or
       $null -eq $local.token.integrityRid -or [int]$local.token.integrityRid -le 0 -or
       $local.token.sqliteVersion -ne '3.54.1' -or [string]::IsNullOrWhiteSpace([string]$local.token.sqliteSourceId) -or
-      [string]$local.token.sqliteSourceId -notmatch '3\.54\.1' -or
       $local.token.pragmas.journalMode -ne 'wal' -or $local.token.pragmas.synchronous -ne 2 -or
       $local.token.pragmas.foreignKeys -ne 1 -or $local.token.pragmas.trustedSchema -ne 0 -or
       [string]$local.token.databasePath -ne [string]$local.dbPath) {
