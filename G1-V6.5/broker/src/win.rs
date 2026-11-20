@@ -1192,18 +1192,18 @@ pub mod pipe {
         Ok(frame.to_string())
     }
 
-    fn new_overlapped() -> Result<OVERLAPPED, String> {
+    fn new_overlapped() -> Result<Box<OVERLAPPED>, String> {
         let event = unsafe { CreateEventW(null_mut(), 0, 0, null()) };
         if event.is_null() {
             return Err(format!("IPC_EVENT_CREATE:{}", error_text()));
         }
-        Ok(OVERLAPPED {
+        Ok(Box::new(OVERLAPPED {
             Internal: 0,
             InternalHigh: 0,
             Offset: 0,
             OffsetHigh: 0,
             hEvent: event,
-        })
+        }))
     }
     fn wait_overlapped(
         pipe: HANDLE,
@@ -1229,8 +1229,13 @@ pub mod pipe {
                 return Ok(transferred);
             }
             if wait != WAIT_TIMEOUT {
-                return cancel_and_drain(pipe, overlapped)
-                    .map_err(|error| format!("{operation}_WAIT_FAILED:{wait}:IO:{error}"));
+                return cancel_and_drain(pipe, overlapped).map_err(|(error, completed)| {
+                    if completed {
+                        format!("{operation}_WAIT_FAILED:{wait}:IO:{error}")
+                    } else {
+                        format!("IPC_IO_UNPROVEN:{operation}:{wait}:IO:{error}")
+                    }
+                });
             }
             let timed_out = timeout_ms
                 .is_some_and(|limit| unsafe { GetTickCount64() }.saturating_sub(started) >= limit);
@@ -1243,33 +1248,42 @@ pub mod pipe {
             // call returns, including when cancellation races completion.
             match cancel_and_drain(pipe, overlapped) {
                 Ok(completed) => return Ok(completed),
-                Err(error) if error == 995 && service::stopping() => {
+                Err((error, _)) if error == 995 && service::stopping() => {
                     return Err("IPC_STOPPED".into())
                 }
-                Err(error) if error == 995 && timed_out => return Err("IPC_FRAME_TIMEOUT".into()),
-                Err(error) if is_client_disconnect_error(error) => {
+                Err((error, _)) if error == 995 && timed_out => {
+                    return Err("IPC_FRAME_TIMEOUT".into())
+                }
+                Err((error, _)) if is_client_disconnect_error(error) => {
                     return Err("IPC_CLIENT_DISCONNECTED".into())
                 }
-                Err(error) => {
-                    return Err(format!("{operation}_CANCELLED:{error}:{}", error_text()))
+                Err((error, completed)) => {
+                    if !completed {
+                        return Err(format!("IPC_IO_UNPROVEN:{operation}:CANCEL:{error}"));
+                    }
+                    return Err(format!("{operation}_CANCELLED:{error}:{}", error_text()));
                 }
             }
         }
     }
-    fn cancel_and_drain(pipe: HANDLE, overlapped: &mut OVERLAPPED) -> Result<DWORD, DWORD> {
+    fn cancel_and_drain(pipe: HANDLE, overlapped: &mut OVERLAPPED) -> Result<DWORD, (DWORD, bool)> {
         unsafe {
-            let _ = CancelIoEx(pipe, overlapped);
+            let cancelled = CancelIoEx(pipe, overlapped);
+            let cancel_error = if cancelled == 0 { GetLastError() } else { 0 };
             let mut transferred = 0;
             if GetOverlappedResult(pipe, overlapped, &mut transferred, 1) != 0 {
                 Ok(transferred)
             } else {
                 let error = GetLastError();
-                if error == 6 {
-                    // The handle was invalidated, so the kernel cannot retain
-                    // a request against it. Keep this explicit in diagnostics.
-                    Err(error)
+                // GetOverlappedResult(TRUE) is the completion barrier. A few
+                // errors explicitly mean that the barrier could not establish
+                // completion; callers retain every referenced allocation.
+                let completion_unproven =
+                    matches!(error, 6 | 87 | 996) || (cancelled == 0 && cancel_error == 87);
+                if completion_unproven {
+                    Err((error, false))
                 } else {
-                    Err(error)
+                    Err((error, true))
                 }
             }
         }
@@ -1285,7 +1299,7 @@ pub mod pipe {
                 buffer.as_mut_ptr().cast(),
                 buffer.len() as DWORD,
                 &mut read,
-                (&mut overlapped as *mut OVERLAPPED).cast(),
+                (&mut *overlapped as *mut OVERLAPPED).cast(),
             ) != 0
             {
                 Ok(read)
@@ -1307,6 +1321,17 @@ pub mod pipe {
                 }
             }
         };
+        if result
+            .as_ref()
+            .is_err_and(|error| error.starts_with("IPC_IO_UNPROVEN"))
+        {
+            // Windows may still reference the OVERLAPPED and caller buffer.
+            // Keep both allocations and the event alive, then retire the
+            // endpoint; leaking here is safer than use-after-free.
+            std::mem::forget(overlapped);
+            std::mem::forget(buffer);
+            return result.map(|_| String::new());
+        }
         unsafe { close(overlapped.hEvent) };
         let read = result?;
         parse_frame(&buffer[..read as usize])
@@ -1318,7 +1343,7 @@ pub mod pipe {
         )
     }
     fn write_message(handle: HANDLE, text: &str) -> Result<(), String> {
-        let bytes = format!("{text}\n");
+        let bytes = format!("{text}\n").into_bytes();
         let mut written = 0;
         let mut overlapped = new_overlapped()?;
         let result = unsafe {
@@ -1327,7 +1352,7 @@ pub mod pipe {
                 bytes.as_ptr().cast(),
                 bytes.len() as DWORD,
                 &mut written,
-                (&mut overlapped as *mut OVERLAPPED).cast(),
+                (&mut *overlapped as *mut OVERLAPPED).cast(),
             ) != 0
             {
                 Ok(written)
@@ -1342,6 +1367,14 @@ pub mod pipe {
                 }
             }
         };
+        if result
+            .as_ref()
+            .is_err_and(|error| error.starts_with("IPC_IO_UNPROVEN"))
+        {
+            std::mem::forget(overlapped);
+            std::mem::forget(bytes);
+            return result.map(|_| ());
+        }
         unsafe { close(overlapped.hEvent) };
         written = result?;
         if written as usize != bytes.len() {
@@ -1590,7 +1623,7 @@ pub mod pipe {
                         return Err(error);
                     }
                 };
-                let connected = ConnectNamedPipe(handle, (&mut connect as *mut OVERLAPPED).cast());
+                let connected = ConnectNamedPipe(handle, (&mut *connect as *mut OVERLAPPED).cast());
                 if connected == 0 {
                     let error = GetLastError();
                     if error == ERROR_PIPE_CONNECTED {
@@ -1602,6 +1635,15 @@ pub mod pipe {
                             Err(error) if error == "IPC_STOPPED" => {
                                 close(connect.hEvent);
                                 break;
+                            }
+                            Err(error) if error.starts_with("IPC_IO_UNPROVEN") => {
+                                // The kernel may still reference the request,
+                                // event and pipe. Retain all of them; retire
+                                // service readiness through the caller's
+                                // fatal result instead of risking reuse.
+                                std::mem::forget(connect);
+                                std::mem::forget(handle);
+                                return Err(format!("PIPE_CONNECT_FAILED:{error}"));
                             }
                             Err(error) => {
                                 close(connect.hEvent);
@@ -1652,21 +1694,34 @@ pub mod pipe {
                             .map_err(|error| format!("IPC_RESPONSE_WRITE_FAILED:{error}")),
                         Err(fatal) => Err(fatal),
                         Ok(true) => {
-                            let response = dispatch(&request, registry);
-                            write_message(handle, &response)
-                                .map_err(|error| format!("IPC_RESPONSE_WRITE_FAILED:{error}"))
+                            let _operation = service::operation_guard();
+                            if service::stopping() {
+                                Ok(())
+                            } else {
+                                let response = dispatch(&request, registry);
+                                write_message(handle, &response).map_err(|error| {
+                                    if error.starts_with("IPC_IO_UNPROVEN") {
+                                        error
+                                    } else {
+                                        format!("IPC_RESPONSE_WRITE_FAILED:{error}")
+                                    }
+                                })
+                            }
                         }
                     },
                 };
                 if let Err(error) = &result {
-                    if error.starts_with("IPC_READ_WAIT_FAILED")
+                    if error.starts_with("IPC_IO_UNPROVEN")
+                        || error.starts_with("IPC_READ_WAIT_FAILED")
                         || error.starts_with("IPC_RESPONSE_WRITE_FAILED")
                     {
                         // The operation has been drained or failed before
                         // dispatch. Retire readiness and stop this endpoint;
                         // an unknown acknowledgement must not leave a
                         // healthy-looking broker accepting new writes.
-                        close(handle);
+                        if !error.starts_with("IPC_IO_UNPROVEN") {
+                            close(handle);
+                        }
                         return Err(error.clone());
                     }
                 }
@@ -1790,6 +1845,7 @@ pub mod service {
     use super::*;
     use std::io::Write;
     static STOP: AtomicBool = AtomicBool::new(false);
+    static AUTHORITY_OPERATION_GATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
     static READINESS_PATH: OnceLock<PathBuf> = OnceLock::new();
     static READINESS_WITHDRAWAL_ERROR: std::sync::Mutex<Option<String>> =
         std::sync::Mutex::new(None);
@@ -1851,6 +1907,11 @@ pub mod service {
     pub fn stopping() -> bool {
         STOP.load(Ordering::SeqCst)
     }
+    pub fn operation_guard() -> std::sync::MutexGuard<'static, ()> {
+        AUTHORITY_OPERATION_GATE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
     fn withdraw_readiness_on_stop() -> Result<(), String> {
         let path = READINESS_PATH
             .get()
@@ -1906,6 +1967,10 @@ pub mod service {
     ) -> DWORD {
         match control {
             SERVICE_CONTROL_STOP => {
+                // Serialize shutdown against an already admitted operation.
+                // Dispatch holds this gate through its response write, whose
+                // timeout is bounded. No new operation can pass after STOP.
+                let _operation = operation_guard();
                 STOP.store(true, Ordering::SeqCst);
                 set_authority_state(AUTHORITY_STOPPING);
                 if let Err(error) = withdraw_readiness_on_stop() {
@@ -2144,3 +2209,4 @@ pub mod service {
         Ok(())
     }
 }
+
