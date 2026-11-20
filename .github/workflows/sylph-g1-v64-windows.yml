@@ -74,9 +74,11 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          $summary = 'G1-V6.4/verification/ci-preflight/summary.json'
-          if (-not (Test-Path -LiteralPath $summary)) { throw 'Preflight summary.json is missing' }
-          Get-Content -Raw -LiteralPath $summary
+          $summaryRoot = 'G1-V6.4/verification/ci-preflight'
+          $summary = Get-ChildItem -LiteralPath $summaryRoot -Filter summary.json -Recurse -File |
+            Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+          if (-not $summary) { throw 'Preflight summary.json is missing' }
+          Get-Content -Raw -LiteralPath $summary.FullName
 
       - name: Upload sanitized CI evidence
         if: always()
