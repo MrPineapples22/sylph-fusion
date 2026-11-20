@@ -1,0 +1,68 @@
+name: SYLPH G1 v6.4 Windows security preflight
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/g1-v6-4-ci-p0
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sylph-g1-v64-windows-preflight-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows-preflight:
+    name: Disposable Windows service and hard-link checks
+    runs-on: windows-2022
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout selected revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
+
+      - name: Pin Rust toolchain
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.89.0 --profile minimal --component rustfmt --target x86_64-pc-windows-msvc
+          rustup default 1.89.0
+          rustc --version --verbose
+          cargo --version
+
+      - name: Bootstrap dependency lock and compile
+        shell: pwsh
+        run: |
+          cargo fmt --manifest-path G1-V6.4/broker/Cargo.toml -- --check
+          cargo generate-lockfile --manifest-path G1-V6.4/broker/Cargo.toml
+          cargo test --manifest-path G1-V6.4/broker/Cargo.toml --target x86_64-pc-windows-msvc -- --test-threads=1
+          cargo build --release --bins --manifest-path G1-V6.4/broker/Cargo.toml --target x86_64-pc-windows-msvc
+
+      - name: Run Windows preflight
+        shell: pwsh
+        run: >-
+          ./G1-V6.4/ci/qualify-windows.ps1
+          -BrokerExe ./G1-V6.4/broker/target/x86_64-pc-windows-msvc/release/g1-broker.exe
+          -ClientExe ./G1-V6.4/broker/target/x86_64-pc-windows-msvc/release/g1-client.exe
+          -AttackerExe ./G1-V6.4/broker/target/x86_64-pc-windows-msvc/release/g1-attacker.exe
+          -VerifierExe ./G1-V6.4/broker/target/x86_64-pc-windows-msvc/release/g1-verifier.exe
+
+      - name: Upload sanitized CI evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sylph-g1-v64-windows-preflight-${{ github.run_id }}
+          path: |
+            G1-V6.4/verification/ci-preflight/
+            G1-V6.4/broker/Cargo.lock
+          if-no-files-found: warn
+          retention-days: 30

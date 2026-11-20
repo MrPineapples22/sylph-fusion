@@ -1,0 +1,10 @@
+{
+  "schema": "SYLPH_G1_V64_PREVIOUS_MANIFESTS_1",
+  "verifiedOn": "2026-11-19",
+  "manifests": [
+    {"name":"G1-v4","sha256":"9be112c87cb0b2073c25099497712cd9617796701eba1404fdff7c84ad376a2a","entries":18,"verifiedEntries":18,"mismatches":0},
+    {"name":"Independent-v4","sha256":"b6ff63895cd4250c9c86629655dfd7ff4e41d583fb2103a54fc0f538235ae384","entries":9,"verifiedEntries":9,"mismatches":0},
+    {"name":"G1-v5","sha256":"3440709411ed6ba8f6a085be5fc1af66eac93f3bfcfe956b723817deb969dd2b","entries":3239,"verifiedEntries":3239,"mismatches":0},
+    {"name":"G1-v6.1","sha256":"7295f19b61b0f1e8f0a5df8870dbddb7fc1b338939937e2c80e6a534c57e9935","entries":4336,"verifiedEntries":4336,"mismatches":0}
+  ]
+}
