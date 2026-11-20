@@ -40,14 +40,34 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          function Invoke-CheckedNative {
+            param(
+              [Parameter(Mandatory = $true)][string]$Label,
+              [Parameter(Mandatory = $true)][scriptblock]$Action
+            )
+            & $Action
+            if ($LASTEXITCODE -ne 0) {
+              throw "$Label failed with native exit code $LASTEXITCODE"
+            }
+          }
+          $negativeControlCaught = $false
+          $LASTEXITCODE = 0
+          try {
+            Invoke-CheckedNative -Label 'native-exit-37-negative-control' -Action { cmd.exe /d /c 'exit 37' }
+          } catch {
+            if ($LASTEXITCODE -eq 37 -or $_.ToString().Contains('37')) { $negativeControlCaught = $true }
+            else { throw }
+          }
+          if (-not $negativeControlCaught) { throw 'Native-command exit guard failed its exit-37 negative control' }
           $manifest = 'G1-VNEXT-SCRATCH/broker/Cargo.toml'
-          cargo fmt --manifest-path $manifest -- --check
-          cargo test --locked --manifest-path $manifest --target x86_64-pc-windows-msvc -- --test-threads=1
-          cargo test --locked --manifest-path $manifest --target x86_64-pc-windows-msvc --features synthetic-maintenance --bin g1-synthetic-maintenance -- --test-threads=1
-          cargo test --locked --manifest-path $manifest --target x86_64-pc-windows-msvc --features synthetic-maintenance --bin g1-broker -- --test-threads=1
-          cargo test --locked --manifest-path $manifest --target x86_64-pc-windows-msvc --features synthetic-maintenance --bin g1-client -- --test-threads=1
-          cargo build --locked --release --bins --manifest-path $manifest --target x86_64-pc-windows-msvc
-          cargo build --locked --release --bins --manifest-path $manifest --target x86_64-pc-windows-msvc --features synthetic-maintenance
+          Invoke-CheckedNative -Label 'cargo fmt' -Action { cargo fmt --manifest-path $manifest -- --check }
+          Invoke-CheckedNative -Label 'default cargo test' -Action { cargo test --locked --manifest-path $manifest --target x86_64-pc-windows-msvc -- --test-threads=1 }
+          Invoke-CheckedNative -Label 'synthetic client tests' -Action { cargo test --locked --manifest-path $manifest --target x86_64-pc-windows-msvc --features synthetic-maintenance --bin g1-synthetic-maintenance -- --test-threads=1 }
+          Invoke-CheckedNative -Label 'broker feature tests' -Action { cargo test --locked --manifest-path $manifest --target x86_64-pc-windows-msvc --features synthetic-maintenance --bin g1-broker -- --test-threads=1 }
+          Invoke-CheckedNative -Label 'client feature tests' -Action { cargo test --locked --manifest-path $manifest --target x86_64-pc-windows-msvc --features synthetic-maintenance --bin g1-client -- --test-threads=1 }
+          Invoke-CheckedNative -Label 'default release build' -Action { cargo build --locked --release --bins --manifest-path $manifest --target x86_64-pc-windows-msvc }
+          Invoke-CheckedNative -Label 'feature release build' -Action { cargo build --locked --release --bins --manifest-path $manifest --target x86_64-pc-windows-msvc --features synthetic-maintenance }
 
       - name: Upload sanitized source build records
         if: always()
