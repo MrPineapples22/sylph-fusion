@@ -513,7 +513,7 @@ try {
   $squatServiceState = (Get-Service -Name $serviceName -ErrorAction Stop).Status.ToString()
   if ($squatServiceState -eq 'Running' -or (Test-Path -LiteralPath $brokerReadyPath)) {
     $readyDuringSquat = if (Test-Path -LiteralPath $brokerReadyPath) { Get-Content -Raw -LiteralPath $brokerReadyPath } else { 'MISSING' }
-    $holderStatus = [ordered]@{ pid=$pipeHolder.Id; exited=$pipeHolder.HasExited; exitCode=if($pipeHolder.HasExited){$pipeHolder.ExitCode}else{$null}; start=$squatStart; state=$squatServiceState; ready=$readyDuringSquat }
+    $holderStatus = [ordered]@{ pid=$pipeHolder.Id; exited=$pipeHolder.HasExited; exitCode=if($pipeHolder.HasExited){$pipeHolder.ExitCode}else{$null}; releaseMarkerExists=(Test-Path -LiteralPath $pipeReleasePath); holderOutput=if(Test-Path -LiteralPath (Join-Path $userRoot 'same-user-fake-pipe-server.stdout.txt')){Get-Content -Raw -LiteralPath (Join-Path $userRoot 'same-user-fake-pipe-server.stdout.txt')}else{'MISSING'}; start=$squatStart; state=$squatServiceState; ready=$readyDuringSquat }
     throw "BROKER_REPORTED_READY_WHILE_UNTRUSTED_FIRST_PIPE_INSTANCE_HELD:$(ConvertTo-Json $holderStatus -Compress -Depth 6)"
   }
   Save-Record 'service-first-pipe-squat-blocked.json' ([ordered]@{start=$squatStart;serviceState=$squatServiceState;readyFileExists=(Test-Path -LiteralPath $brokerReadyPath);blockedBeforeReadiness=$true})
@@ -794,3 +794,4 @@ finally {
   try { Save-Record 'summary.json' $result } catch { Write-Error "SUMMARY_WRITE_FAILED:$($_.Exception.Message)" }
   if ($result.cleanupFailures.Count -gt 0) { throw "CI_CLEANUP_FAILED:$($result.cleanupFailures -join ';')" }
 }
+
