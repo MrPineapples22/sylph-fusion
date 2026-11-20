@@ -1634,7 +1634,11 @@ pub mod service {
         }
         let identity_mode =
             classify_service_identity(&user_sid, &service_sid, group_present, restricted_present)
-                .ok_or_else(|| format!("UNSUPPORTED_SERVICE_IDENTITY:{user_sid}"))?;
+                .ok_or_else(|| {
+                    format!(
+                        "UNSUPPORTED_SERVICE_IDENTITY:user={user_sid};expected={service_sid};groupAttributes={group_attributes:?};restrictedAttributes={restricted_attributes:?};member={check_token_membership}"
+                    )
+                })?;
         pipe::restrict_broker_process_dacl(&service_sid, &cfg.client_sid)?;
         pipe::restrict_broker_token_dacl(&service_sid, &cfg.client_sid)?;
         let group_attributes_json =
