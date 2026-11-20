@@ -15,7 +15,7 @@ use std::path::Path;
 
 const SQLITE_VERSION: &str = "3.54.1";
 const STORAGE_GUARD_SHARE_READ_WRITE: u32 = 0x0000_0003;
-const GENERATIONS_SQL: &str = "CREATE TABLE authority_generations(generation INTEGER PRIMARY KEY,parent_generation INTEGER NOT NULL,parent_state_root TEXT NOT NULL,chain_identity TEXT NOT NULL,state_root TEXT NOT NULL,last_receipt_identity TEXT NOT NULL,receipt_count INTEGER NOT NULL,obligation_count INTEGER NOT NULL,canonical_claim BLOB NOT NULL,signer_identity TEXT NOT NULL,trust_epoch INTEGER NOT NULL,envelope BLOB NOT NULL,synthetic_only INTEGER NOT NULL CHECK(synthetic_only=1))";
+const GENERATIONS_SQL: &str = "CREATE TABLE authority_generations(generation INTEGER PRIMARY KEY,parent_generation INTEGER NOT NULL,parent_state_root TEXT NOT NULL,chain_identity TEXT NOT NULL,state_root TEXT NOT NULL,last_receipt_identity TEXT NOT NULL,receipt_count INTEGER NOT NULL,obligation_count INTEGER NOT NULL,canonical_claim BLOB NOT NULL,signer_identity TEXT NOT NULL,trust_epoch INTEGER NOT NULL,envelope BLOB NOT NULL UNIQUE,synthetic_only INTEGER NOT NULL CHECK(synthetic_only=1))";
 const RECEIPTS_SQL: &str = "CREATE TABLE authority_receipts(generation INTEGER NOT NULL,ordinal INTEGER NOT NULL,identity TEXT NOT NULL,parent_identity TEXT NOT NULL,payload BLOB NOT NULL,PRIMARY KEY(generation,ordinal),UNIQUE(generation,identity),FOREIGN KEY(generation) REFERENCES authority_generations(generation))";
 const OBLIGATIONS_SQL: &str = "CREATE TABLE authority_obligations(generation INTEGER NOT NULL,ordinal INTEGER NOT NULL,identity TEXT NOT NULL,state TEXT NOT NULL,external_identity TEXT NOT NULL,PRIMARY KEY(generation,ordinal),UNIQUE(generation,identity),FOREIGN KEY(generation) REFERENCES authority_generations(generation))";
 const ACTIVE_SQL: &str = "CREATE TABLE active_authority(singleton INTEGER PRIMARY KEY CHECK(singleton=1),generation INTEGER NOT NULL,FOREIGN KEY(generation) REFERENCES authority_generations(generation))";
@@ -166,6 +166,42 @@ impl DurableImportStore {
             )
             .map(|value| value as u64)
             .map_err(|error| format!("IMPORT_ACTIVE_GENERATION:{error}"))
+    }
+
+    /// Reconstruct an anchor from an already-opened store only after verifying
+    /// its complete replay against the independently supplied approved head.
+    /// In this scratch harness the caller's approved head is synthetic input,
+    /// not a rollback-resistant operational trust anchor.
+    pub fn anchor_at(
+        &self,
+        generation: u64,
+        authenticator: &dyn EvidenceAuthenticator,
+    ) -> Result<ImportAnchor, String> {
+        self.verify_inventory(authenticator)?;
+        if generation < self.base_anchor.generation
+            || generation > self.active_generation()?
+            || generation > i64::MAX as u64
+        {
+            return Err("IMPORT_ANCHOR_GENERATION_OUT_OF_RANGE".into());
+        }
+        let (stored_generation, chain_identity, state_root, last_receipt_identity) = self
+            .connection
+            .query_row(
+                "SELECT generation,chain_identity,state_root,last_receipt_identity FROM authority_generations WHERE generation=?1",
+                [generation as i64],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, String>(3)?)),
+            )
+            .map_err(|error| format!("IMPORT_ANCHOR_GENERATION_READ:{error}"))?;
+        if stored_generation < 0 {
+            return Err("IMPORT_ANCHOR_GENERATION_INVALID".into());
+        }
+        Ok(ImportAnchor {
+            chain_identity,
+            generation: stored_generation as u64,
+            state_root,
+            last_receipt_identity,
+            unresolved_obligations: load_obligations(&self.connection, stored_generation)?,
+        })
     }
 
     pub fn activate(
@@ -1141,3 +1177,4 @@ mod tests {
         let _ = std::fs::remove_file(path);
     }
 }
+
