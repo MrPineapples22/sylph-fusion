@@ -1519,10 +1519,17 @@ pub mod service {
         }
         STATUS_HANDLE.store(handle, Ordering::SeqCst);
         set_status(SERVICE_START_PENDING, 0);
+        let _ = std::fs::remove_file(cfg.data_dir.join("broker-startup-error.txt"));
         let result = run_service(&cfg);
         match result {
             Ok(()) => set_status(SERVICE_STOPPED, 0),
-            Err(_) => set_status(SERVICE_STOPPED, 1066),
+            Err(error) => {
+                let _ = std::fs::write(
+                    cfg.data_dir.join("broker-startup-error.txt"),
+                    error.as_bytes(),
+                );
+                set_status(SERVICE_STOPPED, 1066);
+            }
         }
     }
     fn parse_args() -> Result<Config, String> {
